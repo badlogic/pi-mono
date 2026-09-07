@@ -277,11 +277,26 @@ function createExtensionAPI(
 
 	const api = {
 		// Registration methods - write to extension
-		on(event: string, handler: HandlerFn): void {
+		on(event: string, handler: HandlerFn): () => void {
 			assertActive();
+			const registeredHandler: HandlerFn = (...args) => handler(...args);
 			const list = extension.handlers.get(event) ?? [];
-			list.push(handler);
+			list.push(registeredHandler);
 			extension.handlers.set(event, list);
+
+			return () => {
+				const handlers = extension.handlers.get(event);
+				if (!handlers?.includes(registeredHandler)) return;
+
+				// WIP (#8967): handlers registered for this event after removal miss an ongoing
+				// dispatch that still holds the old list, unlike registration without removal.
+				const remaining = handlers.filter((entry) => entry !== registeredHandler);
+				if (remaining.length === 0) {
+					extension.handlers.delete(event);
+				} else {
+					extension.handlers.set(event, remaining);
+				}
+			};
 		},
 
 		registerTool(tool: ToolDefinition): void {

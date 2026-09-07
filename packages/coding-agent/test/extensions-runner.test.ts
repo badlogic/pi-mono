@@ -8,11 +8,18 @@ import * as os from "node:os";
 import * as path from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { AuthStorage } from "../src/core/auth-storage.ts";
-import { createExtensionRuntime, discoverAndLoadExtensions, loadExtensions } from "../src/core/extensions/loader.ts";
+import { createEventBus } from "../src/core/event-bus.ts";
+import {
+	createExtensionRuntime,
+	discoverAndLoadExtensions,
+	loadExtensionFromFactory,
+	loadExtensions,
+} from "../src/core/extensions/loader.ts";
 import { ExtensionRunner, emitProjectTrustEvent } from "../src/core/extensions/runner.ts";
 import type {
 	ExtensionActions,
 	ExtensionContextActions,
+	ExtensionFactory,
 	ExtensionUIContext,
 	ProviderConfig,
 } from "../src/core/extensions/types.ts";
@@ -962,6 +969,83 @@ describe("ExtensionRunner", () => {
 
 			await commandContext.fork("entry-2", { position: "at" });
 			expect(fork).toHaveBeenLastCalledWith("entry-2", { position: "at" });
+		});
+	});
+
+	// #8967: event handler unsubscription must not disturb other registrations.
+	describe("event subscriptions", () => {
+		async function loadSubscriptionExtension(factory: ExtensionFactory) {
+			const runtime = createExtensionRuntime();
+			const extension = await loadExtensionFromFactory(factory, tempDir, createEventBus(), runtime);
+			const runner = new ExtensionRunner([extension], runtime, tempDir, sessionManager, modelRegistry);
+			return { extension, runner };
+		}
+
+		it("allows self-removal without skipping neighboring handlers", async () => {
+			const calls: string[] = [];
+			const { runner } = await loadSubscriptionExtension((pi) => {
+				const unsubscribe = pi.on("agent_end", () => {
+					calls.push("A");
+					unsubscribe();
+				});
+				pi.on("agent_end", () => {
+					calls.push("B");
+				});
+			});
+
+			await runner.emit({ type: "agent_end", messages: [] });
+			expect(calls).toEqual(["A", "B"]);
+
+			await runner.emit({ type: "agent_end", messages: [] });
+			expect(calls).toEqual(["A", "B", "B"]);
+		});
+
+		it("removes duplicate registrations independently and cleans up the last handler", async () => {
+			const calls: string[] = [];
+			const unsubscribers: Array<() => void> = [];
+			const { extension, runner } = await loadSubscriptionExtension((pi) => {
+				const shared = () => {
+					calls.push("shared");
+				};
+				unsubscribers.push(pi.on("agent_end", shared));
+				unsubscribers.push(
+					pi.on("agent_end", () => {
+						calls.push("B");
+					}),
+				);
+				unsubscribers.push(pi.on("agent_end", shared));
+			});
+			const [stopFirst, stopB, stopSecond] = unsubscribers;
+
+			stopSecond();
+			stopSecond();
+			await runner.emit({ type: "agent_end", messages: [] });
+			expect(calls).toEqual(["shared", "B"]);
+
+			stopFirst();
+			await runner.emit({ type: "agent_end", messages: [] });
+			expect(calls).toEqual(["shared", "B", "B"]);
+
+			stopB();
+			expect(extension.handlers.has("agent_end")).toBe(false);
+		});
+
+		it("still runs handlers registered during the current dispatch", async () => {
+			const calls: string[] = [];
+			const { runner } = await loadSubscriptionExtension((pi) => {
+				pi.on("agent_end", () => {
+					calls.push("A");
+					pi.on("agent_end", () => {
+						calls.push("C");
+					});
+				});
+				pi.on("agent_end", () => {
+					calls.push("B");
+				});
+			});
+
+			await runner.emit({ type: "agent_end", messages: [] });
+			expect(calls).toEqual(["A", "B", "C"]);
 		});
 	});
 
