@@ -47,9 +47,13 @@ export function agentLoop(
 		},
 		signal,
 		streamFn,
-	).then((messages) => {
-		stream.end(messages);
-	});
+	)
+		.then((messages) => {
+			stream.end(messages);
+		})
+		.catch((error: unknown) => {
+			endStreamWithError(stream, config, signal, error);
+		});
 
 	return stream;
 }
@@ -86,9 +90,13 @@ export function agentLoopContinue(
 		},
 		signal,
 		streamFn,
-	).then((messages) => {
-		stream.end(messages);
-	});
+	)
+		.then((messages) => {
+			stream.end(messages);
+		})
+		.catch((error: unknown) => {
+			endStreamWithError(stream, config, signal, error);
+		});
 
 	return stream;
 }
@@ -148,6 +156,46 @@ function createAgentStream(): EventStream<AgentEvent, AgentMessage[]> {
 		(event: AgentEvent) => event.type === "agent_end",
 		(event: AgentEvent) => (event.type === "agent_end" ? event.messages : []),
 	);
+}
+
+const EMPTY_USAGE = {
+	input: 0,
+	output: 0,
+	cacheRead: 0,
+	cacheWrite: 0,
+	totalTokens: 0,
+	cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+};
+
+/**
+ * Terminate the stream after runAgentLoop/runAgentLoopContinue rejects.
+ * Without this, the rejection is unhandled (crashing Node) and the stream never
+ * ends, so consumers awaiting result() or iterating events hang forever.
+ * Mirrors Agent's run failure handling: an error assistant message followed by
+ * the message/turn/agent end events, so subscribers see the same sequence.
+ */
+function endStreamWithError(
+	stream: EventStream<AgentEvent, AgentMessage[]>,
+	config: AgentLoopConfig,
+	signal: AbortSignal | undefined,
+	error: unknown,
+): void {
+	const failureMessage: AssistantMessage = {
+		role: "assistant",
+		content: [{ type: "text", text: "" }],
+		api: config.model.api,
+		provider: config.model.provider,
+		model: config.model.id,
+		usage: EMPTY_USAGE,
+		stopReason: signal?.aborted ? "aborted" : "error",
+		errorMessage: error instanceof Error ? error.message : String(error),
+		timestamp: Date.now(),
+	};
+	stream.push({ type: "message_start", message: failureMessage });
+	stream.push({ type: "message_end", message: failureMessage });
+	stream.push({ type: "turn_end", message: failureMessage, toolResults: [] });
+	stream.push({ type: "agent_end", messages: [failureMessage] });
+	stream.end();
 }
 
 /**

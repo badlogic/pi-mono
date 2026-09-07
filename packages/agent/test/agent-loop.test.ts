@@ -1608,3 +1608,62 @@ describe("agentLoopContinue with AgentMessage", () => {
 		expect(messages[0].role).toBe("assistant");
 	});
 });
+
+describe("agentLoop rejection handling", () => {
+	const throwingStreamFn = () => {
+		throw new Error("streamFn exploded");
+	};
+
+	it("ends the stream with an error result when streamFn throws synchronously", async () => {
+		const context: AgentContext = { systemPrompt: "", messages: [], tools: [] };
+		const config: AgentLoopConfig = { model: createModel(), convertToLlm: identityConverter };
+
+		const events: AgentEvent[] = [];
+		const stream = agentLoop([createUserMessage("Hello")], context, config, undefined, throwingStreamFn);
+
+		// Without rejection handling this hangs forever and the rejection is
+		// unhandled (vitest fails the test in both cases).
+		for await (const event of stream) {
+			events.push(event);
+		}
+
+		const messages = await stream.result();
+		const last = messages[messages.length - 1];
+		expect(last.role).toBe("assistant");
+		if (last.role === "assistant") {
+			expect(last.stopReason).toBe("error");
+			expect(last.errorMessage).toBe("streamFn exploded");
+		}
+
+		// Subscribers see the same terminal sequence the Agent path emits on failure.
+		const eventTypes = events.map((e) => e.type);
+		expect(eventTypes[0]).toBe("agent_start");
+		expect(eventTypes[eventTypes.length - 1]).toBe("agent_end");
+		expect(eventTypes).toContain("turn_end");
+	});
+
+	it("ends the stream with an error result when streamFn throws synchronously (continue)", async () => {
+		const context: AgentContext = {
+			systemPrompt: "",
+			messages: [createUserMessage("Hello")],
+			tools: [],
+		};
+		const config: AgentLoopConfig = { model: createModel(), convertToLlm: identityConverter };
+
+		const events: AgentEvent[] = [];
+		const stream = agentLoopContinue(context, config, undefined, throwingStreamFn);
+
+		for await (const event of stream) {
+			events.push(event);
+		}
+
+		const messages = await stream.result();
+		const last = messages[messages.length - 1];
+		expect(last.role).toBe("assistant");
+		if (last.role === "assistant") {
+			expect(last.stopReason).toBe("error");
+			expect(last.errorMessage).toBe("streamFn exploded");
+		}
+		expect(events[events.length - 1].type).toBe("agent_end");
+	});
+});
