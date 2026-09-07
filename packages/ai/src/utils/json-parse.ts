@@ -147,3 +147,19 @@ export function parseStreamingJson<T = Record<string, unknown>>(partialJson: str
 		}
 	}
 }
+
+/**
+ * Whether a streaming partial-json buffer grown to `len` should be re-parsed,
+ * given the buffer length at the last parse (`lastParsedLen`; 0 = never parsed).
+ *
+ * Per-delta full re-parse is O(n^2) across a stream: a multi-MB tool-use argument
+ * pinned the event loop for minutes and wedged the whole server (production
+ * pi-web :30141, 2026-09-07). Geometric stepping (>= 4KB and >= 25% growth since
+ * the last parse) bounds total parse work to O(n) per block. The final parse at
+ * content_block_stop is always exact, so throttling never loses correctness.
+ */
+export function shouldReparsePartial(len: number, lastParsedLen: number): boolean {
+	if (len <= 0) return false;
+	if (lastParsedLen <= 0) return true;
+	return len - lastParsedLen >= Math.max(4096, Math.floor(len / 4));
+}
