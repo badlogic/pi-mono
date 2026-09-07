@@ -1,5 +1,21 @@
 # Development Rules
 
+## Plane projects
+
+Plane projects that track work for **this repo**. Before any Plane write, pick the project whose
+**Concern** matches the task at hand — never guess; if unsure, ask. The `repos:` marker in each
+project's Plane description is the authoritative repo↔project binding; this list mirrors it for offline
+lookup and is refreshed by re-running `plane-bootstrap-project`.
+
+- **Concern: PI** — project `PI` ("PI")
+  - Workspace slug `local` · base URL `http://localhost`
+  - Spans repos: `github.com/antid2ta/pi`, `github.com/antid2ta/pi-extensions`
+  - Gotchas: the agent token must be a *project member* — the server surfaces a legible error on
+    member-scoped writes otherwise · an assignee is **silently dropped** if they are not a project member
+    (`update_work_item`'s response warns when this happens)
+  - Conventions: decisions = `adr` work items · issues = work items · glossary = `CONTEXT.md` (repo) ·
+    wayfinder maps = `wayfinder:map` work items
+
 ## Conversational Style
 
 - Keep answers short and concise
