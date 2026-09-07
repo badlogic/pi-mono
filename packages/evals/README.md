@@ -27,6 +27,7 @@ Additional arguments are forwarded to Vitest:
 ```bash
 npm run eval -- src/extensions.eval.ts
 npm run eval -- -t "creates, reloads, and uses"
+npm run eval -- src/docs.eval.ts -t "session-format\.md"
 ```
 
 Each invocation prints an ignored `.eval/` artifact directory. `runs.jsonl` indexes completed harness runs and their
