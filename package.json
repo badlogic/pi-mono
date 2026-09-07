@@ -60,6 +60,10 @@
 		"rimraf": "6.1.2",
 		"gaxios": {
 			"rimraf": "6.1.2"
-		}
+		},
+		"brace-expansion": "5.0.9",
+		"protobufjs": "7.6.5",
+		"shell-quote": "1.8.5",
+		"undici": "8.10.2"
 	}
 }
