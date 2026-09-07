@@ -2,10 +2,6 @@
  * Builds a documentation catalog from the local Markdown list links
  * (`- [Title](path.md)`) in one Markdown file. Every cataloged page must exist
  * and remain beneath the catalog file's directory.
- *
- * Source hints are repository-local GitHub `blob` links found outside code
- * fences. Their targets must exist; callers may provide them to an auditor as
- * starting points, not search boundaries.
  */
 import { existsSync, readFileSync } from "node:fs";
 import { dirname, isAbsolute, relative, resolve, sep } from "node:path";
@@ -62,24 +58,4 @@ export function loadDocumentationCatalog(catalogPath: string): Array<{ relativeP
 		pages.push({ relativePath });
 	}
 	return pages;
-}
-
-export function loadDocumentationSourceHints(documentationPath: string, repositoryRoot: string): string[] {
-	const resolvedRepositoryRoot = resolve(repositoryRoot);
-	const hints: string[] = [];
-	const seenHints = new Set<string>();
-	for (const line of markdownLines(documentationPath)) {
-		for (const match of line.matchAll(/(?<!!)\[[^\]]+]\((https:\/\/github\.com\/[^)\s]+)\)/g)) {
-			const url = new URL(match[1]);
-			const sourceMatch = /^\/earendil-works\/(?:pi|pi-mono)\/blob\/[^/]+\/(.+)$/.exec(url.pathname);
-			if (!sourceMatch) continue;
-			const target = resolve(resolvedRepositoryRoot, decodeURIComponent(sourceMatch[1]));
-			const relativePath = relativeDocumentationPath(resolvedRepositoryRoot, target);
-			if (!existsSync(target)) throw new Error(`Missing documentation source hint: ${relativePath}`);
-			if (seenHints.has(target)) continue;
-			seenHints.add(target);
-			hints.push(relativePath);
-		}
-	}
-	return hints;
 }

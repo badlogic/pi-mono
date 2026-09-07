@@ -2,7 +2,7 @@ import { mkdirSync, mkdtempSync, readdirSync, rmSync, writeFileSync } from "node
 import { tmpdir } from "node:os";
 import { dirname, join, relative, resolve } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import { loadDocumentationCatalog, loadDocumentationSourceHints } from "../src/docs-catalog.ts";
+import { loadDocumentationCatalog } from "../src/docs-catalog.ts";
 
 const repositoryRoot = resolve(import.meta.dirname, "../../..");
 const codingAgentDocsRoot = resolve(repositoryRoot, "packages/coding-agent/docs");
@@ -95,63 +95,7 @@ describe("loadDocumentationCatalog", () => {
 	});
 });
 
-describe("loadDocumentationSourceHints", () => {
-	it("returns unique repository source links and ignores non-source examples", () => {
-		const root = createDocumentationFixture({
-			"docs/guide.md": [
-				"# Guide",
-				"",
-				"- [Implementation](https://github.com/earendil-works/pi-mono/blob/main/src/feature.ts#L10)",
-				"- [Duplicate](https://github.com/earendil-works/pi-mono/blob/main/src/feature.ts#L20)",
-				"- [Legacy repository URL](https://github.com/earendil-works/pi/blob/main/src/other.ts)",
-				"- [External source](https://example.com/source.ts)",
-				"![Image](https://github.com/earendil-works/pi-mono/blob/main/src/missing-image.ts)",
-				"```md",
-				"[Example](https://github.com/earendil-works/pi-mono/blob/main/src/missing-example.ts)",
-				"```",
-			].join("\n"),
-			"src/feature.ts": "export const feature = true;\n",
-			"src/other.ts": "export const other = true;\n",
-		});
-
-		expect(loadDocumentationSourceHints(join(root, "docs/guide.md"), root)).toEqual([
-			"src/feature.ts",
-			"src/other.ts",
-		]);
-	});
-
-	it("rejects missing repository source links", () => {
-		const root = createDocumentationFixture({
-			"docs/guide.md": "[Missing](https://github.com/earendil-works/pi-mono/blob/main/src/missing.ts)\n",
-		});
-
-		expect(() => loadDocumentationSourceHints(join(root, "docs/guide.md"), root)).toThrow(
-			"Missing documentation source hint: src/missing.ts",
-		);
-	});
-
-	it("rejects repository source links outside the repository root", () => {
-		const root = createDocumentationFixture({
-			"docs/guide.md": "[Outside](https://github.com/earendil-works/pi-mono/blob/main/%2E%2E%2Foutside.ts)\n",
-		});
-
-		expect(() => loadDocumentationSourceHints(join(root, "docs/guide.md"), root)).toThrow(
-			"Documentation link escapes the documentation root",
-		);
-	});
-});
-
 describe("coding-agent documentation", () => {
-	it("has valid source hints in every cataloged page", () => {
-		const pages = loadDocumentationCatalog(join(codingAgentDocsRoot, "index.md"));
-
-		expect(() => {
-			for (const page of pages) {
-				loadDocumentationSourceHints(join(codingAgentDocsRoot, page.relativePath), repositoryRoot);
-			}
-		}).not.toThrow();
-	});
-
 	it("lists every Markdown document in the catalog", () => {
 		const catalogPath = join(codingAgentDocsRoot, "index.md");
 		const pages = loadDocumentationCatalog(catalogPath);
