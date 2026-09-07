@@ -68,7 +68,8 @@ jobs:
           retention-days: 14
 
   publish:
-    if: ${{ github.event_name == 'schedule' || github.event_name == 'workflow_run' || (github.event_name == 'workflow_dispatch' && inputs.publish) }}
+    # Skip when R2 credentials are unset (typical on forks).
+    if: ${{ (github.event_name == 'schedule' || github.event_name == 'workflow_run' || (github.event_name == 'workflow_dispatch' && inputs.publish)) && secrets.PI_ARTIFACTS_R2_ACCESS_KEY_ID != '' }}
     needs: generate
     runs-on: ubuntu-latest
     environment: pi-model-upload
