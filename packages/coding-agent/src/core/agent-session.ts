@@ -3118,6 +3118,11 @@ export class AgentSession {
 		if (this.isStreaming) {
 			throw new Error("Wait for the current response to finish before navigating the session tree.");
 		}
+		if (this.isCompacting) {
+			throw new Error(
+				"Wait for the current compaction or tree navigation to finish before navigating the session tree.",
+			);
+		}
 
 		const oldLeafId = this.sessionManager.getLeafId();
 
