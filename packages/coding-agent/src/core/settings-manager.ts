@@ -1,5 +1,5 @@
 import type { ThinkingLevel } from "@earendil-works/pi-agent-core";
-import { DEFAULT_MAX_AGENT_RETRY_DELAY_MS, type Transport } from "@earendil-works/pi-ai";
+import { DEFAULT_MAX_AGENT_RETRY_DELAY_MS, type Model, type Transport } from "@earendil-works/pi-ai";
 import type { TuiMode as RendererTuiMode, ScrollViewScrollbar, TerminalCapabilities } from "@earendil-works/pi-tui";
 import { randomUUID } from "crypto";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "fs";
@@ -10,10 +10,21 @@ import { normalizePath, resolvePath } from "../utils/paths.ts";
 import { stripBom } from "../utils/text.ts";
 import { DEFAULT_HTTP_IDLE_TIMEOUT_MS, parseHttpIdleTimeoutMs } from "./http-dispatcher.ts";
 
+export interface CompactionModelOverride {
+	reserveTokens?: number;
+	keepRecentTokens?: number;
+}
+
+const DEFAULT_COMPACTION_TOKEN_SETTINGS: Required<CompactionModelOverride> = {
+	reserveTokens: 16384,
+	keepRecentTokens: 20000,
+};
+
 export interface CompactionSettings {
 	enabled?: boolean; // default: true
 	reserveTokens?: number; // default: 16384
 	keepRecentTokens?: number; // default: 20000
+	modelOverrides?: Record<string, CompactionModelOverride>; // exact "provider/modelId" keys
 }
 
 export interface BranchSummarySettings {
@@ -840,19 +851,52 @@ export class SettingsManager {
 		this.save();
 	}
 
-	getCompactionReserveTokens(): number {
-		return this.settings.compaction?.reserveTokens ?? 16384;
+	private getCompactionTokenSetting(
+		field: keyof CompactionModelOverride,
+		model?: Pick<Model<string>, "provider" | "id">,
+	): number {
+		const compaction = this.settings.compaction;
+		const ordinary = compaction?.[field];
+		if (ordinary !== undefined && (typeof ordinary !== "number" || !Number.isSafeInteger(ordinary) || ordinary < 0)) {
+			throw new Error(
+				`Invalid compaction.${field} setting: ${String(ordinary)}. Expected a non-negative safe integer.`,
+			);
+		}
+
+		const modelKey = model ? `${model.provider}/${model.id}` : undefined;
+		const entry = modelKey !== undefined ? compaction?.modelOverrides?.[modelKey] : undefined;
+		if (entry !== undefined && !isMergeableObject(entry)) {
+			throw new Error(
+				`Invalid compaction.modelOverrides["${modelKey}"] setting: ${String(entry)}. Expected an object.`,
+			);
+		}
+		const override = entry?.[field];
+		if (override !== undefined && (typeof override !== "number" || !Number.isSafeInteger(override) || override < 0)) {
+			throw new Error(
+				`Invalid compaction.modelOverrides["${modelKey}"].${field} setting: ${String(override)}. Expected a non-negative safe integer.`,
+			);
+		}
+		return override ?? ordinary ?? DEFAULT_COMPACTION_TOKEN_SETTINGS[field];
 	}
 
-	getCompactionKeepRecentTokens(): number {
-		return this.settings.compaction?.keepRecentTokens ?? 20000;
+	getCompactionReserveTokens(model?: Pick<Model<string>, "provider" | "id">): number {
+		return this.getCompactionTokenSetting("reserveTokens", model);
 	}
 
-	getCompactionSettings(): { enabled: boolean; reserveTokens: number; keepRecentTokens: number } {
+	getCompactionKeepRecentTokens(model?: Pick<Model<string>, "provider" | "id">): number {
+		return this.getCompactionTokenSetting("keepRecentTokens", model);
+	}
+
+	/** Resolve each token setting through model override, ordinary setting, then built-in default. */
+	getCompactionSettings(model?: Pick<Model<string>, "provider" | "id">): {
+		enabled: boolean;
+		reserveTokens: number;
+		keepRecentTokens: number;
+	} {
 		return {
 			enabled: this.getCompactionEnabled(),
-			reserveTokens: this.getCompactionReserveTokens(),
-			keepRecentTokens: this.getCompactionKeepRecentTokens(),
+			reserveTokens: this.getCompactionReserveTokens(model),
+			keepRecentTokens: this.getCompactionKeepRecentTokens(model),
 		};
 	}
 
