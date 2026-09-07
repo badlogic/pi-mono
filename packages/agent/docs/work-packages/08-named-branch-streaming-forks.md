@@ -239,9 +239,9 @@ WP08 is complete when:
 - normative docs and the roadmap reflect the new contract with historical documents untouched;
 - final Fable review reports no blocker.
 
-## 9. Open questions
+## 9. Open questions / potential spec changes
 
-These do not change the current contract until resolved.
+These record implementation decisions and potential specification changes. The requirements above remain unchanged until explicitly revised.
 
 ### 9.1 Corruption checks
 
@@ -263,6 +263,25 @@ The current implementation assumes a format-4 source remains append-only and is 
 
 Original requirement: normalize a closed legacy-v3 source through a bounded disk-backed parser and index.
 
-Current implementation: read and normalize the complete v3 source in memory, write the normalized records to a temporary format-4 file, then fork that stable file through the ordinary two-pass format-4 path. This reuses the current fork semantics, keeps reminted IDs stable across both passes, and never modifies the v3 source, but retains source-sized lines, entries, maps, and normalized writes in memory.
+Current implementation does not do that. Instead, it:
 
-Decide whether closed legacy-v3 files are sufficiently rare and bounded to keep this exception, or replace only the normalization internals with a disk-backed index before WP08 completion.
+- scans the v3 file once for structure, stable IDs, labels/configuration, usage, and current values;
+- does not keep all message payloads in memory during that scan;
+- later reopens the v3 file to stream selected normalized writes directly into the fork output;
+- no longer writes an intermediate normalized v4 temp file.
+
+For compactions, the replay pass may cache needed context messages so it can build `retainedTail`. Later append-only records are excluded by the captured complete-record count.
+
+The source must not be edited or replaced between passes. Header and physical-entry checks catch some changes, but this is not snapshot isolation.
+
+Memory is improved versus storing all normalized writes, but can still grow large if selected compactions need many context messages. Decide whether this is acceptable, or whether WP08 still needs the originally planned disk-backed implementation.
+
+### 9.5 JSONL structural-index memory
+
+The current fork implementation uses in-memory structural indexes. For v4, this includes scalar/list state, entry parent links, selected ancestry, and lane inventory. For v3, this includes structural metadata, stable ID mappings, derived values, and the compaction context-message cache described in §9.4.
+
+This does not meet the disk-backed indexing requirement in §1.3. Decide whether in-memory structural indexes are acceptable, or whether WP08 still requires disk-backed indexes before completion.
+
+### 9.6 TODO: Cleanup after invocation cancellation
+
+Cancellation-safe filesystem cleanup is deferred. Cleanup currently receives the caller's Context, so an aborted invocation can leave a staged file behind even though readers close and the destination id reservation is released. Define the cleanup Context policy before implementing this; do not import Chord's `withoutAbortSignal` directly into JSONL code as a temporary workaround.

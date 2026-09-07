@@ -4,9 +4,9 @@ import type { FileInfo, FileSystem } from "../../types.ts";
 import { StorageBackedSession } from "../session.ts";
 import type { ForkOptions, Session, SessionRepo } from "../types.ts";
 import { parseJsonlSessionHeader } from "./codec.ts";
-import { type JsonlForkSource, runJsonlFork } from "./fork.ts";
-import { fileValue, serializeJsonlTransaction } from "./io.ts";
-import { metadataFromLegacyV3Header, readNormalizedLegacyV3Source } from "./legacy-v3.ts";
+import { type JsonlForkInput, runJsonlFork } from "./fork.ts";
+import { fileValue } from "./io.ts";
+import { LegacyV3Source, metadataFromLegacyV3Header } from "./legacy-v3.ts";
 import { JsonlStorage } from "./storage.ts";
 import {
 	JSONL_FORMAT_VERSION,
@@ -41,8 +41,6 @@ function sessionFileName(createdAt: number, id: string): string {
 	const timestamp = new Date(createdAt).toISOString().replace(/[:.]/g, "-");
 	return `${timestamp}_${encodeURIComponent(id)}.jsonl`;
 }
-
-type ResolvedJsonlForkSource = JsonlForkSource | { kind: "legacy-v3"; metadata: JsonlSessionMetadata };
 
 /** File-backed format-4 session repository lifecycle. */
 export class JsonlSessionRepo
@@ -164,7 +162,7 @@ export class JsonlSessionRepo
 		let path: string | undefined;
 		let storage: JsonlStorage | undefined;
 		try {
-			const resolvedSource = await this.resolveForkSource(source, sourceStorage, context);
+			const input = await this.resolveForkInput(source, sourceStorage, context);
 			path = await this.resolveNewSessionPath(cwd, createdAt, id, context);
 			const header: Omit<JsonlStorageHeader, "nextSeq"> = {
 				v: JSONL_FORMAT_VERSION,
@@ -175,7 +173,17 @@ export class JsonlSessionRepo
 				cwd,
 				parentSessionId: source.id,
 			};
-			storage = await this.createForkStorage(path, header, resolvedSource, options, context);
+			await runJsonlFork(
+				{
+					input,
+					fileSystem: this.fileSystem,
+					destinationPath: path,
+					destinationHeader: header,
+					fork: options,
+				},
+				context,
+			);
+			storage = await JsonlStorage.open({ fileSystem: this.fileSystem, path, now: this.now }, context);
 			const info = fileValue(await this.fileSystem.fileInfo(path, context), `Failed to read session ${path}`);
 			return this.publishOpenSession(metadataFromHeader(header, path, info.mtimeMs), storage, destinationKey);
 		} catch (error) {
@@ -288,11 +296,11 @@ export class JsonlSessionRepo
 		if (idExists) throw new Error(`Session already exists: ${id}`);
 	}
 
-	private async resolveForkSource(
+	private async resolveForkInput(
 		source: JsonlSessionMetadata,
 		storage: JsonlStorage | undefined,
 		context: Context,
-	): Promise<ResolvedJsonlForkSource> {
+	): Promise<JsonlForkInput> {
 		if (storage !== undefined) {
 			if (storage.isLegacyV3()) {
 				throw new Error(
@@ -302,72 +310,14 @@ export class JsonlSessionRepo
 			const nextSeq = await storage.captureForkNextSeq(context);
 			return { kind: "open", metadata: source, nextSeq };
 		}
-		if (await this.isLegacyV3ForkSource(source, context)) return { kind: "legacy-v3", metadata: source };
-		return { kind: "closed", metadata: source };
-	}
-
-	private async createForkStorage(
-		path: string,
-		header: Omit<JsonlStorageHeader, "nextSeq">,
-		source: ResolvedJsonlForkSource,
-		fork: ForkOptions,
-		context: Context,
-	): Promise<JsonlStorage> {
-		if (source.kind === "legacy-v3") {
-			return this.createLegacyV3ForkStorage(path, header, source.metadata, fork, context);
-		}
-		await runJsonlFork(
-			{
-				source,
-				fileSystem: this.fileSystem,
-				destinationPath: path,
-				destinationHeader: header,
-				fork,
-			},
-			context,
-		);
-		return JsonlStorage.open({ fileSystem: this.fileSystem, path, now: this.now }, context);
-	}
-
-	/** Normalize a closed v3 source into a temporary v4 file, then fork it through the format-4 path. */
-	private async createLegacyV3ForkStorage(
-		path: string,
-		header: Omit<JsonlStorageHeader, "nextSeq">,
-		source: JsonlSessionMetadata,
-		fork: ForkOptions,
-		context: Context,
-	): Promise<JsonlStorage> {
-		const normalizedPath = `${path}.legacy-v3-source.tmp`;
-		try {
-			const normalized = await readNormalizedLegacyV3Source(this.fileSystem, source, context);
-			const normalizedHeader = { ...normalized.header, nextSeq: normalized.nextSeq };
-			fileValue(
-				await this.fileSystem.writeFile(normalizedPath, `${JSON.stringify(normalizedHeader)}\n`, context),
-				`Failed to stage normalized legacy v3 source ${source.path}`,
-			);
-			for (const write of normalized.writes) {
-				fileValue(
-					await this.fileSystem.appendFile(normalizedPath, `${serializeJsonlTransaction([write])}\n`, context),
-					`Failed to stage normalized legacy v3 source ${source.path}`,
-				);
+		if (await this.isLegacyV3ForkSource(source, context)) {
+			const normalized = await LegacyV3Source.read(this.fileSystem, source.path, context);
+			if (normalized.header.id !== source.id || normalized.header.cwd !== source.cwd) {
+				throw new Error(`Session identity does not match header: ${source.id}`);
 			}
-			await runJsonlFork(
-				{
-					source: {
-						kind: "closed",
-						metadata: { id: normalizedHeader.id, cwd: normalizedHeader.cwd, path: normalizedPath },
-					},
-					fileSystem: this.fileSystem,
-					destinationPath: path,
-					destinationHeader: header,
-					fork,
-				},
-				context,
-			);
-			return JsonlStorage.open({ fileSystem: this.fileSystem, path, now: this.now }, context);
-		} finally {
-			await this.fileSystem.remove(normalizedPath, { force: true }, context);
+			return { kind: "legacy-v3", normalized };
 		}
+		return { kind: "closed", metadata: source };
 	}
 
 	private async isLegacyV3ForkSource(source: JsonlSessionMetadata, context: Context): Promise<boolean> {

@@ -30,6 +30,7 @@ import {
 	type Result,
 	type ShellExecOptions,
 	type ShellExecResult,
+	type TextLine,
 	type TextLineReader,
 	toError,
 } from "../types.ts";
@@ -375,6 +376,7 @@ class NodeTextLineReader implements TextLineReader {
 	private readonly path: string;
 	private readonly decoder = new TextDecoder();
 	private readonly chunk = new Uint8Array(64 * 1024);
+	private byteOffset = 0;
 	private buffered = "";
 	private ended = false;
 	private closed = false;
@@ -384,8 +386,8 @@ class NodeTextLineReader implements TextLineReader {
 		this.path = path;
 	}
 
-	async readLine(context: Context): Promise<Result<{ text: string; terminated: boolean } | undefined, FileError>> {
-		const aborted = abortResult<{ text: string; terminated: boolean } | undefined>(context.abortSignal, this.path);
+	async readLine(context: Context): Promise<Result<TextLine | undefined, FileError>> {
+		const aborted = abortResult<TextLine | undefined>(context.abortSignal, this.path);
 		if (aborted) return aborted;
 		if (this.closed) return err(new FileError("invalid", "Text line reader is closed", this.path));
 
@@ -393,7 +395,7 @@ class NodeTextLineReader implements TextLineReader {
 			while (true) {
 				const newline = this.buffered.indexOf("\n");
 				if (newline !== -1) {
-					const text = this.buffered.slice(0, newline).replace(/\r$/, "");
+					const text = this.buffered.slice(0, newline);
 					this.buffered = this.buffered.slice(newline + 1);
 					return ok({ text, terminated: true });
 				}
@@ -404,12 +406,11 @@ class NodeTextLineReader implements TextLineReader {
 					return ok({ text, terminated: false });
 				}
 
-				const { bytesRead } = await this.file.read(this.chunk, 0, this.chunk.length, null);
-				const afterReadAbort = abortResult<{ text: string; terminated: boolean } | undefined>(
-					context.abortSignal,
-					this.path,
-				);
+				// Explicit positions allow an aborted read to be retried without skipping bytes.
+				const { bytesRead } = await this.file.read(this.chunk, 0, this.chunk.length, this.byteOffset);
+				const afterReadAbort = abortResult<TextLine | undefined>(context.abortSignal, this.path);
 				if (afterReadAbort) return afterReadAbort;
+				this.byteOffset += bytesRead;
 				if (bytesRead === 0) {
 					this.buffered += this.decoder.decode();
 					this.ended = true;
@@ -425,7 +426,12 @@ class NodeTextLineReader implements TextLineReader {
 	async close(_context: Context): Promise<void> {
 		if (this.closed) return;
 		this.closed = true;
-		await this.file.close().catch(() => undefined);
+		this.buffered = "";
+		try {
+			await this.file.close();
+		} catch {
+			// Closing is best-effort, including after cancellation or an earlier I/O failure.
+		}
 	}
 }
 

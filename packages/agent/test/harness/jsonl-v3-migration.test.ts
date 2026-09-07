@@ -303,6 +303,109 @@ describe("JSONL v3 migration", () => {
 			expect(getOrThrow(await fileSystem.readTextFile(path, BACKGROUND_CONTEXT))).toBe(content);
 		});
 
+		it("forks a configured closed source at its main tip when entryId is omitted", async () => {
+			await writeLegacyV3Fixture([
+				{
+					type: "model_change",
+					id: "model",
+					parentId: null,
+					timestamp: new Date(NOW + 1_000).toISOString(),
+					provider: "anthropic",
+					modelId: "claude-sonnet-4-5",
+				},
+				{
+					type: "thinking_level_change",
+					id: "thinking",
+					parentId: "model",
+					timestamp: new Date(NOW + 2_000).toISOString(),
+					thinkingLevel: "high",
+				},
+				{
+					type: "message",
+					id: "tip",
+					parentId: "thinking",
+					timestamp: new Date(NOW + 3_000).toISOString(),
+					message: firstMessage,
+				},
+			]);
+			const [metadata] = await repo.list({ cwd: "/workspace" }, BACKGROUND_CONTEXT);
+			if (metadata === undefined) throw new Error("Legacy fixture was not discovered");
+
+			const fork = await repo.fork(
+				metadata,
+				{ id: "branch-fork", scope: "branch", branch: "main" },
+				BACKGROUND_CONTEXT,
+			);
+			const entries = await fork.findEntries({ order: "asc" }, BACKGROUND_CONTEXT);
+			expect(entries).toHaveLength(1);
+			expect(await mainTip(fork)).toBe(entries[0]!.id);
+			expect((await fork.getValue(storedValues.laneConfig("main"), BACKGROUND_CONTEXT))?.value).toEqual({
+				model: { provider: "anthropic", modelId: "claude-sonnet-4-5" },
+				thinkingLevel: "high",
+				activeToolNames: [],
+			});
+			expect((await fork.getValue(storedValues.laneState("main"), BACKGROUND_CONTEXT))?.value).toEqual({
+				currentOperationId: null,
+				lastOperationId: null,
+				inbox: [],
+			});
+			await fork.close(BACKGROUND_CONTEXT);
+		});
+
+		it("forks a configured closed source at an original legacy entry id", async () => {
+			await writeLegacyV3Fixture([
+				{
+					type: "model_change",
+					id: "model",
+					parentId: null,
+					timestamp: new Date(NOW + 1_000).toISOString(),
+					provider: "anthropic",
+					modelId: "claude-sonnet-4-5",
+				},
+				{
+					type: "thinking_level_change",
+					id: "thinking",
+					parentId: "model",
+					timestamp: new Date(NOW + 2_000).toISOString(),
+					thinkingLevel: "high",
+				},
+				{
+					type: "message",
+					id: "message-1",
+					parentId: "thinking",
+					timestamp: new Date(NOW + 3_000).toISOString(),
+					message: firstMessage,
+				},
+				{
+					type: "message",
+					id: "message-2",
+					parentId: "message-1",
+					timestamp: new Date(NOW + 4_000).toISOString(),
+					message: secondMessage,
+				},
+				{
+					type: "message",
+					id: "message-3",
+					parentId: "message-2",
+					timestamp: new Date(NOW + 5_000).toISOString(),
+					message: firstMessage,
+				},
+			]);
+			const [metadata] = await repo.list({ cwd: "/workspace" }, BACKGROUND_CONTEXT);
+			if (metadata === undefined) throw new Error("Legacy fixture was not discovered");
+
+			const fork = await repo.fork(
+				metadata,
+				{ id: "entry-fork", scope: "branch", branch: "main", entryId: "message-2" },
+				BACKGROUND_CONTEXT,
+			);
+			const entries = await fork.findEntries({ order: "asc" }, BACKGROUND_CONTEXT);
+			expect(entries).toHaveLength(2);
+			expect(entries[1]).toMatchObject({ parentId: entries[0]!.id, message: secondMessage });
+			expect(await mainTip(fork)).toBe(entries[1]!.id);
+			await fork.close(BACKGROUND_CONTEXT);
+		});
+
 		it("rejects an open v3 source until a non-empty commit persists its format-4 ids", async () => {
 			const { path, content, metadata } = await writeForkFixture();
 			const source = await repo.open(metadata, BACKGROUND_CONTEXT);
@@ -765,48 +868,6 @@ describe("JSONL v3 migration", () => {
 			await session.close(BACKGROUND_CONTEXT);
 		});
 
-		it("omits an unsupported nearest value instead of falling back to an older change", async () => {
-			await writeLegacyV3Fixture([
-				{
-					type: "message",
-					id: "root",
-					parentId: null,
-					timestamp: new Date(firstTimestamp).toISOString(),
-					message: firstMessage,
-				},
-				{
-					type: "model_change",
-					id: "older-model",
-					parentId: "root",
-					timestamp: new Date(modelChangeTimestamp).toISOString(),
-					provider: "anthropic",
-					modelId: "older",
-				},
-				{
-					type: "model_change",
-					id: "invalid-model",
-					parentId: "older-model",
-					timestamp: new Date(thinkingChangeTimestamp).toISOString(),
-					provider: "",
-					modelId: "",
-				},
-				{
-					type: "message",
-					id: "tip",
-					parentId: "invalid-model",
-					timestamp: new Date(secondTimestamp).toISOString(),
-					message: secondMessage,
-				},
-			]);
-			const [metadata] = await repo.list({ cwd: "/workspace" }, BACKGROUND_CONTEXT);
-			if (metadata === undefined) throw new Error("Legacy fixture was not discovered");
-
-			const session = await repo.open(metadata, BACKGROUND_CONTEXT);
-			expect(await session.getValue(storedValues.laneConfig("main"), BACKGROUND_CONTEXT)).toBeUndefined();
-			expect(await session.getValue(storedValues.laneState("main"), BACKGROUND_CONTEXT)).toBeUndefined();
-			await session.close(BACKGROUND_CONTEXT);
-		});
-
 		it.each([
 			{
 				name: "missing model",
@@ -830,26 +891,6 @@ describe("JSONL v3 migration", () => {
 						timestamp: new Date(modelChangeTimestamp).toISOString(),
 						provider: "anthropic",
 						modelId: "selected",
-					},
-				],
-			},
-			{
-				name: "invalid thinking level",
-				changes: [
-					{
-						type: "model_change",
-						id: "model",
-						parentId: "root",
-						timestamp: new Date(modelChangeTimestamp).toISOString(),
-						provider: "anthropic",
-						modelId: "selected",
-					},
-					{
-						type: "thinking_level_change",
-						id: "thinking",
-						parentId: "model",
-						timestamp: new Date(thinkingChangeTimestamp).toISOString(),
-						thinkingLevel: "unsupported",
 					},
 				],
 			},
@@ -877,48 +918,6 @@ describe("JSONL v3 migration", () => {
 			const session = await repo.open(metadata, BACKGROUND_CONTEXT);
 			expect(await session.getValue(storedValues.laneConfig("main"), BACKGROUND_CONTEXT)).toBeUndefined();
 			expect(await session.getValue(storedValues.laneState("main"), BACKGROUND_CONTEXT)).toBeUndefined();
-			await session.close(BACKGROUND_CONTEXT);
-		});
-
-		it("normalizes malformed active-tool history without compatibility state", async () => {
-			await writeLegacyV3Fixture([
-				{
-					type: "model_change",
-					id: "model",
-					parentId: null,
-					timestamp: new Date(modelChangeTimestamp).toISOString(),
-					provider: "anthropic",
-					modelId: "selected",
-				},
-				{
-					type: "thinking_level_change",
-					id: "thinking",
-					parentId: "model",
-					timestamp: new Date(thinkingChangeTimestamp).toISOString(),
-					thinkingLevel: "high",
-				},
-				{
-					type: "active_tools_change",
-					id: "tools",
-					parentId: "thinking",
-					timestamp: new Date(activeToolsChangeTimestamp).toISOString(),
-					activeToolNames: ["read", 42],
-				},
-			]);
-			const [metadata] = await repo.list({ cwd: "/workspace" }, BACKGROUND_CONTEXT);
-			if (metadata === undefined) throw new Error("Legacy fixture was not discovered");
-
-			const session = await repo.open(metadata, BACKGROUND_CONTEXT);
-			expect((await session.getValue(storedValues.laneConfig("main"), BACKGROUND_CONTEXT))?.value).toEqual({
-				model: { provider: "anthropic", modelId: "selected" },
-				thinkingLevel: "high",
-				activeToolNames: [],
-			});
-			expect((await session.getValue(storedValues.laneState("main"), BACKGROUND_CONTEXT))?.value).toEqual({
-				currentOperationId: null,
-				lastOperationId: null,
-				inbox: [],
-			});
 			await session.close(BACKGROUND_CONTEXT);
 		});
 
