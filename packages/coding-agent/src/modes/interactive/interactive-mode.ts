@@ -5361,8 +5361,8 @@ export class InteractiveMode {
 						? SessionManager.listAll(onProgress)
 						: SessionManager.listAll(this.sessionManager.getSessionDir(), onProgress),
 				async (sessionPath) => {
-					done();
 					await this.handleResumeSession(sessionPath);
+					done();
 				},
 				() => {
 					done();
