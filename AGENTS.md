@@ -26,6 +26,7 @@ When asked to "Pick PI-X":
 4. Load `/skill:code-review` during the acceptance loop. Fix findings that need no spec or design decision. Use `/skill:grill-with-plane` to resolve decisions with the user. Track worthwhile follow-up work through `/skill:plane-to-issues`.
 5. For agent-facing documentation, load `/skill:writing-for-agents`. Apply `/skill:unslop` to other documentation.
 6. Commit and push under the Git rules below. Use `/skill:show-me` for the PR body. Prefer `/skill:gh-stack` when related work items form independently reviewable vertical slices.
+7. Before reporting task completion, add a work item comment summarizing completed work, relevant findings or learning, blockers, and the resulting work item state.
 
 ## Conversational Style
 
