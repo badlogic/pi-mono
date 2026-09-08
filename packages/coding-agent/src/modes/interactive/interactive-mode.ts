@@ -173,6 +173,7 @@ import {
 } from "./theme/theme.ts";
 import { InteractiveThemeController } from "./theme/theme-controller.ts";
 import { createInteractiveTui, createInteractiveTuiReference } from "./tui-renderer.ts";
+import { OwnerOverrideSlot } from "./ui-overrides.ts";
 
 export { createInteractiveTui, createInteractiveTuiReference } from "./tui-renderer.ts";
 
@@ -488,6 +489,12 @@ export class InteractiveMode {
 
 	// Custom footer from extension (undefined = use built-in footer)
 	private customFooter: (Component & { dispose?(): void }) | undefined = undefined;
+	private readonly footerOverrides = new OwnerOverrideSlot<
+		(tui: TUI, theme: Theme, footerData: ReadonlyFooterDataProvider) => Component & { dispose?(): void }
+	>();
+	private readonly editorOverrides = new OwnerOverrideSlot<EditorFactory>();
+	private readonly themeOverrides = new OwnerOverrideSlot<string | Theme>();
+	private themeOverrideBase: string | undefined;
 
 	// Header container that holds the built-in or custom header
 	private headerContainer: Container;
@@ -2276,6 +2283,7 @@ export class InteractiveMode {
 		}
 		this.ui.hideOverlay();
 		this.clearExtensionTerminalInputListeners();
+		this.footerOverrides.clear();
 		this.setExtensionFooter(undefined);
 		this.setExtensionHeader(undefined);
 		this.clearExtensionHeaderWidgets();
@@ -2283,7 +2291,9 @@ export class InteractiveMode {
 		this.footerDataProvider.clearExtensionStatuses();
 		this.footer.invalidate();
 		this.autocompleteProviderWrappers = [];
+		this.editorOverrides.clear();
 		this.setCustomEditorComponent(undefined);
+		this.restoreThemeOverrideBase();
 		this.setupAutocompleteProvider();
 		this.defaultEditor.onExtensionShortcut = undefined;
 		this.updateTerminalTitle();
@@ -2359,6 +2369,21 @@ export class InteractiveMode {
 		}
 
 		this.ui.requestRender();
+	}
+
+	private setExtensionFooterOverride(
+		owner: object,
+		factory:
+			| ((tui: TUI, theme: Theme, footerData: ReadonlyFooterDataProvider) => Component & { dispose?(): void })
+			| undefined,
+	) {
+		const wasActive = this.footerOverrides.current?.owner === owner;
+		const result =
+			factory === undefined ? this.footerOverrides.release(owner) : this.footerOverrides.set(owner, factory);
+		if (factory !== undefined || wasActive) {
+			this.setExtensionFooter(this.footerOverrides.current?.value);
+		}
+		return result;
 	}
 
 	/**
@@ -2512,6 +2537,7 @@ export class InteractiveMode {
 			setHiddenThinkingLabel: (label) => this.setHiddenThinkingLabel(label),
 			setWidget: (key, content, options) => this.setExtensionWidget(key, content, options),
 			setFooter: (factory) => this.setExtensionFooter(factory),
+			setFooterOverride: (owner, factory) => this.setExtensionFooterOverride(owner, factory),
 			setHeader: (factory) => this.setExtensionHeader(factory),
 			setHeaderWidget: (key, factory) => this.setExtensionHeaderWidget(key, factory),
 			setTitle: (title) => this.ui.terminal.setTitle(title),
@@ -2525,24 +2551,15 @@ export class InteractiveMode {
 				this.setupAutocompleteProvider();
 			},
 			setEditorComponent: (factory) => this.setCustomEditorComponent(factory),
+			setEditorComponentOverride: (owner, factory) => this.setCustomEditorComponentOverride(owner, factory),
 			getEditorComponent: () => this.editorComponentFactory,
 			get theme() {
 				return theme;
 			},
 			getAllThemes: () => getAvailableThemesWithPaths(),
 			getTheme: (name) => getThemeByName(name),
-			setTheme: (themeOrName) => {
-				if (themeOrName instanceof Theme) {
-					return this.themeController.setThemeInstance(themeOrName);
-				}
-				const result = this.themeController.setThemeName(themeOrName);
-				if (result.success) {
-					if (this.settingsManager.getTheme() !== themeOrName) {
-						this.settingsManager.setTheme(themeOrName);
-					}
-				}
-				return result;
-			},
+			setTheme: (themeOrName) => this.setUserTheme(themeOrName),
+			setThemeOverride: (owner, themeOrName) => this.setThemeOverride(owner, themeOrName),
 			getToolsExpanded: () => this.toolOutputExpanded,
 			setToolsExpanded: (expanded) => this.setToolsExpanded(expanded),
 		};
@@ -2730,6 +2747,7 @@ export class InteractiveMode {
 
 		// Save text from current editor before switching
 		const currentText = this.editor.getText();
+		const previousEditor = this.editor;
 
 		this.disposeActiveSelector();
 		this.editorContainer.clear();
@@ -2790,6 +2808,10 @@ export class InteractiveMode {
 			this.editor = this.defaultEditor;
 		}
 
+		if (previousEditor !== this.defaultEditor && previousEditor !== this.editor) {
+			(previousEditor as EditorComponent & { dispose?(): void }).dispose?.();
+		}
+
 		this.reloadPromptHistory();
 		this.editorContainer.addChild(this.editor as Component);
 		if (this.activeStatusIndicator) {
@@ -2801,6 +2823,60 @@ export class InteractiveMode {
 		}
 		this.ui.setFocus(this.editor as Component);
 		this.ui.requestRender();
+	}
+
+	private setCustomEditorComponentOverride(owner: object, factory: EditorFactory | undefined) {
+		const wasActive = this.editorOverrides.current?.owner === owner;
+		const result =
+			factory === undefined ? this.editorOverrides.release(owner) : this.editorOverrides.set(owner, factory);
+		if (factory !== undefined || wasActive) {
+			this.setCustomEditorComponent(this.editorOverrides.current?.value);
+		}
+		return result;
+	}
+
+	private setUserTheme(themeOrName: string | Theme): { success: boolean; error?: string } {
+		this.themeOverrides.clear();
+		this.themeOverrideBase = undefined;
+		if (themeOrName instanceof Theme) {
+			return this.themeController.setThemeInstance(themeOrName);
+		}
+		const result = this.themeController.setThemeName(themeOrName);
+		if (result.success && this.settingsManager.getTheme() !== themeOrName) {
+			this.settingsManager.setTheme(themeOrName);
+		}
+		return result;
+	}
+
+	private restoreThemeOverrideBase(): void {
+		this.themeOverrides.clear();
+		if (this.themeOverrideBase !== undefined) {
+			this.themeController.setThemeName(this.themeOverrideBase);
+			this.themeOverrideBase = undefined;
+		}
+	}
+
+	private setThemeOverride(owner: object, themeOrName: string | Theme | undefined) {
+		if (themeOrName !== undefined && this.themeOverrides.current === undefined) {
+			this.themeOverrideBase = this.themeController.getThemeSelection();
+		}
+		const wasActive = this.themeOverrides.current?.owner === owner;
+		const result =
+			themeOrName === undefined ? this.themeOverrides.release(owner) : this.themeOverrides.set(owner, themeOrName);
+		if (themeOrName !== undefined || wasActive) {
+			const effectiveTheme = this.themeOverrides.current?.value;
+			if (effectiveTheme instanceof Theme) {
+				this.themeController.setThemeInstance(effectiveTheme);
+			} else if (effectiveTheme !== undefined) {
+				this.themeController.setThemeName(effectiveTheme);
+			} else if (this.themeOverrideBase !== undefined) {
+				this.themeController.setThemeName(this.themeOverrideBase);
+				this.themeOverrideBase = undefined;
+			} else {
+				void this.themeController.applyFromSettings();
+			}
+		}
+		return result;
 	}
 
 	/**
@@ -4729,6 +4805,8 @@ export class InteractiveMode {
 						}
 					},
 					onThemeChange: (themeSetting) => {
+						this.themeOverrides.clear();
+						this.themeOverrideBase = undefined;
 						this.settingsManager.setTheme(themeSetting);
 						void this.themeController.setThemeSetting(themeSetting);
 					},

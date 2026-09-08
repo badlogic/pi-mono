@@ -23,6 +23,7 @@ function createUiContext(
 		setHiddenThinkingLabel: () => {},
 		setWidget: () => {},
 		setFooter: () => {},
+		setFooterOverride: () => ({ effectiveOwner: undefined, previousOwner: undefined, conflictedOwner: undefined }),
 		setHeader: () => {},
 		setHeaderWidget: () => {},
 		setTitle: () => {},
@@ -33,6 +34,11 @@ function createUiContext(
 		editor: async () => undefined,
 		addAutocompleteProvider: () => {},
 		setEditorComponent: () => {},
+		setEditorComponentOverride: () => ({
+			effectiveOwner: undefined,
+			previousOwner: undefined,
+			conflictedOwner: undefined,
+		}),
 		getEditorComponent: () => undefined,
 		get theme() {
 			return theme;
@@ -40,6 +46,7 @@ function createUiContext(
 		getAllThemes: () => [],
 		getTheme: () => undefined,
 		setTheme: (_theme: string | Theme) => ({ success: false, error: "Theme switching not available in tests" }),
+		setThemeOverride: () => ({ effectiveOwner: undefined, previousOwner: undefined, conflictedOwner: undefined }),
 		getToolsExpanded: () => false,
 		setToolsExpanded: () => {},
 	};

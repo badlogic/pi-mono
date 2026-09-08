@@ -166,6 +166,8 @@ export type {
 	TreePreparation,
 	TurnEndEvent,
 	TurnStartEvent,
+	UIOverrideResult,
+	UIOwner,
 	UIPromptEndEvent,
 	UIPromptKind,
 	UIPromptStartEvent,

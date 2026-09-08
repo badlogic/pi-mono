@@ -144,6 +144,8 @@ export type {
 	ToolResultEvent,
 	TurnEndEvent,
 	TurnStartEvent,
+	UIOverrideResult,
+	UIOwner,
 	UIPromptEndEvent,
 	UIPromptKind,
 	UIPromptStartEvent,

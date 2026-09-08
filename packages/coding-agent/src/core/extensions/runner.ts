@@ -246,6 +246,7 @@ const noOpUIContext: ExtensionUIContext = {
 	setHiddenThinkingLabel: () => {},
 	setWidget: () => {},
 	setFooter: () => {},
+	setFooterOverride: () => ({ effectiveOwner: undefined, previousOwner: undefined, conflictedOwner: undefined }),
 	setHeader: () => {},
 	setHeaderWidget: () => {},
 	setTitle: () => {},
@@ -256,6 +257,11 @@ const noOpUIContext: ExtensionUIContext = {
 	editor: async () => undefined,
 	addAutocompleteProvider: () => {},
 	setEditorComponent: () => {},
+	setEditorComponentOverride: () => ({
+		effectiveOwner: undefined,
+		previousOwner: undefined,
+		conflictedOwner: undefined,
+	}),
 	getEditorComponent: () => undefined,
 	get theme() {
 		return theme;
@@ -263,6 +269,7 @@ const noOpUIContext: ExtensionUIContext = {
 	getAllThemes: () => [],
 	getTheme: () => undefined,
 	setTheme: (_theme: string | Theme) => ({ success: false, error: "UI not available" }),
+	setThemeOverride: () => ({ effectiveOwner: undefined, previousOwner: undefined, conflictedOwner: undefined }),
 	getToolsExpanded: () => false,
 	setToolsExpanded: () => {},
 };

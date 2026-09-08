@@ -126,6 +126,19 @@ export interface WorkingIndicatorOptions {
 export type AutocompleteProviderFactory = (current: AutocompleteProvider) => AutocompleteProvider;
 export type EditorFactory = (tui: TUI, theme: EditorTheme, keybindings: KeybindingsManager) => EditorComponent;
 
+/** Identity used to claim a temporary interactive UI override. Keep one object per extension instance. */
+export type UIOwner = object;
+
+/** Result of claiming or releasing an interactive UI override. */
+export interface UIOverrideResult {
+	/** Owner currently controlling the slot, or undefined when Pi's native UI is active. */
+	effectiveOwner: UIOwner | undefined;
+	/** Owner that controlled the slot before this call. */
+	previousOwner: UIOwner | undefined;
+	/** Owner superseded by this claim, if any. */
+	conflictedOwner: UIOwner | undefined;
+}
+
 /**
  * UI context for extensions to request interactive UI.
  * Each mode (interactive, RPC, print) provides its own implementation.
@@ -187,6 +200,14 @@ export interface ExtensionUIContext {
 			| ((tui: TUI, theme: Theme, footerData: ReadonlyFooterDataProvider) => Component & { dispose?(): void })
 			| undefined,
 	): void;
+
+	/** Claim or release a temporary custom footer. Releasing a stale owner changes nothing. */
+	setFooterOverride(
+		owner: UIOwner,
+		factory:
+			| ((tui: TUI, theme: Theme, footerData: ReadonlyFooterDataProvider) => Component & { dispose?(): void })
+			| undefined,
+	): UIOverrideResult;
 
 	/** Set a custom header component (shown at startup, above chat), or undefined to restore the built-in header. */
 	setHeader(factory: ((tui: TUI, theme: Theme) => Component & { dispose?(): void }) | undefined): void;
@@ -267,6 +288,9 @@ export interface ExtensionUIContext {
 	 */
 	setEditorComponent(factory: EditorFactory | undefined): void;
 
+	/** Claim or release a temporary custom editor. Releasing a stale owner changes nothing. */
+	setEditorComponentOverride(owner: UIOwner, factory: EditorFactory | undefined): UIOverrideResult;
+
 	/** Get the currently configured custom editor factory, or undefined when using the default editor. */
 	getEditorComponent(): EditorFactory | undefined;
 
@@ -281,6 +305,9 @@ export interface ExtensionUIContext {
 
 	/** Set the current theme by name or Theme object. */
 	setTheme(theme: string | Theme): { success: boolean; error?: string };
+
+	/** Claim or release a temporary theme. Releasing a stale owner changes nothing. */
+	setThemeOverride(owner: UIOwner, theme: string | Theme | undefined): UIOverrideResult;
 
 	/** Get current tool output expansion state. */
 	getToolsExpanded(): boolean;

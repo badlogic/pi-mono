@@ -211,6 +211,10 @@ export async function runRpcMode(runtimeHost: AgentSessionRuntime): Promise<neve
 			// Custom footer not supported in RPC mode - requires TUI access
 		},
 
+		setFooterOverride() {
+			return { effectiveOwner: undefined, previousOwner: undefined, conflictedOwner: undefined };
+		},
+
 		setHeader(_factory: unknown): void {
 			// Custom header not supported in RPC mode - requires TUI access
 		},
@@ -282,6 +286,10 @@ export async function runRpcMode(runtimeHost: AgentSessionRuntime): Promise<neve
 			// Custom editor components not supported in RPC mode
 		},
 
+		setEditorComponentOverride() {
+			return { effectiveOwner: undefined, previousOwner: undefined, conflictedOwner: undefined };
+		},
+
 		getEditorComponent() {
 			// Custom editor components not supported in RPC mode
 			return undefined;
@@ -302,6 +310,10 @@ export async function runRpcMode(runtimeHost: AgentSessionRuntime): Promise<neve
 		setTheme(_theme: string | Theme) {
 			// Theme switching not supported in RPC mode
 			return { success: false, error: "Theme switching not supported in RPC mode" };
+		},
+
+		setThemeOverride() {
+			return { effectiveOwner: undefined, previousOwner: undefined, conflictedOwner: undefined };
 		},
 
 		getToolsExpanded() {
