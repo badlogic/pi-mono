@@ -261,12 +261,12 @@ jobs:
             core.setOutput('name', `pi-ci-${crypto.randomBytes(16).toString('hex')}`);
 
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
         with:
           path: ${{ steps.workdir.outputs.name }}
 
       - name: Setup Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v5
         with:
           node-version: 22
           cache: npm
