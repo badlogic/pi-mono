@@ -19,7 +19,7 @@ fi
 RUN_BROWSER_SMOKE=0
 for file in $STAGED_FILES; do
   case "$file" in
-    packages/ai/*|packages/web-ui/*|package.json|package-lock.json)
+    packages/ai/*|package.json|package-lock.json)
       RUN_BROWSER_SMOKE=1
       break
       ;;
