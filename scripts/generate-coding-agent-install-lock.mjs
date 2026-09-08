@@ -15,7 +15,7 @@ const internalPackagePrefix = "@earendil-works/pi-";
 const installPackageName = "@earendil-works/pi-coding-agent-install";
 const allowedInstallScriptPackages = new Map([
 	["@google/genai@1.52.0", "preinstall is a no-op in the published package"],
-	["protobufjs@7.6.4", "postinstall only warns about protobufjs version scheme mismatches"],
+	["protobufjs@7.6.5", "postinstall only warns about protobufjs version scheme mismatches"],
 ]);
 
 const args = new Set(process.argv.slice(2));
@@ -191,6 +191,18 @@ function resolveExternalDependency(lockPackages, packageName, fromLockPath) {
 
 	if (matches.length === 1) {
 		return matches[0];
+	}
+
+	if (matches.length > 1) {
+		const versions = new Set(matches.map((lockPath) => lockPackages[lockPath]?.version));
+		if (versions.size === 1) {
+			const preferred =
+				matches.find((lockPath) => lockPath === `packages/coding-agent/node_modules/${packageName}`) ??
+				matches.find((lockPath) => lockPath === `node_modules/${packageName}`);
+			if (preferred) return preferred;
+			matches.sort((a, b) => a.length - b.length || a.localeCompare(b));
+			return matches[0];
+		}
 	}
 
 	throw new Error(
