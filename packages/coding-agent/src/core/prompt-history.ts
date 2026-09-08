@@ -6,6 +6,8 @@ import { canonicalizePath, resolvePath } from "../utils/paths.ts";
 
 const MAX_HISTORY_ENTRIES = 100;
 const MAX_PROMPT_BYTES = 16 * 1024;
+const MAX_LOCK_ATTEMPTS = 20;
+const LOCK_RETRY_MS = 10;
 
 type PromptHistoryEntry = {
 	cwd: string;
@@ -20,15 +22,6 @@ type PromptHistoryFile = {
 
 function canonicalizeCwd(cwd: string): string {
 	return canonicalizePath(resolvePath(cwd));
-}
-
-function isWithinWorkspace(cwd: string, workspace: string): boolean {
-	const path = relative(workspace, cwd);
-	return path === "" || (path !== ".." && !path.startsWith(`..${sep}`) && !isAbsolute(path));
-}
-
-function limitEntries(entries: PromptHistoryEntry[]): PromptHistoryEntry[] {
-	return entries.sort((a, b) => b.updatedAt - a.updatedAt).slice(0, MAX_HISTORY_ENTRIES);
 }
 
 function parseHistory(content: string): PromptHistoryFile {
@@ -61,7 +54,10 @@ export class PromptHistoryStore {
 			if (!existsSync(this.path)) return [];
 			const workspace = canonicalizeCwd(cwd);
 			const entries = parseHistory(readFileSync(this.path, "utf8"))
-				.entries.filter((entry) => isWithinWorkspace(entry.cwd, workspace))
+				.entries.filter((entry) => {
+					const path = relative(workspace, entry.cwd);
+					return path === "" || (path !== ".." && !path.startsWith(`..${sep}`) && !isAbsolute(path));
+				})
 				.sort((a, b) => b.updatedAt - a.updatedAt);
 			const seen = new Set<string>();
 			const history: string[] = [];
@@ -83,18 +79,37 @@ export class PromptHistoryStore {
 
 		try {
 			mkdirSync(dirname(this.path), { recursive: true, mode: 0o700 });
-			if (!existsSync(this.path)) {
-				writeFileSync(this.path, JSON.stringify({ version: 1, entries: [] }), { encoding: "utf8", mode: 0o600 });
+			let release: () => void;
+			for (let attempt = 0; ; attempt++) {
+				try {
+					release = lockfile.lockSync(this.path, { realpath: false });
+					break;
+				} catch (error) {
+					if (
+						attempt === MAX_LOCK_ATTEMPTS - 1 ||
+						typeof error !== "object" ||
+						error === null ||
+						!("code" in error) ||
+						error.code !== "ELOCKED"
+					) {
+						throw error;
+					}
+					Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, LOCK_RETRY_MS);
+				}
 			}
-			const release = lockfile.lockSync(this.path, { realpath: false });
 			try {
+				if (!existsSync(this.path)) {
+					writeFileSync(this.path, JSON.stringify({ version: 1, entries: [] }), { encoding: "utf8", mode: 0o600 });
+				}
 				const history = parseHistory(readFileSync(this.path, "utf8"));
 				const canonicalCwd = canonicalizeCwd(cwd);
 				const latestUpdatedAt = Math.max(Date.now(), ...history.entries.map((entry) => entry.updatedAt + 1));
-				const entries = limitEntries([
+				const entries = [
 					{ cwd: canonicalCwd, text: normalized, updatedAt: latestUpdatedAt },
 					...history.entries.filter((entry) => entry.cwd !== canonicalCwd || entry.text !== normalized),
-				]);
+				]
+					.sort((a, b) => b.updatedAt - a.updatedAt)
+					.slice(0, MAX_HISTORY_ENTRIES);
 				const temporaryPath = `${this.path}.${process.pid}.${randomUUID()}.tmp`;
 				try {
 					writeFileSync(temporaryPath, JSON.stringify({ version: 1, entries }), { encoding: "utf8", mode: 0o600 });
