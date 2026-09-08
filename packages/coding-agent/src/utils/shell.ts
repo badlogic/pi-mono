@@ -42,13 +42,20 @@ function findExecutableOnPath(executable: string): string | null {
 		return null;
 	}
 
-	// Unix: Use 'which' and trust its output (handles Termux and special filesystems)
+	// Unix: scan PATH directly instead of spawning `which`. A spawnSync on the
+	// main thread of a multi-threaded process (for example the pi-web-ui server,
+	// which runs the agent in-process) can deadlock the whole process on
+	// Android/Termux: fork() races with other threads, the forked child stays
+	// stuck between fork and exec, and libuv's uv_spawn blocks its caller
+	// reading the child's error pipe. existsSync on PATH entries is equivalent
+	// for locating an executable.
 	try {
-		const result = spawnSync("which", [executable], { encoding: "utf-8", timeout: 5000 });
-		if (result.status === 0 && result.stdout) {
-			const firstMatch = result.stdout.trim().split(/\r?\n/)[0];
-			if (firstMatch) {
-				return firstMatch;
+		const dirs = process.env.PATH ? process.env.PATH.split(delimiter) : [];
+		for (const dir of dirs) {
+			if (!dir) continue;
+			const candidate = join(dir, executable);
+			if (existsSync(candidate)) {
+				return candidate;
 			}
 		}
 	} catch {

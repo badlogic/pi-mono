@@ -1,7 +1,7 @@
 import { type SpawnSyncReturns, spawnSync } from "child_process";
 import { chmodSync, createWriteStream, existsSync, mkdirSync, readdirSync, renameSync, rmSync } from "fs";
 import { arch, platform } from "os";
-import { join } from "path";
+import { delimiter, join } from "path";
 import { Readable } from "stream";
 import { pipeline } from "stream/promises";
 import { APP_NAME, getBinDir } from "../config.ts";
@@ -68,15 +68,29 @@ const TOOLS: Record<string, ToolConfig> = {
 	},
 };
 
-// Check if a command exists in PATH by trying to run it
+// Check if a command exists in PATH. On POSIX this is a plain PATH scan —
+// spawnSync(cmd, ["--version"]) used to fork on the calling thread of
+// multi-threaded hosts (for example the in-process pi-web-ui server, which
+// runs this per grep/glob tool call via ensureTool("rg"/"fd")), and a fork()
+// in a multi-threaded process can deadlock the whole process on
+// Android/Termux: the forked child stays stuck between fork and exec while
+// libuv's uv_spawn blocks its caller reading the child's error pipe.
 function commandExists(cmd: string): boolean {
 	try {
-		const result = spawnSync(cmd, ["--version"], { stdio: "pipe" });
-		// Check for ENOENT error (command not found)
-		return result.error === undefined || result.error === null;
+		if (cmd.includes("/")) return existsSync(cmd);
+		if (platform === "win32") {
+			const result = spawnSync(cmd, ["--version"], { stdio: "pipe" });
+			// Check for ENOENT error (command not found)
+			return result.error === undefined || result.error === null;
+		}
+		const dirs = process.env.PATH ? process.env.PATH.split(delimiter) : [];
+		for (const dir of dirs) {
+			if (dir && existsSync(join(dir, cmd))) return true;
+		}
 	} catch {
 		return false;
 	}
+	return false;
 }
 
 // Get the path to a tool (system-wide or in our tools dir)

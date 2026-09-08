@@ -6,6 +6,10 @@
 
 - Added `ctx.modelRegistry.stream()` and `streamSimple()` for extension model calls through configured providers with resolved authentication ([#8964](https://github.com/earendil-works/pi/issues/8964)).
 
+### Fixed
+
+- `findExecutableOnPath()` and `commandExists()` no longer spawn processes on POSIX: they scan `PATH` with `existsSync` instead. Forking from a multi-threaded host process can deadlock the caller on Android/Termux (the forked child stays stuck between fork and exec while `uv_spawn` blocks on the child's error pipe), and these helpers run on hot paths such as every grep/glob tool call.
+
 ### Changed
 
 - Moved compaction, branch summarization, and retry spinners into the editor border alongside the working indicator. Custom editors use the same embedding opt-in for all status spinners.
