@@ -1467,7 +1467,11 @@ async function loadModelsDevData(): Promise<Model<any>[]> {
 				if ((variant.provider === "opencode" || variant.provider === "opencode-go") && modelId === "kimi-k2.6") {
 					// OpenCode Kimi K2.6 accepts Anthropic-style thinking objects
 					// and rejects string thinking values or combined reasoning_effort.
-					compat = { ...(compat ?? {}), thinkingFormat: "deepseek", supportsReasoningEffort: false };
+					if (api === "openai-completions") {
+						compat = { ...(compat ?? {}), thinkingFormat: "deepseek", supportsReasoningEffort: false };
+					} else {
+						compat = { ...(compat ?? {}), supportsReasoningEffort: false };
+					}
 				}
 
 				// Fix known mismatches between models.dev npm data and actual

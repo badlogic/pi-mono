@@ -543,8 +543,8 @@ export interface CreateProviderOptions<TApi extends Api = Api> {
 	/** Fetch a dynamic model overlay. createProvider restores/persists it through ModelsStore. */
 	fetchModels?: (context: RefreshModelsContext) => Promise<readonly Model<TApi>[]>;
 	filterModels?: (models: readonly Model<TApi>[], credential: Credential | undefined) => readonly Model<TApi>[];
-	/** Single implementation, or map keyed by `model.api` for mixed-API providers. */
-	api: ProviderStreams | Partial<Record<TApi, ProviderStreams>>;
+	/** Single implementation, or map keyed by `model.api` for mixed-API providers. Extra known APIs are allowed so catalogs can omit an API without breaking the factory. */
+	api: ProviderStreams | Partial<Record<TApi, ProviderStreams>> | Partial<Record<Api, ProviderStreams>>;
 }
 
 /**

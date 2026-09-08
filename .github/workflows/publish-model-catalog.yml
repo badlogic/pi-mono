@@ -68,8 +68,9 @@ jobs:
           retention-days: 14
 
   publish:
-    # Skip when R2 credentials are unset (typical on forks).
-    if: ${{ (github.event_name == 'schedule' || github.event_name == 'workflow_run' || (github.event_name == 'workflow_dispatch' && inputs.publish)) && secrets.PI_ARTIFACTS_R2_ACCESS_KEY_ID != '' }}
+    # Production R2 publish belongs to the canonical repo. Forks skip this job so
+    # missing secrets do not fail CI, and secrets are not used in job `if`.
+    if: ${{ github.repository == 'earendil-works/pi' && (github.event_name == 'schedule' || github.event_name == 'workflow_run' || (github.event_name == 'workflow_dispatch' && inputs.publish)) }}
     needs: generate
     runs-on: ubuntu-latest
     environment: pi-model-upload
