@@ -26,6 +26,8 @@ const allowedExternalPackages = new Set([
 	// Optional native accelerators. Their callers fall back to JavaScript when absent.
 	"bufferutil",
 	"utf-8-validate",
+	// Optional native proxy authentication. Its caller reports an install hint when absent.
+	"kerberos",
 	// Optional debug output coloring.
 	"supports-color",
 ]);
