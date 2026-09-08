@@ -7,11 +7,7 @@
 		"@earendil-works/pi-coding-agent": "0.85.1"
 	},
 	"overrides": {
-		"protobufjs": "7.6.5",
-		"rimraf": "6.1.2",
-		"gaxios": {
-			"rimraf": "6.1.2"
-		}
+		"protobufjs": "7.6.6"
 	},
 	"engines": {
 		"node": ">=22.19.0"
