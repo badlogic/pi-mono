@@ -131,6 +131,10 @@ class JsonlForkIndex {
 		return this.branchTips.get(branch);
 	}
 
+	hasCompleteLane(branch: string): boolean {
+		return this.laneConfigs.has(branch) && this.laneStates.has(branch);
+	}
+
 	getCurrentScalarSeq(namespace: string, key: string): number | undefined {
 		return this.currentScalarSeqs.get(physicalKey(namespace, key));
 	}
@@ -151,31 +155,6 @@ class JsonlForkIndex {
 	isEntrySelected(entryId: string): boolean {
 		return this.copiedEntryIds.has(entryId);
 	}
-
-	validateLanes(options: ForkOptions): void {
-		for (const lane of new Set([...this.branchTips.keys(), ...this.laneConfigs, ...this.laneStates])) {
-			this.validateLane(lane);
-		}
-		if (options.scope === "branch" && !this.laneConfigs.has(options.branch)) {
-			throw new Error(`Source branch ${JSON.stringify(options.branch)} is not a configured AgentLane`);
-		}
-	}
-
-	private validateLane(lane: string): void {
-		const hasTip = this.branchTips.has(lane);
-		const hasConfiguration = this.laneConfigs.has(lane);
-		const hasState = this.laneStates.has(lane);
-		if (!hasTip && (hasConfiguration || hasState)) {
-			throw new Error(`Source session branch ${JSON.stringify(lane)} is missing branch.tip`);
-		}
-		if (hasConfiguration !== hasState) {
-			throw new Error(`Source session branch ${JSON.stringify(lane)} has incomplete lane state`);
-		}
-		const tip = this.branchTips.get(lane);
-		if (tip !== undefined && tip !== null && !this.entryParents.has(tip)) {
-			throw new Error(`Source session branch ${JSON.stringify(lane)} has an unknown tip`);
-		}
-	}
 }
 
 /**
@@ -189,13 +168,16 @@ class JsonlForkIndex {
  * Both formats use the same indexed metadata; this function performs no file I/O.
  */
 function selectJsonlFork(index: JsonlForkIndex, options: ForkOptions): ForkCurrentStatePlan {
-	index.validateLanes(options);
 	if (options.scope === "tree") return { scope: "tree" };
-	return selectBranchFork(options, {
+	const plan = selectBranchFork(options, {
 		tip: index.getBranchTip(options.branch),
 		getParent: (entryId) => index.getParent(entryId),
 		selectEntry: (entryId) => index.selectEntry(entryId),
 	});
+	if (!index.hasCompleteLane(options.branch)) {
+		throw new Error(`Source branch ${JSON.stringify(options.branch)} is not a configured AgentLane`);
+	}
+	return plan;
 }
 
 type JsonlForkWrite = CommittedEntryWrite | CommittedValueSetWrite | CommittedListAppendWrite;

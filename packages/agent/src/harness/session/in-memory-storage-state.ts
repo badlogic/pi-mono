@@ -35,6 +35,8 @@ import {
 	branchTip,
 	type ListElement,
 	type ListReadOptions,
+	laneConfig,
+	laneState,
 	list,
 	resolveListReadOptions,
 	type StoredValue,
@@ -46,12 +48,6 @@ import {
 interface StoredListSnapshot {
 	address: ValueList<unknown>;
 	elements: ListElement<unknown>[];
-}
-
-interface ForkLaneInventory {
-	tip: boolean;
-	configuration: boolean;
-	state: boolean;
 }
 
 type MemoryForkPlan =
@@ -159,33 +155,7 @@ export class InMemoryStorageState {
 		}
 		destination.stats = { ...destination.stats, messageCount };
 
-		const lanes = new Map<string, ForkLaneInventory>();
-		const lane = (name: string): ForkLaneInventory => {
-			let inventory = lanes.get(name);
-			if (inventory === undefined) {
-				inventory = { tip: false, configuration: false, state: false };
-				lanes.set(name, inventory);
-			}
-			return inventory;
-		};
 		for (const stored of this.scalarValues.values()) {
-			switch (stored.address.namespace) {
-				case "pi.branch.tip": {
-					lane(stored.address.key).tip = true;
-					const tip = stored as StoredValue<string | null>;
-					if (tip.value !== null && !this.entries.has(tip.value)) {
-						throw new Error(`Source session branch ${JSON.stringify(stored.address.key)} has an unknown tip`);
-					}
-					break;
-				}
-				case "pi.lane.config":
-					lane(stored.address.key).configuration = true;
-					break;
-				case "pi.lane.state":
-					lane(stored.address.key).state = true;
-					break;
-			}
-
 			const projected = projectForkCurrentStateWrite(
 				{
 					kind: "value",
@@ -199,18 +169,6 @@ export class InMemoryStorageState {
 				isEntryCopied,
 			);
 			if (projected !== undefined) destination.applyValueSetOrListAppend(projected);
-		}
-
-		for (const [name, inventory] of lanes) {
-			if (!inventory.tip && (inventory.configuration || inventory.state)) {
-				throw new Error(`Source session branch ${JSON.stringify(name)} is missing branch.tip`);
-			}
-			if (inventory.configuration !== inventory.state) {
-				throw new Error(`Source session branch ${JSON.stringify(name)} has incomplete lane state`);
-			}
-		}
-		if (plan.scope === "branch" && !lanes.get(plan.branch)?.configuration) {
-			throw new Error(`Source branch ${JSON.stringify(plan.branch)} is not a configured AgentLane`);
 		}
 
 		for (const stored of this.listValues.values()) {
@@ -243,6 +201,12 @@ export class InMemoryStorageState {
 			getParent: (entryId) => this.entries.get(entryId)?.parentId,
 			selectEntry: (entryId) => entryIds.add(entryId),
 		});
+		if (
+			this.getValue(laneConfig(options.branch)) === undefined ||
+			this.getValue(laneState(options.branch)) === undefined
+		) {
+			throw new Error(`Source branch ${JSON.stringify(options.branch)} is not a configured AgentLane`);
+		}
 		return { ...plan, entryIds };
 	}
 
