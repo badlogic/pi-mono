@@ -4,6 +4,10 @@ import { convertMessages } from "../src/api/openai-completions.ts";
 import { getModel, stream, streamSimple } from "../src/compat.ts";
 import type { AssistantMessage, Model, SimpleStreamOptions, Tool, ToolResultMessage } from "../src/types.ts";
 
+function asOpenAICompletions(model: { api?: string } | undefined): Model<"openai-completions"> | undefined {
+	return model?.api === "openai-completions" ? (model as Model<"openai-completions">) : undefined;
+}
+
 const mockState = vi.hoisted(() => ({
 	lastParams: undefined as unknown,
 	chunks: undefined as
@@ -290,14 +294,12 @@ describe("openai-completions tool_choice", () => {
 
 	it("stores z.ai tool_stream support in model compat metadata", () => {
 		for (const id of ["glm-5.1", "glm-4.7", "glm-5-turbo"] as const) {
-			const model = getModel("zai", id);
-			if (model?.api !== "openai-completions") continue;
+			const model = asOpenAICompletions(getModel("zai", id));
+			if (!model) continue;
 			expect(model.compat?.zaiToolStream).toBe(true);
 		}
-		const air = getModel("zai", "glm-4.5-air");
-		if (air?.api === "openai-completions") {
-			expect(air.compat?.zaiToolStream).toBeUndefined();
-		}
+		const air = asOpenAICompletions(getModel("zai", "glm-4.5-air"));
+		expect(air?.compat?.zaiToolStream).toBeUndefined();
 	});
 
 	it("stores z.ai GLM-5.2 effort metadata", () => {
