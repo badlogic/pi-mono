@@ -32,6 +32,7 @@ import type {
 	SimpleStreamOptions,
 	Usage,
 } from "./types.ts";
+import type { UsageReport, UsageReportFetcher } from "./usage-reports.ts";
 import { operationSignal, raceWithAbortSignal } from "./utils/abort.ts";
 
 export { ModelsError, type ModelsErrorCode } from "./auth/resolve.ts";
@@ -133,6 +134,9 @@ export interface Provider<TApi extends Api = Api> {
 	 */
 	filterModels?(models: readonly Model<TApi>[], credential: Credential | undefined): readonly Model<TApi>[];
 
+	/** Optional adapter for finite subscription-usage reports. */
+	fetchUsageReport?: UsageReportFetcher;
+
 	stream<T extends TApi>(
 		model: Model<T>,
 		context: Context,
@@ -178,6 +182,9 @@ export interface Models {
 
 	/** Check whether a provider has complete auth configuration without refreshing OAuth. */
 	checkAuth(providerId: string, options?: AuthOperationOptions): Promise<AuthCheck | undefined>;
+
+	/** Return finite subscription usage for a provider, or undefined when unavailable. */
+	getUsageReport(providerId: string, options?: AuthOperationOptions): Promise<UsageReport | undefined>;
 
 	/** Return models whose providers have complete auth configuration. */
 	getAvailable(providerId?: string, options?: AuthOperationOptions): Promise<readonly Model<Api>[]>;
@@ -513,6 +520,25 @@ class ModelsImpl implements MutableModels {
 		return resolution ? { source: resolution.source, type: "api_key" } : undefined;
 	}
 
+	async getUsageReport(providerId: string, options?: AuthOperationOptions): Promise<UsageReport | undefined> {
+		const signal = operationSignal(options?.signal);
+		if (signal.aborted) return undefined;
+
+		try {
+			const provider = this.providers.get(providerId);
+			if (!provider?.fetchUsageReport) return undefined;
+			const credential = await this.readCredential(providerId, signal);
+			if (credential?.type !== "oauth") return undefined;
+			const auth = await this.getAuth(providerId, { signal });
+			if (!auth?.auth.apiKey) return undefined;
+			const current = await this.readCredential(providerId, signal);
+			if (current?.type !== "oauth" || current.access !== auth.auth.apiKey) return undefined;
+			return await raceWithAbortSignal(provider.fetchUsageReport({ accessToken: auth.auth.apiKey, signal }), signal);
+		} catch {
+			return undefined;
+		}
+	}
+
 	checkAuth(providerId: string, options?: AuthOperationOptions): Promise<AuthCheck | undefined> {
 		const signal = operationSignal(options?.signal);
 		const check = (async () => {
@@ -762,6 +788,7 @@ export interface CreateProviderOptions<TApi extends Api = Api> {
 	/** Fetch a dynamic model overlay. createProvider restores and publishes it transactionally. */
 	fetchModels?: (context: RefreshModelsContext) => Promise<readonly Model<TApi>[]>;
 	filterModels?: (models: readonly Model<TApi>[], credential: Credential | undefined) => readonly Model<TApi>[];
+	fetchUsageReport?: UsageReportFetcher;
 	/** Single implementation, or map keyed by `model.api` for mixed-API providers. */
 	api: ProviderStreams | Partial<Record<TApi, ProviderStreams>>;
 }
@@ -839,6 +866,7 @@ export function createProvider<TApi extends Api = Api>(input: CreateProviderOpti
 				}
 			: undefined,
 		filterModels: input.filterModels,
+		fetchUsageReport: input.fetchUsageReport,
 		stream: (model, context, options) => dispatch(model, (streams) => streams.stream(model, context, options)),
 		streamSimple: (model, context, options) =>
 			dispatch(model, (streams) => streams.streamSimple(model, context, options)),

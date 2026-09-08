@@ -35,6 +35,7 @@ import {
 	type ProviderRequestOptions,
 	type SimpleStreamOptions,
 	type StreamOptions,
+	type UsageReport,
 } from "@earendil-works/pi-ai";
 import * as builtinProviderCatalog from "@earendil-works/pi-ai/providers/all";
 import { getAgentDir } from "../config.ts";
@@ -399,6 +400,10 @@ export class ModelRuntime implements Models {
 
 	async checkAuth(providerId: string, options?: AuthOperationOptions): Promise<AuthCheck | undefined> {
 		return this.models.checkAuth(providerId, options);
+	}
+
+	getUsageReport(providerId: string, options?: AuthOperationOptions): Promise<UsageReport | undefined> {
+		return this.models.getUsageReport(providerId, options);
 	}
 
 	async getAvailable(providerId?: string, options?: AuthOperationOptions): Promise<readonly Model<Api>[]> {
