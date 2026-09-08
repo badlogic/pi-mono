@@ -16,6 +16,17 @@ lookup and is refreshed by re-running `plane-bootstrap-project`.
   - Conventions: decisions = `adr` work items · issues = work items · glossary = `CONTEXT.md` (repo) ·
     wayfinder maps = `wayfinder:map` work items
 
+### Executing a Plane work item
+
+When asked to "Pick PI-X":
+
+1. Fetch the work item from the PI project. Read its relationships and any linked PRD or ADR.
+2. For a bug investigation, load `/skill:diagnosing-bugs`.
+3. For code changes, load `/skill:dev-tdd`. Work in a new git worktree unless the current worktree already belongs to the task.
+4. Load `/skill:code-review` during the acceptance loop. Fix findings that need no spec or design decision. Use `/skill:grill-with-plane` to resolve decisions with the user. Track worthwhile follow-up work through `/skill:plane-to-issues`.
+5. For agent-facing documentation, load `/skill:writing-for-agents`. Apply `/skill:unslop` to other documentation.
+6. Commit and push under the Git rules below. Use `/skill:show-me` for the PR body. Prefer `/skill:gh-stack` when related work items form independently reviewable vertical slices.
+
 ## Conversational Style
 
 - Keep answers short and concise
