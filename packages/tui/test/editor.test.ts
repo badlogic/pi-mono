@@ -179,21 +179,21 @@ describe("Editor component", () => {
 			assert.strictEqual(editor.getText(), "same");
 		});
 
-		it("allows non-consecutive duplicates in history", () => {
+		it("moves a reused history entry to the newest position", () => {
 			const editor = new Editor(createTestTUI(), defaultEditorTheme);
 
 			editor.addToHistory("first");
 			editor.addToHistory("second");
-			editor.addToHistory("first"); // Not consecutive, should be added
+			editor.addToHistory("first");
 
-			editor.handleInput("\x1b[A"); // "first"
+			editor.handleInput("\x1b[A");
 			assert.strictEqual(editor.getText(), "first");
 
-			editor.handleInput("\x1b[A"); // "second"
+			editor.handleInput("\x1b[A");
 			assert.strictEqual(editor.getText(), "second");
 
-			editor.handleInput("\x1b[A"); // "first" (older one)
-			assert.strictEqual(editor.getText(), "first");
+			editor.handleInput("\x1b[A");
+			assert.strictEqual(editor.getText(), "second");
 		});
 
 		it("uses cursor movement instead of history when editor has content", () => {

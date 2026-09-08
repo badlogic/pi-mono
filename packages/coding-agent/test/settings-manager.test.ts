@@ -570,6 +570,16 @@ describe("SettingsManager", () => {
 		});
 	});
 
+	describe("promptHistory.enabled", () => {
+		it("defaults to enabled and accepts a project override", () => {
+			writeFileSync(join(agentDir, "settings.json"), JSON.stringify({ promptHistory: { enabled: false } }));
+			writeFileSync(join(projectDir, ".pi", "settings.json"), JSON.stringify({ promptHistory: { enabled: true } }));
+
+			expect(SettingsManager.create(projectDir, agentDir).getPromptHistoryEnabled()).toBe(true);
+			expect(SettingsManager.inMemory().getPromptHistoryEnabled()).toBe(true);
+		});
+	});
+
 	describe("getSessionDir", () => {
 		it("should return undefined when not set", () => {
 			writeFileSync(join(agentDir, "settings.json"), JSON.stringify({ theme: "dark" }));

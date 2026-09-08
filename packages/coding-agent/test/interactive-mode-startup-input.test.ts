@@ -14,6 +14,7 @@ type SubmitContext = {
 		prompt: (text: string, options?: unknown) => Promise<void>;
 	};
 	flushPendingBashComponents: () => void;
+	recordEditorSubmission: (text: string) => void;
 	onInputCallback?: (text: string) => void;
 	pendingUserInputs: string[];
 };
@@ -28,10 +29,18 @@ type StartupSubmitContext = {
 	showStatus: (message: string) => void;
 };
 
+type RenderInitialMessagesContext = {
+	sessionManager: { buildContextEntries: () => []; getEntries: () => [] };
+	renderSessionEntries: (entries: [], options: { updateFooter: boolean }) => void;
+	renderProjectTrustWarningIfNeeded: () => void;
+	showStatus: (message: string) => void;
+};
+
 type InteractiveModePrivate = {
 	handleStartupSubmit(this: StartupSubmitContext, text: string): void;
 	setupEditorSubmitHandler(this: SubmitContext): void;
 	getUserInput(this: InputContext): Promise<string>;
+	renderInitialMessages(this: RenderInitialMessagesContext): void;
 };
 
 const interactiveModePrototype = InteractiveMode.prototype as unknown as InteractiveModePrivate;
@@ -50,6 +59,7 @@ function createSubmitContext(): SubmitContext {
 			prompt: vi.fn(async () => {}),
 		},
 		flushPendingBashComponents: vi.fn(),
+		recordEditorSubmission: vi.fn(),
 		pendingUserInputs: [],
 	};
 }
@@ -75,7 +85,20 @@ describe("InteractiveMode startup input", () => {
 
 		expect(context.pendingUserInputs).toEqual(["early prompt"]);
 		expect(context.flushPendingBashComponents).toHaveBeenCalledTimes(1);
-		expect(context.editor.addToHistory).toHaveBeenCalledWith("early prompt");
+		expect(context.recordEditorSubmission).toHaveBeenCalledWith("early prompt");
+	});
+
+	it("does not populate prompt history from restored session messages", () => {
+		const context: RenderInitialMessagesContext = {
+			sessionManager: { buildContextEntries: () => [], getEntries: () => [] },
+			renderSessionEntries: vi.fn(),
+			renderProjectTrustWarningIfNeeded: vi.fn(),
+			showStatus: vi.fn(),
+		};
+
+		interactiveModePrototype.renderInitialMessages.call(context);
+
+		expect(context.renderSessionEntries).toHaveBeenCalledWith([], { updateFooter: true });
 	});
 
 	it("returns queued startup input before installing a new input callback", async () => {

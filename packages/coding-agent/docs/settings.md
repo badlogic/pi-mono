@@ -66,6 +66,7 @@ Use `/trust` in interactive mode to save a project trust decision for future ses
 | `outputPad` | number | `1` | Horizontal padding for user messages, assistant messages, and thinking (0 or 1) |
 | `autocompleteMaxVisible` | number | `5` | Max visible items in autocomplete dropdown (3-20) |
 | `showHardwareCursor` | boolean | `false` | Show the terminal cursor while TUI positions it for IME support |
+| `promptHistory.enabled` | boolean | `true` | Persist interactive editor prompts for the current folder and its descendants |
 | `tuiMode` | string | `"regular"` | Interactive TUI mode: `"regular"` or experimental `"fullscreen"`. Changes from `/settings` apply immediately; `--tui-mode` overrides this setting at startup |
 | `fullscreenExitOutput` | string | `"transcript"` | Fullscreen exit output: `"transcript"` prints the final transcript and resume hint, while `"resume-hint"` restores the previous screen and prints only the resume hint. Has no effect in regular TUI mode |
 | `fullscreenScrollbar` | string | `"auto"` | Fullscreen transcript scrollbar: `"auto"` shows it temporarily while scrolling or while the pointer is over its rightmost-column track, `"always"` reserves that column and keeps it visible, and `"hidden"` hides it. Has no effect in regular TUI mode |
@@ -78,6 +79,12 @@ For VS Code, include `--wait` so pi resumes after the editor exits:
   "externalEditor": "code --wait"
 }
 ```
+
+### Prompt History
+
+Prompt history is stored in `~/.pi/agent/prompt-history.json`. A session loads prompts submitted from its current folder and descendant folders. Prompts are deduplicated by trimmed exact text, reused prompts move to the newest position, and only the newest 100 are shown. Prompts larger than 16 KiB are not persisted.
+
+Pi records only text submitted through an interactive editor. Initial messages, RPC input, tool arguments, and session transcripts are excluded. Set `promptHistory.enabled` to `false` to disable workspace history; `--no-session` also prevents reading and writing it.
 
 ### Telemetry and update checks
 

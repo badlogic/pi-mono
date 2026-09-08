@@ -415,13 +415,21 @@ export class Editor implements Component, Focusable {
 	addToHistory(text: string): void {
 		const trimmed = text.trim();
 		if (!trimmed) return;
-		// Don't add consecutive duplicates
-		if (this.history.length > 0 && this.history[0] === trimmed) return;
-		this.history.unshift(trimmed);
-		// Limit history size
-		if (this.history.length > 100) {
-			this.history.pop();
+		this.history = [trimmed, ...this.history.filter((entry) => entry !== trimmed)].slice(0, 100);
+	}
+
+	/** Replace prompt history with newest-first entries. */
+	replaceHistory(entries: readonly string[]): void {
+		const seen = new Set<string>();
+		this.history = [];
+		for (const entry of entries) {
+			const trimmed = entry.trim();
+			if (!trimmed || seen.has(trimmed)) continue;
+			seen.add(trimmed);
+			this.history.push(trimmed);
+			if (this.history.length === 100) break;
 		}
+		this.exitHistoryBrowsing();
 	}
 
 	private isEditorEmpty(): boolean {
