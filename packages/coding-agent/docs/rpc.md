@@ -829,9 +829,9 @@ Response:
   "success": true,
   "data": {
     "commands": [
-      {"name": "session-name", "description": "Set or clear session name", "source": "extension", "path": "/home/user/.pi/agent/extensions/session.ts"},
-      {"name": "fix-tests", "description": "Fix failing tests", "source": "prompt", "location": "project", "path": "/home/user/myproject/.pi/agent/prompts/fix-tests.md"},
-      {"name": "skill:brave-search", "description": "Web search via Brave API", "source": "skill", "location": "user", "path": "/home/user/.pi/agent/skills/brave-search/SKILL.md"}
+      {"name": "session-name", "description": "Set or clear session name", "source": "extension", "sourceInfo": {"path": "/home/user/.pi/agent/extensions/session.ts", "source": "auto", "scope": "user", "origin": "top-level", "baseDir": "/home/user/.pi/agent"}},
+      {"name": "fix-tests", "description": "Fix failing tests", "source": "prompt", "sourceInfo": {"path": "/home/user/myproject/.pi/agent/prompts/fix-tests.md", "source": "auto", "scope": "project", "origin": "top-level", "baseDir": "/home/user/myproject/.pi/agent"}},
+      {"name": "skill:brave-search", "description": "Web search via Brave API", "source": "skill", "sourceInfo": {"path": "/home/user/.pi/agent/skills/brave-search/SKILL.md", "source": "auto", "scope": "user", "origin": "top-level", "baseDir": "/home/user/.pi/agent"}}
     ]
   }
 }
@@ -844,11 +844,12 @@ Each command has:
   - `"extension"`: Registered via `pi.registerCommand()` in an extension
   - `"prompt"`: Loaded from a prompt template `.md` file
   - `"skill"`: Loaded from a skill directory (name is prefixed with `skill:`)
-- `location`: Where it was loaded from (optional, not present for extensions):
-  - `"user"`: User-level (`~/.pi/agent/`)
-  - `"project"`: Project-level (`./.pi/agent/`)
-  - `"path"`: Explicit path via CLI or settings
-- `path`: Absolute file path to the command source (optional)
+- `sourceInfo`: Source metadata object:
+  - `path`: Absolute file path to the command source
+  - `source`: How the resource was discovered (e.g. `"auto"`, `"cli"`)
+  - `scope`: Where it was loaded from (`"user"`, `"project"`, or `"temporary"`)
+  - `origin`: Whether it comes from a package or is top-level (`"package"` or `"top-level"`)
+  - `baseDir`: Base directory of the owning resource (optional)
 
 **Note**: Built-in TUI commands (`/settings`, `/hotkeys`, etc.) are not included. They are handled only in interactive mode and would not execute if sent via `prompt`.
 
