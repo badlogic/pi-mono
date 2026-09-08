@@ -456,6 +456,8 @@ export const VIEWPORT_TUI = Symbol.for("@earendil-works/pi-tui/viewport");
 export interface ViewportTUI extends TUI {
 	readonly [VIEWPORT_TUI]: true;
 	setLayoutRoot(component: Component | undefined): void;
+	clearTextSelection(): void;
+	resetClickHistory(): void;
 }
 
 export function isViewportTUI(tui: TUI): tui is ViewportTUI {

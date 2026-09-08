@@ -862,7 +862,7 @@ export class TuiAltScreen extends TuiBase implements ViewportTUI {
 		return count;
 	}
 
-	private clearTextSelection(): void {
+	clearTextSelection(): void {
 		this.stopSelectionAutoScroll();
 		this.selectionPressActive = false;
 		this.selectionAnchor = undefined;
@@ -871,6 +871,10 @@ export class TuiAltScreen extends TuiBase implements ViewportTUI {
 		this.selectionInitialRange = undefined;
 		this.pressedUrl = undefined;
 		this.selectionDragged = false;
+	}
+
+	resetClickHistory(): void {
+		this.lastClick = undefined;
 	}
 
 	private handleMouseEvent(raw: SgrMouseEvent): void {

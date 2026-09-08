@@ -3783,6 +3783,10 @@ export class InteractiveMode {
 		entries: SessionEntry[],
 		options: { updateFooter?: boolean; populateHistory?: boolean } = {},
 	): void {
+		if (TuiLayouts.isViewportTUI(this.renderer)) {
+			this.renderer.clearTextSelection();
+			this.renderer.resetClickHistory();
+		}
 		const items = entries.flatMap((entry): RenderSessionItem[] => {
 			if (entry.type === "custom") {
 				return [entry];
