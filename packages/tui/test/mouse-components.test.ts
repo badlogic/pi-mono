@@ -2,9 +2,10 @@ import assert from "node:assert";
 import { describe, it } from "node:test";
 import { Editor, type EditorTheme } from "../src/components/editor.ts";
 import { Input } from "../src/components/input.ts";
+import { MouseRegion } from "../src/components/mouse-region.ts";
 import { SelectList, type SelectListTheme } from "../src/components/select-list.ts";
 import { SettingsList, type SettingsListTheme } from "../src/components/settings-list.ts";
-import { Container, type TuiMouseEvent, type TuiMouseEventType } from "../src/tui.ts";
+import { Container, type Component, type TuiMouseEvent, type TuiMouseEventType } from "../src/tui.ts";
 import { TuiAltScreen } from "../src/tui-alt-screen.ts";
 import { VirtualTerminal } from "./virtual-terminal.ts";
 
@@ -60,6 +61,13 @@ class InputOverlay extends Container {
 }
 
 describe("mouse-aware components", () => {
+	it("invalidates safely when a wrapped component has no invalidate method", () => {
+		const child = { render: () => ["content"] } as Component;
+		const region = new MouseRegion(child, () => undefined);
+
+		assert.doesNotThrow(() => region.invalidate());
+	});
+
 	it("positions a single-line input cursor on press", () => {
 		const input = new Input();
 		input.setValue("hello");
