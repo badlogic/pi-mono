@@ -6,7 +6,9 @@ import assert from "node:assert";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { describe, it } from "node:test";
+import { stripVTControlCharacters } from "node:util";
 import { Image } from "../src/components/image.ts";
+import { Markdown } from "../src/components/markdown.ts";
 import {
 	cropKittyImageLine,
 	deleteAllKittyImages,
@@ -29,6 +31,7 @@ import {
 	setCellDimensions,
 } from "../src/terminal-image.ts";
 import { visibleWidth } from "../src/utils.ts";
+import { defaultMarkdownTheme } from "./test-themes.ts";
 
 const ENV_KEYS = [
 	"TERM",
@@ -216,6 +219,88 @@ describe("isImageLine", () => {
 });
 
 describe("detectCapabilities", () => {
+	// Regression: https://github.com/stablyai/orca/issues/6880
+	it("recognizes Orca without inheriting another emulator's image capabilities", () => {
+		for (const termProgram of ["Orca", "orca", "ORCA"]) {
+			for (const marker of [
+				undefined,
+				"KITTY_WINDOW_ID",
+				"GHOSTTY_RESOURCES_DIR",
+				"WEZTERM_PANE",
+				"ITERM_SESSION_ID",
+				"WARP_SESSION_ID",
+				"WARP_TERMINAL_SESSION_UUID",
+			]) {
+				withEnv(
+					{ TERM_PROGRAM: termProgram, TERM: "xterm-256color", ...(marker ? { [marker]: "outer" } : {}) },
+					() => {
+						assert.deepStrictEqual(
+							detectCapabilities(),
+							{ images: null, trueColor: true, hyperlinks: true },
+							`${termProgram}: ${marker ?? "clean"}`,
+						);
+					},
+				);
+			}
+		}
+	});
+
+	it("keeps multiplexer detection ahead of Orca recognition", () => {
+		for (const env of [{ TMUX: "/tmp/tmux-test", TERM: "xterm-256color" }, { TERM: "tmux-256color" }]) {
+			withEnv({ ...env, TERM_PROGRAM: "Orca", COLORTERM: "truecolor" }, () => {
+				for (const forwards of [false, true]) {
+					let probes = 0;
+					assert.deepStrictEqual(
+						detectCapabilities(() => {
+							probes++;
+							return forwards;
+						}),
+						{ images: null, trueColor: true, hyperlinks: forwards },
+					);
+					assert.strictEqual(probes, 1);
+				}
+			});
+		}
+		withEnv({ TERM_PROGRAM: "Orca", TERM: "screen-256color" }, () => {
+			assert.deepStrictEqual(detectCapabilities(), { images: null, trueColor: false, hyperlinks: false });
+		});
+	});
+
+	it("preserves explicit capability overrides in Orca", () => {
+		withEnv({ TERM_PROGRAM: "Orca", PI_HYPERLINKS: "0", PI_IMAGE_PROTOCOL: "iterm2", PI_TRUE_COLOR: "0" }, () => {
+			assert.deepStrictEqual(detectCapabilities(), { images: "iterm2", trueColor: false, hyperlinks: false });
+		});
+	});
+
+	it("renders compact Markdown links and image placeholders in Orca without overrides", () => {
+		withEnv({ TERM_PROGRAM: "Orca", TERM: "xterm-256color", ITERM_SESSION_ID: "outer" }, () => {
+			resetCapabilitiesCache();
+			try {
+				for (const url of [
+					"https://example.com/long/path?q=hello%20world#section",
+					"https://gitlab.com/group/project/-/issues/123",
+					"file:///tmp/pi%20report.md",
+				]) {
+					const lines = new Markdown(`[Example](${url})`, 0, 0, defaultMarkdownTheme).render(18);
+					assert.strictEqual(lines.length, 1);
+					assert.strictEqual(stripVTControlCharacters(lines[0]).trim(), "Example");
+					assert.ok(lines[0].includes(`\x1b]8;;${url}\x1b\\`));
+					assert.ok(lines[0].includes("\x1b]8;;\x1b\\"));
+				}
+				const lines = new Image(
+					"AAAA",
+					"image/png",
+					{ fallbackColor: (value) => value },
+					{},
+					{ widthPx: 10, heightPx: 10 },
+				).render(40);
+				assert.deepStrictEqual(lines, ["[Image: [image/png] 10x10]"]);
+			} finally {
+				resetCapabilitiesCache();
+			}
+		});
+	});
+
 	it("defaults to hyperlinks: false for unknown terminals", () => {
 		withEnv({}, () => {
 			const caps = detectCapabilities();
