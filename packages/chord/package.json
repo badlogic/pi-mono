@@ -63,7 +63,7 @@
 		"node": ">=22.19.0"
 	},
 	"dependencies": {
-		"esbuild": "0.28.1"
+		"esbuild": "0.28.2"
 	},
 	"devDependencies": {
 		"shx": "0.4.0",
