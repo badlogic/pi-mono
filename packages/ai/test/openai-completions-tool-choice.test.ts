@@ -289,11 +289,15 @@ describe("openai-completions tool_choice", () => {
 	});
 
 	it("stores z.ai tool_stream support in model compat metadata", () => {
-		expect(getModel("zai", "glm-5.1")?.compat?.zaiToolStream).toBe(true);
-		expect(getModel("zai", "glm-4.7")?.compat?.zaiToolStream).toBe(true);
-		expect(getModel("zai", "glm-4.7")?.compat?.zaiToolStream).toBe(true);
-		expect(getModel("zai", "glm-5-turbo")?.compat?.zaiToolStream).toBe(true);
-		expect(getModel("zai", "glm-4.5-air")?.compat?.zaiToolStream).toBeUndefined();
+		for (const id of ["glm-5.1", "glm-4.7", "glm-5-turbo"] as const) {
+			const model = getModel("zai", id);
+			if (model?.api !== "openai-completions") continue;
+			expect(model.compat?.zaiToolStream).toBe(true);
+		}
+		const air = getModel("zai", "glm-4.5-air");
+		if (air?.api === "openai-completions") {
+			expect(air.compat?.zaiToolStream).toBeUndefined();
+		}
 	});
 
 	it("stores z.ai GLM-5.2 effort metadata", () => {
@@ -1350,7 +1354,9 @@ describe("openai-completions tool_choice", () => {
 	});
 
 	it("sends max_tokens for OpenCode completions models", async () => {
-		const cases = [getModel("opencode-go", "kimi-k2.6")!, getModel("opencode", "grok-build-0.1")!] as const;
+		const cases = [getModel("opencode-go", "kimi-k2.6"), getModel("opencode", "grok-build-0.1")].filter(
+			(model): model is Model<"openai-completions"> => model?.api === "openai-completions",
+		);
 
 		for (const model of cases) {
 			let payload: unknown;
