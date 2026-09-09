@@ -433,22 +433,45 @@ Nothing to do in any of them.
 ### prompt, accept, drive
 
 `prompt` is three things: accept the input, drive the conversation until it is idle, read the
-answer to that input.
+explicit result for that input.
 
 ```typescript
 const answer = await c.prompt('Inspect the parser');
 // AssistantEntry | undefined (the run ended without an answer: aborted, failed)
 ```
 
-The pieces are available separately, and they work across retries. `accept` is idempotent by
-`requestId`, and `answerTo` finds the answer to an input however far the conversation has moved
-since, so a client that lost the reply can ask again:
+The pieces are available separately. `inputId` is always the id of the accepted `pi.inbox` list
+element, even when idle acceptance places and removes it in the same commit. Generation and
+`post_tools` carry input ids explicitly, so result lookup never scans the transcript:
 
 ```typescript
-const { entryId } = await c.accept('Inspect the parser', { requestId: 'req-42' });
+const { inputId } = await c.accept('Inspect the parser', { requestId: 'req-42' });
 const outcome = await c.drive();                       // 'idle' | 'closed'
-const answer = await c.answerTo(entryId);              // last assistant entry after it, before the next user entry
+const result = await c.result(inputId);                 // one sticky-value point read
+const answer = result?.status === 'done'
+  ? await h.getEntry(assistantKind, result.resultEntryId)
+  : undefined;
 ```
+
+Results move from `queued` to `running`, then to `done`, `failed`, `cancelled` or `stopped`.
+Context-only writes finish as `placed`. Terminal results never change.
+
+A remote caller that lost the accept response performs an explicit request lookup:
+
+```typescript
+const existing = await h.acceptance('req-42');
+if (existing) {
+  const conversation = await h.conversation(existing.conversationId);
+  return {
+    inputId: existing.inputId,
+    result: await conversation?.result(existing.inputId),
+  };
+}
+return c.accept(input, { requestId: 'req-42' });
+```
+
+A concurrent duplicate `accept` rejects as `RequestAlreadyAccepted` and identifies the first
+receipt. Request ids are optional; there is no payload comparison or silent replay.
 
 `c.drive()` resolves when the conversation's foreground set is idle: no generation, tool or
 automatic collapse in that ownership chain is live. `h.drive()` resolves when no foreground task is
@@ -458,20 +481,30 @@ is live.
 
 ### Input While Busy
 
-While a turn runs, new input is queued rather than refused. Which mode decides where it lands and
-whether it asks for another turn:
+While a turn runs, new input is queued rather than refused. The mode determines the boundary and
+input-group behavior:
 
 ```typescript
-await c.steer('Focus on the tokenizer first');   // next tool boundary or final answer; requests a turn
-await c.followUp('Then write the tests');        // after the final answer; requests a turn
-await c.nextRun('Remind me to commit');          // only at the next idle accept
-await c.write('user stepped away');              // next boundary; no turn requested
+const steer = await c.steer('Focus on the tokenizer first'); // post_tools: joins current group;
+                                                              // final answer: starts next group
+const follow = await c.followUp('Then write the tests');      // after final answer; starts next group
+const next = await c.nextRun('Remind me to commit');          // waits for the next explicit idle accept
+const write = await c.write(noteKind, {                       // next safe boundary; no generation
+  data: { text: 'user stepped away' },
+});
 ```
 
-The queue is visible in the view (`view.inbox`) and any item can be withdrawn until it lands:
+When a generation emits calls, its settlement creates every tool plus exactly one `post_tools`
+carrying the current input ids. That task places writes and steering, extends the ids and creates the
+continuation generation. A final-answer generation resolves its current group, then places
+steer/followUp items into a new group. `nextRun` remains queued until a later idle `accept`.
+
+The queue exposes complete entry drafts so a UI can render text/images directly. Durable and watch
+updates are append/remove/clear operations, not whole-array replacements. Any item can be withdrawn
+until it lands:
 
 ```typescript
-await c.cancelQueued(itemId);                    // 'cancelled' | 'not_found'
+await c.cancelQueued(steer.inputId);             // 'cancelled' | 'not_found'
 ```
 
 ### Aborting
@@ -481,11 +514,12 @@ await c.abort();          // every live foreground task of this conversation, an
 await h.abortTask(id);    // one background task: a job, a schedule
 ```
 
-An abort is a durable mark on the task, then cleanup: a generation may retain its partial for the
-UI but creates no tool tasks/results and is excluded from later requests; tool tasks that already
-exist write their own error results; a subagent tool aborts its child. If the process dies between
-the mark and cleanup, the next one finishes it. Queued `steer` and `followUp` are dropped by `abort`;
-`write` and `nextRun` stay.
+An abort is a durable mark on the task, then cleanup. The live generation or `post_tools` owns the
+active input ids and resolves all of them as cancelled without a normal successor. A generation may
+retain its partial for the UI but creates no tool tasks/results and is excluded from later requests;
+tool tasks that already exist write their own error results; a subagent tool aborts its child. If
+the process dies between the mark and cleanup, the next one finishes it. Queued `steer` and
+`followUp` are removed and marked cancelled; `write` and `nextRun` stay queued.
 
 ## Watching
 
@@ -523,6 +557,11 @@ shape for its process output.
 ### Events
 
 ```typescript
+type InboxOp =
+  | { type: 'append'; item: Element<InboxItem> }
+  | { type: 'remove'; id: Id }
+  | { type: 'clear' };
+
 type ConversationEvent =
   | { type: 'entry';       entry: Entry }
   | { type: 'task_start';  task: Task }
@@ -530,14 +569,16 @@ type ConversationEvent =
   | { type: 'task_end';    task: Task }
   | { type: 'task_output'; task: Id; ops: DeltaOp[] }      // already applied to view.previews
   | { type: 'value';       addr: Address; value: JsonValue | undefined }
-  | { type: 'inbox';       items: Element<InboxItem>[] }
+  | { type: 'inbox';       ops: InboxOp[] }
   | { type: 'context';     ids: Id[] }                      // a head or edit changed derived context
   | { type: 'fault';       error: unknown }
   | { type: 'closed' };
 ```
 
 The view is authoritative and the event is a wake-up: when the listener runs, `w.view` has already
-been folded. A renderer may ignore the event payload entirely and be correct. Because every piece
+been folded. Inbox operations are combined per commit; an idle acceptance's append and immediate
+remove emits no inbox event. A renderer may ignore the event payload entirely and be correct.
+Because every piece
 of work is a task of a known kind, four task events cover what used to need a name per case:
 
 | you want to know | look at |

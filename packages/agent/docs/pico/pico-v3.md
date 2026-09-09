@@ -327,19 +327,23 @@ stop using this handle, reopen, recover the last complete batch and its `lastSeq
 from that. No observer ever sees half a commit. An effect must not treat an uncertain write as
 permission to redo the same external action with new ids.
 
-### 3.4 Request keys are ordinary state
+### 3.4 Request keys name acceptances
 
-A caller's request id is a session value: `accept(input, requestId)` looks the key up inside the
-commit; if present it returns the existing acceptance, otherwise it creates the input and records
-the key in the same batch. Because the mapping is session state, it may follow and reference the
-new entry or inbox element:
+Every accepted input has an `inputId`, the id of its `pi.inbox` list element (§8.1). A caller may
+also supply an opaque request id. Acceptance atomically stores a session value from that key to the
+new identity:
 
 ```text
-400  user entry or inbox element
-401  request["req-42"] = 400
+400  append pi.inbox item                         inputId = 400
+401  inputResult[400] = queued or running
+402  request["req-42"] = { conversationId, inputId:400 }
 ```
 
-A lost reply plus a retry yields the same accepted id. Reusing a key for different input rejects.
+`harness.acceptance(requestId)` returns that receipt. This is an explicit lookup for a caller whose
+accept response may have been lost; `accept` itself does not compare payloads or silently replay an
+old call. A second acceptance with the same key rejects as `RequestAlreadyAccepted` and identifies
+the first receipt. Without a request id, no mapping is written. The mapping is session state, so it
+may follow and reference the newly minted inbox element.
 
 ## 4. State
 
@@ -385,7 +389,7 @@ A rewindable history reads as of an entry (§3.2): a list appended at 40 and 50,
 appended at 70 reads `[A, B]` at entry 55, `[]` at 65, `[C]` at 75. A remove hides one element the
 same way a clear hides all of them. Clear hides; it doesn't erase
 what an earlier fork needs. Deleting a rewindable value records absence. Sticky state exposes only
-its current contents.
+its current contents, so a removed sticky list element may be discarded physically.
 
 ### 4.3 Initialization is explicit; forks inherit
 
@@ -621,7 +625,10 @@ await ctx.commit(tx => {
   const assistant = tx.entry(assistantKind, { model: [message] });    // calls [A, B]
   const tools = message.calls.map(call =>
     tx.task(toolKind, { state: { call, assistant } }));
-  tx.task(postToolsKind, { after: tools, state: { assistant, tools } });
+  tx.task(postToolsKind, {
+    after: tools,
+    state: { assistant, tools, inputs: task.state.inputs },
+  });
   tx.settle(task, { assistant });
 });
 ```
@@ -635,8 +642,14 @@ async execute(task, ctx) {
   await ctx.commit(tx => {
     const tools = tx.getTasks(toolKind, task.state.tools);            // Map<id, Task<ToolState>>
     const outcomes = [...tools.values()].map(t => t.state.output);        // ToolOutputState
-    if (outcomes.some(o => o.terminate) || tx.getTask(task.id)!.abort)
-      return tx.settle(task, { stopped: true });                      // outcome lands, no successor
+    if (tx.getTask(task.id)!.abort) {
+      resolveInputs(tx, task.state.inputs, "cancelled");
+      return tx.settle(task, { cancelled: true });                    // no successor
+    }
+    if (outcomes.some(o => o.terminate)) {
+      resolveInputs(tx, task.state.inputs, "stopped");
+      return tx.settle(task, { stopped: true });                      // no successor
+    }
     const added = outcomes.flatMap(o => o.addedTools ?? []);
     const selectedTools = added.length ? [...current, ...added] : current;
     if (added.length) tx.value(generationKind.config.selectedTools).set(selectedTools);
@@ -644,8 +657,8 @@ async execute(task, ctx) {
     if (handoff) tx.entry(handoffKind, {
       data: { text: handoff.handoff }, model: [handoffMessage(handoff.handoff)], head: "self",
     });
-    landSteering(tx, task.conversationId);                           // §8.1
-    tx.task(generationKind, { state: nextGeneration(task, { selectedTools }) });
+    const inputs = landPostToolsInbox(tx, task.conversationId, task.state.inputs); // writes + steer (§8.1)
+    tx.task(generationKind, { state: nextGeneration(task, { selectedTools, inputs }) });
     tx.settle(task, {});
   });
 }
@@ -1001,9 +1014,10 @@ committed state plus earlier writes in the batch (kinds validate status transiti
 enforces ownership, dependencies, exchange rules and admission; nobody validates payload shapes:
 stored objects are trusted, and schema validation belongs at wire boundaries). For an entry with
 `head`, validation requires the stored id to be visible and at or after the previous fork-visible
-head's stored boundary. Stored edit targets must be earlier visible entries. No entry-kind code runs.
-Storage checks scope, sequences and structure, prepares only touched data, persists atomically,
-publishes. A commit with no writes writes nothing.
+head's stored boundary. Stored edit targets must be earlier visible entries. Input-result transitions
+are validated, terminal results cannot change, and consuming/cancelling an inbox element writes its
+result in the same batch. No entry-kind code runs. Storage checks scope, sequences and structure,
+prepares only touched data, persists atomically, publishes. A commit with no writes writes nothing.
 
 ### 7.4 Memory and JSONL
 
@@ -1065,42 +1079,75 @@ outside the line, and their decisions are re-validated inside it.
 
 ### 8.1 Accepting input
 
-A conversation is busy when its foreground set is not empty.
+The inbox is a conversation-scoped sticky list, `pi.inbox`. Its list element id is the stable
+`inputId`; its value carries the complete entry draft, so a UI can render queued text or images
+without another read:
 
-```text
-idle accept:   { append user entry; create generation, foreground }
-busy accept:   { append { message, mode } to the inbox }
+```ts
+interface AcceptedEntryDraft extends EntryDraft { readonly kind: string }
+type InputMode = "write" | "steer" | "followUp" | "nextRun";
+
+interface InboxItem {
+  readonly mode: InputMode;
+  readonly entry: AcceptedEntryDraft;
+  readonly requestId?: string;
+}
+
+type InputResult =
+  | { readonly status: "queued"; readonly requestId?: string }
+  | { readonly status: "running"; readonly requestId?: string; readonly placementEntryId: Id }
+  | { readonly status: "placed"; readonly requestId?: string; readonly placementEntryId: Id }
+  | { readonly status: "done"; readonly requestId?: string; readonly placementEntryId: Id; readonly resultEntryId: Id }
+  | { readonly status: "failed" | "cancelled" | "stopped"; readonly requestId?: string;
+      readonly placementEntryId?: Id; readonly reason?: string };
 ```
 
-The inbox is a conversation-scoped sticky list, `pi.inbox`. A queued item is the message itself;
-nothing is written to the transcript until it lands. Three places dequeue: post_tools after a tool
-exchange, the generation when it settles a final answer, and `accept` when the conversation is
-idle. Each reads the list, takes the items its mode table allows, appends a `user` entry per item,
-removes them, and creates the next generation, all in one commit. `cancelQueued(elementId)` is a
-remove. Nothing else exists.
+Acceptance always appends an inbox element and writes `inputResult[inputId]` in the same commit.
+When the conversation is idle, that commit immediately places and removes the item and creates a
+generation; append plus remove folds to no inbox watch operation. When it is busy, the item remains
+queued. `accept` uses `followUp` when it must queue. The four modes are:
 
-| Mode | Lands at | Requests a generation |
+| Mode | Placement | Input-group effect |
 |---|---|---|
-| write | post_tools or a final answer | no |
-| steer | post_tools or a final answer | yes |
-| followUp | a final answer | yes |
-| nextRun | an idle accept only | yes |
+| write | next post_tools or final boundary | none; terminal result is `placed` |
+| steer | next post_tools or final boundary | joins the active group at post_tools; starts the next group after a final answer |
+| followUp | final-answer boundary | starts the next group |
+| nextRun | next explicit idle `accept` | joins the group started by that acceptance |
 
-Landing selects either everything eligible or the oldest item per mode, by configuration, in
-admission order. Selection, landing, and the generation it triggers share one commit. Foreground
-abort cancels queued steer and followUp; write and nextRun stay.
+A generation and its `post_tools` carry `inputs: Id[]`. Generation-with-calls creates the tools and
+exactly one `post_tools` with the same group in its settlement commit. `post_tools` places writes,
+places selected steering in admission order, extends the group with those steer ids, creates the
+continuation generation and settles. At a final answer, the generation resolves every current
+input to that answer, places writes, then places selected steer/followUp items into a new group and
+creates its generation. An `on_yield` continuation retains the current group. No tail scan
+attributes results.
+
+Placement appends `item.entry`, removes the list element and writes its result in one commit.
+`cancelQueued(inputId)` removes an item and records `cancelled`; foreground abort does that for
+queued steer/followUp while preserving write/nextRun. A generation failure records `failed` for its
+whole group; terminate records `stopped`; generation or `post_tools` abort records `cancelled` and
+creates no normal successor. Failure/terminate may place safe writes but do not consume queued
+inputs that require a successor. Exactly one live generation or `post_tools` owns an active group,
+and ownership transfers in the same commit that settles the previous owner.
+
+The list is stored as append/remove/clear operations, not as a rewritten array. Inbox watch events
+carry the same operations; an idle same-commit append/remove emits none. Memory and SQLite may
+discard a removed sticky element; JSONL retains its append record, so any payload later copied into
+a transcript entry appears twice on disk, including an idle acceptance. Once an unplaced item is
+cancelled, its draft is no longer queryable; `inputResult` retains only its terminal status and
+optional request id.
 
 ### 8.2 Generation
 
 ```text
-create:      capture the kind's declared config (model, thinking, selected tools, profile; §5.2,
-             rewindable values) and provider options and retry policy, so a retry uses what the
+create:      capture inputs, the kind's declared config (model, thinking, selected tools, profile;
+             §5.2, rewindable values), provider options and retry policy, so a retry uses what the
              attempt used
 execute:     if a collapse is needed by threshold: { create collapse C; create generation G' after:[C]; settle }
              desired = system_instructions hook, per conversation: keyed sections (the host's identity,
                        cwd, skills, context files; a plugin's plan_mode) merged across handlers and
                        rendered in declared order, plus tool definitions selected from the catalogue;
-                       none of the inputs is stored
+                       none of these host prompt sources is stored as config
              sent    = the newest baseline `system` entry in the context plus the deltas after it;
                        deltas before it (kept by a compaction) are subsumed and ignored, by the fold
                        and by request projection alike
@@ -1111,14 +1158,16 @@ execute:     if a collapse is needed by threshold: { create collapse C; create g
              project the context; before_request; re-check status and mark
              stream; frames to scratch
 outcome:
-  calls        { assistant; tools; post_tools; settle done }
-  final        { assistant; resolve or continue (§8.3); settle done }
+  calls        { assistant; tools; post_tools carrying inputs; settle done }
+  final        { assistant; resolve every current input; place next-group inbox items and successor if any;
+                 settle done }
   deferred     { status deferred, handle }         → execute again: poll with sleeps until final
   retryable    { status retry_wait, attempt+1, notBefore } → execute again: sleep, then stream
   overflow     { settle failed(overflow); create collapse C; C's settlement creates G' }
-  failure      { retain partial/error outcome for display if useful; settle failed; no tools/results }
-  aborted      stream ends with stopReason "aborted": { retain partial for display if useful; settle aborted;
-                                                        no tool tasks/results }
+  failure      { retain partial/error outcome for display if useful; resolve inputs failed;
+                 settle failed; no tools/results }
+  aborted      stream ends with stopReason "aborted": { retain partial for display if useful;
+                 resolve inputs cancelled; settle aborted; no tool tasks/results }
 ```
 
 **Prompt and tools.** Two things the lane harness fuses are kept apart. What the client wants is
@@ -1175,8 +1224,8 @@ abort:    join own execution; drain scratch; own aborted error result; settle
 ```
 
 post_tools is the code in §5.5: read the tool tasks, stop on terminate, write the handoff if one
-was requested, land steering, create the next generation, settle. Its abort settles it with no
-successor.
+was requested, place writes and steering, carry the extended input group into the next generation,
+and settle. Its abort resolves its input group as cancelled and settles with no successor.
 
 **Blocking budget.** A tool call may not block a turn indefinitely. Tools that run processes or
 child conversations create a job (or a conversation) first and wait on it with the budget; if the
@@ -1203,9 +1252,10 @@ the promise and retargets the sink into the job's scratch; that path is best-eff
 `new_context` is a tool that calls `out.handoff(message)`; the reset happens here, after the exchange
 is complete, never inside the tool, because a head landing mid-exchange would cut it in half. Conflicting handoffs reject rather than pick an order.
 
-A final answer's continuation is decided in the generation's settlement: `on_yield` may request an
-explicit continuation (a user entry and a generation); eligible followUp input lands and starts the
-next turn; an owned conversation's final answer settles nothing by itself, its owner is a tool
+A final answer's continuation is decided in the generation's settlement. `on_yield` may request an
+explicit continuation that keeps the current input group. Otherwise the answer resolves that group,
+then eligible steer/followUp items are placed into a new group and its generation. An owned
+conversation's final answer still resolves its own inputs; its owner tool observes that result while
 driving it (§8.5). An idle conversation whose tail is a user entry creates no work by inference.
 
 ### 8.4 Collapse
@@ -1245,16 +1295,16 @@ type SubagentCommand =
 ```
 
 ```text
-run:     { create child conversation (this task owns it); initial values; prompt; first generation }
+run:     { create child conversation (this task owns it); initial values; accept prompt → inputId; first generation }
          await child.drive()                       // blocked on the world; the tool stays inflight
-         child.answerTo(prompt entry); { result entry; settle }
+         child.result(inputId); { result entry; settle }
          recover: the child exists; drive it again
          abort: the mark on this tool marks the child's foreground set through ownership; error result
 
 spawn:   the same creation commit; settle at once with the child's id
 send:    child.accept(text)          → queued if the child is busy
 status:  the child's tail and live tasks
-wait:    await child.drive(); child.answerTo(the last sent prompt); settle    (recover: drive again)
+wait:    await child.drive(); child.result(the last sent inputId); settle     (recover: drive again)
 stop:    child.abort()
 ```
 
@@ -1412,12 +1462,15 @@ listeners are not hooks: they observe, never decide, and never await a commit on
 interface ConversationHandle {
   readonly id: Id;
   snapshot(): Promise<Conversation>;
-  accept(input, options?: { requestId? }): Promise<{ entryId: number }>;
-  prompt(input, options?): Promise<AssistantEntry | undefined>;   // accept + drive + answerTo(entryId)
-  answerTo(entryId: Id): Promise<AssistantEntry | undefined>;      // last assistant entry after it and before the next user entry
+  accept(input, options?: { requestId?: string }): Promise<{ inputId: Id }>;
+  prompt(input, options?): Promise<AssistantEntry | undefined>;   // accept + drive + result(inputId)
+  result(inputId: Id): Promise<InputResult | undefined>;
   drive(options?: { signal? }): Promise<"idle" | "closed">;
-  steer(input); followUp(input); nextRun(input); write(message);
-  cancelQueued(elementId): Promise<"cancelled" | "not_found">;
+  steer(input): Promise<{ inputId: Id }>;
+  followUp(input): Promise<{ inputId: Id }>;
+  nextRun(input): Promise<{ inputId: Id }>;
+  write<E extends Entry>(kind: EntryKind<E>, input: EntryInput<E>): Promise<{ inputId: Id }>;
+  cancelQueued(inputId: Id): Promise<"cancelled" | "not_found">;
   abort(): Promise<void>;
   collapse(options?: { instructions? }): Promise<number>;    // collapse task id
   reset(handoff?): Promise<void>;
@@ -1434,6 +1487,7 @@ interface Harness {
   root(): Promise<ConversationHandle>;
   conversation(id): Promise<ConversationHandle | undefined>;
   conversations(q?): Promise<Page<Conversation>>;             // independent ones: owner === undefined
+  acceptance(requestId: string): Promise<{ requestId: string; conversationId: Id; inputId: Id } | undefined>;
   inspect(): Promise<{ start: Task[]; inflight: Task[] }>;
   drive(options?): Promise<"idle" | "closed">;
   getEntry(id); getEntry(kind, id); getEntries(ids); getEntries(kind, ids); entries(conversationId, page);
@@ -1449,11 +1503,11 @@ interface Harness {
 
 `drive`'s signal cancels the caller's wait, not the work. `fork({ abort: true })` marks the source's
 foreground set in the same commit that creates the fork, for "go back to that point"; which
-conversation a UI treats as current is the UI's business. `prompt` returns the answer to this input, or
-`undefined` if the run ended without one. `answerTo(entryId)` is the read behind it: the last
-assistant entry after the input and before the next user entry (or the tail), one bounded range
-query; so a retried `accept` with the same `requestId` followed by `drive` and `answerTo` yields
-the same answer however far the conversation has moved since. Nothing else maps inputs to results.
+conversation a UI treats as current is the UI's business. `prompt` returns the answer entry only
+when its explicit input result is `done`; failed, cancelled, stopped or merely placed input returns
+`undefined`. `result(inputId)` is one sticky-value point read, never a transcript scan. After an
+uncertain remote response, `acceptance(requestId)` recovers the conversation/input identity; the
+caller then reads its result or retries a create and handles `RequestAlreadyAccepted`.
 
 ### 9.2 Commits
 
@@ -1693,6 +1747,11 @@ interface ConversationView {
   readonly readAt: Id;
 }
 
+type InboxOp =
+  | { readonly type: "append"; readonly item: Element<InboxItem> }
+  | { readonly type: "remove"; readonly id: Id }
+  | { readonly type: "clear" };
+
 type ConversationEvent =
   | { type: "entry";        entry: Entry }
   | { type: "task_start";   task: Task }
@@ -1700,7 +1759,7 @@ type ConversationEvent =
   | { type: "task_end";     task: Task }
   | { type: "task_output";  task: Id; ops: readonly DeltaOp[] }           // ops on the task's preview; applied to view.previews
   | { type: "value";        addr: Address; value: JsonValue | undefined }
-  | { type: "inbox";        items: readonly Element<InboxItem>[] }
+  | { type: "inbox";        ops: readonly InboxOp[] }
   | { type: "context";      ids: readonly Id[] }                  // a head or edit changed derived context
   | { type: "fault";        error: unknown } | { type: "closed" };
 
@@ -1739,7 +1798,9 @@ listener neither deadlocks nor refolds stale state. Buffering is bounded; a lagg
 
 Events are proportional to their change, and the view fold is a generic reducer,
 `applyEvent(view, event)`, exported by the harness package and needing no kinds: append the entry,
-upsert the task, apply the ops to `previews[task]`, set the value. The harness maintains `w.view`
+upsert the task, apply task-output ops to `previews[task]`, apply inbox ops, set the value. Inbox
+operations are folded across one commit before delivery, so an idle acceptance's same-commit append
+and remove emits no inbox event. The harness maintains `w.view`
 with it, and a UI in another process runs the same reducer on the same events; nothing is
 re-diffed for the wire:
 
@@ -1850,7 +1911,7 @@ source cutoffs, sticky state untouched by historical reads.
 | Scenario | Required |
 |---|---|
 | Persistence paused after construction | readers see the old complete state |
-| Commit durable, reply lost | reopen sees the batch; keyed retry returns the same id |
+| Accept commit durable, reply lost | `acceptance(requestId)` returns the original conversation/input id |
 | Main and scratch writes in one batch | reject, nothing written |
 | Torn final JSONL line | only that line discarded |
 | Malformed complete line | open fails; no silent truncation |
@@ -1862,7 +1923,9 @@ source cutoffs, sticky state untouched by historical reads.
 | Two overlapping drives | one execution per task |
 | A drive caller cancels its wait | other callers and tasks unaffected |
 | Summary lands after a competing head/reset | rejected as stale; intervening edits do not stale it |
-| Cancel vs land of the same inbox item | one wins on the line; the loser reports it |
+| Cancel vs land of the same inbox item | one wins on the line; one terminal input result |
+| Abort vs generation/post_tools group transfer | every active input resolves once; no unmarked owner escapes |
+| Several inputs share one generation | every result points to the same final answer entry |
 | Overflow retry while collapse runs | no live task waits on the collapse |
 | Watch registration races a commit | base includes it or the stream delivers it |
 

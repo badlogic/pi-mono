@@ -13,8 +13,9 @@ shows the surface each package has to end up with.
 
 `Id`, `EntryIdentity`, `EntryBase`, the composable `EntryData` / `ModelProjection` /
 `ContextHead` / `ContextEdits` facets, `Entry`, `EntryKind`, `EntryInput`, `ContextEdit`, `Task`,
-`TaskRole`, stored task roles, `Conversation`, `Address`/`Value`/`List`/`Scope`,
-`Write`/`CommitBatch`, `Page`/`Cursor` and the query shapes (§2, §4.1, §5.1, §7.2–7.3). No code.
+`TaskRole`, stored task roles, `Conversation`, `InboxItem`, `InputResult`, `InboxOp`, acceptance
+receipts, `Address`/`Value`/`List`/`Scope`, `Write`/`CommitBatch`, `Page`/`Cursor` and the query shapes
+(§2, §4.1, §5.1, §7.2–7.3). No code.
 
 Test: it compiles; fixtures cover entries with no data, no model, every individual facet and the
 built-in facet combinations.
@@ -94,8 +95,9 @@ new attempt clears its list.
 
 `Harness.open` (built-in registries, `kinds` and `replace` options, kinds-set check, `inspect`,
 `drive`, `close`, `shutdown`), `ConversationHandle` (`commit`, `value` / `list`, `config` /
-`settings`, `fork` with `abort`, `abort`, `hooks.on` scoped with `subtree`), `abortTask`,
-`conversations` with `parent` / independent filtering. No agent behaviour yet.
+`settings`, `fork` with `abort`, `abort`, `hooks.on` scoped with `subtree`), `acceptance(requestId)`,
+`result(inputId)`, `abortTask`, `conversations` with `parent` / independent filtering. No agent
+behaviour yet.
 
 Tests: open on empty vs existing storage; an unregistered entry kind is reported without scanning
 entries and its stored model/head/edits still derive context; an unknown live task kind rejects;
@@ -104,9 +106,10 @@ harness-wide ones, innermost last.
 
 ## 9. Generation kind
 
-One stable generation task cycles pending → streaming → retry_wait / deferred → streaming until
-done / failed / aborted on a faux provider; config capture (model, thinking, selected tools, profile,
-budget); `system_instructions` with
+One stable generation task carries `inputs: Id[]` and cycles pending → streaming → retry_wait /
+deferred → streaming until done / failed / aborted on a faux provider; explicit terminal results for
+its whole input group; config capture (model, thinking, selected tools, profile, budget);
+`system_instructions` with
 sections merged across handlers and the diff writing `system` data plus its materialized model
 message; `before_request`,
 `after_response`, `on_yield`; retry sleeps in execute; recover from frames; usage recorded per
@@ -122,22 +125,29 @@ crash while streaming publishes the partial; retry budget exhausted → failed w
 The tool kind with the sink (`ToolOutput`, `ToolOutputState`, limits enforced by the sink, `diag`,
 `delegate`, `handoff`, `addTools`, `terminate`), tool-result entries with structured data plus their
 materialized model message, `before_tool` (fail-closed) and `after_tool`,
-replay policy on recover; post_tools with `after`, terminate / handoff / steer / next generation;
-`accept` idle vs busy; `prompt` and `answerTo`.
+replay policy on recover; post_tools with `after`, carried input groups, terminate / handoff / steer /
+next generation; `accept` idle vs busy; `prompt`, `result` and request acceptance lookup.
 
 Tests: parallel tools completing in either order; sequential via `after`; an aborted generation
 creates no tool tasks/results while an aborted existing tool writes its own error result;
 `new_context` resets after the exchange, never inside it; `addTools` writes the rewindable loadout
 before any handoff/user entry in the settlement commit and appears in the next turn's `toolsAdded`;
-a throwing tool → error result, `terminate` still honoured; truncation diag from the sink; `accept`
-with the same `requestId` twice → same entry, `answerTo` finds it after further turns.
+a throwing tool → error result, `terminate` still honoured; truncation diag from the sink; a lost
+accept response is recovered through `acceptance(requestId)`; a duplicate create reports the first
+receipt; results remain point-readable after further turns.
 
 ## 11. Inbox
 
-`pi.inbox` as a conversation list, the modes, the three dequeue points, `cancelQueued`, abort
-draining steer and followUp.
+`pi.inbox` as a conversation sticky list whose element id is `inputId` and whose value holds mode,
+complete entry draft and optional request id; append/remove/clear watch operations; queued/running
+and terminal result values; the three placement points; carried generation/post_tools input groups;
+`cancelQueued`; abort draining steer and followUp while preserving write and nextRun.
 
-Tests: the modes table; cancel vs land in both orders; input queued during a collapse lands.
+Tests: idle append/remove is one commit and emits no inbox event; busy image payload is one append
+operation; the modes table; steer joins at post_tools but starts a group after a final answer;
+followUp starts the next group; nextRun waits for idle accept; writes are placed without joining;
+several inputs resolve to one answer; cancel/land and abort/group-transfer in both orders; queued and
+placed crash recovery; cancelled unplaced payload is unavailable; input queued during collapse lands.
 
 ## 12. Collapse
 
@@ -152,8 +162,8 @@ flowing.
 ## 13. Subagents
 
 The `subagent` tool (`run`, `spawn`, `send`, `status`, `wait`, `stop`), ownership links, foreground
-reach through live owners, `run`'s recover driving the child again, `spawn` initialization of
-config, `answerTo` on the child.
+reach through live owners, `run`'s recover driving the child again, `spawn` initialization of config,
+explicit child input results.
 
 Tests: restart in the middle of `run`; parent abort reaches a `run` child and spares a `spawn`
 child; `stop`; nested children; the child's first turn writes its own baseline.
@@ -185,8 +195,9 @@ equal to the live preview; a sliding tool tail → `t` + `a`.
 `report` and `usage`, the usage ledger (`pi.usage` + totals).
 
 Tests: the fold is correct (view after N events equals a fresh capture, randomized); head and edit
-entries update derived context; all events of one commit delivered together; a thin-client reducer
-over a recorded stream with no kinds loaded;
+entries update derived context; inbox append/remove/clear operations update the view and same-commit
+append/remove cancels; all events of one commit delivered together; a thin-client reducer over a
+recorded stream with no kinds loaded;
 lag → fault → resnapshot; `resnapshot` from inside the listener; usage totals equal the ledger
 fold, failed and aborted attempts included.
 
@@ -197,14 +208,16 @@ Append-only batches, replay on open, torn tail discarded, malformed line fails o
 first or small, ops otherwise), scratch sidecars retired after the main-file settle.
 
 Tests: conformance against memory (one mutation stream, identical query results); linear file
-growth under repeated sets of a large value; crash between the settle write and the sidecar unlink.
+growth under repeated sets of a large value; accepted payload plus placement has two JSONL copies,
+including idle acceptance; crash between the settle write and the sidecar unlink.
 
 ## 18. SQLite storage
 
 Tables and indexes of §7.5, nullable entry JSON columns for data/model/edits and an indexed integer
 head boundary, scratch rows deleted in the settle transaction, storage version and `migrate`.
 
-Tests: conformance three ways; a cold reopen decodes only live rows (count them); a version
+Tests: conformance three ways; removed sticky inbox elements may be physically discarded while
+input results remain point-readable; a cold reopen decodes only live rows (count them); a version
 mismatch rejects.
 
 ## 19. Race matrix and telemetry
