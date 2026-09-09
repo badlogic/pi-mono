@@ -81,8 +81,7 @@ function readNavigation(): NavigationGroup[] {
 		JSON.parse(readFileSync(resolve(docsRoot, "docs.json"), "utf8")),
 		"Documentation catalog",
 	);
-	requireFields(catalog, ["schemaVersion", "navigation", "redirects"], "Documentation catalog");
-	if (catalog.schemaVersion !== 1) throw new Error("Documentation catalog schemaVersion must be 1");
+	requireFields(catalog, ["navigation", "redirects"], "Documentation catalog");
 	if (!Array.isArray(catalog.navigation)) throw new Error("Documentation catalog navigation must be an array");
 
 	return catalog.navigation.map((rawGroup, groupIndex) => {
