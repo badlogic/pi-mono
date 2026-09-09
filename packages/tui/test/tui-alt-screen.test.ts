@@ -245,6 +245,57 @@ describe("TuiAltScreen", () => {
 		tui.stop();
 	});
 
+	it("composites an overlay over a Kitty image and clears its placement", async () => {
+		setCapabilities({ images: "kitty", trueColor: true, hyperlinks: true });
+		try {
+			const terminal = new RecordingTerminal(20, 3);
+			const tui = new TuiAltScreen(terminal);
+			const imageId = 700;
+			const imageLine = encodeKitty("AAAA", { columns: 2, rows: 1, imageId, moveCursor: false });
+			registerKittyImageMetadata({ imageId, columns: 2, rows: 1, widthPx: 100, heightPx: 50 });
+			tui.addChild({ render: () => [imageLine], invalidate: () => {} });
+			tui.start();
+			await terminal.waitForRender();
+
+			const eventCount = terminal.events.length;
+			const overlayHandle = tui.showOverlay(new InputOverlay(), { anchor: "top-left", width: 20 });
+			await terminal.waitForRender();
+			const overlayWrites = terminal.events
+				.slice(eventCount)
+				.filter((event): event is { type: "write"; data: string } => event.type === "write")
+				.map((event) => event.data)
+				.join("");
+
+			assert.ok(overlayWrites.includes("overlay"));
+			assert.ok(overlayWrites.includes("\x1b_Ga=d,d=a,q=2\x1b\\"));
+			assert.ok(!overlayWrites.includes(imageLine));
+
+			const steadyEventCount = terminal.events.length;
+			tui.requestRender();
+			await terminal.waitForRender();
+			const steadyWrites = terminal.events
+				.slice(steadyEventCount)
+				.filter((event): event is { type: "write"; data: string } => event.type === "write")
+				.map((event) => event.data)
+				.join("");
+			assert.ok(!steadyWrites.includes("\x1b_Ga=d"));
+			assert.ok(!steadyWrites.includes("\x1b[2K"));
+
+			const restoreEventCount = terminal.events.length;
+			overlayHandle.hide();
+			await terminal.waitForRender();
+			const restoreWrites = terminal.events
+				.slice(restoreEventCount)
+				.filter((event): event is { type: "write"; data: string } => event.type === "write")
+				.map((event) => event.data)
+				.join("");
+			assert.ok(restoreWrites.includes("\x1b_Ga=p,q=2"));
+			tui.stop();
+		} finally {
+			resetCapabilitiesCache();
+		}
+	});
+
 	it("routes wheel input to the scroll view under the pointer", async () => {
 		const terminal = new VirtualTerminal(20, 4);
 		const tui = new TuiAltScreen(terminal);
