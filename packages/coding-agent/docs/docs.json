@@ -148,12 +148,6 @@
       ]
     }
   ],
-  "unlisted": [
-    {
-      "title": "llama.cpp",
-      "path": "llama-cpp.md"
-    }
-  ],
   "redirects": [
     {
       "from": "session.md",

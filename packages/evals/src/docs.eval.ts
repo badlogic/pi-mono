@@ -1,9 +1,9 @@
+import { globSync } from "node:fs";
 import { resolve } from "node:path";
 import { Type } from "@earendil-works/pi-ai";
 import { defineTool } from "@earendil-works/pi-coding-agent";
 import { expect } from "vitest";
 import { describeEval, toolCalls } from "vitest-evals";
-import { documentationCatalogPages, loadDocumentationCatalog } from "./docs-catalog.ts";
 import { createPiCodingAgentHarness } from "./pi-harness.ts";
 
 const SUBMIT_AUDIT_TOOL_NAME = "submit_documentation_audit";
@@ -33,8 +33,10 @@ const submitDocumentationAuditTool = defineTool({
 
 const repositoryRoot = resolve(import.meta.dirname, "../../..");
 const docsRoot = resolve(repositoryRoot, "packages/coding-agent/docs");
-const documentationCatalog = loadDocumentationCatalog(resolve(docsRoot, "docs.json"));
-const documentationPages = documentationCatalogPages(documentationCatalog);
+const documentationPages = globSync("**/*.md", { cwd: docsRoot })
+	.map((path) => path.replaceAll("\\", "/"))
+	.sort()
+	.map((path) => ({ path }));
 const documentationAuditHarness = createPiCodingAgentHarness({
 	name: "documentation-page-audit",
 	tools: ["read", "grep", "find", "ls", SUBMIT_AUDIT_TOOL_NAME],
