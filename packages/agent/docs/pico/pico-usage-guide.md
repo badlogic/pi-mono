@@ -69,10 +69,10 @@ conversation has three things:
 - **state**: keyed **values** and **lists**, for the model in use, plan mode, a game board, whatever
   a plugin needs to remember.
 
-What the model sees, the **context**, is not stored. The newest **head** supplies a replacement
-(summary, handoff or nothing) and the first retained transcript entry. The harness prepends that
-head, reads forward from the retained entry, applies immutable **edit** entries that omit or replace
-individual projections, then projects messages. Compaction appends a head; tool-result pruning
+What the model sees, the **context**, is not stored as a list. Each entry may store `model`
+messages, a **head** boundary, and **edits** that omit or replace earlier model messages. The harness
+prepends the newest head, reads forward from its stored boundary, folds retained edits, then performs
+request-local tool and provider normalization. Compaction appends a head; tool-result pruning
 appends an edit. Forks, compaction and reset never mutate old entries.
 
 Every id is a session sequence number, minted when the write is built and never changed:
@@ -147,7 +147,7 @@ w.start(event => {
 
 // accept the input, drive the conversation until it is idle, return the answer to that input
 const answer = await c.prompt('Inspect the parser and list the public API');
-console.log(answer?.content);
+console.log(answer?.model[0]?.content);
 
 w.unsubscribe();
 await h.close();   // cancels nothing durable; reopening the file continues exactly here
@@ -193,8 +193,10 @@ const h = await Harness.open(storage, { models, tools, replace: {
 }});
 ```
 
-Open checks that every kind found in storage is registered (without scanning the transcript: the
-set of kinds ever written is kept) and reports live work, but starts nothing:
+Open checks the recorded kind strings without scanning the transcript and reports live work, but
+starts nothing. An unregistered historical entry kind is reported, not rejected: its stored
+`model`, `head` and `edits` still build context, while its typed data and custom renderer are
+unavailable. A live task kind is still required.
 
 ```typescript
 const { start, inflight } = await h.inspect();
@@ -284,13 +286,14 @@ definitions). pico is built on that, and keeps two things apart:
 - **What you want right now.** Config (model, thinking, selected tools, a profile) plus whatever
   the host has: cwd, skills, context files, the tool catalogue. The host answers a hook with it
   each turn. None of it is stored.
-- **What the model has been told.** `system` entries in the transcript: the baseline that opened the
-  current context and one entry per change delivered since. Immutable facts about requests that
-  happened, so they fork and compact like every other entry.
+- **What the model has been told.** `system` entries in the transcript: structured `data` for the
+  baseline or delta and the exact materialized `SystemMessage` in `model`. These are immutable facts
+  about requests that happened, so they fork and compact like every other entry.
 
-At the top of every turn the generation renders the first, folds the second out of the context,
-and appends the difference, if any, before it projects the request. The host keeps rendering "the
-whole prompt" the way it always did; the harness turns that into append-only deltas.
+At the top of every turn the generation renders the first, folds the second out of the context, and
+appends the difference, if any, with both its structured data and model message before it projects
+the request. The host keeps rendering "the whole prompt" the way it always did; the harness turns
+that into append-only deltas.
 
 ### Answering the Hook
 
@@ -318,9 +321,9 @@ After the first turn the transcript holds what was sent:
 12 assistant ...
 ```
 
-The tool definitions are stored in full, not as names. Rendering a persisted message may depend
-only on what is stored on it, so a later change to a tool's description is a change the model gets
-told about, and an old transcript renders the way it was sent.
+The tool definitions are stored in full, not as names, and the model message is materialized in the
+same append. A later change to a tool's description is therefore a change the model gets told about,
+and an old transcript is sent the way it was originally recorded without running entry-kind code.
 
 ### Changing the Loadout
 
@@ -436,7 +439,7 @@ const answer = await c.prompt('Inspect the parser');
 // AssistantEntry | undefined (the run ended without an answer: aborted, failed)
 ```
 
-The pieces are available separately, and they compose across retries. `accept` is idempotent by
+The pieces are available separately, and they work across retries. `accept` is idempotent by
 `requestId`, and `answerTo` finds the answer to an input however far the conversation has moved
 since, so a client that lost the reply can ask again:
 
@@ -622,7 +625,7 @@ await alt.prompt('Try a different implementation');
 const back = await c.fork(earlier.id, { abort: true });     // "go back": aborts the source's foreground first
 ```
 
-Any content entry is a valid fork point, including an assistant with unanswered tool calls or one
+Any transcript entry is a valid fork point, including an assistant with unanswered tool calls or one
 of several results. The request projection supplies missing results for a successful incomplete
 exchange without inheriting or executing the source tasks. Which conversation a UI treats as
 "current" is the UI's business; the harness only has conversations.
@@ -635,10 +638,11 @@ const children = await h.conversations({ parent: c.id });           // forks and
 
 ## Compaction and Reset
 
-Compaction appends a summary head whose content names the first retained entry. The context becomes
-the summary followed by the transcript from that entry. It runs as a background task and may run
-while the model keeps working: ordinary entries landing meanwhile remain after the prepared retained
-boundary. Only a competing head makes the summary stale; edit entries do not.
+Compaction appends a summary entry with its model message and first retained entry id stored on the
+entry. The context becomes the summary followed by the transcript from that boundary. It runs as a
+background task and may run while the model keeps working: ordinary entries landing meanwhile
+remain after the prepared boundary. Only a competing head makes the summary stale; edit entries do
+not.
 
 ```typescript
 const collapseId = await c.collapse();
@@ -752,7 +756,7 @@ inside it see committed state; ids are final when returned; a throw discards eve
 ```typescript
 const entry = await c.commit(tx => {
   tx.value(planMode).set(false);                                          // rewindable state first
-  const id = tx.entry(myPlugin.noteKind, { text: 'plan accepted' });
+  const id = tx.entry(myPlugin.noteKind, { data: { text: 'plan accepted' } });
   tx.value(expanded).set(true);                                           // sticky state may follow
   tx.task(myPlugin.reminderKind, { background: true,                      // tasks anywhere
     state: { about: id, at: Date.now() + 3600_000 } });
@@ -825,8 +829,9 @@ its own conversation through `ctx.conversation.commit(...)`: a job, a child conv
 Anything that is *about* the call rather than its output goes through `diag`: truncation, a spilled
 file, a corrected path, "the file changed on disk since you read it". The harness emits the ones it
 owns (the sink itself reports truncation and spill); a tool adds only what it alone knows.
-Projection puts the data first and the commentary after it, delimited, so the model can treat tool
-output as data, and a UI renders diagnostics as callouts by severity:
+Tool settlement puts the output first and the commentary after it and stores that exact message in
+entry `model`. Non-message details, usage, control flags, diagnostics and truncation metadata become
+entry `data`. A UI combines the two and renders diagnostics as callouts by severity:
 
 ```text
 ...last matching line
@@ -914,55 +919,77 @@ effects need their own idempotence.
 
 ## Writing Kinds
 
-Kinds are how you extend the harness with new behaviour rather than new state. An entry kind says
-what a kind of entry means to the model; a task kind says how a kind of work runs.
+Kinds are how you extend the harness with new behaviour rather than new state. An entry kind is a
+typed name for an immutable transcript shape; a task kind says how a kind of work runs.
 
 ### Entry Kinds
 
+Entry facets combine. `data` is optional kind-specific JSON for logic and custom UI rendering;
+`model` is an optional stored `Message[]`; `head` and `edits` are optional stored context controls.
+No facet is derived while reading.
+
 ```typescript
-interface NoteContent { text: string; pinned?: boolean }
+interface NoteData { text: string; pinned?: boolean }
+type NoteEntry = EntryBase & EntryData<NoteData>;
 
-// the model never sees this kind: no `project`
-export const noteKind = defineEntryKind<NoteContent>({ kind: 'myplugin.note' });
+export const noteKind = defineEntryKind<NoteEntry>('myplugin.note');
 
-// the model sees this one
-export const pinnedKind = defineEntryKind<NoteContent>({
-  kind: 'myplugin.pinned',
-  project: e => [{ role: 'user', content: `<pinned>${e.content.text}</pinned>`, timestamp: 0 }],
+await c.commit(tx => tx.entry(noteKind, {
+  data: { text: 'Parser plan accepted', pinned: false },
+}));                                                        // transcript/UI only; the model sees nothing
+```
+
+A plugin that wants both typed data and a model message keeps the append-time conversion in an
+ordinary helper:
+
+```typescript
+type PinnedEntry = EntryBase & EntryData<NoteData> & ModelProjection<UserMessage>;
+export const pinnedKind = defineEntryKind<PinnedEntry>('myplugin.pinned');
+
+function appendPinned(tx: ConversationTx, data: NoteData, timestamp: number): Id {
+  return tx.entry(pinnedKind, {
+    data,
+    model: [{ role: 'user', content: `<pinned>${data.text}</pinned>`, timestamp }],
+  });
+}
+```
+
+Heads and edits are supplied the same way:
+
+```typescript
+type WindowEntry = EntryBase & EntryData<{ retainFrom: Id }> & ContextHead;
+export const windowKind = defineEntryKind<WindowEntry>('myplugin.window');
+
+tx.entry(windowKind, {
+  data: { retainFrom },
+  head: retainFrom,                     // first retained entry, inclusive
 });
 
-// a head kind: prepend this entry, then retain the transcript from retainFrom
-export const windowKind = defineEntryKind<{ retainFrom: Id }>({
-  kind: 'myplugin.window',
-  head: entry => entry.content.retainFrom,
-});
+type ToolResultEditEntry = EntryBase & ContextEdits;
+export const toolResultEditKind = defineEntryKind<ToolResultEditEntry>('myplugin.tool_result_edit');
 
-type ToolResultEdit = { target: Id; messages?: Message[] };
-export const toolResultEditKind = defineEntryKind<ToolResultEdit>({
-  kind: 'myplugin.tool_result_edit',
-  edit: entry => entry.content.messages === undefined
-    ? [{ target: entry.content.target, action: 'omit' }]
-    : [{ target: entry.content.target, action: 'replace', messages: entry.content.messages }],
+tx.entry(toolResultEditKind, {
+  edits: replacement === undefined
+    ? [{ target, action: 'omit' }]
+    : [{ target, action: 'replace', messages: replacement }],
 });
 ```
 
-The presence of `head` makes writes of that kind persist `Entry.head = true`, which supports an
-indexed newest-head lookup. The function itself returns the first retained entry id. Commit
-validation requires that value not move before the previous visible head's returned value. The
-latest head is prepended and older heads are excluded from its retained range.
-
-`edit` interprets immutable entry content as projection operations. Edits are applied in transcript
-order; the newest edit for a target wins. They omit or replace individual retained projections
-without changing the target entry. There is no dynamic `compose`: append another head or edit when
-context should change.
+`head: 'self'` in an append draft stores the new entry id, which is how reset and handoff discard
+everything earlier. Commit validation requires a stored head boundary not to move before the
+previous visible boundary. Edits apply in transcript order; the newest edit per target wins. Append
+another head or edit when context should change; no entry-kind callback runs during context reads.
 
 Reads are typed by the kind, or untyped and narrowed:
 
 ```typescript
-const note = await h.getEntry(noteKind, id);     // Entry<NoteContent> | undefined (also undefined for another kind)
-const any = await h.getEntry(id);
-if (noteKind.is(any)) any.content.pinned;
+const note = await h.getEntry(noteKind, id);     // NoteEntry | undefined (also undefined for another kind)
+const any = await h.getEntry(id);                // Entry | undefined
+if (noteKind.is(any)) any.data.pinned;
 ```
+
+A missing plugin removes that narrowing and its custom renderer, but not context behavior: the
+entry's model messages, head and edits are stored independently of the kind.
 
 ### Task Kinds
 
@@ -985,7 +1012,7 @@ export const reminderKind = defineTaskKind({
     const { skip } = await ctx.hooks(reminderKind).run('before_fire', { about: task.state.about });
     await ctx.commit(tx => {
       if (!skip && !tx.getTask(task.id)!.abort)                                    // a marked task creates no successor
-        tx.entry(noticeKind, { text: `Reminder: see entry ${task.state.about}` });
+        tx.entry(noticeKind, { model: [noticeMessage(`Reminder: see entry ${task.state.about}`)] });
       tx.settle(task.id, 'done', { ...task.state, fired: !skip });
     });
   },

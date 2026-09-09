@@ -52,134 +52,157 @@ are never model input by themselves.
 ```ts
 type Id = number;                  // a session sequence number; one alias so the representation can change
 
-interface Entry<Content = JsonValue> {
-  readonly id: Id;                 // its sequence number
-  readonly conversationId: Id;
-  readonly kind: string;
-  readonly content: Content;
-  readonly key?: string;           // optional indexed key, e.g. the tool call a result answers
-  readonly head?: true;            // this kind is a context head; indexed
-  readonly byTaskId?: Id;          // which task wrote it
-}
-```
-
-Entries append. They are never patched, reordered or renumbered. Ids increase in transcript order
-but need not be consecutive.
-
-Kinds are code, not data: the built-ins are registered by `Harness.open`, plugins add theirs
-next to the task kinds (§5.2) and tools (§9.5). Storage sees only the `kind` string on each entry and never runs kind code; the scan
-and projection look the string up in the registry.
-
-```ts
 type ContextEdit =
   | { readonly target: Id; readonly action: "omit" }
   | { readonly target: Id; readonly action: "replace"; readonly messages: readonly Message[] };
 
-interface EntryKind<Content> {
+interface EntryIdentity {
+  readonly id: Id;                 // its sequence number
+  readonly conversationId: Id;
   readonly kind: string;
-  project?(entry: Entry<Content>): readonly Message[];      // absent: the model never sees this kind
-  head?(entry: Entry<Content>): Id;                         // first retained entry, inclusive
-  edit?(entry: Entry<Content>): readonly ContextEdit[];
-  is(entry: Entry): entry is Entry<Content>;
+  readonly byTaskId?: Id;          // which task wrote it
+}
+
+interface EntryBase extends EntryIdentity {
+  readonly key?: string;           // optional indexed key, e.g. the tool call a result answers
+}
+
+interface EntryData<Data extends JsonValue = JsonValue> {
+  readonly data: Data;             // kind-specific durable data; never model input by itself
+}
+
+interface ModelProjection<Model extends Message = Message> {
+  readonly model: readonly Model[]; // provider-neutral messages materialized at append
+}
+
+interface ContextHead {
+  readonly head: Id;               // first retained transcript entry, inclusive
+}
+
+interface ContextEdits {
+  readonly edits: readonly ContextEdit[];
+}
+
+type Entry = EntryBase & Partial<
+  EntryData & ModelProjection & ContextHead & ContextEdits
+>;
+
+type UserEntry = EntryBase & ModelProjection<UserMessage>;
+type AssistantEntry = EntryBase & ModelProjection<AssistantMessage>;
+
+interface SummaryData { readonly summarizedThrough: Id }
+type SummaryEntry = EntryBase & EntryData<SummaryData> & ModelProjection<UserMessage> & ContextHead;
+```
+
+The facets combine. A user entry may be only `EntryBase & ModelProjection<UserMessage>`; a tool
+result may also carry non-message `EntryData<ToolResultData>` for its renderer; a summary has data,
+a model projection and a head; a reset needs only a head. Entries append and are never patched,
+reordered or renumbered. Ids increase in transcript order but need not be consecutive.
+
+`model` is the exact provider-neutral message projection chosen by the writer. It is not the final
+provider request: context selection, edit folding, tool-exchange normalization and provider
+conversion still happen per request. `data` is optional arbitrary kind-specific JSON for typed
+logic and rendering. Nothing implicitly derives one from the other, so storing both never requires
+duplicating a message.
+
+An entry kind is only a name and type witness:
+
+```ts
+interface EntryKind<E extends Entry = Entry> {
+  readonly kind: string;
+  is(entry: Entry): entry is E;
 }
 ```
 
-`project` turns an entry into the messages the model receives. A kind without it is invisible to the
-model: it is in the transcript and never in the context.
+A plugin normally keeps append-time construction in a typed helper. It may compute `model`, `head`
+and `edits` from its data before calling `Tx.entry`, but no such computation is registered on the
+kind or run while reading. Asynchronous inputs are prepared before entering the commit line.
 
-A kind with `head` defines a context head. `Tx.entry` stores only `head: true`, so storage can index
-heads without understanding the kind. When deriving context, the harness calls `head(entry)` to get
-the first retained entry id, inclusive. A summary returns the first entry it did not summarize;
-`handoff` and `reset` return their own id, so nothing earlier is retained. A plugin can define its
-own head kind.
-
-For every new head:
+A stored `head` is the inclusive first retained entry id. Presence of the column marks and indexes
+the entry as a head. `Tx.entry` accepts `"self"` for reset and handoff drafts and stores the minted
+entry id. Every new head must satisfy:
 
 ```text
-newKind.head(newHead) >= oldKind.head(previousVisibleHead)
+newHead.head >= previousVisibleHead.head
 ```
 
-The commit line loads and interprets both entries and enforces this. Plugin code supplies the
-candidate but cannot move context backwards. Older heads are controls, not retained context entries:
-the newest head replaces them and carries any predecessor summary information it still needs.
+The commit line validates this directly from stored entries. A head cannot move context backwards.
+Older heads are controls, not retained context entries: the newest head replaces them and carries
+any predecessor summary information it still needs.
 
-A kind with `edit` defines a context edit. Its immutable entry content is interpreted as standard
-operations that omit or replace the projection of earlier visible entries. Edits are folded in
-transcript order; the newest applicable edit for a target wins. The target entry itself is never
-changed, and an edit whose target is outside the selected range is a no-op. Retained edit entries
-are applied again on later turns. Tool-result pruning and shortening are edits. Dynamic policies
-such as "always keep only the last N exchanges" are unsupported; code appends a new head or edit
-when it wants context to change. There is no `compose` callback.
+Stored `edits` omit or replace the model projection of earlier visible entries. Edits are folded in
+transcript order; the newest applicable edit for a target wins. The target entry is never changed,
+and an edit whose target is outside the selected range is a no-op. Retained edit entries apply again
+on later turns. Tool-result pruning and shortening are edits. Dynamic policies such as "always keep
+only the last N exchanges" are unsupported; code appends a new head or edit when context should
+change. There is no `compose` callback or read-time entry-kind behavior.
 
 The built-ins are `user`, `assistant`, `tool_result`, `system`, `notice`, `summary`, `handoff` and
-`reset`.
-All have `project` except `reset`, which starts an empty context; `handoff` starts a context with
-its own message; `system` projects to pi-ai's `SystemMessage`, each at its position in the
-transcript, so the prompt in force at any entry is on record and a provider's cached prefix is
-never rewritten:
+`reset`. Their writers materialize model messages when they append. `reset` stores no model;
+`handoff` stores its message and starts a context; `system` stores the exact pi-ai `SystemMessage`
+at its transcript position, so the prompt in force at any entry is on record and a provider's
+cached prefix is never rewritten:
 
 ```ts
-interface SystemContent {
+interface SystemData {
   readonly baseline?: true;              // opens an epoch (§8.2)
   readonly sections?: readonly { key: string; text: string }[];   // in render order; baseline: all; delta: the changed ones
   readonly toolsAdded?: readonly Tool[]; // complete definitions as sent, never names resolved later
   readonly toolsRemoved?: readonly Tool[];
 }
+
+type SystemEntry = EntryBase & EntryData<SystemData> & ModelProjection<SystemMessage>;
 ```
 
-Definitions are stored, not looked up, and sections are stored in the order they were rendered,
-because rendering a persisted message must depend only on what is stored on it; a changed
-description, schema or section order is therefore a delta like any other. `project` turns the
-entry into pi-ai's `SystemMessage` at request time: a baseline's sections into the top-level prompt
-(or one system message where there is no baseline slot), a delta's into "the `plan_mode` guidance
-now applies: …" with `toolsAdded`/`toolsRemoved` attached. Plugin-defined kinds usually have no `project`. The
-kind is the type witness for reads and writes, so nothing is cast and nothing is validated:
-stored objects are trusted (§7.3), and a kind that changes its shape ships a migration.
+Definitions and sections are stored in `data` for the next generation's structured comparison and
+in the materialized message in `model`. A changed description, schema or section order is therefore
+a delta like any other. Plugin-defined entries omit `model` when the model should not see them.
+The kind types reads and writes; stored objects are trusted after wire validation (§7.3), and a kind
+that changes its data shape ships a migration.
 
 ```ts
-tx.entry(toolResultKind, conversationId, content);                  // content: ToolResultContent
-const e = await harness.getEntry(summaryKind, id);                  // Entry<SummaryContent>
-const any = await harness.getEntry(id);                             // Entry<JsonValue>
-if (summaryKind.is(any)) any.content.through;                       // narrowed
+type ToolResultEntry = EntryBase & EntryData<ToolResultData> & ModelProjection<ToolResultMessage>;
+const toolResultKind = defineEntryKind<ToolResultEntry>("tool_result");
+
+tx.entry(toolResultKind, conversationId, { data: resultData, model: [message], key: callId });
+const e = await harness.getEntry(summaryKind, id);                  // SummaryEntry | undefined
+const any = await harness.getEntry(id);                             // Entry | undefined
+if (summaryKind.is(any)) any.data.summarizedThrough;                // narrowed
 ```
 
-The kind is optional on reads: without it you get the untyped entry, and `kind.is(entry)` narrows
-it. A typed read of an entry of another kind returns `undefined`, the same as a missing entry;
-batched reads omit it.
-
-Open checks the set of entry kinds ever written against the registry: on SQLite that is a `kinds`
-table with one row per distinct kind, filled by `INSERT OR IGNORE` in the commit that first uses a
-kind; on JSONL and memory it falls out of the replay open does anyway. No scan of entries; an
-unknown kind rejects before anything runs.
+Without a kind, a read returns the untyped entry. A typed read of another kind returns `undefined`,
+the same as a missing entry; batched reads omit it. The session records the distinct kind strings
+without scanning entries. Open reports an unregistered entry kind but does not reject: stored
+`model`, `head` and `edits` preserve context, while only kind-specific typing and rendering are
+unavailable.
 
 ### 2.2 Context is derived, not stored
 
 The generation derives context from the transcript:
 
 ```text
-H       = newest head visible at the request/fork target       (one indexed query)
-from    = no H → transcript start; otherwise kind(H).head(H)
+H       = newest entry with stored `head` visible at the request/fork target
+from    = no H → transcript start; otherwise H.head
 range   = fork-aware transcript entries from `from` through target, inclusive
-controls= fold edit entries in transcript order
+controls= fold stored `edits` in transcript order
 context = no H → eligible range entries
           H exists → H, then eligible range entries excluding every head
           omitted targets disappear; replaced targets keep their id and use replacement messages
-messages= project through each entry's kind; normalize tool exchanges for the selected model
+messages= concatenate stored `model` arrays; normalize tool exchanges for the selected model
 ```
 
-Edit entries are controls and do not project unless their kind separately defines `project`.
-Entries whose kind has neither control behavior nor `project` contribute nothing. Existing tool
-results are placed with their calls in call order. For a successful assistant cut before all its
-results, request-local pi-ai transformation supplies missing results; results beyond the fork cutoff
-and source tasks are never inherited. Error/aborted assistant outputs are excluded from subsequent
-requests and never create tool tasks/results.
+An entry without `model` contributes no messages. An edit entry may independently have a model
+projection. Existing tool results are placed with their calls in call order. For a successful
+assistant cut before all its results, request-local pi-ai transformation supplies missing results;
+results beyond the fork cutoff and source tasks are never inherited. Error/aborted assistant
+outputs are excluded from subsequent requests and never create tool tasks/results.
 
 No context list is stored, so nothing can drift from the transcript. A conversation handle keeps an
 optional process-local cache of the current derived entries, candidate membership and winning edits.
-`contextEntries(through)` loads it once, catches it up with entries after its cursor, slices it when
-a new head arrives and folds new edits. Generation tasks receive that handle; `ConversationView`
-exposes the resulting context ids. A historical target older than the cache is derived separately
-and does not rewind it. Each request receives an immutable snapshot.
+`contextEntries(through)` loads it once, catches it up with entries after its cursor, slices it from
+the stored boundary when a new head arrives and folds stored edits. Generation tasks receive that
+handle; `ConversationView` exposes the resulting context ids. A historical target older than the
+cache is derived separately and does not rewind it. Each request receives an immutable snapshot.
 
 On a cold handle, cost is the fork-aware candidate range plus edit folding and fork depth, not
 necessarily the final projected-message count. Memory and JSONL answer from their in-memory indexes;
@@ -188,12 +211,11 @@ convenience owned by the handle and may be garbage-collected with it; the transc
 
 ### 2.3 Compaction and reset
 
-**Compaction** appends one summary head. Its typed content names the first retained entry, and its
-kind returns that id:
+**Compaction** appends one summary with a stored model projection and head boundary:
 
 ```text
 transcript  [10 user, 20 asst, 30 user, 40 asst]         context [10, 20, 30, 40]
-append      50 summary { retainFrom: 30 }, head:true
+append      50 summary { model:[summary], head:30 }
 scan        [30 user, 40 asst, 50 summary]
 context     [50 summary, 30 user, 40 asst]
 ```
@@ -205,9 +227,9 @@ may still land later: ordinary entries appended while it runs are at or after it
 boundary and remain in the range. Only a competing head invalidates it; intervening context edits
 do not (§8.4).
 
-**Reset** appends a `handoff` head (with a message the model sees) or a `reset` head (nothing).
-Their `head(entry)` returns `entry.id`. The transcript keeps everything. Reset by itself neither
-cancels tasks nor requests a response.
+**Reset** appends a `handoff` head with `model` or a `reset` head without it. Both pass
+`head: "self"` to `Tx.entry`, which stores the new entry id as the boundary. The transcript keeps
+everything. Reset by itself neither cancels tasks nor requests a response.
 
 ### 2.4 Forks share history, not future changes
 
@@ -254,7 +276,7 @@ One session-wide sequence orders every mutation. A creation's sequence number is
 // last committed: 99
 const entryId = await conv.commit(tx => {
   tx.value(planMode).set(true);                                             // 100
-  const id = tx.entry(userKind, message);                                   // 101
+  const id = tx.entry(userKind, { model: [message] });                      // 101
   tx.task(generationKind, { state: { input: id } });                       // 102
   return id;
 });
@@ -280,7 +302,7 @@ history through X:
 // tool settlement, one commit
 await ctx.commit(tx => {
   tx.value(planMode).set(true);                             // 300
-  const result = tx.entry(toolResultKind, content);         // 301
+  const result = tx.entry(toolResultKind, { data: resultData, model: [message] }); // 301
   tx.settle(task, { result });                              // 302
 });
 
@@ -294,7 +316,7 @@ before persistence and consumes no ids. Session state and sticky conversation st
 anywhere because forks do not reconstruct their history, so they may reference ids minted earlier
 in the same commit. Tasks also go anywhere; they are not inherited by forks and usually come after
 the entries they name. Historical reads (§4) take an entry as their position; "before the first
-entry" is the empty position. Any content entry is a valid fork point, including an assistant call
+entry" is the empty position. Any transcript entry is a valid fork point, including an assistant call
 or one of several tool results. Projection repairs the resulting successful incomplete exchange for
 the request only; it never inherits or executes the source tasks.
 
@@ -423,7 +445,7 @@ const partial = await ctx.scratch(sc => sc.list(frames).read());
 
 // settlement: the result becomes an entry; settle retires the scope in the same commit
 await ctx.commit(tx => {
-  const id = tx.entry(assistantKind, assemble(partial));
+  const id = tx.entry(assistantKind, { model: [assemble(partial)] });
   tx.settle(task, { result: id });
 });
 ```
@@ -587,7 +609,7 @@ The generation's settlement publishes the exchange atomically:
 
 ```ts
 await ctx.commit(tx => {
-  const assistant = tx.entry(assistantKind, message);                 // calls [A, B]
+  const assistant = tx.entry(assistantKind, { model: [message] });    // calls [A, B]
   const tools = message.calls.map(call =>
     tx.task(toolKind, { state: { call, assistant } }));
   tx.task(postToolsKind, { after: tools, state: { assistant, tools } });
@@ -610,7 +632,9 @@ async execute(task, ctx) {
     const selectedTools = added.length ? [...current, ...added] : current;
     if (added.length) tx.value(generationKind.config.selectedTools).set(selectedTools);
     const handoff = outcomes.find(o => o.handoff);
-    if (handoff) tx.entry(handoffKind, handoff.handoff);
+    if (handoff) tx.entry(handoffKind, {
+      data: { text: handoff.handoff }, model: [handoffMessage(handoff.handoff)], head: "self",
+    });
     landSteering(tx, task.conversationId);                           // §8.1
     tx.task(generationKind, { state: nextGeneration(task, { selectedTools }) });
     tx.settle(task, {});
@@ -824,9 +848,10 @@ successor. Background work: `abortTask(job)`, or `abort(childConversation)` for 
 
 ### 6.4 Open, close, shutdown, delete
 
-**Open** opens storage, checks the set of entry kinds written (§2.1) and the live tasks' kinds
-against the registry, exposes `inspect()` (live tasks by role) and queries,
-starts nothing. **Close** stops admitting commits, cancels owned executions, waits for them and for
+**Open** opens storage, reports unregistered entry kind strings (§2.1), checks live task kinds
+against the registry, exposes `inspect()` (live tasks by role) and queries, and starts nothing.
+Unknown entries remain fully usable for context from their stored facets; an unknown live task kind
+still rejects. **Close** stops admitting commits, cancels owned executions, waits for them and for
 admitted persistence, releases storage; it writes no outcomes, so unfinished work resumes on the
 next open. **Shutdown** marks all live work, drains queued input, drives cancellation to settlement,
 then closes. **Delete** of a conversation rejects while its ownership subtree has live work, then
@@ -889,7 +914,7 @@ interface TaskQuery         extends Cursor { readonly conversationIds: readonly 
 interface ListQuery         extends Cursor { readonly at?: Id }                   // at = an entry id (§3.2)
 interface ValueQuery        { readonly scope: Scope; readonly namespace: string; readonly after?: string; readonly limit: number }  // keys, ordered
 
-type EntryHeader = Omit<Entry, "content">;
+type EntryHeader = Omit<Entry, "data">;  // context fields without arbitrary plugin data
 interface Version<T>  { readonly seq: Id; readonly value: T }
 interface Element<T>  { readonly id: Id; readonly value: T }
 
@@ -924,7 +949,7 @@ Pages carry a cursor and the sequence they were read at. Transcript reads are lo
 reads: they combine each fork's capped source prefix with local entries, carrying every ancestor
 cutoff recursively. `from` and `through` are inclusive entry positions in that logical transcript;
 source entries after a fork point never appear. `newestHead(conversationId, at)` applies the same
-cutoffs and returns the newest visible `head:true` entry at or before `at`. Rewindable conversation
+cutoffs and returns the newest visible entry with `head` at or before `at`. Rewindable conversation
 state follows the same ancestor cutoffs. Session state stays current; sticky conversation state is
 copied from current state only when the fork explicitly selects it. Tasks are never inherited.
 Historical reads on sticky or scratch addresses reject. Coherent multi-read operations run on the
@@ -963,11 +988,11 @@ from there; the line guarantees nothing landed in between, so storage numbering 
 storage check that for free. The harness validates against
 committed state plus earlier writes in the batch (kinds validate status transitions; the harness
 enforces ownership, dependencies, exchange rules and admission; nobody validates payload shapes:
-stored objects are trusted, and schema validation belongs at wire boundaries). For a `head:true`
-entry, validation calls its kind's `head(entry)`, requires the returned id to be visible, and requires
-it to be at or after the previous fork-visible head kind's returned id. Edit targets must be earlier
-visible entries. Storage checks scope, sequences and structure, prepares only touched data, persists
-atomically, publishes. A commit with no writes writes nothing.
+stored objects are trusted, and schema validation belongs at wire boundaries). For an entry with
+`head`, validation requires the stored id to be visible and at or after the previous fork-visible
+head's stored boundary. Stored edit targets must be earlier visible entries. No entry-kind code runs.
+Storage checks scope, sequences and structure, prepares only touched data, persists atomically,
+publishes. A commit with no writes writes nothing.
 
 ### 7.4 Memory and JSONL
 
@@ -979,7 +1004,7 @@ one line per batch:
 ```json
 {"first":100,"writes":[
   {"type":"value.set","conversationId":1,"namespace":"plugin.plan","value":true},
-  {"type":"entry","conversationId":1,"kind":"user","content":"Inspect"},
+  {"type":"entry","conversationId":1,"kind":"user","model":[{"role":"user","content":"Inspect","timestamp":0}]},
   {"type":"task","conversationId":1,"kind":"generation","status":"pending"}]}
 ```
 
@@ -1005,12 +1030,15 @@ must never remove a deliberately reused scope.
 
 Tables: conversations, entries, tasks (current records including terminal), values and
 value_versions, list_elements and clear_markers, scratch, commit_boundaries, kinds (one row per
-distinct entry kind), session_metadata (storage version, §6.5). Keys start with the session id. Indexes follow the
-query table: entries by (conversation, id), (conversation, kind, key, id) and a partial index
-(conversation, id) where head is set; tasks by (role, id) and (conversation, role, id) with a
+distinct entry kind), session_metadata (storage version, §6.5). An entry row has nullable JSON
+columns for `data`, `model` and `edits`, plus a nullable integer `head`; storage understands those
+core fields but never a plugin's data shape. Keys start with the session id. Indexes follow the query
+table: entries by (conversation, id), (conversation, kind, key, id) and a partial index
+(conversation, id) where head is not null; tasks by (role, id) and (conversation, role, id) with a
 partial index on non-terminal roles; value_versions by (conversation, namespace, key, seq);
-conversations by parent and by owner. One commit is one transaction: number the writes from `lastSeq + 1`,
-insert rows, record the boundary, advance `lastSeq`. No full rewrite of anything per append.
+conversations by parent and by owner. One commit is one transaction: number the writes from
+`lastSeq + 1`, insert rows, record the boundary, advance `lastSeq`. No full rewrite of anything per
+append.
 
 Values are stored whole, current and historical: a point read must not become a replay chain, and
 disk is cheaper than that. Scratch is rows in the `scratch` table keyed by (task, address), written
@@ -1064,7 +1092,7 @@ execute:     if a collapse is needed by threshold: { create collapse C; create g
                        none of the inputs is stored
              sent    = the newest baseline `system` entry in the context plus the deltas after it;
                        deltas before it (kept by a compaction) are subsumed and ignored, by the fold
-                       and by projection alike
+                       and by request projection alike
              { if no sent: system entry with the baseline (text + full tool definitions);
                else if sent ≠ desired: system entry with the diff, per section ("the plan_mode guidance
                now applies: …", "the cwd section changed: …") and toolsAdded / toolsRemoved as full
@@ -1091,10 +1119,10 @@ The generation diffs the two at the top of every turn and writes only the delta.
 handoff, reset) starts a new epoch: the context has no baseline after it, so the next generation
 writes a fresh one, and any older delta a compaction kept is subsumed by it and dropped at projection; a fork carries
 the sent-state in its prefix and diffs against its own config; a restart with a changed host
-emits "these sections now apply" and nothing else. Projection puts the epoch's baseline in the
-provider's baseline slot, later entries as system messages at their positions, and the folded tool
-set as the callable list, or folds everything into one top-level prompt on providers without
-native system messages.
+emits "these sections now apply" and nothing else. Request projection puts the epoch's stored
+baseline message in the provider's baseline slot, later stored system messages at their positions,
+and the folded tool set as the callable list, or folds
+everything into one top-level prompt on providers without native system messages.
 
 One task lives through retries and deferral; retries share a budget carried in state. Overflow
 does not keep the generation alive: it settles and hands the retry to the collapse's settlement,
@@ -1177,7 +1205,7 @@ create:   capture the prefix to replace (ending on a complete exchange), its fir
 execute:  { status summarizing }
           before_collapse (may decline or supply the summary); call the summarizer; candidate to scratch
           { if no head newer than the captured one:
-              append summary { retainFrom:firstRetained }, whose kind marks it head:true; settle done
+              append summary { model:[summary], head:firstRetained }; settle done
             else: settle failed(stale) }
 ```
 
@@ -1187,8 +1215,8 @@ but do not invalidate or recompute the summary. A summary may land while a gener
 since the stream already projected its context and the replaced prefix is old. Automatic collapses
 (threshold, overflow) are foreground; manual ones are background. A collapse never creates a
 generation except through the settlement chain in §8.2. Abort records usage and settles without
-publishing. Prefix pruning/windowing uses another head kind; pruning or replacing individual
-retained entries uses edit entries (§2.1). Dynamic `compose` policies are unsupported.
+publishing. Prefix pruning/windowing appends another entry with a stored head; pruning or replacing
+individual retained entries uses edit entries (§2.1). Dynamic `compose` policies are unsupported.
 
 ### 8.5 Subagents
 
@@ -1280,7 +1308,9 @@ const jobKind: TaskKind<JobState> = {
       if (ctx.signal.aborted) return tx.settle(task.id, "killed", { ...task.state, output });
       const r = getOrThrow(result);
       if (task.state.notify)                     // the call that started it returned early (§9.3): tell the model
-        tx.entry(noticeKind, { text: `job ${task.id} (${task.state.origin?.tool}: ${task.state.cmd.join(" ")}) finished, exit ${r.exitCode}` });
+        tx.entry(noticeKind, {
+          model: [noticeMessage(`job ${task.id} (${task.state.origin?.tool}: ${task.state.cmd.join(" ")}) finished, exit ${r.exitCode}`)],
+        });
       if (task.state.every)                      // recurring: same task, next time
         tx.patch(task.id, { status: "planned", state: { ...task.state, notBefore: Date.now() + task.state.every } });
       else
@@ -1297,8 +1327,8 @@ shell doesn't hand out an adoptable process, recover reruns if the job declared 
 otherwise settles `lost`. A recurring job is the same task looping `planned → running → planned`;
 `abortTask(id)` ends it wherever it is. Output stays in scratch while it runs and in the terminal state
 after, where `jobOutput`, the `job` tool and UIs read it; there is no result entry, since a call that
-waited already carries the output. A job whose call returned early appends a `notice` entry (a kind
-that projects to a `SystemMessage`) when it finishes, so the next generation learns of it without
+waited already carries the output. A job whose call returned early appends a `notice` entry with a stored `SystemMessage` when it
+finishes, so the next generation learns of it without
 polling. Interval and catch-up policy are in state,
 so a restart never launches a backlog.
 
@@ -1419,20 +1449,35 @@ the same answer however far the conversation has moved since. Nothing else maps 
 ```ts
 const entryId = await harness.commit(tx => {
   tx.value(planMode).set(true);                              // state first (§3.2)
-  const id = tx.entry(noteKind, conversationId, content);    // final id, inside the closure
+  const id = tx.entry(noteKind, conversationId, {
+    data: { text: "plan accepted" },
+    model: [{ role: "user", content: "<note>plan accepted</note>", timestamp: 0 }],
+  });                                                       // final id, inside the closure
   tx.task(reminderKind, { background: true, state: { about: id } });
-  return id;                                                 // any value; resolved after commit
+  return id;                                                // any value; resolved after commit
 });
 ```
 
 ```ts
+type EntryInput<E extends Entry> =
+  Omit<E, keyof EntryIdentity | "head"> &
+  (E extends ContextHead ? { readonly head: Id | "self" } : { readonly head?: never });
+
+interface EntryDraft {
+  readonly key?: string;
+  readonly data?: JsonValue;
+  readonly model?: readonly Message[];
+  readonly head?: Id | "self";
+  readonly edits?: readonly ContextEdit[];
+}
+
 interface Tx {
   // reads (committed state)
   getEntry(id) / getEntry(kind, id) / getEntries(...) / getTask(id) / getTask(kind, id) / getTasks(...)
   value<T>(addr: Value<T>): { get(at?): T | undefined; set(v: T): void; delete(): void };
   list<T>(addr: List<T>): { append(v: T): Id; remove(id: Id): void; clear(): void; read(q): Page<T> };
   // writes; rewindable conversation state before entries (§3.2)
-  entry<C>(kind: EntryKind<C>, conversationId: Id, content: C): Id;
+  entry<E extends Entry>(kind: EntryKind<E>, conversationId: Id, input: EntryInput<E>): Id;
   task<S>(kind: TaskKind<S>, spec: { state: S; after?: Id[]; background?: true; owns?: Id[] }): Id;
   patch<S>(task: Task<S> | Id, changes: { status?: string; state?: Partial<S> }): void;
   settle<S>(task: Task<S> | Id, outcome: Partial<S> & { status?: string }): void;   // terminal; retires scratch
@@ -1473,12 +1518,13 @@ class Tx {
     };
   }
 
-  entry<C>(kind: EntryKind<C>, conversationId: number, content: C): number {
+  entry(kind: EntryKind, conversationId: number, draft: EntryDraft): number {
     this.sawEntry = true;
     const id = this.seq + 1;
-    const entry: Entry<C> = {
-      id, conversationId, kind: kind.kind, content,
-      ...(kind.head === undefined ? {} : { head: true }),
+    const { head, ...fields } = draft;
+    const entry: Entry = {
+      id, conversationId, kind: kind.kind, ...fields,
+      ...(head === "self" ? { head: id } : head === undefined ? {} : { head }),
     };
     this.push({ type: "entry", entry });
     return id;
@@ -1556,7 +1602,7 @@ interface ToolContext {
   jobOutput(id: Id): Promise<ToolOutputState & { exitCode?: number }>;                    // preview or terminal state
 }
 
-// what the sink folds to; recorded on the tool task and the tool_result entry at settlement
+// what the live sink folds to; recorded on the tool task and used to build the result entry
 interface ToolOutputState {
   content: (TextContent | ImageContent)[];
   details: JsonValue;
@@ -1568,6 +1614,8 @@ interface ToolOutputState {
   diags: readonly { severity: "info" | "warn" | "error"; message: string; code?: string }[];
   truncation: ShellOutputTruncation;                 // totals over everything ever written
 }
+
+type ToolResultData = Omit<ToolOutputState, "content">;
 ```
 
 `execute` returns nothing and reports failure by throwing; the harness sets `isError` when it
@@ -1582,8 +1630,8 @@ spilled to a file, the path was resolved differently, the file changed on disk s
 the search stopped at 500 matches) goes through `out.diag`, never into the text the model reads as
 the tool's data. The harness emits the ones it owns: the sink calls `diag` itself when it truncates
 or spills, the path resolver when it corrects a path, the blocking budget when a call continues as
-a job. A tool adds only what it alone knows. Projection renders the data first and the diagnostics
-after it, delimited:
+a job. A tool adds only what it alone knows. Tool settlement renders the data first and the
+diagnostics after it, delimited, and stores that message on the result entry:
 
 ```text
 …last line of the file
@@ -1594,8 +1642,10 @@ after it, delimited:
 
 so the model can parse tool output as data, a plugin can post-process it without stripping notices
 it doesn't know, and a UI renders diagnostics as callouts by severity. `isError` says whether the
-call failed; a `warn` diag does not change it. The transcript records exactly the commentary the
-model saw, because it is in the entry's `ToolOutputState`.
+call failed; a `warn` diag does not change it. Tool settlement stores the exact rendered result as
+entry `model`; the non-message fields of `ToolOutputState` become `ToolResultData` for typed logic
+and rendering. The transcript therefore records exactly the commentary the model saw without
+copying the message into `data`.
 
 ### 9.4 Watch
 
@@ -1754,12 +1804,12 @@ h.kinds.generation;  h.kinds.tool;  h.kinds.postTools;  h.kinds.collapse;  h.kin
 
 The built-in entry kinds (`user`, `assistant`, `tool_result`, `system`, `notice`, `summary`,
 `handoff`, `reset`) and task kinds (`generation`, `tool`, `post_tools`, `collapse`, `job`) are
-registered by `open` itself, because `accept`, `prompt`, `steer` and `collapse` cannot work without
-them. A replacement is registered under the built-in's name and must understand its persisted
-statuses and keep its hook names, so existing handlers keep working; a wrapper that delegates to
-the original is the usual shape. `h.kinds.<name>` is how handles and plugins refer to whatever is
-currently registered, so `c.settings` is the config of the generation kind in use, not of a
-specific import.
+registered by `open` itself, because `accept`, `prompt`, `steer` and `collapse` need them to write
+and type new records. Reading context does not need entry kinds. A task-kind replacement is
+registered under the built-in's name and must understand its persisted statuses and keep its hook
+names, so existing handlers keep working; a wrapper that delegates to the original is the usual
+shape. `h.kinds.<name>` is how handles and plugins refer to whatever is currently registered, so
+`c.settings` is the config of the generation kind in use, not of a specific import.
 
 `Harness.open` takes storage, models, tools, additional kinds, replacements and initial root values; it creates
 the root only for empty storage and never creates work on reopen.
