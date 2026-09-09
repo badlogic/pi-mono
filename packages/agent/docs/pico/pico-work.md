@@ -13,8 +13,8 @@ shows the surface each package has to end up with.
 
 `Id`, `EntryIdentity`, `EntryBase`, the composable `EntryData` / `ModelProjection` /
 `ContextHead` / `ContextEdits` facets, `Entry`, `EntryKind`, `EntryInput`, `ContextEdit`, `Task`,
-`TaskRole`, `Conversation`, `Address`/`Value`/`List`/`Scope`, `Write`/`CommitBatch`, `Page`/`Cursor`
-and the query shapes (§2, §4.1, §5.1, §7.2–7.3). No code.
+`TaskRole`, stored task roles, `Conversation`, `Address`/`Value`/`List`/`Scope`,
+`Write`/`CommitBatch`, `Page`/`Cursor` and the query shapes (§2, §4.1, §5.1, §7.2–7.3). No code.
 
 Test: it compiles; fixtures cover entries with no data, no model, every individual facet and the
 built-in facet combinations.
@@ -35,8 +35,9 @@ live-task scan decodes no terminal rows; `remove` and `clear` hide by position.
 `commit(plan)` on a serialized line: buffered writes, ids final at call time, rewindable
 conversation value/list writes after an entry throw, a throwing plan discards everything, publish
 after persist, `kick` when a batch touched a task. Session and sticky conversation state, task
-writes and conversation writes may appear anywhere. `value` / `list` / `entry` / `task` / `patch` /
-`settle` build the batch of §7.3.
+writes and conversation writes may appear anywhere. `task` / `patch` / `settle` materialize the role
+from the kind's status map. `value` / `list` / `entry` / `task` / `patch` / `settle` build the batch
+of §7.3.
 
 Tests: concurrent commits serialize; a rejected commit consumes no ids; each builder verb produces
 the expected write; reads inside a plan see committed state only; session and sticky conversation
@@ -69,15 +70,18 @@ results but inherit no tasks; state committed after the entry (a model change) i
 
 ## 6. Task kinds and the driver
 
-`TaskKind`, the registry, `TaskContext` (`commit`, `scratch`, `sleep`, `signal`, `config`,
-`hooks`), the driver of §6.1 (`owned`, `Wake`, attached scopes, `drive` as a waiter, poison guards,
-abort join and re-read), scopes of §6.2. Test kinds only: a counter, a blocker, a kind that
-returns without changing status, a kind that ignores its signal.
+`TaskKind`, the registry, kind-declared status cycles, `TaskContext` (`commit`, `scratch`, `sleep`,
+`signal`, `config`, `hooks`), the driver of §6.1 (`owned`, `Wake`, attached scopes, `drive` as a
+waiter, unchanged-status and poison guards, abort join and re-read), scopes of §6.2. Test kinds only:
+a counter, a blocker, a cycling schedule, a kind that returns without changing status, a kind that
+ignores its signal. There is no parked role or successor chain for retries.
 
-Tests: roles drive execute / recover; a blocked execute holds nothing up; the spin guard; `after`
-gates a start; `drive` resolves on foreground idle while a background task keeps running and the
-loop keeps serving it; abort marks in both race orders; reopen recovers inflight; a mark written
-by one process is applied by the next.
+Tests: persisted roles select execute / recover without a role-map lookup; a blocked execute holds
+nothing up; a valid status cycle; the exact unchanged-status guard; `after` gates a start;
+conversation and harness drive both start foreground/background work, resolve on foreground idle
+and keep serving background work; a full-quiescence wait remains pending on a recurring schedule;
+abort marks in both race orders; reopen recovers inflight; a mark written by one process is applied
+by the next.
 
 ## 7. Scratch
 
@@ -100,8 +104,9 @@ harness-wide ones, innermost last.
 
 ## 9. Generation kind
 
-Statuses pending → streaming → done / failed / retry_wait / deferred / aborted on a faux provider;
-config capture (model, thinking, selected tools, profile, budget); `system_instructions` with
+One stable generation task cycles pending → streaming → retry_wait / deferred → streaming until
+done / failed / aborted on a faux provider; config capture (model, thinking, selected tools, profile,
+budget); `system_instructions` with
 sections merged across handlers and the diff writing `system` data plus its materialized model
 message; `before_request`,
 `after_response`, `on_yield`; retry sleeps in execute; recover from frames; usage recorded per
@@ -160,8 +165,9 @@ delegating first and waiting with the budget, `notify` and the `notice` entry, t
 schedules.
 
 Tests: budget expiry settles the call with `delegated` and the job continues; the notice appears
-on completion; a schedule loops and `abortTask` ends it; recover → `lost` or rerun by policy; a
-user abort during the wait kills a non-backgrounded job.
+on completion; a schedule cycles one stable task id and `abortTask` ends it; it does not block
+ordinary harness drive after foreground idle; recover → `lost` or rerun by policy; a user abort
+during the wait kills a non-backgrounded job.
 
 ## 15. Previews
 

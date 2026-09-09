@@ -206,9 +206,10 @@ const { start, inflight } = await h.inspect();
 
 ### What Happens on Reopen
 
-Nothing, until something drives a conversation. `h.drive()` recovers and continues everything;
-`c.drive()` does it for one conversation and the conversations its tasks own. A UI usually attaches
-a watch to what it shows and drives that.
+Nothing, until something drives a conversation. `h.drive()` starts and recovers eligible foreground
+and background work across the session; `c.drive()` does the same for one conversation's ownership
+scope. Each promise resolves when its scope has no live foreground task. Its attached background
+work remains served afterwards. A UI usually attaches a watch to what it shows and drives that.
 
 ```typescript
 const h = await Harness.open(storage, opts);
@@ -449,9 +450,11 @@ const outcome = await c.drive();                       // 'idle' | 'closed'
 const answer = await c.answerTo(entryId);              // last assistant entry after it, before the next user entry
 ```
 
-`drive` resolves when the conversation's foreground is idle: no generation, tool or automatic
-collapse is live. Background work (a spawned subagent, a job) keeps running and doesn't keep
-`drive` waiting. `h.drive()` waits for everything.
+`c.drive()` resolves when the conversation's foreground set is idle: no generation, tool or
+automatic collapse in that ownership chain is live. `h.drive()` resolves when no foreground task is
+live anywhere in the session. Both start eligible background work and keep serving it after they
+resolve. A separate full-quiescence wait may intentionally never return while a recurring schedule
+is live.
 
 ### Input While Busy
 
@@ -993,7 +996,12 @@ entry's model messages, head and edits are stored independently of the kind.
 
 ### Task Kinds
 
-A task kind declares its statuses and their roles, its config, its hooks, and three functions.
+A task kind declares its statuses and their roles, its config, its hooks, and three functions. Task
+writes materialize the mapped role on the durable task row; storage and the driver read that field
+without running kind code. Status graphs may contain cycles because one task is one logical
+operation: retries, deferred polls and recurring schedules keep their stable task id. Recovery uses
+only the current status, state, role and scratch.
+
 Here is a reminder that fires once:
 
 ```typescript
@@ -1030,7 +1038,8 @@ The rules an execution follows, and the driver enforces:
    crash after goes through `recover`.
 2. You may block on the world: a provider stream, a process, a child conversation, a sleep. The
    driver runs executions concurrently; a blocked one holds up nothing.
-3. Change your status or settle before returning. Returning unchanged is reported as a bug.
+3. Change your status or settle before returning. Returning unchanged is reported as a precise
+   contract violation; the driver does not try to diagnose changing but buggy status cycles.
 4. Never wait on another task. Depend on it at creation (`after`), or let it be a conversation you
    drive.
 

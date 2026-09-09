@@ -478,6 +478,7 @@ interface Task<State = JsonValue> {
   readonly conversationId: Id;
   readonly kind: string;
   readonly status: string;              // kind-specific
+  readonly role: TaskRole;              // materialized from the kind's roles map on every write
   readonly state: State;                // JSON
   readonly after: readonly Id[];        // dependencies, fixed at creation
   readonly background?: true;           // fixed at creation; absent = foreground (§5.6)
@@ -494,8 +495,9 @@ inflight   intent was committed; call recover  generation: streaming;  job: runn
 terminal   done; never patched again           generation: done, failed, aborted
 ```
 
-Storage indexes the role so "live tasks in this scope" is one query that decodes no state. Role is
-derived from status on every write; it is not editable on its own.
+`Tx.task`, `patch` and `settle` derive the role from the registered kind's status map and persist it
+on every write. Storage indexes the stored role, so "live tasks in this scope" is one query that
+decodes no state and does not need kind code. Callers cannot edit the role independently.
 
 ### 5.2 Kinds
 
@@ -591,9 +593,16 @@ Four rules, and they are the whole contract:
    (§8.5), or a process you wait for.
 
 Timing is the task's business: a retry stores `notBefore` in its state and sleeps in its own
-execute (`ctx.sleep`, which throws on abort). Not everything on the signal throws: pi-ai's provider stream
-completes with `stopReason: "aborted"`, and the generation settles from that in-band (§8.2). A recurring job sets its next `notBefore` and
-returns in a start status. The scheduler has no timers.
+execute (`ctx.sleep`, which throws on abort). Not everything on the signal throws: pi-ai's provider
+stream completes with `stopReason: "aborted"`, and the generation settles from that in-band (§8.2).
+A recurring job sets its next `notBefore` and returns in a start status. The scheduler has no timers.
+
+A task is one logical operation, not one attempt. Its declared status graph may contain cycles: a
+generation revisits `streaming` across retries and deferred polls, and a schedule loops from
+`planned` through `running` back to `planned` under one stable id. Recovery uses only the current
+status, state, role and scratch; it does not reconstruct the path taken. Returning with the same
+status is still a contract violation caught by the driver, but changing statuses is not a generic
+proof of progress and the harness does not try to diagnose a bad cycle.
 
 ### 5.4 Dependencies mean terminal, not successful
 
@@ -704,10 +713,10 @@ class Driver {
         if (this.owned.has(task.id)) continue;
         const kind = this.kinds.get(task.kind)!;
         if (task.abort)                                  this.run(task, kind, "abort");
-        else if (kind.roles[task.status] === "start") {
+        else if (task.role === "start") {
           if (await this.allTerminal(task.after))        this.run(task, kind, "execute");
         }
-        else if (kind.roles[task.status] === "inflight") this.run(task, kind, "recover");
+        else if (task.role === "inflight")              this.run(task, kind, "recover");
       }
 
       this.waiters = this.waiters.filter(w => !(w.scope.isIdle(live) && (w.resolve("idle"), true)));
@@ -745,7 +754,7 @@ class Driver {
   }
 
   private allTerminal(ids: readonly number[]) { /* batched getTasks; every role terminal */ }
-  private roleOf(t: Task) { return this.kinds.get(t.kind)!.roles[t.status]; }
+  private roleOf(t: Task) { return t.role; }
   private poison(id: Id) { /* remember id; skip it in later passes */ }
 }
 ```
@@ -810,20 +819,22 @@ const conversationScope = (root: Id): Scope => ({
   isIdle: live => !live.some(t => t.conversationId === root && !t.background),
 });
 
-// harness.drive(): every conversation, done when nothing at all is live
+// harness.drive(): every conversation, done when no foreground task is live anywhere
 const sessionScope: Scope = {
   conversations: async () => (await storage.scanConversations({})).items.map(c => c.id),
-  isIdle: live => live.length === 0,
+  isIdle: live => !live.some(t => !t.background),
 };
 ```
 
 `ownedFrom: c` is "conversations whose `owner` task belongs to c", one indexed query.
 
-Forks are not reached through ownership, so nothing drives them by accident; each is its own
-tree. A running background job keeps `harness.drive()` unresolved, which is what "running" means. Both
-return `closed` if the harness closes first. There is no "suspended": a task waiting on the world
-is an owned execution, and a host that doesn't want some work to proceed in this process doesn't
-drive that scope.
+Forks are not reached through ownership, so nothing drives them by accident; each is its own tree.
+Both drive methods start eligible foreground and background tasks in their scope, resolve when that
+scope's foreground set is empty, and keep serving its attached background work afterwards. A
+session-wide full-quiescence wait, if provided, may remain pending forever while a recurring
+schedule is live. Both drive methods return `closed` if the harness closes first. There is no
+"suspended": a task waiting on the world is an owned execution, and a host that doesn't want some
+work to proceed in this process doesn't drive that scope.
 
 ### 6.3 Cancellation is a mark, then cleanup
 
@@ -971,8 +982,8 @@ type MainWrite =
   | { type: "deleteConversation"; id: number }
   | { type: "entry";   entry: Entry }
   | { type: "task";    task: Task }
-  | { type: "patch";   id: number; status?: string; state?: JsonValue; abort?: true }
-  | { type: "settle";  id: number; status: string; state: JsonValue };     // also retires scratch
+  | { type: "patch";   id: number; status?: string; role?: TaskRole; state?: JsonValue; abort?: true }
+  | { type: "settle";  id: number; status: string; role: "terminal"; state: JsonValue }; // also retires scratch
 
 type CommitBatch =
   | { readonly kind: "main";    readonly writes: readonly MainWrite[] }
@@ -1531,11 +1542,20 @@ class Tx {
   }
   task<S>(kind: TaskKind<S>, spec: { conversationId: number; state: S; after?: number[]; background?: true; owns?: number[] }): number {
     const id = this.seq + 1;
-    this.push({ type: "task", task: { id, kind: kind.kind, status: kind.initialStatus, ...spec } });
+    const status = kind.initialStatus;
+    const role = getOrThrow(kind.roles[status]);
+    this.push({ type: "task", task: { id, kind: kind.kind, status, role, ...spec } });
     return id;
   }
-  patch(id: number, changes: { status?: string; state?: JsonValue; abort?: true }) { this.push({ type: "patch", id, ...changes }); }
-  settle(id: number, status: string, state: JsonValue) { this.push({ type: "settle", id, status, state }); }
+  patch(id: number, changes: { status?: string; state?: JsonValue; abort?: true }) {
+    const role = changes.status === undefined ? {} : { role: this.roleFor(id, changes.status) };
+    this.push({ type: "patch", id, ...changes, ...role });
+  }
+  settle(id: number, status: string, state: JsonValue) {
+    if (this.roleFor(id, status) !== "terminal") throw new Error(`${status} is not terminal`);
+    this.push({ type: "settle", id, status, role: "terminal", state });
+  }
+  private roleFor(id: number, status: string): TaskRole { /* task kind from the transaction view; reject unknown status */ }
 
   getTask = this.storage.getTask; getTasks = this.storage.getTasks;   // reads: committed state
   getEntry = this.storage.getEntry; getEntries = this.storage.getEntries;
@@ -1786,7 +1806,7 @@ await h.drive();                                                  // drives the 
 console.log(await h.conversation(child));
 
 const alt = await c.fork({ atEntry: answer.id });
-await alt.prompt("Try a different implementation");               // source stays parked
+await alt.prompt("Try a different implementation");               // source remains untouched
 
 w.unsubscribe(); await h.close();
 ```
