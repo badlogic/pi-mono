@@ -354,6 +354,22 @@ describe("SettingsManager", () => {
 		});
 	});
 
+	describe("retry settings", () => {
+		it("defaults and overrides agent retry delay cap", () => {
+			expect(SettingsManager.inMemory().getRetrySettings()).toEqual({
+				enabled: true,
+				maxRetries: 3,
+				baseDelayMs: 2000,
+				maxAgentDelayMs: 60000,
+			});
+			expect(
+				SettingsManager.inMemory({
+					retry: { enabled: true, maxRetries: 10, baseDelayMs: 500, maxAgentDelayMs: 5000 },
+				}).getRetrySettings(),
+			).toEqual({ enabled: true, maxRetries: 10, baseDelayMs: 500, maxAgentDelayMs: 5000 });
+		});
+	});
+
 	describe("httpIdleTimeoutMs", () => {
 		it("should default to 5 minutes", () => {
 			const manager = SettingsManager.create(projectDir, agentDir);
