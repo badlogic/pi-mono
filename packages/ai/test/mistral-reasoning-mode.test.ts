@@ -99,6 +99,26 @@ describe("Mistral reasoning mode selection", () => {
 		expect(payload.promptMode).toBeUndefined();
 	});
 
+	// Mistral-hosted GLM must use reasoning_effort, not Magistral's prompt_mode:
+	// Mistral's API silently ignores prompt_mode for these models, so thinking
+	// would never be requested and the model answers inline with no thinking
+	// blocks and no reasoning tokens in usage.
+	describe("zai-glm-5-2", () => {
+		it("uses reasoning_effort when thinking is enabled", async () => {
+			const payload = await capturePayload(makeModel("zai-glm-5-2", true), { reasoning: "medium" });
+
+			expect(payload.reasoningEffort).toBe("high");
+			expect(payload.promptMode).toBeUndefined();
+		});
+
+		it("omits reasoning controls when thinking is off", async () => {
+			const payload = await capturePayload(makeModel("zai-glm-5-2", true));
+
+			expect(payload.reasoningEffort).toBeUndefined();
+			expect(payload.promptMode).toBeUndefined();
+		});
+	});
+
 	it("uses the session id as prompt cache key", async () => {
 		const payload = await capturePayload(makeModel("mistral-large-latest", false), {
 			sessionId: "session-123",

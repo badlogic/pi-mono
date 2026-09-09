@@ -892,7 +892,13 @@ function buildToolResultText(text: string, hasImages: boolean, supportsImages: b
 
 function usesReasoningEffort(model: Model<"mistral-conversations">): boolean {
 	return (
-		model.id === "mistral-small-2603" || model.id === "mistral-small-latest" || model.id.startsWith("mistral-medium-")
+		model.id === "mistral-small-2603" ||
+		model.id === "mistral-small-latest" ||
+		model.id.startsWith("mistral-medium-") ||
+		// Mistral-hosted GLM (zai-glm-5-2) only honors reasoning via
+		// reasoning_effort; prompt_mode is silently ignored for these models
+		// (no thinking items, no reasoning tokens in usage).
+		model.id === "zai-glm-5-2"
 	);
 }
 
