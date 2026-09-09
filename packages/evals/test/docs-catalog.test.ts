@@ -54,6 +54,43 @@ describe("loadDocumentationCatalog", () => {
 		});
 	});
 
+	it("loads recursive navigation sections and pages", () => {
+		const root = createDocumentationFixture({
+			"docs.json": catalogJson([
+				{
+					title: "Guides",
+					items: [
+						{
+							title: "Using Pi",
+							items: [
+								{
+									title: "Models",
+									path: "models.md",
+									items: [{ title: "llama.cpp", path: "llama-cpp.md" }],
+								},
+							],
+						},
+					],
+				},
+			]),
+			"models.md": "# Models\n",
+			"llama-cpp.md": "# llama.cpp\n",
+		});
+
+		expect(loadDocumentationCatalog(join(root, "docs.json")).navigation[0]?.items).toEqual([
+			{
+				title: "Using Pi",
+				items: [
+					{
+						title: "Models",
+						path: "models.md",
+						items: [{ title: "llama.cpp", path: "llama-cpp.md" }],
+					},
+				],
+			},
+		]);
+	});
+
 	it("rejects missing documentation files", () => {
 		const root = createDocumentationFixture({
 			"docs.json": catalogJson([

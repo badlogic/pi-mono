@@ -3,7 +3,7 @@ import { Type } from "@earendil-works/pi-ai";
 import { defineTool } from "@earendil-works/pi-coding-agent";
 import { expect } from "vitest";
 import { describeEval, toolCalls } from "vitest-evals";
-import { loadDocumentationCatalog } from "./docs-catalog.ts";
+import { documentationCatalogPages, loadDocumentationCatalog } from "./docs-catalog.ts";
 import { createPiCodingAgentHarness } from "./pi-harness.ts";
 
 const SUBMIT_AUDIT_TOOL_NAME = "submit_documentation_audit";
@@ -34,10 +34,7 @@ const submitDocumentationAuditTool = defineTool({
 const repositoryRoot = resolve(import.meta.dirname, "../../..");
 const docsRoot = resolve(repositoryRoot, "packages/coding-agent/docs");
 const documentationCatalog = loadDocumentationCatalog(resolve(docsRoot, "docs.json"));
-const documentationPages = [
-	...documentationCatalog.navigation.flatMap(({ items }) => items),
-	...documentationCatalog.unlisted,
-];
+const documentationPages = documentationCatalogPages(documentationCatalog);
 const documentationAuditHarness = createPiCodingAgentHarness({
 	name: "documentation-page-audit",
 	tools: ["read", "grep", "find", "ls", SUBMIT_AUDIT_TOOL_NAME],
