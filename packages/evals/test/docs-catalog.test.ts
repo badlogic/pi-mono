@@ -1,11 +1,9 @@
-import { mkdirSync, mkdtempSync, readdirSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { dirname, join, relative, resolve } from "node:path";
+import { dirname, join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { loadDocumentationCatalog } from "../src/docs-catalog.ts";
 
-const repositoryRoot = resolve(import.meta.dirname, "../../..");
-const codingAgentDocsRoot = resolve(repositoryRoot, "packages/coding-agent/docs");
 const temporaryDirectories: string[] = [];
 
 afterEach(() => {
@@ -25,85 +23,167 @@ function createDocumentationFixture(files: Record<string, string>): string {
 	return root;
 }
 
-function listMarkdownFiles(root: string, directory: string = root): string[] {
-	const paths: string[] = [];
-	for (const entry of readdirSync(directory, { withFileTypes: true })) {
-		const path = join(directory, entry.name);
-		if (entry.isDirectory()) {
-			paths.push(...listMarkdownFiles(root, path));
-		} else if (entry.isFile() && entry.name.endsWith(".md")) {
-			paths.push(relative(root, path).replaceAll("\\", "/"));
-		}
-	}
-	return paths.sort();
+function catalogJson(navigation: unknown, unlisted: unknown = []): string {
+	return `${JSON.stringify({ schemaVersion: 1, navigation, unlisted }, null, 2)}\n`;
 }
 
 describe("loadDocumentationCatalog", () => {
-	const invalidCatalogFixtures: Array<{
-		condition: string;
-		files: Record<string, string>;
-		error: string;
-	}> = [
-		{
-			condition: "missing pages",
-			files: { "contents.md": "- [Missing](missing.md)\n" },
-			error: "Missing documentation page: missing.md",
-		},
-		{
-			condition: "duplicate page entries",
-			files: {
-				"contents.md": "- [First](guide.md)\n- [Second](guide.md)\n",
-				"guide.md": "# Guide\n",
-			},
-			error: "Duplicate documentation page: guide.md",
-		},
-		{
-			condition: "paths outside the documentation root",
-			files: { "contents.md": "- [Outside](../outside.md)\n" },
-			error: "Documentation link escapes the documentation root",
-		},
-	];
-
-	it("builds the page inventory from the supplied Markdown file", () => {
+	it("loads valid groups, labels, paths, and ordering", () => {
 		const root = createDocumentationFixture({
-			"contents.md": [
-				"# Documentation",
-				"",
-				"- [Guide](guide.md) - Guide description.",
-				"- [SDK quickstart](sdk/quickstart.md)",
-				"",
-				"An unrelated [draft](draft.md) is not a catalog entry.",
-				"- [Website](https://example.com/docs.md)",
-				"```md",
-				"- [Example only](missing.md)",
-				"```",
-			].join("\n"),
+			"docs.json": JSON.stringify({
+				schemaVersion: 1,
+				navigation: [
+					{ title: "Start here", items: [{ title: "Overview", path: "index.md" }] },
+					{ title: "Reference", items: [{ title: "Guide", path: "guide.md" }] },
+				],
+				unlisted: [{ title: "Internal", path: "internal.md" }],
+				redirects: [{ from: "old.md", to: "guide.md" }],
+			}),
+			"index.md": "# Overview\n",
 			"guide.md": "# Guide\n",
-			"sdk/quickstart.md": "# SDK quickstart\n",
+			"internal.md": "# Internal\n",
 		});
 
-		expect(loadDocumentationCatalog(join(root, "contents.md"))).toEqual([
-			{ relativePath: "guide.md" },
-			{ relativePath: "sdk/quickstart.md" },
-		]);
+		expect(loadDocumentationCatalog(join(root, "docs.json"))).toEqual({
+			schemaVersion: 1,
+			navigation: [
+				{ title: "Start here", items: [{ title: "Overview", path: "index.md" }] },
+				{ title: "Reference", items: [{ title: "Guide", path: "guide.md" }] },
+			],
+			unlisted: [{ title: "Internal", path: "internal.md" }],
+		});
 	});
 
-	it.each(invalidCatalogFixtures)("rejects $condition", ({ files, error }) => {
-		const root = createDocumentationFixture(files);
+	it("rejects missing documentation files", () => {
+		const root = createDocumentationFixture({
+			"docs.json": catalogJson([
+				{
+					title: "Docs",
+					items: [
+						{ title: "Overview", path: "index.md" },
+						{ title: "Missing", path: "missing.md" },
+					],
+				},
+			]),
+			"index.md": "# Overview\n",
+		});
 
-		expect(() => loadDocumentationCatalog(join(root, "contents.md"))).toThrow(error);
+		expect(() => loadDocumentationCatalog(join(root, "docs.json"))).toThrow(
+			"Missing documentation files: missing.md",
+		);
 	});
-});
 
-describe("coding-agent documentation", () => {
-	it("lists every Markdown document in the catalog", () => {
-		const catalogPath = join(codingAgentDocsRoot, "index.md");
-		const pages = loadDocumentationCatalog(catalogPath);
-		const catalogedFiles = [
-			relative(codingAgentDocsRoot, catalogPath),
-			...pages.map(({ relativePath }) => relativePath),
-		].sort();
+	it("rejects uncataloged Markdown files in sorted order", () => {
+		const root = createDocumentationFixture({
+			"docs.json": catalogJson([{ title: "Docs", items: [{ title: "Overview", path: "index.md" }] }]),
+			"index.md": "# Overview\n",
+			"z.md": "# Z\n",
+			"a.md": "# A\n",
+		});
 
-		expect(catalogedFiles).toEqual(listMarkdownFiles(codingAgentDocsRoot));
+		expect(() => loadDocumentationCatalog(join(root, "docs.json"))).toThrow("Uncataloged Markdown files: a.md, z.md");
+	});
+
+	it("rejects duplicate catalog entries", () => {
+		const root = createDocumentationFixture({
+			"docs.json": catalogJson(
+				[{ title: "Docs", items: [{ title: "First", path: "index.md" }] }],
+				[{ title: "Second", path: "index.md" }],
+			),
+			"index.md": "# Overview\n",
+		});
+
+		expect(() => loadDocumentationCatalog(join(root, "docs.json"))).toThrow(
+			"Duplicate documentation paths: index.md",
+		);
+	});
+
+	it.each([
+		["../outside.md", "relative normalized .md path"],
+		["/absolute.md", "relative normalized .md path"],
+		["./index.md", "relative normalized .md path"],
+		["guide.txt", "relative normalized .md path"],
+		["", "must be a nonempty string"],
+	])("rejects invalid documentation path %j", (path, error) => {
+		const root = createDocumentationFixture({
+			"docs.json": catalogJson([{ title: "Docs", items: [{ title: "Page", path }] }]),
+		});
+
+		expect(() => loadDocumentationCatalog(join(root, "docs.json"))).toThrow(error);
+	});
+
+	it.each([
+		["the root type", [], "Documentation catalog must be an object"],
+		[
+			"unsupported fields",
+			{ schemaVersion: 1, navigation: [], extra: true },
+			"Documentation catalog has unsupported fields: extra",
+		],
+		["the schema version", { schemaVersion: 2, navigation: [] }, "schemaVersion must be 1"],
+		["the navigation type", { schemaVersion: 1, navigation: {} }, "navigation must be an array"],
+		[
+			"the unlisted type",
+			{ schemaVersion: 1, navigation: [], unlisted: {} },
+			"Documentation catalog unlisted must be an array",
+		],
+		[
+			"the group shape",
+			{ schemaVersion: 1, navigation: [null] },
+			"Documentation catalog navigation[0] must be an object",
+		],
+		[
+			"the items type",
+			{ schemaVersion: 1, navigation: [{ title: "Docs", items: {} }] },
+			"Documentation catalog navigation[0].items must be an array",
+		],
+		[
+			"the item shape",
+			{ schemaVersion: 1, navigation: [{ title: "Docs", items: [null] }] },
+			"Documentation catalog navigation[0].items[0] must be an object",
+		],
+		[
+			"an empty group title",
+			{ schemaVersion: 1, navigation: [{ title: " ", items: [] }] },
+			"navigation[0].title must be a nonempty string",
+		],
+		[
+			"an empty item title",
+			{ schemaVersion: 1, navigation: [{ title: "Docs", items: [{ title: "", path: "index.md" }] }] },
+			"navigation[0].items[0].title must be a nonempty string",
+		],
+	])("rejects malformed schema: %s", (_condition, catalog, error) => {
+		const root = createDocumentationFixture({ "docs.json": JSON.stringify(catalog) });
+
+		expect(() => loadDocumentationCatalog(join(root, "docs.json"))).toThrow(error);
+	});
+
+	it("rejects duplicate public slugs", () => {
+		const root = createDocumentationFixture({
+			"docs.json": catalogJson(
+				[
+					{
+						title: "Docs",
+						items: [
+							{ title: "Overview", path: "index.md" },
+							{ title: "Foo", path: "foo.md" },
+						],
+					},
+				],
+				[{ title: "Foo index", path: "foo/index.md" }],
+			),
+			"index.md": "# Overview\n",
+			"foo.md": "# Foo\n",
+			"foo/index.md": "# Foo index\n",
+		});
+
+		expect(() => loadDocumentationCatalog(join(root, "docs.json"))).toThrow(
+			"Duplicate public documentation slugs: foo (foo.md, foo/index.md)",
+		);
+	});
+
+	it("rejects malformed JSON without fallback parsing", () => {
+		const root = createDocumentationFixture({ "docs.json": "{" });
+
+		expect(() => loadDocumentationCatalog(join(root, "docs.json"))).toThrow(SyntaxError);
 	});
 });

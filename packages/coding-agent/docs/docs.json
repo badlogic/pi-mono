@@ -1,4 +1,5 @@
 {
+  "schemaVersion": 1,
   "navigation": [
     {
       "title": "Start here",
@@ -82,6 +83,10 @@
       "title": "Reference",
       "items": [
         {
+          "title": "Environment Variables",
+          "path": "environment-variables.md"
+        },
+        {
           "title": "Session Format",
           "path": "session-format.md"
         }
@@ -141,6 +146,12 @@
           "path": "development.md"
         }
       ]
+    }
+  ],
+  "unlisted": [
+    {
+      "title": "llama.cpp",
+      "path": "llama-cpp.md"
     }
   ],
   "redirects": [
