@@ -27,7 +27,7 @@ describe("Editor prompt history keybindings", () => {
 
 		editor.handleInput("\x10"); // Ctrl+P
 		assert.strictEqual(editor.getText(), "newer\nmultiline prompt");
-		assert.deepStrictEqual(editor.getCursor(), { line: 0, col: 0 });
+		assert.deepStrictEqual(editor.getCursor(), { line: 1, col: 16 });
 
 		editor.handleInput("\x10"); // Ctrl+P
 		assert.strictEqual(editor.getText(), "older prompt");

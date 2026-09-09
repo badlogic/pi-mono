@@ -125,7 +125,7 @@ describe("Editor component", () => {
 			assert.strictEqual(editor.getText(), "draft");
 		});
 
-		it("exits history mode when typing a character", () => {
+		it("places typed characters after a retrieved history entry", () => {
 			const editor = new Editor(createTestTUI(), defaultEditorTheme);
 
 			editor.addToHistory("old prompt");
@@ -133,7 +133,7 @@ describe("Editor component", () => {
 			editor.handleInput("\x1b[A"); // Up - shows "old prompt"
 			editor.handleInput("x"); // Type a character - exits history mode
 
-			assert.strictEqual(editor.getText(), "xold prompt");
+			assert.strictEqual(editor.getText(), "old promptx");
 		});
 
 		it("exits history mode on setText", () => {
@@ -233,19 +233,14 @@ describe("Editor component", () => {
 			assert.strictEqual(editor.getText(), "prompt 5");
 		});
 
-		it("places cursor at start after browsing history upward", () => {
+		it("places cursor at end after browsing history upward", () => {
 			const editor = new Editor(createTestTUI(), defaultEditorTheme);
 
-			editor.addToHistory("older entry");
 			editor.addToHistory("line1\nline2\nline3");
 
-			editor.handleInput("\x1b[A"); // Up - shows multi-line entry at start
+			editor.handleInput("\x1b[A"); // Up - shows multi-line entry at end
 			assert.strictEqual(editor.getText(), "line1\nline2\nline3");
-			assert.deepStrictEqual(editor.getCursor(), { line: 0, col: 0 });
-
-			editor.handleInput("\x1b[A"); // Up again - immediately navigates to older entry
-			assert.strictEqual(editor.getText(), "older entry");
-			assert.deepStrictEqual(editor.getCursor(), { line: 0, col: 0 });
+			assert.deepStrictEqual(editor.getCursor(), { line: 2, col: 5 });
 		});
 
 		it("places cursor at end after browsing history downward", () => {
@@ -267,20 +262,16 @@ describe("Editor component", () => {
 			assert.strictEqual(editor.getText(), "newer entry");
 		});
 
-		it("allows opposite-direction cursor movement within multi-line history entry", () => {
+		it("uses Down to leave a recovered multi-line history entry", () => {
 			const editor = new Editor(createTestTUI(), defaultEditorTheme);
 
 			editor.addToHistory("line1\nline2\nline3");
 
-			editor.handleInput("\x1b[A"); // Up - shows entry at start
-			assert.deepStrictEqual(editor.getCursor(), { line: 0, col: 0 });
+			editor.handleInput("\x1b[A"); // Up - shows entry at end
+			assert.deepStrictEqual(editor.getCursor(), { line: 2, col: 5 });
 
-			editor.handleInput("\x1b[B"); // Down - cursor moves to line2
-			assert.strictEqual(editor.getText(), "line1\nline2\nline3");
-			assert.deepStrictEqual(editor.getCursor(), { line: 1, col: 0 });
-
-			editor.handleInput("\x1b[A"); // Up - cursor moves back to line1
-			assert.strictEqual(editor.getText(), "line1\nline2\nline3");
+			editor.handleInput("\x1b[B"); // Down - restores draft
+			assert.strictEqual(editor.getText(), "");
 			assert.deepStrictEqual(editor.getCursor(), { line: 0, col: 0 });
 		});
 	});
