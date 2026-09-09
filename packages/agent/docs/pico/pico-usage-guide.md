@@ -69,9 +69,11 @@ conversation has three things:
 - **state**: keyed **values** and **lists**, for the model in use, plan mode, a game board, whatever
   a plugin needs to remember.
 
-What the model sees, the **context**, is not stored; it is derived from the transcript: the newest
-"head" entry (a summary, a handoff, a reset) and everything after it. Compaction is appending a
-head. That is why forks, compaction and reset never edit anything.
+What the model sees, the **context**, is not stored. The newest **head** supplies a replacement
+(summary, handoff or nothing) and the first retained transcript entry. The harness prepends that
+head, reads forward from the retained entry, applies immutable **edit** entries that omit or replace
+individual projections, then projects messages. Compaction appends a head; tool-result pruning
+appends an edit. Forks, compaction and reset never mutate old entries.
 
 Every id is a session sequence number, minted when the write is built and never changed:
 
@@ -473,10 +475,11 @@ await c.abort();          // every live foreground task of this conversation, an
 await h.abortTask(id);    // one background task: a job, a schedule
 ```
 
-An abort is a durable mark on the task, then cleanup: the generation publishes what it had, tools
-write error results for their calls, a subagent tool aborts its child. If the process dies between
-the mark and the cleanup, the next one finishes it. Queued `steer` and `followUp` are dropped by
-`abort`; `write` and `nextRun` stay.
+An abort is a durable mark on the task, then cleanup: a generation may retain its partial for the
+UI but creates no tool tasks/results and is excluded from later requests; tool tasks that already
+exist write their own error results; a subagent tool aborts its child. If the process dies between
+the mark and cleanup, the next one finishes it. Queued `steer` and `followUp` are dropped by `abort`;
+`write` and `nextRun` stay.
 
 ## Watching
 
@@ -522,7 +525,7 @@ type ConversationEvent =
   | { type: 'task_output'; task: Id; ops: DeltaOp[] }      // already applied to view.previews
   | { type: 'value';       addr: Address; value: JsonValue | undefined }
   | { type: 'inbox';       items: Element<InboxItem>[] }
-  | { type: 'context';     ids: Id[] }                      // a head landed
+  | { type: 'context';     ids: Id[] }                      // a head or edit changed derived context
   | { type: 'fault';       error: unknown }
   | { type: 'closed' };
 ```
@@ -619,9 +622,10 @@ await alt.prompt('Try a different implementation');
 const back = await c.fork(earlier.id, { abort: true });     // "go back": aborts the source's foreground first
 ```
 
-Forking at an assistant entry whose tool calls aren't answered yet is refused (the fork would end
-mid-exchange); fork at the last result instead. Which conversation a UI treats as "current" is the
-UI's business; the harness only has conversations.
+Any content entry is a valid fork point, including an assistant with unanswered tool calls or one
+of several results. The request projection supplies missing results for a successful incomplete
+exchange without inheriting or executing the source tasks. Which conversation a UI treats as
+"current" is the UI's business; the harness only has conversations.
 
 ```typescript
 const all = await h.conversations();
@@ -631,10 +635,10 @@ const children = await h.conversations({ parent: c.id });           // forks and
 
 ## Compaction and Reset
 
-Compaction appends a summary entry that replaces a prefix; the summary is a head, so the context
-becomes the summary plus what came after the replaced prefix. It runs as a background task and may
-run while the model keeps working: whatever lands meanwhile has higher ids than the summary's
-reach and stays in context.
+Compaction appends a summary head whose content names the first retained entry. The context becomes
+the summary followed by the transcript from that entry. It runs as a background task and may run
+while the model keeps working: ordinary entries landing meanwhile remain after the prepared retained
+boundary. Only a competing head makes the summary stale; edit entries do not.
 
 ```typescript
 const collapseId = await c.collapse();
@@ -747,17 +751,20 @@ inside it see committed state; ids are final when returned; a throw discards eve
 
 ```typescript
 const entry = await c.commit(tx => {
-  tx.value(planMode).set(false);                                          // state first
-  const id = tx.entry(myPlugin.noteKind, { text: 'plan accepted' });      // then entries
-  tx.task(myPlugin.reminderKind, { background: true,                       // tasks anywhere
+  tx.value(planMode).set(false);                                          // rewindable state first
+  const id = tx.entry(myPlugin.noteKind, { text: 'plan accepted' });
+  tx.value(expanded).set(true);                                           // sticky state may follow
+  tx.task(myPlugin.reminderKind, { background: true,                      // tasks anywhere
     state: { about: id, at: Date.now() + 3600_000 } });
   return id;
 });
 ```
 
-One rule: in a commit, state writes come before entries. A fork at an entry is "everything up to
-that id", and that is what makes the state a command wrote alongside its entry part of the fork,
-and state committed later not.
+One rule: rewindable conversation value/list writes must precede entries in the same commit. That
+makes state written alongside an entry visible to a fork at that entry while excluding later
+commits. Session state and sticky conversation state may appear anywhere because forks never
+reconstruct their history; they may therefore reference a new entry id. Tasks may also appear
+anywhere. A violating builder call throws before anything is persisted.
 
 ## Writing Tools
 
@@ -924,17 +931,30 @@ export const pinnedKind = defineEntryKind<NoteContent>({
   project: e => [{ role: 'user', content: `<pinned>${e.content.text}</pinned>`, timestamp: 0 }],
 });
 
-// a head kind: a context that starts here and keeps only what follows (a window, no summary)
-export const windowKind = defineEntryKind<{ through: Id }>({
+// a head kind: prepend this entry, then retain the transcript from retainFrom
+export const windowKind = defineEntryKind<{ retainFrom: Id }>({
   kind: 'myplugin.window',
-  head: content => content.through,       // entries after this id are in context; the window entry itself projects nothing
+  head: entry => entry.content.retainFrom,
+});
+
+type ToolResultEdit = { target: Id; messages?: Message[] };
+export const toolResultEditKind = defineEntryKind<ToolResultEdit>({
+  kind: 'myplugin.tool_result_edit',
+  edit: entry => entry.content.messages === undefined
+    ? [{ target: entry.content.target, action: 'omit' }]
+    : [{ target: entry.content.target, action: 'replace', messages: entry.content.messages }],
 });
 ```
 
-`head` runs once, at append, and the number it returns is stored and indexed, which is how the
-context is found without scanning. A head kind that wants to reshape what follows (drop old tool
-results, shorten one) adds `compose(head, tail)`, which runs in memory on the already-bounded
-range.
+The presence of `head` makes writes of that kind persist `Entry.head = true`, which supports an
+indexed newest-head lookup. The function itself returns the first retained entry id. Commit
+validation requires that value not move before the previous visible head's returned value. The
+latest head is prepended and older heads are excluded from its retained range.
+
+`edit` interprets immutable entry content as projection operations. Edits are applied in transcript
+order; the newest edit for a target wins. They omit or replace individual retained projections
+without changing the target entry. There is no dynamic `compose`: append another head or edit when
+context should change.
 
 Reads are typed by the kind, or untyped and narrowed:
 

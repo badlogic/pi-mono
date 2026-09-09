@@ -11,47 +11,55 @@ shows the surface each package has to end up with.
 
 ## 1. Types and ids
 
-`Id`, `Entry`, `Task`, `TaskRole`, `Conversation`, `Address`/`Value`/`List`/`Scope`,
-`Write`/`CommitBatch`, `Page`/`Cursor` and the query shapes (§2, §4.1, §5.1, §7.2–7.3). No code.
+`Id`, `Entry`, `EntryKind`, `ContextEdit`, `Task`, `TaskRole`, `Conversation`,
+`Address`/`Value`/`List`/`Scope`, `Write`/`CommitBatch`, `Page`/`Cursor` and the query shapes
+(§2, §4.1, §5.1, §7.2–7.3). No code.
 
 Test: it compiles; a fixture file with one instance of every record shape.
 
 ## 2. Memory storage
 
-`Storage` and `MemoryStorage`: `commit` numbering from `lastSeq`, point reads, `scanEntries` /
-`scanTasks` / `scanConversations` with cursors, `newestHead`, value versions and list elements read
-at a position, `ownedFrom`, the set of entry kinds written.
+`Storage` and `MemoryStorage`: `commit` numbering from `lastSeq`, point reads, fork-aware
+`scanEntries` / `scanTasks` / `scanConversations` with cursors, target-capped `newestHead`, value
+versions and list elements read at a position, `ownedFrom`, the set of entry kinds written.
 
 Tests: every row of the §7.2 query table against hand-built batches; ids are `lastSeq + 1 + i`; a
 live-task scan decodes no terminal rows; `remove` and `clear` hide by position.
 
 ## 3. The line and `Tx`
 
-`commit(plan)` on a serialized line: buffered writes, ids final at call time, state-before-entries
-throws, a throwing plan discards everything, publish after persist, `kick` when a batch touched a
-task. `value` / `list` / `entry` / `task` / `patch` / `settle` build the batch of §7.3.
+`commit(plan)` on a serialized line: buffered writes, ids final at call time, rewindable
+conversation value/list writes after an entry throw, a throwing plan discards everything, publish
+after persist, `kick` when a batch touched a task. Session and sticky conversation state, task
+writes and conversation writes may appear anywhere. `value` / `list` / `entry` / `task` / `patch` /
+`settle` build the batch of §7.3.
 
 Tests: concurrent commits serialize; a rejected commit consumes no ids; each builder verb produces
-the expected write; reads inside a plan see committed state only.
+the expected write; reads inside a plan see committed state only; session and sticky conversation
+writes may follow and reference a new entry; rewindable value set/delete and list
+append/remove/clear after an entry each reject.
 
 ## 4. Entry kinds and context
 
 `EntryKind`, the registry, the built-in kinds (`user`, `assistant`, `tool_result`, `system`,
-`notice`, `summary`, `handoff`, `reset`) with `project` and `head`; context = newest head + range;
-`compose`; projection to pi-ai messages with tool results ordered by call index; the `system`
-kind's epoch fold (newest baseline plus the deltas after it, older deltas dropped) and its
-projection into the baseline slot / `SystemMessage`s.
+`notice`, `summary`, `handoff`, `reset`) with `project`, `head` and `edit`; context = newest head
+prepended to the fork-aware range from its returned id, older heads excluded, edits folded in
+transcript order; projection to pi-ai messages with tool results ordered by call index; the `system`
+kind's epoch fold (newest baseline plus the deltas after it, older deltas dropped) and its projection
+into the baseline slot / `SystemMessage`s. No `compose`.
 
-Tests: summary keeps the tail; handoff and reset; repeated compaction subsumes; a head number below
-the previous head's id is rejected; the fold on a context that kept an old delta; tool-result order.
+Tests: summary keeps the tail; handoff and reset; repeated compaction subsumes; a returned head id
+below the previous visible head kind's returned id is rejected; edits omit/replace targets and persist
+across turns; the fold on a context that kept an old delta; tool-result order.
 
 ## 5. Forks and historical reads
 
-`createConversation` with `parent`, the shared prefix in `scanEntries`, capped-source lookup for
-values and lists, refusal of a fork inside an unresolved exchange.
+`createConversation` with `parent`, the shared prefix in fork-aware `scanEntries`, capped-source
+lookup for values and lists, arbitrary content-entry fork points.
 
-Tests: a fork sees the head and the values in force at its entry; heads the source adds later are
-invisible; deep fork chains; state committed after the entry (a model change) is not in the fork.
+Tests: a fork sees the head, edits and values in force at its entry; heads/results the source adds
+later are invisible; deep fork chains; successful incomplete tool exchanges project with missing
+results but inherit no tasks; state committed after the entry (a model change) is not in the fork.
 
 ## 6. Task kinds and the driver
 
@@ -103,11 +111,12 @@ The tool kind with the sink (`ToolOutput`, `ToolOutputState`, limits enforced by
 replay policy on recover; post_tools with `after`, terminate / handoff / steer / next generation;
 `accept` idle vs busy; `prompt` and `answerTo`.
 
-Tests: parallel tools completing in either order; sequential via `after`; error results for every
-call on abort; `new_context` resets after the exchange, never inside it; `addTools` → the next
-turn's `toolsAdded`; a throwing tool → error result, `terminate` still honoured; truncation diag
-from the sink; `accept` with the same `requestId` twice → same entry, `answerTo` finds it after
-further turns.
+Tests: parallel tools completing in either order; sequential via `after`; an aborted generation
+creates no tool tasks/results while an aborted existing tool writes its own error result;
+`new_context` resets after the exchange, never inside it; `addTools` writes the rewindable loadout
+before any handoff/user entry in the settlement commit and appears in the next turn's `toolsAdded`;
+a throwing tool → error result, `terminate` still honoured; truncation diag from the sink; `accept`
+with the same `requestId` twice → same entry, `answerTo` finds it after further turns.
 
 ## 11. Inbox
 
@@ -121,9 +130,10 @@ Tests: the modes table; cancel vs land in both orders; input queued during a col
 Manual, threshold and overflow; `before_collapse`; publish only if no newer head; the overflow
 chain (generation settles → collapse → new generation carrying the attempt).
 
-Tests: a summary lands under a running generation and later entries stay in context; a stale
-summary fails; overflow retries once and no live task ever waits on the collapse; threshold before
-a turn; abort of a running collapse leaves appends flowing.
+Tests: a summary lands under a running generation and later entries stay in context; a competing
+head makes a summary stale while intervening edits do not; overflow retries once and no live task
+ever waits on the collapse; threshold before a turn; abort of a running collapse leaves appends
+flowing.
 
 ## 13. Subagents
 
@@ -159,8 +169,9 @@ equal to the live preview; a sliding tool tail → `t` + `a`.
 (capture on the line, bounded buffering, `resnapshot`, `unsubscribe`), the session watch with
 `report` and `usage`, the usage ledger (`pi.usage` + totals).
 
-Tests: the fold is correct (view after N events equals a fresh capture, randomized); all events of
-one commit delivered together; a thin-client reducer over a recorded stream with no kinds loaded;
+Tests: the fold is correct (view after N events equals a fresh capture, randomized); head and edit
+entries update derived context; all events of one commit delivered together; a thin-client reducer
+over a recorded stream with no kinds loaded;
 lag → fault → resnapshot; `resnapshot` from inside the listener; usage totals equal the ledger
 fold, failed and aborted attempts included.
 
