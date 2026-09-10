@@ -80,7 +80,7 @@ function isModelAllowed(current: { provider: string; id: string }, config: Prefe
 	);
 }
 
-// ─── Multi-Select Picker ────────────────────────────────────────────────
+// ─── Multi-Select Picker with Search ───────────────────────────────────
 
 interface PickerItem {
 	value: string;       // "provider/model"
@@ -113,8 +113,19 @@ async function showModelPicker(
 	const result = await ctx.ui.custom<Set<string> | null>((tui, theme, _kb, done) => {
 		let cursorIndex = 0;
 		let scrollOffset = 0;
+		let searchTerm = "";
 		const maxVisible = Math.min(items.length, 20);
 		let cachedLines: string[] | undefined;
+
+		// Filter items by search term
+		function getFilteredIndices(): number[] {
+			if (!searchTerm) return items.map((_, i) => i);
+			const term = searchTerm.toLowerCase();
+			return items
+				.map((item, i) => ({ item, i }))
+				.filter(({ item }) => item.value.toLowerCase().includes(term))
+				.map(({ i }) => i);
+		}
 
 		function refresh() {
 			cachedLines = undefined;
@@ -122,8 +133,9 @@ async function showModelPicker(
 		}
 
 		function toggle(index: number) {
-			const item = items[index];
-			item.checked = !item.checked;
+			const filtered = getFilteredIndices();
+			const itemIdx = filtered[index];
+			if (itemIdx !== undefined) items[itemIdx].checked = !items[itemIdx].checked;
 			refresh();
 		}
 
@@ -137,13 +149,19 @@ async function showModelPicker(
 
 		function handleInput(data: string) {
 			if (matchesKey(data, Key.up)) {
-				cursorIndex = Math.max(0, cursorIndex - 1);
+				const filtered = getFilteredIndices();
+				const maxIdx = filtered.length - 1;
+				if (maxIdx < 0) return;
+				cursorIndex = Math.max(0, Math.min(cursorIndex, maxIdx) - 1);
 				if (cursorIndex < scrollOffset) scrollOffset = cursorIndex;
 				refresh();
 				return;
 			}
 			if (matchesKey(data, Key.down)) {
-				cursorIndex = Math.min(items.length - 1, cursorIndex + 1);
+				const filtered = getFilteredIndices();
+				const maxIdx = filtered.length - 1;
+				if (maxIdx < 0) return;
+				cursorIndex = Math.min(maxIdx, Math.max(0, cursorIndex) + 1);
 				if (cursorIndex >= scrollOffset + maxVisible) scrollOffset = cursorIndex - maxVisible + 1;
 				refresh();
 				return;
@@ -153,27 +171,53 @@ async function showModelPicker(
 				return;
 			}
 			if (matchesKey(data, Key.escape)) {
-				done(null);
+				if (searchTerm) {
+					searchTerm = "";
+					cursorIndex = 0;
+					scrollOffset = 0;
+					refresh();
+				} else {
+					done(null);
+				}
 				return;
 			}
-			// Space also toggles
-			if (data === " ") {
+			// Backspace to delete search char
+			if (matchesKey(data, Key.backspace) || data === "\x7f") {
+				if (searchTerm.length > 0) {
+					searchTerm = searchTerm.slice(0, -1);
+					cursorIndex = 0;
+					scrollOffset = 0;
+					refresh();
+				}
+				return;
+			}
+			// Space toggles (only when not searching)
+			if (data === " " && !searchTerm) {
 				toggle(cursorIndex);
-				if (cursorIndex < items.length - 1) {
+				const filtered = getFilteredIndices();
+				if (cursorIndex < filtered.length - 1) {
 					cursorIndex++;
 					if (cursorIndex >= scrollOffset + maxVisible) scrollOffset = cursorIndex - maxVisible + 1;
 				}
 				refresh();
 				return;
 			}
-			// 'a' = select all, 'n' = select none
-			if (data === "a") {
-				for (const item of items) item.checked = true;
+			// 'a' = select all (filtered), 'n' = select none
+			if (data === "a" && !searchTerm) {
+				for (const idx of getFilteredIndices()) items[idx].checked = true;
 				refresh();
 				return;
 			}
-			if (data === "n") {
-				for (const item of items) item.checked = false;
+			if (data === "n" && !searchTerm) {
+				for (const idx of getFilteredIndices()) items[idx].checked = false;
+				refresh();
+				return;
+			}
+			// Printable characters → type into search
+			if (data.length === 1 && data >= " " && data < "\x7f" && data !== " ") {
+				searchTerm += data;
+				cursorIndex = 0;
+				scrollOffset = 0;
 				refresh();
 				return;
 			}
@@ -184,17 +228,21 @@ async function showModelPicker(
 
 			const lines: string[] = [];
 			const rw = Math.max(1, width);
+			const filtered = getFilteredIndices();
+			const filteredItems = filtered.map((i) => items[i]);
 
 			lines.push(theme.fg("accent", "─".repeat(rw)));
 			lines.push(theme.fg("text", theme.bold(` ${title}`)));
-			lines.push(theme.fg("dim", ` ${items.filter((i) => i.checked).length}/${items.length} selected`));
+
+			// Search bar
+			lines.push(theme.fg("dim", ` 🔍 ${searchTerm || ""}_`));
+			lines.push(theme.fg("dim", ` ${items.filter((i) => i.checked).length}/${items.length} selected, ${filtered.length} shown`));
 			lines.push("");
 
-			const visibleItems = items.slice(scrollOffset, scrollOffset + maxVisible);
-
-			for (let i = 0; i < visibleItems.length; i++) {
+			for (let i = 0; i < Math.min(filteredItems.length, maxVisible); i++) {
 				const globalIdx = scrollOffset + i;
-				const item = visibleItems[i];
+				const item = filteredItems[globalIdx];
+				if (!item) break;
 				const isSelected = globalIdx === cursorIndex;
 				const checkbox = item.checked ? "☑" : "☐";
 				const avail = item.available ? "" : theme.fg("warning", " ⚠ no key");
@@ -213,13 +261,13 @@ async function showModelPicker(
 			}
 
 			// Scroll indicator
-			if (items.length > maxVisible) {
-				const scrollInfo = ` ${scrollOffset + 1}-${Math.min(scrollOffset + maxVisible, items.length)} of ${items.length}`;
+			if (filteredItems.length > maxVisible) {
+				const scrollInfo = ` ${scrollOffset + 1}-${Math.min(scrollOffset + maxVisible, filteredItems.length)} of ${filteredItems.length}`;
 				lines.push(theme.fg("dim", scrollInfo));
 			}
 
 			lines.push("");
-			lines.push(theme.fg("dim", "  Space toggle • a=select all • n=select none • Enter to confirm • Esc cancel"));
+			lines.push(theme.fg("dim", "  Type to search • Space toggle • a=all • n=none • Enter confirm • Esc cancel"));
 			lines.push(theme.fg("accent", "─".repeat(rw)));
 
 			cachedLines = lines;
