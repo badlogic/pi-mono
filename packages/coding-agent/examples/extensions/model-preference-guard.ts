@@ -75,18 +75,16 @@ function formatModel(pref: ModelPreference): string {
 function isModelAllowed(current: { provider: string; id: string }, config: PreferenceConfig): boolean {
 	if (!config.enabled) return true;
 	if (config.allowedModels.length === 0) return true; // No preferences = no guard
-	return config.allowedModels.some(
-		(p) => p.provider === current.provider && p.model === current.id,
-	);
+	return config.allowedModels.some((p) => p.provider === current.provider && p.model === current.id);
 }
 
 // ─── Multi-Select Picker with Search ───────────────────────────────────
 
 interface PickerItem {
-	value: string;       // "provider/model"
-	label: string;       // "provider/model"
-	checked: boolean;    // currently selected
-	available: boolean;  // has API key configured
+	value: string; // "provider/model"
+	label: string; // "provider/model"
+	checked: boolean; // currently selected
+	available: boolean; // has API key configured
 }
 
 async function showModelPicker(
@@ -191,8 +189,8 @@ async function showModelPicker(
 				}
 				return;
 			}
-			// Space toggles (only when not searching)
-			if (data === " " && !searchTerm) {
+			// Space toggles
+			if (data === " ") {
 				toggle(cursorIndex);
 				const filtered = getFilteredIndices();
 				if (cursorIndex < filtered.length - 1) {
@@ -236,7 +234,12 @@ async function showModelPicker(
 
 			// Search bar
 			lines.push(theme.fg("dim", ` 🔍 ${searchTerm || ""}_`));
-			lines.push(theme.fg("dim", ` ${items.filter((i) => i.checked).length}/${items.length} selected, ${filtered.length} shown`));
+			lines.push(
+				theme.fg(
+					"dim",
+					` ${items.filter((i) => i.checked).length}/${items.length} selected, ${filtered.length} shown`,
+				),
+			);
 			lines.push("");
 
 			for (let i = 0; i < Math.min(filteredItems.length, maxVisible); i++) {
@@ -276,7 +279,9 @@ async function showModelPicker(
 
 		return {
 			render,
-			invalidate: () => { cachedLines = undefined; },
+			invalidate: () => {
+				cachedLines = undefined;
+			},
 			handleInput,
 		};
 	});
@@ -302,10 +307,7 @@ export default function modelPreferenceGuard(pi: ExtensionAPI) {
 					ctx.ui.notify("No model preferences saved. All models allowed.", "info");
 				} else {
 					const list = config.allowedModels.map((m) => `  • ${formatModel(m)}`).join("\n");
-					ctx.ui.notify(
-						`Guard: ${config.enabled ? "ON" : "OFF"}\nAllowed models:\n${list}`,
-						"info",
-					);
+					ctx.ui.notify(`Guard: ${config.enabled ? "ON" : "OFF"}\nAllowed models:\n${list}`, "info");
 				}
 				return;
 			}
@@ -332,7 +334,8 @@ export default function modelPreferenceGuard(pi: ExtensionAPI) {
 				}
 
 				const currentSet = new Set(config.allowedModels.map(formatModel));
-				const title = sub === "add" ? "Select models to ADD to preferences" : "Select models to REMOVE from preferences";
+				const title =
+					sub === "add" ? "Select models to ADD to preferences" : "Select models to REMOVE from preferences";
 
 				const result = await showModelPicker(ctx, title, allModels, currentSet);
 				if (!result) {
@@ -352,6 +355,7 @@ export default function modelPreferenceGuard(pi: ExtensionAPI) {
 					if (newModels.length > 0) {
 						config.allowedModels.push(...newModels);
 						saveConfig(config);
+						updateStatus(ctx, config);
 						ctx.ui.notify(`Added ${newModels.length} model(s): ${newModels.map(formatModel).join(", ")}`, "info");
 					} else {
 						ctx.ui.notify("No new models added", "info");
@@ -363,6 +367,7 @@ export default function modelPreferenceGuard(pi: ExtensionAPI) {
 					const removed = before - config.allowedModels.length;
 					if (removed > 0) {
 						saveConfig(config);
+						updateStatus(ctx, config);
 						ctx.ui.notify(`Removed ${removed} model(s)`, "info");
 					} else {
 						ctx.ui.notify("No models removed", "info");
@@ -386,12 +391,7 @@ export default function modelPreferenceGuard(pi: ExtensionAPI) {
 				}
 
 				ctx.ui.notify("No preferences set yet. Pick your preferred models:", "info");
-				const result = await showModelPicker(
-					ctx,
-					"Select your PREFERRED models",
-					allModels,
-					new Set(),
-				);
+				const result = await showModelPicker(ctx, "Select your PREFERRED models", allModels, new Set());
 
 				if (!result || result.size === 0) {
 					ctx.ui.notify("No models selected. All models remain allowed.", "info");
@@ -403,6 +403,7 @@ export default function modelPreferenceGuard(pi: ExtensionAPI) {
 					return { provider, model: modelParts.join("/") };
 				});
 				saveConfig(config);
+				updateStatus(ctx, config);
 				config = loadConfig();
 				ctx.ui.notify(
 					`Saved ${config.allowedModels.length} preferred model(s):\n${config.allowedModels.map((m) => `  • ${formatModel(m)}`).join("\n")}`,
@@ -436,10 +437,8 @@ export default function modelPreferenceGuard(pi: ExtensionAPI) {
 				return { provider, model: modelParts.join("/") };
 			});
 			saveConfig(config);
-			ctx.ui.notify(
-				`Updated preferences: ${config.allowedModels.length} model(s) allowed`,
-				"info",
-			);
+			updateStatus(ctx, config);
+			ctx.ui.notify(`Updated preferences: ${config.allowedModels.length} model(s) allowed`, "info");
 		},
 	});
 
@@ -452,10 +451,7 @@ export default function modelPreferenceGuard(pi: ExtensionAPI) {
 		// Show hint if no preferences saved and guard hasn't been disabled
 		if (config.enabled && config.allowedModels.length === 0 && !hintShown) {
 			hintShown = true;
-			ctx.ui.notify(
-				"💡 No model preferences set. Run /model-pref to choose preferred models.",
-				"info",
-			);
+			ctx.ui.notify("💡 No model preferences set. Run /model-pref to choose preferred models.", "info");
 		}
 
 		updateStatus(ctx, config);
@@ -530,13 +526,20 @@ export default function modelPreferenceGuard(pi: ExtensionAPI) {
 
 function updateStatus(ctx: ExtensionContext, config: PreferenceConfig) {
 	if (!config.enabled) {
-		ctx.ui.setStatus("model-guard", ctx.ui.theme.fg("dim", "guard:off"));
+		ctx.ui.setStatus("model-guard", ctx.ui.theme.fg("dim", "model guard: off"));
 	} else if (config.allowedModels.length === 0) {
-		ctx.ui.setStatus("model-guard", ctx.ui.theme.fg("dim", "guard:—"));
+		ctx.ui.setStatus("model-guard", ctx.ui.theme.fg("dim", "model guard: —"));
 	} else {
+		// List model names, truncate if too long
+		const modelNames = config.allowedModels.map((m) => `${m.provider}/${m.model}`);
+		const maxLen = 60;
+		let displayNames = modelNames.join(", ");
+		if (displayNames.length > maxLen) {
+			displayNames = displayNames.slice(0, maxLen - 3) + "...";
+		}
 		ctx.ui.setStatus(
 			"model-guard",
-			ctx.ui.theme.fg("accent", `guard:${config.allowedModels.length}`),
+			ctx.ui.theme.fg("accent", `model guard (${config.allowedModels.length}): ${displayNames}`),
 		);
 	}
 }
