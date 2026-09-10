@@ -272,7 +272,7 @@ const EAGER_TOOL_INPUT_STREAMING_UNSUPPORTED_ANTHROPIC_MODELS = new Set([
 	"github-copilot:claude-sonnet-4.5",
 ]);
 const ANTHROPIC_ALLOWED_FALLBACK_MODELS = {
-	"claude-fable-5": ["claude-opus-4-8", "claude-opus-5"],
+	"claude-fable-5": ["claude-opus-5"],
 	"claude-opus-5": ["claude-opus-4-8"],
 } satisfies Record<string, string[]>;
 
