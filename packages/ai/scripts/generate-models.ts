@@ -287,6 +287,16 @@ const DEEPSEEK_V4_FLASH_THINKING_LEVEL_MAP = {
 	...DEEPSEEK_V4_THINKING_LEVEL_MAP,
 	low: "low",
 } as const;
+// Verified against Fireworks Messages raw_output on 2026-09-10 (#9323).
+// Fall back to verified support when models.dev omits effort metadata; this is
+// not an allowlist. Any Fireworks Messages model advertising effort uses adaptive thinking.
+const FIREWORKS_ADAPTIVE_THINKING_FALLBACK_MODELS = new Set([
+	"accounts/fireworks/models/deepseek-v4-flash-0731",
+	"accounts/fireworks/models/deepseek-v4-flash-vision-exp",
+	"accounts/fireworks/models/deepseek-v4-pro-0813",
+	"accounts/fireworks/models/qwen3p8-max",
+	"accounts/fireworks/models/qwen3p8-2p4t-a95b",
+]);
 const QWEN_TOKEN_PLAN_FALLBACK_THINKING_LEVEL_MAP = {
 	minimal: null,
 	low: null,
@@ -996,8 +1006,36 @@ function applyThinkingLevelMetadata(model: Model<any>): void {
 	if (model.provider === "openrouter" && model.id === "z-ai/glm-5.2") {
 		mergeThinkingLevelMap(model, { xhigh: "xhigh" });
 	}
-	if (model.provider === "fireworks" && model.id.includes("glm-5p2")) {
-		mergeThinkingLevelMap(model, { off: "none", minimal: null, low: "high", medium: "high", max: "max" });
+	if (model.provider === "fireworks") {
+		if (model.api === "anthropic-messages" && model.compat?.forceAdaptiveThinking) {
+			// Qwen Max currently advertises only a toggle. Prefer upstream effort
+			// metadata once available instead of replacing it with this fallback.
+			if (model.id === "accounts/fireworks/models/qwen3p8-max" && !model.thinkingLevelMap) {
+				model.thinkingLevelMap = getEffortThinkingLevelMap([
+					{ type: "effort", values: ["low", "medium", "xhigh"] },
+				]);
+			}
+			const reasoningOptions = modelsDevReasoningOptions.get(getModelKey(model));
+			if (
+				reasoningOptions?.some((option) => option.type === "toggle") ||
+				// The 2.4T alias omits the verified toggle in models.dev.
+				model.id === "accounts/fireworks/models/qwen3p8-2p4t-a95b"
+			) {
+				mergeThinkingLevelMap(model, { off: "none" });
+			}
+			if (model.id === "accounts/fireworks/models/deepseek-v4-pro-0813") {
+				mergeThinkingLevelMap(model, { low: "low" });
+			}
+		}
+		if (model.id.includes("glm-5p2")) {
+			// GLM 5.2 and its fast router support off/high/max. Fireworks maps low
+			// and medium to high, so do not expose those aliases as distinct levels.
+			mergeThinkingLevelMap(model, { off: "none", minimal: null, low: null, medium: null, max: "max" });
+		}
+		if (model.id.includes("kimi-k3")) {
+			// Fireworks maps medium to high on both APIs; do not expose it as a distinct level.
+			mergeThinkingLevelMap(model, { medium: null });
+		}
 	}
 	if (model.provider === "opencode-go" && model.id === "glm-5.2") {
 		mergeThinkingLevelMap(model, OPENCODE_GO_GLM52_THINKING_LEVEL_MAP);
@@ -1384,6 +1422,7 @@ function processFireworksModels(provider: ModelsDevProvider | undefined): Model<
 	if (!provider?.models) return [];
 
 	const anthropicCompat: AnthropicMessagesCompat = {
+		allowEmptySignature: true,
 		sendSessionAffinityHeaders: true,
 		supportsEagerToolInputStreaming: false,
 		supportsCacheControlOnTools: false,
@@ -1449,7 +1488,15 @@ function processFireworksModels(provider: ModelsDevProvider | undefined): Model<
 				// x-session-affinity routes requests to the same replica for cache hits.
 				// cache_control on tools and eager_input_streaming are not supported.
 				// See: https://docs.fireworks.ai/tools-sdks/anthropic-compatibility
-				compat: anthropicCompat,
+				// Use adaptive thinking for cataloged effort controls, with verified
+				// fallbacks where models.dev is incomplete. New models need no allowlist entry.
+				compat: {
+					...anthropicCompat,
+					...(model.reasoning_options?.some((option) => option.type === "effort") ||
+					FIREWORKS_ADAPTIVE_THINKING_FALLBACK_MODELS.has(modelId)
+						? { forceAdaptiveThinking: true }
+						: {}),
+				},
 			});
 		}
 		recordModelsDevReasoningOptions("fireworks", modelId, model);
