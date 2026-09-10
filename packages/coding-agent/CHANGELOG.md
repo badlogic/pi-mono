@@ -4,6 +4,7 @@
 
 ### Added
 
+- Added `baseUrl` to `models.json` value resolution: provider-level `baseUrl` now supports `$ENV` interpolation and `!command` execution like `apiKey`/`headers`, resolved at request time. Enables routing requests through dynamic proxies such as nono credential injection via `OPENAI_BASE_URL` ([#9422](https://github.com/earendil-works/pi/issues/9422)).
 - Added `ctx.modelRegistry.stream()` and `streamSimple()` for extension model calls through configured providers with resolved authentication ([#8964](https://github.com/earendil-works/pi/issues/8964)).
 - Added per-model `reserveTokens` and `keepRecentTokens` settings through `compaction.modelOverrides`, with ordinary compaction settings as fallback ([#8133](https://github.com/earendil-works/pi-mono/issues/8133)).
 

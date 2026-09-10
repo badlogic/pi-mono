@@ -133,7 +133,7 @@ Set `api` at provider level (default for all models) or model level (override pe
 
 | Field | Description |
 |-------|-------------|
-| `baseUrl` | API endpoint URL |
+| `baseUrl` | API endpoint URL (supports value resolution, see below) |
 | `api` | API type (see above) |
 | `apiKey` | Optional API key config (see value resolution below). Omit it when auth is provided by `/login`/`auth.json` or CLI `--api-key`. |
 | `oauth` | Dynamic OAuth provider type. Currently supports `"radius"`; requires the gateway `baseUrl`. |
@@ -146,7 +146,7 @@ For providers with `models`, non-built-in provider configs need `baseUrl` and an
 
 ### Value Resolution
 
-The `apiKey` and `headers` fields support command execution, environment interpolation, and literals:
+The `apiKey`, `baseUrl`, and `headers` fields support command execution, environment interpolation, and literals:
 
 - **Shell command:** `"!command"` at the start executes the whole value as a command and uses stdout
   ```json
@@ -181,7 +181,7 @@ If your command is slow, expensive, rate-limited, or should keep using a previou
 {
   "providers": {
     "custom-proxy": {
-      "baseUrl": "https://proxy.example.com/v1",
+      "baseUrl": "$MY_PROXY_BASE_URL",
       "apiKey": "$MY_API_KEY",
       "api": "anthropic-messages",
       "headers": {

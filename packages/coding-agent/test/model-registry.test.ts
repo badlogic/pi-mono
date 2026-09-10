@@ -236,6 +236,138 @@ describe("ModelRegistry", () => {
 		});
 	});
 
+	describe("baseUrl value resolution", () => {
+		/** Provider with a templated baseUrl and a literal apiKey. */
+		function providerWithBaseUrl(baseUrl: string, apiKey = "test-key") {
+			return {
+				baseUrl,
+				apiKey,
+				api: "anthropic-messages",
+				models: [
+					{
+						id: "test-model",
+						name: "Test Model",
+						reasoning: false,
+						input: ["text"],
+						cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+						contextWindow: 100000,
+						maxTokens: 8000,
+					},
+				],
+			};
+		}
+
+		test("baseUrl with $ prefix resolves to env value at request time", async () => {
+			const originalEnv = process.env.TEST_BASE_URL_12345;
+			process.env.TEST_BASE_URL_12345 = "https://env-proxy.example.com/v1";
+
+			try {
+				writeRawModelsJson({
+					"custom-provider": providerWithBaseUrl("$TEST_BASE_URL_12345"),
+				});
+
+				const registry = await createModelRegistry(authStorage, modelsJsonPath);
+				const model = registry.find("custom-provider", "test-model");
+				expect(model).toBeDefined();
+
+				const auth = await registry.getApiKeyAndHeaders(model!);
+				expect(auth.ok).toBe(true);
+				if (auth.ok) {
+					expect(auth.baseUrl).toBe("https://env-proxy.example.com/v1");
+				}
+			} finally {
+				if (originalEnv === undefined) {
+					delete process.env.TEST_BASE_URL_12345;
+				} else {
+					process.env.TEST_BASE_URL_12345 = originalEnv;
+				}
+			}
+		});
+
+		test("baseUrl with braced env syntax resolves to env value", async () => {
+			const originalEnv = process.env.TEST_BRACED_BASE_URL_12345;
+			process.env.TEST_BRACED_BASE_URL_12345 = "https://braced-proxy.example.com/v1";
+			const bracedUrl = "$" + "{TEST_BRACED_BASE_URL_12345}";
+
+			try {
+				writeRawModelsJson({
+					"custom-provider": providerWithBaseUrl(bracedUrl),
+				});
+
+				const registry = await createModelRegistry(authStorage, modelsJsonPath);
+				const model = registry.find("custom-provider", "test-model");
+
+				const auth = await registry.getApiKeyAndHeaders(model!);
+				expect(auth.ok).toBe(true);
+				if (auth.ok) {
+					expect(auth.baseUrl).toBe("https://braced-proxy.example.com/v1");
+				}
+			} finally {
+				if (originalEnv === undefined) {
+					delete process.env.TEST_BRACED_BASE_URL_12345;
+				} else {
+					process.env.TEST_BRACED_BASE_URL_12345 = originalEnv;
+				}
+			}
+		});
+
+		test("baseUrl shell command resolves at request time", async () => {
+			writeRawModelsJson({
+				"custom-provider": providerWithBaseUrl("!echo https://command-proxy.example.com/v1"),
+			});
+
+			const registry = await createModelRegistry(authStorage, modelsJsonPath);
+			const model = registry.find("custom-provider", "test-model");
+
+			const auth = await registry.getApiKeyAndHeaders(model!);
+			expect(auth.ok).toBe(true);
+			if (auth.ok) {
+				expect(auth.baseUrl).toBe("https://command-proxy.example.com/v1");
+			}
+		});
+
+		test("literal baseUrl resolves to itself (no regression)", async () => {
+			writeRawModelsJson({
+				"custom-provider": providerWithBaseUrl("https://literal.example.com/v1"),
+			});
+
+			const registry = await createModelRegistry(authStorage, modelsJsonPath);
+			const model = registry.find("custom-provider", "test-model");
+
+			const auth = await registry.getApiKeyAndHeaders(model!);
+			expect(auth.ok).toBe(true);
+			if (auth.ok) {
+				expect(auth.baseUrl).toBe("https://literal.example.com/v1");
+			}
+		});
+
+		test("unresolved baseUrl env var reports a clear error", async () => {
+			// Ensure the var is absent so resolution fails.
+			const originalEnv = process.env.TEST_MISSING_BASE_URL_12345;
+			delete process.env.TEST_MISSING_BASE_URL_12345;
+
+			try {
+				writeRawModelsJson({
+					"custom-provider": providerWithBaseUrl("$TEST_MISSING_BASE_URL_12345"),
+				});
+
+				const registry = await createModelRegistry(authStorage, modelsJsonPath);
+				const model = registry.find("custom-provider", "test-model");
+
+				const auth = await registry.getApiKeyAndHeaders(model!);
+				expect(auth.ok).toBe(false);
+				if (!auth.ok) {
+					expect(auth.error).toContain("baseUrl");
+					expect(auth.error).toContain("TEST_MISSING_BASE_URL_12345");
+				}
+			} finally {
+				if (originalEnv !== undefined) {
+					process.env.TEST_MISSING_BASE_URL_12345 = originalEnv;
+				}
+			}
+		});
+	});
+
 	describe("custom models merge behavior", () => {
 		test("built-in provider custom models inherit api and baseUrl without explicit fields", async () => {
 			// Built-in providers already have api/baseUrl on every model, and auth
@@ -1920,6 +2052,7 @@ describe("ModelRegistry", () => {
 				expect(auth1).toEqual({
 					ok: true,
 					apiKey: "token-1",
+					baseUrl: "https://example.com/v1",
 					headers: { Authorization: "Bearer token-1" },
 				});
 
@@ -1929,6 +2062,7 @@ describe("ModelRegistry", () => {
 				expect(auth2).toEqual({
 					ok: true,
 					apiKey: "token-2",
+					baseUrl: "https://example.com/v1",
 					headers: { Authorization: "Bearer token-2" },
 				});
 			});
@@ -1952,6 +2086,7 @@ describe("ModelRegistry", () => {
 				expect(auth).toEqual({
 					ok: true,
 					apiKey: "token-1",
+					baseUrl: "https://example.com/v1",
 					headers: { Authorization: "Bearer token-1" },
 				});
 				expect(readFileSync(counterFile, "utf-8").trim()).toBe("1");
