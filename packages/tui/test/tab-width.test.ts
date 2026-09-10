@@ -53,6 +53,7 @@ describe("tab width accounting", () => {
 	});
 
 	it("continues to carry persistent styling into later slices", () => {
+		// Regression for #9332: excluding APC must not disable persistent SGR styling.
 		const line = "\x1b[31mabcdefghij\x1b[0m";
 
 		assert.deepStrictEqual(sliceWithWidth(line, 4, 2, true), { text: "\x1b[31mef", width: 2 });

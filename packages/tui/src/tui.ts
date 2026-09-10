@@ -1353,13 +1353,9 @@ export abstract class TuiBase extends Container implements TUI {
 	protected applyLineResets(lines: string[]): string[] {
 		const reset = SEGMENT_RESET;
 		for (let i = 0; i < lines.length; i++) {
-			let line = lines[i];
-			// Cursor markers are internal render metadata and must never reach terminal output.
-			if (line.includes(CURSOR_MARKER)) line = line.replaceAll(CURSOR_MARKER, "");
+			const line = lines[i];
 			if (!isImageLine(line)) {
 				lines[i] = normalizeTerminalOutput(line) + reset;
-			} else {
-				lines[i] = line;
 			}
 		}
 		return lines;
