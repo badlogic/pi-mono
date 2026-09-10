@@ -477,19 +477,11 @@ export class ModelRuntime implements Models {
 		if (typeof providerOrModel === "string") return this.models.getAuth(providerOrModel, overrides);
 		const resolution = await this.models.getAuth(providerOrModel, overrides);
 		if (!resolution) return undefined;
+		const provider = this.config.getProvider(providerOrModel.provider);
+		const providerConfig = this.extensionProviders.get(providerOrModel.provider);
 		const requestEnv = { ...(resolution.env ?? {}), ...(overrides.env ?? {}) };
-		const configuredHeaders = resolveConfiguredModelHeaders(
-			providerOrModel,
-			this.config.getProvider(providerOrModel.provider),
-			this.extensionProviders.get(providerOrModel.provider),
-			requestEnv,
-		);
-		const configuredBaseUrl = resolveConfiguredBaseUrl(
-			providerOrModel,
-			this.config.getProvider(providerOrModel.provider),
-			this.extensionProviders.get(providerOrModel.provider),
-			requestEnv,
-		);
+		const configuredHeaders = resolveConfiguredModelHeaders(providerOrModel, provider, providerConfig, requestEnv);
+		const configuredBaseUrl = resolveConfiguredBaseUrl(providerOrModel, provider, providerConfig, requestEnv);
 		return {
 			...resolution,
 			auth: {
