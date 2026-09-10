@@ -389,6 +389,7 @@ export const stream: StreamFunction<"openai-completions", OpenAICompletionsOptio
 				type?: string;
 				function?: { name?: string; arguments?: string };
 				custom?: { name?: string; input?: string };
+				thoughtSignature?: string;
 			};
 
 			let textBlock: TextContent | null = null;
@@ -637,6 +638,9 @@ export const stream: StreamFunction<"openai-completions", OpenAICompletionsOptio
 							const name = toolCall.function?.name ?? toolCall.custom?.name;
 							if (!block.name && name) {
 								block.name = name;
+							}
+							if (toolCall.thoughtSignature) {
+								block.thoughtSignature = toolCall.thoughtSignature;
 							}
 
 							let delta = "";
@@ -1328,27 +1332,30 @@ export function convertMessages(
 			}
 
 			if (toolCalls.length > 0) {
-				assistantMsg.tool_calls = toolCalls.map((tc): ChatCompletionMessageToolCall => {
-					const customInputProperty = options?.grammarToolInputProperties?.get(tc.name);
-					if (customInputProperty !== undefined) {
+				assistantMsg.tool_calls = toolCalls.map(
+					(tc): ChatCompletionMessageToolCall & { thoughtSignature?: string } => {
+						const customInputProperty = options?.grammarToolInputProperties?.get(tc.name);
+						if (customInputProperty !== undefined) {
+							return {
+								id: tc.id,
+								type: "custom",
+								custom: {
+									name: tc.name,
+									input: sanitizeSurrogates(getGrammarToolInput(tc.name, tc.arguments, customInputProperty)),
+								},
+							};
+						}
 						return {
 							id: tc.id,
-							type: "custom",
-							custom: {
+							type: "function",
+							function: {
 								name: tc.name,
-								input: sanitizeSurrogates(getGrammarToolInput(tc.name, tc.arguments, customInputProperty)),
+								arguments: JSON.stringify(tc.arguments),
 							},
+							...(tc.thoughtSignature ? { thoughtSignature: tc.thoughtSignature } : {}),
 						};
-					}
-					return {
-						id: tc.id,
-						type: "function",
-						function: {
-							name: tc.name,
-							arguments: JSON.stringify(tc.arguments),
-						},
-					};
-				});
+					},
+				);
 			}
 			if (preservedReasoningDetails) {
 				assistantMsg.reasoning_details = preservedReasoningDetails;
