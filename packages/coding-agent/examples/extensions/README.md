@@ -23,6 +23,7 @@ cp permission-gate.ts ~/.pi/agent/extensions/
 | `protected-paths.ts` | Blocks writes to protected paths (.env, .git/, node_modules/) |
 | `confirm-destructive.ts` | Confirms before destructive session actions (clear, switch, fork) |
 | `dirty-repo-guard.ts` | Prevents session changes with uncommitted git changes |
+| `model-preference-guard.ts` | Guards against unintended model usage by checking against preferred model list with multi-select UI |
 | `sandbox/` | OS-level sandboxing using `@anthropic-ai/sandbox-runtime` with per-project config |
 | `gondolin/` | Route built-in tools and `!` commands into a Gondolin micro-VM |
 
@@ -59,6 +60,7 @@ cp permission-gate.ts ~/.pi/agent/extensions/
 | `hidden-thinking-label.ts` | Customizes the collapsed thinking label via `ctx.ui.setHiddenThinkingLabel()` |
 | `working-indicator.ts` | Customizes the streaming working indicator via `ctx.ui.setWorkingIndicator()` |
 | `model-status.ts` | Shows model changes in status bar via `model_select` hook |
+| `model-preference-guard.ts` | Multi-select checkbox picker for model preferences with `/model-pref` command |
 | `snake.ts` | Snake game with custom UI, keyboard handling, and session persistence |
 | `tic-tac-toe.ts` | Tic-tac-toe vs the agent with `executionMode: "sequential"` tools to prevent race conditions on shared cursor state |
 | `send-user-message.ts` | Demonstrates `pi.sendUserMessage()` for sending user messages from extensions |
