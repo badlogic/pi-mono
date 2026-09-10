@@ -568,6 +568,27 @@ describe("AgentSession model and extension characterization", () => {
 		expect(harness.session.systemPrompt).not.toContain("session:startup:1");
 	});
 
+	// #9432: reload must not opt a pure SDK session into extension lifecycle events.
+	it("does not emit session_start on reload before extensions are bound", async () => {
+		let sessionStartCount = 0;
+		const harness = await createHarness({
+			extensionFactories: [
+				(pi) => {
+					pi.on("session_start", () => {
+						sessionStartCount++;
+						return { systemPromptAppend: "session instructions" };
+					});
+				},
+			],
+		});
+		harnesses.push(harness);
+
+		await harness.session.reload();
+
+		expect(sessionStartCount).toBe(0);
+		expect(harness.session.systemPrompt).not.toContain("session instructions");
+	});
+
 	it("bindExtensions emits session_start and reload emits session_shutdown then session_start", async () => {
 		const lifecycleEvents: string[] = [];
 		const harness = await createHarness({
