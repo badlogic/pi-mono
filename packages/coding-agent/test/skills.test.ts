@@ -64,6 +64,28 @@ describe("skills", () => {
 			expect(diagnostics.some((d: ResourceDiagnostic) => d.message.includes("invalid characters"))).toBe(true);
 		});
 
+		it("should load dotted names without warnings", () => {
+			const { skills, diagnostics } = loadSkillsFromDir({
+				dir: join(fixturesDir, "dotted-name"),
+				source: "test",
+			});
+
+			expect(skills).toHaveLength(1);
+			expect(skills[0].name).toBe("skill-codetool.csharp-lint");
+			expect(diagnostics).toHaveLength(0);
+		});
+
+		it("should load underscored names without warnings", () => {
+			const { skills, diagnostics } = loadSkillsFromDir({
+				dir: join(fixturesDir, "underscore-name"),
+				source: "test",
+			});
+
+			expect(skills).toHaveLength(1);
+			expect(skills[0].name).toBe("data_analysis");
+			expect(diagnostics).toHaveLength(0);
+		});
+
 		it("should warn when name exceeds 64 characters", () => {
 			const { skills, diagnostics } = loadSkillsFromDir({
 				dir: join(fixturesDir, "long-name"),
@@ -150,14 +172,14 @@ describe("skills", () => {
 			expect(diagnostics).toHaveLength(0);
 		});
 
-		it("should warn when name contains consecutive hyphens", () => {
+		it("should warn when name contains consecutive separators", () => {
 			const { skills, diagnostics } = loadSkillsFromDir({
 				dir: join(fixturesDir, "consecutive-hyphens"),
 				source: "test",
 			});
 
 			expect(skills).toHaveLength(1);
-			expect(diagnostics.some((d: ResourceDiagnostic) => d.message.includes("consecutive hyphens"))).toBe(true);
+			expect(diagnostics.some((d: ResourceDiagnostic) => d.message.includes("consecutive separators"))).toBe(true);
 		});
 
 		it("should load all skills from fixture directory", () => {
@@ -167,7 +189,7 @@ describe("skills", () => {
 			});
 
 			// Should load all skills that have descriptions (even with warnings)
-			// valid-skill, name-mismatch, invalid-name-chars, long-name, unknown-field, nested/child-skill, consecutive-hyphens
+			// valid-skill, name-mismatch, invalid-name-chars, long-name, unknown-field, nested/child-skill, consecutive-hyphens, dotted-name, underscore-name
 			// NOT: missing-description, no-frontmatter (both missing descriptions)
 			expect(skills.length).toBeGreaterThanOrEqual(6);
 		});

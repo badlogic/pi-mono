@@ -86,7 +86,7 @@ export interface LoadSkillsResult {
 }
 
 /**
- * Validate skill name per Agent Skills spec.
+ * Validate skill name per Agent Skills spec, extended with dots and underscores.
  * Returns array of validation error messages (empty if valid).
  */
 function validateName(name: string): string[] {
@@ -96,16 +96,16 @@ function validateName(name: string): string[] {
 		errors.push(`name exceeds ${MAX_NAME_LENGTH} characters (${name.length})`);
 	}
 
-	if (!/^[a-z0-9-]+$/.test(name)) {
-		errors.push(`name contains invalid characters (must be lowercase a-z, 0-9, hyphens only)`);
+	if (!/^[a-z0-9._-]+$/.test(name)) {
+		errors.push(`name contains invalid characters (must be lowercase a-z, 0-9, hyphens, dots, or underscores)`);
 	}
 
-	if (name.startsWith("-") || name.endsWith("-")) {
-		errors.push(`name must not start or end with a hyphen`);
+	if (/^[._-]|[._-]$/.test(name)) {
+		errors.push(`name must not start or end with a separator (hyphen, dot, or underscore)`);
 	}
 
-	if (name.includes("--")) {
-		errors.push(`name must not contain consecutive hyphens`);
+	if (/[._-]{2}/.test(name)) {
+		errors.push(`name must not contain consecutive separators`);
 	}
 
 	return errors;

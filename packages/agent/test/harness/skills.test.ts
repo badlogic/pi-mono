@@ -37,6 +37,28 @@ Use this skill.
 		]);
 	});
 
+	it("loads dotted and underscored names without diagnostics", async () => {
+		const root = createTempDir();
+		const env = new NodeExecutionEnv({ cwd: root });
+		await env.createDir(".agents/skills/pdf.tools", { recursive: true }, BACKGROUND_CONTEXT);
+		await env.writeFile(
+			".agents/skills/pdf.tools/SKILL.md",
+			"---\nname: pdf.tools\ndescription: Example skill\n---\nUse this skill.",
+			BACKGROUND_CONTEXT,
+		);
+		await env.createDir(".agents/skills/data_analysis", { recursive: true }, BACKGROUND_CONTEXT);
+		await env.writeFile(
+			".agents/skills/data_analysis/SKILL.md",
+			"---\nname: data_analysis\ndescription: Example skill\n---\nUse this skill.",
+			BACKGROUND_CONTEXT,
+		);
+
+		const { skills, diagnostics } = await loadSkills(env, ".agents/skills", BACKGROUND_CONTEXT);
+
+		expect(diagnostics).toEqual([]);
+		expect(skills.map((skill) => skill.name).sort()).toEqual(["data_analysis", "pdf.tools"]);
+	});
+
 	it("loads skills through symlinked directories", async () => {
 		const root = createTempDir();
 		const env = new NodeExecutionEnv({ cwd: root });
