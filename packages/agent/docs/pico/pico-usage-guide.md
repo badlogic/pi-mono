@@ -233,9 +233,11 @@ starts nothing. An unregistered historical entry kind is reported, not rejected:
 unavailable. A live task kind is still required.
 
 ```typescript
-const { start, inflight } = await h.inspect(call);
+const { start, inflight, orphaned, parked } = await h.inspect(call);
 // start: tasks that never began or must begin again (a planned tool, a retry, a scheduled job)
 // inflight: tasks the last process was running when it stopped; recover() will handle them
+// orphaned: foreground tasks whose kind is missing (a plugin was uninstalled); settled at open
+// parked:   background tasks whose kind is missing; they resume when it is registered again
 ```
 
 ### What Happens on Reopen
@@ -837,10 +839,10 @@ From the API a job is a task; a schedule is a job with `every`:
 
 ```typescript
 const dev = await c.commit(tx => tx.task(jobKind, { background: true,
-  state: { cmd: 'npm run dev', cwd } }), call);
+  state: { status: 'planned', cmd: 'npm run dev', cwd } }), call);
 
 const nightly = await c.commit(tx => tx.task(jobKind, { background: true,
-  state: { cmd: 'npm test', cwd, every: 24 * 3600_000, notBefore: tonightAt(2) } }), call);
+  state: { status: 'planned', cmd: 'npm test', cwd, every: 24 * 3600_000, notBefore: tonightAt(2) } }), call);
 
 await h.abortTask(nightly, call);          // ends the schedule wherever it is
 ```
@@ -891,7 +893,7 @@ const entry = await c.commit(tx => {
   const id = tx.entry(myPlugin.noteKind, { data: { text: 'plan accepted' } });
   tx.value(expanded).set(true);                                           // sticky state may follow
   tx.task(myPlugin.reminderKind, { background: true,                      // tasks anywhere
-    state: { about: id, at: Date.now() + 3600_000 } });
+    state: { status: 'scheduled', about: id, at: Date.now() + 3600_000 } });
   return id;
 }, call);
 ```
@@ -983,11 +985,9 @@ goes on:
 async execute(toolCallId, params, out, runtime, call) {
   const job = await runtime.commit(tx => {
     const id = tx.task(jobKind, { background: true,
-      state: { cmd: params.cmd, cwd: params.cwd ?? runtime.env.cwd,
+      state: { status: 'planned', cmd: params.cmd, cwd: params.cwd ?? runtime.env.cwd,
                origin: { tool: 'bash', task: runtime.taskId, callId: toolCallId } } });
-    tx.patch(runtime.taskId, { state: {
-      jobId: id, cancelJobOnAbort: !params.background,
-    } });
+    tx.patch(task, { jobId: id, cancelJobOnAbort: !params.background });   // partial: still 'running'
     return id;
   }, call);
 
@@ -1157,7 +1157,11 @@ only the current status, state, role and scratch.
 Here is a reminder that fires once:
 
 ```typescript
-interface ReminderState { about: Id; at: number; fired?: boolean }
+type ReminderStates =
+  | { status: 'scheduled'; about: Id; at: number }
+  | { status: 'firing';    about: Id; at: number }
+  | { status: 'done';      about: Id; at: number; fired: boolean }
+  | { status: 'aborted';   about: Id; at: number };
 
 export const reminderKind = defineTaskKind({
   kind: 'myplugin.reminder',
@@ -1167,22 +1171,32 @@ export const reminderKind = defineTaskKind({
   hooks: { before_fire: { failClosed: false } },
 
   async execute(task, runtime, call) {
-    if (task.state.at > runtime.now()) await runtime.sleep(task.state.at, call);                // throws on abort
-    await runtime.commit(tx => tx.patch(task.id, { status: 'firing' }), call);               // record intent before any effect
+    if (task.state.at > runtime.now()) await runtime.sleep(task.state.at, call);        // throws on cancellation
+    await runtime.commit(tx => tx.patch(task, { status: 'firing', ...common(task) }), call);   // intent before any effect
     const { skip } = await runtime.hooks(reminderKind).run('before_fire', { about: task.state.about }, call);
     await runtime.commit(tx => {
-      if (!skip)                                                               // marked execution's whole commit rejects
-        tx.entry(noticeKind, { model: [noticeMessage(`Reminder: see entry ${task.state.about}`)] });
-      tx.settle(task.id, 'done', { ...task.state, fired: !skip });
+      if (!skip) tx.entry(noticeKind, { model: [noticeMessage(`Reminder: see entry ${task.state.about}`)] });
+      tx.settle(task, { status: 'done', ...common(task), fired: !skip });               // a marked task's commit rejects
     }, call);
   },
 
-  async recover(task, runtime, call) { return this.execute(task, runtime, call); },                  // safe to redo
-  async abort(task, runtime, call)   { await runtime.commit(tx => tx.settle(task.id, 'aborted', task.state), call); },
+  async recover(task, runtime, call) { return this.execute(task, runtime, call); },      // safe to redo
+  async abort(task, runtime, call)   {
+    await runtime.commit(tx => tx.settle(task, { status: 'aborted', ...common(task) }), call);
+  },
 
   // no preview: nothing to show while sleeping
 });
+
+const common = (t: Task<ReminderStates>) => ({ about: t.state.about, at: t.state.at });
 ```
+
+State is a tagged union over status: one variant per status carrying exactly the fields that exist
+in it, so a reader narrows instead of checking optionals, and `patch` within a variant takes a
+partial (`tx.patch(task, { at: later })`) while a transition takes the whole variant. The harness
+adds an `orphaned` terminal variant with the fields common to all of yours, for the case where this
+plugin is not installed when the session is opened; you never write it, and a task that depends on
+yours handles it in the same `switch` that handles your other terminal statuses.
 
 The rules an execution follows, and the driver enforces:
 

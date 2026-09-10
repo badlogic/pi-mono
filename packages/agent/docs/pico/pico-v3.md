@@ -279,7 +279,7 @@ One session-wide sequence orders every mutation. A creation's sequence number is
 const entryId = await conv.commit(tx => {
   tx.value(planMode).set(true);                                             // 100
   const id = tx.entry(userKind, { model: [message] });                      // 101
-  tx.task(generationKind, { state: { input: id } });                       // 102
+  tx.task(generationKind, { state: { status: "pending", input: id } });     // 102
   return id;
 }, call);
 // one batch [100–102] persisted and published; entryId === 101 here
@@ -305,7 +305,7 @@ history through X:
 await runtime.commit(tx => {
   tx.value(planMode).set(true);                             // 300
   const result = tx.entry(toolResultKind, { data: resultData, model: [message] }); // 301
-  tx.settle(task, { result });                              // 302
+  tx.settle(task, { status: "done", call: task.state.call, assistant: task.state.assistant, output, result });   // 302
 }, call);
 
 await conv.value(model).set("claude-opus-5", call);               // 303, a later commit
@@ -465,7 +465,7 @@ const partial = await runtime.scratch(sc => sc.list(frames).read(), call);
 // settlement: the result becomes an entry; settle retires the scope in the same commit
 await runtime.commit(tx => {
   const id = tx.entry(assistantKind, { model: [assemble(partial)] });
-  tx.settle(task, { result: id });
+  tx.settle(task, { status: "done", call: task.state.call, assistant: task.state.assistant, output, result: id });
 }, call);
 ```
 
@@ -497,19 +497,38 @@ supplies the inputs, progress and outcome that must survive a process.
 ```ts
 type TaskRole = "start" | "inflight" | "terminal";
 
-interface Task<State = JsonValue> {
+interface TaskStateBase { readonly status: string }
+
+interface Task<State extends TaskStateBase = TaskStateBase> {
   readonly id: Id;
   readonly conversationId: Id;
   readonly kind: string;
-  readonly status: string;              // kind-specific
+  readonly status: string;              // = state.status, stored and indexed so storage never decodes state
   readonly role: TaskRole;              // materialized from the kind's roles map on every write
-  readonly state: State;                // JSON
+  readonly state: State;                // a tagged union; the status is its discriminant
   readonly after: readonly Id[];        // dependencies, fixed at creation
   readonly background?: true;           // fixed at creation; absent = foreground (§5.6)
   readonly owns?: readonly Id[];        // conversations this task created (§5.7)
   readonly abort?: true;                // durable cancellation mark (§6.3)
 }
 ```
+
+**State is a tagged union over status.** A kind declares one variant per status, carrying exactly
+the fields that exist in it, so nothing is an optional that a reader has to guess about and a
+dependent narrows instead of probing:
+
+```ts
+type ToolStates =
+  | { status: "planned";  call: ToolCall; assistant: Id }
+  | { status: "running";  call: ToolCall; assistant: Id; args: JsonObject; replay: "safe" | "never";
+                          jobId?: Id; cancelJobOnAbort?: boolean }
+  | { status: "done";     call: ToolCall; assistant: Id; output: ToolOutputState; result: Id }
+  | { status: "aborted";  call: ToolCall; assistant: Id; output: ToolOutputState; result: Id };
+```
+
+`Task.status` duplicates `state.status` because storage indexes it and the driver compares it
+without decoding state; `Tx` writes both from the one variant it was given, so they cannot diverge.
+Fields common to every variant must have the same type in each.
 
 A kind maps its statuses to three roles:
 
@@ -524,21 +543,40 @@ on every write. Storage selects live rows using the role index without inspectin
 running kind code. Loading their full records may decode state; terminal history is not decoded.
 Callers cannot edit the role independently.
 
+**`orphaned` is derived, not declared.** A kind never writes it and never lists it. The harness adds
+one terminal variant to every state union, carrying the fields common to all of the kind's own
+variants:
+
+```ts
+type Common<S> = UnionToIntersection<S>;                              // fields present in every variant
+type Orphaned<S> = Omit<Common<S>, "status"> & { status: "orphaned" };
+type ToolState = ToolStates | Orphaned<ToolStates>;                   // { status: "orphaned"; call; assistant }
+```
+
+It is written in one situation only: at open, for a live foreground task whose kind is not
+registered in this process (§6.4). The stored record keeps whatever fields it had; the type
+promises only the common ones, which is all a dependent may rely on, because the kind never ran its
+cleanup. Background tasks of unregistered kinds are parked instead, and resume through `recover`
+when their kind returns. This is the only case in which the harness settles a task it does not own.
+
 ### 5.2 Kinds
 
 ```ts
-interface TaskKind<State, Hooks extends HookPoints = {}, Config extends ConfigSpec = {}, Preview = never> {
+interface TaskKind<States extends TaskStateBase, Hooks extends HookPoints = {}, Config extends ConfigSpec = {}, Preview = never> {
   readonly kind: string;
-  readonly initialStatus: string;
-  readonly roles: Readonly<Record<string, TaskRole>>;
+  readonly initialStatus: States["status"];
+  readonly roles: Readonly<Record<States["status"], TaskRole>>;   // `orphaned` is added as terminal (§5.1)
   readonly hooks?: HookSpecs<Hooks>;                // the points this kind runs (§8.7)
   readonly config?: Config;                         // the values this kind reads (below)
   preview?: {                                       // what UIs see while the task runs (§9.4)
     init(scratch: ScratchReader): Preview;          //   built once, on attach or reopen, from durable scratch
   };                                                //   afterwards the kind mutates runtime.preview.state in place
-  execute(task: Task<State>, runtime: TaskRuntime, call: Call): Promise<void>;
-  recover(task: Task<State>, runtime: TaskRuntime, call: Call): Promise<void>;
-  abort(task: Task<State>, runtime: TaskRuntime, call: Call): Promise<void>;
+  execute(task: Task<States>, runtime: TaskRuntime, call: Call): Promise<void>;
+  recover(task: Task<States>, runtime: TaskRuntime, call: Call): Promise<void>;
+  abort(task: Task<States>, runtime: TaskRuntime, call: Call): Promise<void>;
+}
+
+type TaskState<K> = K extends TaskKind<infer S, any, any, any> ? S | Orphaned<S> : never;  // what readers see
 }
 ```
 
@@ -657,31 +695,39 @@ The generation's settlement publishes the exchange atomically:
 await runtime.commit(tx => {
   const assistant = tx.entry(assistantKind, { model: [message] });    // calls [A, B]
   const tools = message.calls.map(call =>
-    tx.task(toolKind, { state: { call, assistant } }));
+    tx.task(toolKind, { state: { status: "planned", call, assistant } }));
   tx.task(postToolsKind, {
     after: tools,
-    state: { assistant, tools, inputs: task.state.inputs },
+    state: { status: "waiting", assistant, tools, inputs: task.state.inputs },
   });
-  tx.settle(task, { assistant });
+  tx.settle(task, { status: "done", inputs: task.state.inputs, assistant });
 }, call);
 ```
 
-Each tool executes and settles itself: hooks, execution, result entry, terminal status. It does not
+Each tool executes and settles itself: hooks, execution, result entry, terminal variant. It does not
 look at siblings, queues or context. post_tools starts when both are terminal, reads them with the
-typed getter, and decides what happens next:
+typed getter, narrows on their status, and decides what happens next:
 
 ```ts
 async execute(task, runtime, call) {
   await runtime.commit(async tx => {
     const tools = await tx.getTasks(toolKind, task.state.tools);            // Map<id, Task<ToolState>>
-    const outcomes = [...tools.values()].map(t => t.state.output);        // ToolOutputState
+    const outcomes: ToolOutputState[] = [];
+    for (const t of tools.values()) {
+      switch (t.state.status) {
+        case "done": case "aborted": outcomes.push(t.state.output); break;   // both wrote their result entry
+        case "orphaned":                                                     // kind unregistered at open (§5.1)
+          tx.entry(toolResultKind, unavailableResult(t.state.call)); break;
+        default: throw new Error(`tool ${t.id} still live in post_tools`);
+      }
+    }
     if (outcomes.some(o => o.terminate)) {
       for (const inputId of task.state.inputs) {
         const result = await tx.value(inputResult(inputId)).get();
         if (result?.status !== "running") throw new Error(`Invalid active input ${inputId}`);
         tx.value(inputResult(inputId)).set({ ...result, status: "stopped" });
       }
-      return tx.settle(task, { stopped: true });                      // no successor
+      return tx.settle(task, { status: "stopped", assistant: task.state.assistant, tools: task.state.tools });   // no successor
     }
     const added = outcomes.flatMap(o => o.addedTools ?? []);
     const selectedTools = added.length ? [...current, ...added] : current;
@@ -691,8 +737,8 @@ async execute(task, runtime, call) {
       data: { text: handoff.handoff }, model: [handoffMessage(handoff.handoff)], head: "self",
     });
     const inputs = await landPostToolsInbox(tx, task.conversationId, task.state.inputs); // writes + steer (§8.1)
-    tx.task(generationKind, { state: nextGeneration(task, { selectedTools, inputs }) });
-    tx.settle(task, {});
+    tx.task(generationKind, { state: { status: "pending", ...nextGeneration(task, { selectedTools, inputs }) } });
+    tx.settle(task, { status: "done", assistant: task.state.assistant, tools: task.state.tools, inputs });
   }, call);
 }
 ```
@@ -916,8 +962,11 @@ forever. An isolate kill boundary is future work; RPC cancellation alone is not 
 
 ### 6.4 Open, close, shutdown, delete
 
-**Open** reports unregistered entry kinds, validates live task kinds, seeds live/ownership indexes,
-exposes inspection/queries, and starts nothing. Unknown entries preserve context through stored facets.
+**Open** reports unregistered entry kinds, seeds live/ownership indexes, exposes inspection/queries,
+and starts nothing. A live task whose kind is not registered cannot run: a background one is parked
+(not started, not recovered, not counted for idleness) and resumes through `recover` when its kind
+returns; a foreground one would keep its conversation busy forever, so open settles it in the
+derived `orphaned` variant (§5.1) and reports it. `inspect` returns those separately. Unknown entries preserve context through stored facets.
 
 **Close** runs one nonpersistent line operation that enters `closing` and stops admission and claims.
 All earlier line operations have already finished. Later storage operations reject; internal invocation
@@ -1369,8 +1418,8 @@ work continues as the job:
 ```ts
 const job = await runtime.commit(tx => {
   const id = tx.task(jobKind, { background: true,
-    state: { cmd, cwd, origin: { tool: "bash", task: runtime.taskId, callId: toolCallId } } });
-  tx.patch(runtime.taskId, { state: { jobId: id, cancelJobOnAbort: true } });
+    state: { status: "planned", cmd, cwd, origin: { tool: "bash", task: runtime.taskId, callId: toolCallId } } });
+  tx.patch(task, { jobId: id, cancelJobOnAbort: true });        // partial: still "running" (§9.2)
   return id;
 }, call);
 const done = await runtime.waitForTask(job, { budgetMs: runtime.budgetMs }, call);
@@ -1479,10 +1528,12 @@ Starting one is creating the task; a tool does it in its execute (§8.3), a UI i
 
 ```ts
 const jobId = await conv.commit(tx =>
-  tx.task(jobKind, { background: true, state: { cmd: "npm test", cwd, every: 6 * 3600_000 } }), call);
+  tx.task(jobKind, { background: true, state: { status: "planned", cmd: "npm test", cwd, every: 6 * 3600_000 } }), call);
 ```
 
 ```text
+states:  planned { cmd, cwd, every?, notBefore? } | running { …, startedAt } |
+         exited { …, output, exitCode } | killed { …, output } | lost { … }
 roles:   planned=start; running=inflight; exited/killed/lost=terminal
 execute: sleep until notBefore with Call; { status running; startedAt = runtime.now() }
          env.exec(command, options, call), with bounded capture and spill
@@ -1615,7 +1666,7 @@ interface Harness {
   conversation(id: Id, call: Call): Promise<ConversationHandle | undefined>;
   conversations(query, call: Call): Promise<Page<Conversation>>;
   acceptance(requestId: string, call: Call): Promise<{ requestId: string; conversationId: Id; inputId: Id } | undefined>;
-  inspect(call: Call): Promise<{ start: Task[]; inflight: Task[] }>;
+  inspect(call: Call): Promise<{ start: Task[]; inflight: Task[]; orphaned: Task[]; parked: Task[] }>;
   drive(call: Call): Promise<"idle" | "closed">;
   getEntry(id, call); getEntry(kind, id, call); getEntries(ids, call); getEntries(kind, ids, call);
   entries(conversationId, page, call);
@@ -1648,7 +1699,7 @@ const entryId = await harness.commit(tx => {
     data: { text: "plan accepted" },
     model: [{ role: "user", content: "<note>plan accepted</note>", timestamp: 0 }],
   });                                                       // final id, inside the closure
-  tx.task(reminderKind, { background: true, state: { about: id } });
+  tx.task(reminderKind, { background: true, state: { status: "scheduled", about: id } });
   return id;                                                // any value; resolved after commit
 }, call);
 ```
@@ -1674,8 +1725,20 @@ interface Tx {
   // writes; rewindable conversation state before entries (§3.2)
   entry<E extends Entry>(kind: EntryKind<E>, conversationId: Id, input: EntryInput<E>): Id;
   task<S>(kind: TaskKind<S>, spec: { state: S; after?: Id[]; background?: true; owns?: Id[] }): Id;
-  patch<S>(task: Task<S> | Id, changes: { status?: string; state?: Partial<S> }): void;
-  settle<S>(task: Task<S> | Id, outcome: Partial<S> & { status?: string }): void;   // terminal; retires scratch
+  // stay in the current variant: a partial of that variant, no status
+  patch<S extends TaskStateBase, K extends S["status"]>(
+    task: Task<S> & { state: { status: K } },
+    changes: Partial<Omit<Extract<S, { status: K }>, "status">>): void;
+  // move to another variant, or patch by id: the whole variant
+  patch<S extends TaskStateBase>(task: Task<S> | Id, state: NonTerminal<S>): void;
+  settle<S extends TaskStateBase>(task: Task<S> | Id, state: Terminal<S>): void;   // terminal; retires scratch
+  // NonTerminal<S> / Terminal<S> are S filtered by the kind's roles map. The partial overload needs a task
+  // whose variant the compiler can see (the normal case inside a kind's methods); a bare id or an unnarrowed
+  // union falls back to the whole-variant form, so no field of another variant is smuggled in and a partial
+  // cannot change status:
+  //   tx.patch(task, { jobId });                                          // still "running"
+  //   tx.patch(task, { status: "running", call, assistant, args, replay }); // planned → running
+  //   tx.settle(task, { status: "done", call, assistant, output, result }); // terminal
   createConversation(spec): Id;  deleteConversation(id: Id): void;
 }
 ```
