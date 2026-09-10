@@ -14,8 +14,10 @@ shows the surface each package has to end up with.
 `Id`, `EntryIdentity`, `EntryBase`, the composable `EntryData` / `ModelProjection` /
 `ContextHead` / `ContextEdits` facets, `Entry`, `EntryKind`, `EntryInput`, `ContextEdit`, `Task`,
 `TaskRole`, stored task roles, `Conversation`, `InboxItem`, `InputResult`, `InboxOp`, acceptance
-receipts, `Address`/`Value`/`List`/`Scope`, `Write`/`CommitBatch`, `Page`/`Cursor` and the query shapes
-(§2, §4.1, §5.1, §7.2–7.3). No code.
+receipts, `Call` (an alias of Chord Context), `TaskRuntime`/`ToolRuntime`, private typed invocation
+identity, `Address`/`Value`/`List`/`Scope`, `Write`/`CommitBatch`, `Page`/`Cursor` and query shapes.
+Every async harness/handle/runtime method takes a required final Call; no duplicate signal options,
+task-conversation facades or admission gates.
 
 Test: it compiles; fixtures cover entries with no data, no model, every individual facet and the
 built-in facet combinations.
@@ -25,17 +27,20 @@ built-in facet combinations.
 `Storage` and `MemoryStorage`: `commit` numbering from `lastSeq`, point reads, fork-aware
 `scanEntries` / `scanTasks` / `scanConversations` with cursors, target-capped `newestHead` over stored
 numeric boundaries, stored entry data/model/edits, value versions and list elements read at a
-position, `ownedFrom`, the set of entry kind strings written.
+position, `ownedFrom`, the set of entry kind strings written and session-wide live-task scans.
+Use existing batched `getTasks` for named owners; no header/projection APIs or inbox-specific queries.
 
 Tests: every row of the §7.2 query table against hand-built batches; ids are `lastSeq + 1 + i`; a
-head is found without a kind; entry headers omit arbitrary data but retain model/head/edits; a
-live-task scan decodes no terminal rows; `remove` and `clear` hide by position.
+head is found without a kind; entry reads/scans/head lookup return full entries after indexed
+selection; live-task scans skip terminal rows (named owner reads may fetch them); `remove` and
+`clear` hide by position.
 
 ## 3. The line and `Tx`
 
-`commit(plan)` on a serialized line: buffered writes, ids final at call time, rewindable
+`commit(plan, call)` on a serialized line: buffered writes, ids final at call time, rewindable
 conversation value/list writes after an entry throw, a throwing plan discards everything, publish
-after persist, `kick` when a batch touched a task. Session and sticky conversation state, task
+after persist; apply the entire batch to live indexes before scheduling or testing idle. Driver
+callbacks, signals and task methods dispatch outside the line. Session and sticky conversation state, task
 writes and conversation writes may appear anywhere. `task` / `patch` / `settle` materialize the role
 from the kind's status map. `value` / `list` / `entry` / `task` / `patch` / `settle` build the batch
 of §7.3.
@@ -43,7 +48,11 @@ of §7.3.
 Tests: concurrent commits serialize; a rejected commit consumes no ids; each builder verb produces
 the expected write; reads inside a plan see committed state only; session and sticky conversation
 writes may follow and reference a new entry; rewindable value set/delete and list
-append/remove/clear after an entry each reject.
+append/remove/clear after an entry each reject; exact invocation-token checks run on the line;
+post-mark main/scratch mutation rejects before builder; only an owned task's current invocation may
+patch its state/status or settle it (host abort marks remain allowed); caller cancellation never
+abandons admitted persistence; Tx/ScratchTx reads are asynchronous and builders may await them
+without releasing the line; writes remain synchronous. No external effects or nested line entry in builders.
 
 ## 4. Entry kinds and context
 
@@ -71,38 +80,56 @@ results but inherit no tasks; state committed after the entry (a model change) i
 
 ## 6. Task kinds and the driver
 
-`TaskKind`, the registry, kind-declared status cycles, `TaskContext` (`commit`, `scratch`, `sleep`,
-`signal`, `config`, `hooks`), the driver of §6.1 (`owned`, `Wake`, attached scopes, `drive` as a
-waiter, unchanged-status and poison guards, abort join and re-read), scopes of §6.2. Test kinds only:
-a counter, a blocker, a cycling schedule, a kind that returns without changing status, a kind that
-ignores its signal. There is no parked role or successor chain for retries.
+`TaskKind` with `(task, runtime, call)` methods, registry and `TaskRuntime`; one Call-final convention
+for operations, existing Context-aware env/provider/hook boundaries. Driver decisions, attachments,
+waiters, invocation completion and lifecycle run on the commit line. Only effects/callbacks dispatch
+outside it. Seed live tasks once; committed batches update live, reverse-dependency and conversation
+indexes. Resolve ownership upward only for live/owned work; evict unused ancestry. Stable attachments
+are distinct from temporary waiters. No Wake, polling loop, worker pool, poison graph, gate or parked role.
 
-Tests: persisted roles select execute / recover without a role-map lookup; a blocked execute holds
-nothing up; a valid status cycle; the exact unchanged-status guard; `after` gates a start;
-conversation and harness drive both start foreground/background work, resolve on foreground idle
-and keep serving background work; a full-quiescence wait remains pending on a recurring schedule;
-abort marks in both race orders; reopen recovers inflight; a mark written by one process is applied
-by the next.
+One invocation per task ID, concurrent across IDs; reserve before dispatch and release only after
+actual return, even if already terminal. Durable abort revokes execute/recover main and scratch writes,
+then signals outside line; fresh abort invocation alone writes cancellation outcomes. Status epochs
+count actual committed transitions, including same-start/end cycles. Task-contract faults fail-stop:
+reject waiters, stop admission, signal/join and close; preserve durable recovery state.
+
+Tests: one open scan, no full scan per completion; 100,000 historical children with two live tasks;
+whole-batch settle/successor publication; exact epoch rules; owned-task exclusive mutation; one
+invocation per ID; blocked calls do not block others; abort bypasses dependencies and never overlaps
+execute; repeated mark spares running abort; abort-handler failure; cooperative signal window;
+known direct/dependency self-waits, including background caller and new cycle-creating admission;
+already-aborted waiter registration and every cancellation/idle race; repeated drive uses one
+attachment; foreground idle while attached background work continues; reopen recovers marked work.
 
 ## 7. Scratch
 
 Scratch batches, one task per batch, `ScratchTx`, retire on settle, sidecar-independent (memory).
 
-Tests: a crash before settle keeps scratch; settle deletes it; a write after settle is rejected; a
-new attempt clears its list.
+Tests: a crash before settle keeps scratch; settle deletes it; writes after mark/settle/retired token
+reject; new attempts clear scratch; persisted assistant frames use the pi-ai compact frame encoder,
+not raw cumulative provider events; a rejected stream-frame write cancels and joins the producer
+before invocation completion (iterator exit is insufficient); harness progress bridges own every promise, suppress expected
+late cancellation only, report persistence errors, and drain before invocation completion. Raw task
+scratch calls must be awaited/caught; no successful silent no-op.
 
 ## 8. Harness shell and handles
 
 `Harness.open` (built-in registries, `kinds` and `replace` options, kinds-set check, `inspect`,
 `drive`, `close`, `shutdown`), `ConversationHandle` (`commit`, `value` / `list`, `config` /
 `settings`, `fork` with `abort`, `abort`, `hooks.on` scoped with `subtree`), `acceptance(requestId)`,
-`result(inputId)`, `abortTask`, `conversations` with `parent` / independent filtering. No agent
-behaviour yet.
+`result(inputId, call)`, `abortTask`, `conversations` with `parent` / independent filtering. Call is
+required on every async public/runtime operation, including reads and lifecycle; no raw host-lifecycle
+Harness exposed to tasks. No agent behaviour yet.
 
 Tests: open on empty vs existing storage; an unregistered entry kind is reported without scanning
 entries and its stored model/head/edits still derive context; an unknown live task kind rejects;
 replace by name keeps `h.kinds.<name>` consistent; `settings` round-trips; scoped hooks run after
-harness-wide ones, innermost last.
+harness-wide ones, innermost last; derived Call preserves typed private identity and telemetry;
+stale/foreign task token rejects; close stops admission in one nonpersistent line job, joins outside;
+shutdown atomically marks live tasks only, then permits abort cleanup; queued items/results remain
+unchanged, including idle inbox-only conversations; crash/reopen child cleanup marks tasks only and
+preserves queues; repeated close/shutdown share completion; close interrupt rejects shutdown;
+lifecycle calls with task identity reject; delete rejects outstanding terminal invocations.
 
 ## 9. Generation kind
 
@@ -117,8 +144,11 @@ attempt.
 
 Tests: the six system-entry traces from the guide (tool added, removed, host section changed, MCP
 schema changed, plugin section on and off, `addTools`); fresh baseline after a head; a fork diffs
-against its own config; a restart emits only the changed section; in-band `aborted` stop reason;
-crash while streaming publishes the partial; retry budget exhausted → failed with no successor.
+against its own config; a restart emits only the changed section; in-band provider abort without a durable mark has a
+kind-level outcome, but post-mark execute settlement rejects and fresh abort writes optional partial,
+cancelled input results and known usage atomically; no mark branch in normal settlement; missing
+post-cutoff usage is unknown; crash while streaming publishes the partial; retry budget exhausted
+→ failed with no successor.
 
 ## 10. Tools, post_tools, exchanges
 
@@ -165,8 +195,9 @@ The `subagent` tool (`run`, `spawn`, `send`, `status`, `wait`, `stop`), ownershi
 reach through live owners, `run`'s recover driving the child again, `spawn` initialization of config,
 explicit child input results.
 
-Tests: restart in the middle of `run`; parent abort reaches a `run` child and spares a `spawn`
-child; `stop`; nested children; the child's first turn writes its own baseline.
+Tests: restart in the middle of `run`; conversation abort reaches a `run` child and spares a `spawn`
+child; abortTask marks only owner and fresh cleanup cancels its child; drive waiter observes Call;
+cleanup tolerates already-terminal child/job; `stop`; nested children; child's own baseline.
 
 ## 14. Jobs and the budget
 
@@ -174,14 +205,20 @@ child; `stop`; nested children; the child's first turn writes its own baseline.
 delegating first and waiting with the budget, `notify` and the `notice` entry, the `job` tool,
 schedules.
 
-Tests: budget expiry settles the call with `delegated` and the job continues; the notice appears
-on completion; a schedule cycles one stable task id and `abortTask` ends it; it does not block
-ordinary harness drive after foreground idle; recover → `lost` or rerun by policy; a user abort
-during the wait kills a non-backgrounded job.
+Tests: job creation atomically stores job id and cancellation policy on the tool; fresh tool abort
+uses those durable references, not execute locals or catch writes; budget expiry settles delegated
+and job continues; delegation requests notification in separate sticky state, not a patch to an owned
+job; both notification/completion orders publish once for exited, lost and killed; schedule cycles one
+stable id; foreground drive
+ignores background recurrence; recover → lost or safe rerun; abort kills non-detached job.
+
+Remaining integration design: arbitrary-promise budget adoption must explicitly transfer effect and
+sink ownership before the tool invocation releases. A raced, abandoned promise is not permitted.
+Preserve the capability (crash outcome lost), but implement job-first execution until transfer is settled.
 
 ## 15. Previews
 
-`ctx.preview` as a Chord tracker per task; the generation applies stream events to a partial
+`runtime.preview` as a Chord tracker per task; the generation applies stream events to a partial
 message, the tool's preview is its sink state, the job's the same; `preview.init` on attach and
 reopen; flush after each scratch commit.
 
@@ -204,12 +241,17 @@ fold, failed and aborted attempts included.
 ## 17. JSONL storage
 
 Append-only batches, replay on open, torn tail discarded, malformed line fails open, entry
-`data`/`model`/`head`/`edits` and the kind-string set from replay, values as Chord deltas (full when
-first or small, ops otherwise), scratch sidecars retired after the main-file settle.
+`data`/`model`/`head`/`edits` and the kind-string set from replay. Whole value sets and intrinsic list
+operations in main and scratch files; no Chord storage codec. Replay main first, then surviving live
+scratch; per-file sequence gaps are valid. Recover lastSeq from maximum complete surviving batch
+endpoint, including clear/remove. Retired scratch is ignored; its later settlement covers its ids.
+Physically remove torn suffixes before appending; malformed complete replayed batches fail.
 
-Tests: conformance against memory (one mutation stream, identical query results); linear file
-growth under repeated sets of a large value; accepted payload plus placement has two JSONL copies,
-including idle acceptance; crash between the settle write and the sidecar unlink.
+Tests: conformance against memory; full replacement values on disk; compact incremental frames/output
+operations avoid repeated growing snapshots; main=100/live scratch=150 reopens at 150; settle=151
+with failed unlink ignores retired scratch, even malformed; clear/remove high-water; torn main and
+live scratch tails; nonoverlapping ranges; accepted payload plus placement has two JSONL copies,
+including idle acceptance. Backend memory and disk growth claims match whole-value behavior.
 
 ## 18. SQLite storage
 
@@ -217,15 +259,18 @@ Tables and indexes of §7.5, nullable entry JSON columns for data/model/edits an
 head boundary, scratch rows deleted in the settle transaction, storage version and `migrate`.
 
 Tests: conformance three ways; removed sticky inbox elements may be physically discarded while
-input results remain point-readable; a cold reopen decodes only live rows (count them); a version
-mismatch rejects.
+input results remain point-readable; a cold reopen decodes live tasks and only named required owner
+records, including terminal owners; no retained terminal payload cache; a version mismatch rejects.
 
 ## 19. Race matrix and telemetry
 
 The §10.2 matrix in both orders with faux clocks, fake processes and storage barriers; spans per
 task call and per commit.
 
-Tests: the matrix; span tree for one turn with a tool and a retry.
+Tests: the matrix; span tree for one turn with a tool and retry; nested Call preserves active telemetry
+parent and private invocation identity; drive-caller cancellation does not become the task signal;
+providers/env interpret signals, hooks propagate cancellation rather than swallowing it; no callback
+runs on the line; stale RPC-bound invocation rejected. Metadata transport never carries task authority.
 
 ## 20. Clients
 
@@ -254,7 +299,8 @@ Copy (under `packages/agent/src/harness/` unless noted):
 
 Depend on, as packages (they are not the old harness):
 
-- `@earendil-works/chord/delta` (15, 16, 17)
+- `@earendil-works/chord` Context types and `@earendil-works/chord/context` helpers (1, 6, 8, 19)
+- `@earendil-works/chord/delta` (15, 16: preview/watch only; not storage)
 - `@earendil-works/pi-ai`: `faux` provider for tests, `utils/estimate` for thresholds, `SystemMessage` (4, 9, 12)
 
 Read before writing the equivalent, then close the file:
