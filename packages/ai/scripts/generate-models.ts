@@ -287,6 +287,19 @@ const DEEPSEEK_V4_FLASH_THINKING_LEVEL_MAP = {
 	...DEEPSEEK_V4_THINKING_LEVEL_MAP,
 	low: "low",
 } as const;
+
+function isDeepSeekV4ModelId(modelId: string): boolean {
+	return modelId.includes("deepseek-v4") || modelId.includes("deepseek-flash");
+}
+
+function isDeepSeekFlashModelId(modelId: string): boolean {
+	return (
+		modelId.includes("deepseek-v4-flash") ||
+		modelId.includes("deepseek-v4.1-flash") ||
+		modelId.includes("deepseek-flash")
+	);
+}
+
 // Verified against Fireworks Messages raw_output on 2026-09-10 (#9323).
 // Fall back to verified support when models.dev omits effort metadata; this is
 // not an allowlist. Any Fireworks Messages model advertising effort uses adaptive thinking.
@@ -961,13 +974,13 @@ function applyThinkingLevelMetadata(model: Model<any>): void {
 	if (model.api === "anthropic-messages" && isAnthropicTemperatureUnsupportedModel(model.id)) {
 		mergeAnthropicMessagesCompat(model, { supportsTemperature: false });
 	}
-	if (model.api === "openai-completions" && model.id.includes("deepseek-v4")) {
+	if (model.api === "openai-completions" && isDeepSeekV4ModelId(model.id)) {
 		mergeThinkingLevelMap(
 			model,
 			model.provider === "openrouter"
 				? { ...DEEPSEEK_V4_THINKING_LEVEL_MAP, xhigh: "xhigh", max: null }
 				: (model.provider === "deepseek" || model.provider === "opencode" || model.provider === "opencode-go") &&
-					model.id.includes("deepseek-v4-flash")
+					isDeepSeekFlashModelId(model.id)
 					? DEEPSEEK_V4_FLASH_THINKING_LEVEL_MAP
 					: DEEPSEEK_V4_THINKING_LEVEL_MAP,
 		);
@@ -2674,6 +2687,42 @@ async function generateModels() {
 			compat: deepseekCompat,
 		},
 		{
+			id: "deepseek-flash",
+			name: "DeepSeek V4.1 Flash",
+			api: "openai-completions",
+			baseUrl: "https://api.deepseek.com",
+			provider: "deepseek",
+			reasoning: true,
+			input: ["text", "image"],
+			cost: {
+				input: 0.15,
+				output: 0.6,
+				cacheRead: 0.003,
+				cacheWrite: 0,
+			},
+			contextWindow: 1000000,
+			maxTokens: 384000,
+			compat: deepseekCompat,
+		},
+		{
+			id: "deepseek-v4.1-flash",
+			name: "DeepSeek V4.1 Flash",
+			api: "openai-completions",
+			baseUrl: "https://api.deepseek.com",
+			provider: "deepseek",
+			reasoning: true,
+			input: ["text", "image"],
+			cost: {
+				input: 0.15,
+				output: 0.6,
+				cacheRead: 0.003,
+				cacheWrite: 0,
+			},
+			contextWindow: 1000000,
+			maxTokens: 384000,
+			compat: deepseekCompat,
+		},
+		{
 			id: "deepseek-v4-pro",
 			name: "DeepSeek V4 Pro",
 			api: "openai-completions",
@@ -2747,7 +2796,7 @@ async function generateModels() {
 	for (const candidate of allModels) {
 		if (
 			candidate.api === "openai-completions" &&
-			candidate.id.includes("deepseek-v4") &&
+			isDeepSeekV4ModelId(candidate.id) &&
 			!QWEN_TOKEN_PLAN_PROVIDER_IDS.has(candidate.provider)
 		) {
 			const preservesNativeReasoningEffort = candidate.provider === "openrouter" || candidate.provider === "opencode";

@@ -88,6 +88,16 @@ describe("getSupportedThinkingLevels", () => {
 		expect(getSupportedThinkingLevels(model!)).toEqual(["off", "low", "high", "max"]);
 	});
 
+	it.each(["deepseek-flash", "deepseek-v4.1-flash"] as const)(
+		"includes low/high/max plus off for DeepSeek V4.1 Flash (%s) on the DeepSeek provider",
+		(modelId) => {
+			const model = getModel("deepseek", modelId);
+			expect(model).toBeDefined();
+			expect(model!.input).toEqual(["text", "image"]);
+			expect(getSupportedThinkingLevels(model!)).toEqual(["off", "low", "high", "max"]);
+		},
+	);
+
 	it("includes low/high/max plus off for DeepSeek V4 Flash on opencode-go", () => {
 		const model = getModel("opencode-go", "deepseek-v4-flash");
 		expect(model).toBeDefined();
