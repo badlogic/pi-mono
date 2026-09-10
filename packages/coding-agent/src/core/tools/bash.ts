@@ -20,11 +20,14 @@ import { DEFAULT_MAX_BYTES, DEFAULT_MAX_LINES, formatSize, type TruncationResult
 
 const MAX_TIMEOUT_MS = 2_147_483_647;
 const MAX_TIMEOUT_SECONDS = MAX_TIMEOUT_MS / 1000;
+/** Default shell timeout in seconds, matching the agent loop default of 3 minutes. */
+const DEFAULT_SHELL_TIMEOUT_S = 180;
 
 function resolveTimeoutMs(timeout: number | undefined): number | undefined {
-	if (timeout === undefined) return undefined;
-	if (!Number.isFinite(timeout) || timeout <= 0) {
-		throw new Error("Invalid timeout: must be a finite number of seconds");
+	if (timeout === undefined) return DEFAULT_SHELL_TIMEOUT_S * 1000;
+	if (timeout === 0) return undefined;
+	if (!Number.isFinite(timeout) || timeout < 0) {
+		throw new Error("Invalid timeout: must be a finite number of seconds, or 0 to disable the timer");
 	}
 
 	const timeoutMs = timeout * 1000;
@@ -36,7 +39,12 @@ function resolveTimeoutMs(timeout: number | undefined): number | undefined {
 
 const bashSchema = Type.Object({
 	command: Type.String({ description: "Shell command to execute" }),
-	timeout: Type.Optional(Type.Number({ description: "Timeout in seconds (optional, no default timeout)" })),
+	timeout: Type.Optional(
+		Type.Number({
+			description:
+				"Timeout in seconds. Defaults to 180 (3 minutes) when omitted; pass 0 to disable the timer, or a finite number of seconds for a longer limit.",
+		}),
+	),
 });
 
 export const bashToolSystemPromptContribution = {
@@ -231,7 +239,7 @@ export function createShellToolDefinition(
 	return {
 		name: config.name,
 		label: config.label,
-		description: `Execute a ${config.shellName} command in the current working directory. Returns stdout and stderr. Output is truncated to last ${DEFAULT_MAX_LINES} lines or ${DEFAULT_MAX_BYTES / 1024}KB (whichever is hit first). If truncated, full output is saved to a temp file. Optionally provide a timeout in seconds.`,
+		description: `Execute a ${config.shellName} command in the current working directory. Returns stdout and stderr. Output is truncated to last ${DEFAULT_MAX_LINES} lines or ${DEFAULT_MAX_BYTES / 1024}KB (whichever is hit first). If truncated, full output is saved to a temp file. Timeout defaults to 180 seconds; pass a timeout in seconds for a longer limit, or 0 to disable the timer.`,
 		promptSnippet: config.promptSnippet,
 		promptGuidelines: exposeSessionEnvironment && config.promptGuidelines ? [...config.promptGuidelines] : undefined,
 		parameters: bashSchema,

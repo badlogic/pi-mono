@@ -7,7 +7,7 @@ import {
 	type UserMessage,
 } from "@earendil-works/pi-ai";
 import { Type } from "typebox";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { agentLoop, agentLoopContinue } from "../src/agent-loop.ts";
 import { setDefaultStreamFn } from "../src/index.ts";
 import type { AgentContext, AgentEvent, AgentLoopConfig, AgentMessage, AgentTool } from "../src/types.ts";
@@ -1482,6 +1482,163 @@ describe("agentLoop with AgentMessage", () => {
 		}
 
 		expect(llmCalls).toBe(1);
+	});
+
+	it("should time out a tool call after the default 3 minute limit", async () => {
+		vi.useFakeTimers();
+		try {
+			const toolSchema = Type.Object({ value: Type.String() });
+			const tool: AgentTool<typeof toolSchema, { value: string }> = {
+				name: "echo",
+				label: "Echo",
+				description: "Echo tool",
+				parameters: toolSchema,
+				async execute(_toolCallId, params) {
+					await new Promise((resolve) => setTimeout(resolve, 60_000));
+					return {
+						content: [{ type: "text", text: `echoed: ${params.value}` }],
+						details: { value: params.value },
+					};
+				},
+			};
+
+			const context: AgentContext = {
+				systemPrompt: "",
+				messages: [],
+				tools: [tool],
+			};
+
+			const config: AgentLoopConfig = {
+				model: createModel(),
+				convertToLlm: identityConverter,
+				toolTimeoutMs: 1_000,
+			};
+
+			let callIndex = 0;
+			const streamFn = () => {
+				const stream = new MockAssistantStream();
+				queueMicrotask(() => {
+					if (callIndex === 0) {
+						const message = createAssistantMessage(
+							[{ type: "toolCall", id: "tool-1", name: "echo", arguments: { value: "hello" } }],
+							"toolUse",
+						);
+						stream.push({ type: "done", reason: "toolUse", message });
+					} else {
+						const message = createAssistantMessage([{ type: "text", text: "done" }]);
+						stream.push({ type: "done", reason: "stop", message });
+					}
+					callIndex++;
+				});
+				return stream;
+			};
+
+			const events: AgentEvent[] = [];
+			const stream = agentLoop([createUserMessage("echo something")], context, config, undefined, streamFn);
+			const consumer = (async () => {
+				for await (const event of stream) {
+					events.push(event);
+				}
+			})();
+			await vi.advanceTimersByTimeAsync(2_000);
+			await consumer;
+
+			const toolEnd = events.find((e) => e.type === "tool_execution_end");
+			expect(toolEnd).toBeDefined();
+			if (toolEnd?.type === "tool_execution_end") {
+				expect(toolEnd.isError).toBe(true);
+				const text = toolEnd.result.content.find((c: { type: string }) => c.type === "text");
+				expect(text && "text" in text ? text.text : "").toContain('Tool "echo" timed out');
+			}
+		} finally {
+			vi.useRealTimers();
+		}
+	});
+
+	it("should honor a per-call timeout override and timeout 0 to disable the timer", async () => {
+		vi.useFakeTimers();
+		try {
+			const toolSchema = Type.Object({
+				value: Type.String(),
+				timeout: Type.Optional(Type.Number()),
+			});
+			const finished: string[] = [];
+			const tool: AgentTool<typeof toolSchema, { value: string }> = {
+				name: "echo",
+				label: "Echo",
+				description: "Echo tool",
+				parameters: toolSchema,
+				async execute(_toolCallId, params) {
+					await new Promise((resolve) => setTimeout(resolve, 500));
+					finished.push(params.value);
+					return {
+						content: [{ type: "text", text: `echoed: ${params.value}` }],
+						details: { value: params.value },
+					};
+				},
+			};
+
+			const runOnce = async (args: Record<string, unknown>, toolTimeoutMs?: number) => {
+				const context: AgentContext = {
+					systemPrompt: "",
+					messages: [],
+					tools: [tool],
+				};
+				const config: AgentLoopConfig = {
+					model: createModel(),
+					convertToLlm: identityConverter,
+					toolTimeoutMs,
+				};
+				let callIndex = 0;
+				const streamFn = () => {
+					const stream = new MockAssistantStream();
+					queueMicrotask(() => {
+						if (callIndex === 0) {
+							const message = createAssistantMessage(
+								[{ type: "toolCall", id: "tool-1", name: "echo", arguments: args }],
+								"toolUse",
+							);
+							stream.push({ type: "done", reason: "toolUse", message });
+						} else {
+							const message = createAssistantMessage([{ type: "text", text: "done" }]);
+							stream.push({ type: "done", reason: "stop", message });
+						}
+						callIndex++;
+					});
+					return stream;
+				};
+				const events: AgentEvent[] = [];
+				const stream = agentLoop([createUserMessage("run")], context, config, undefined, streamFn);
+				const consumer = (async () => {
+					for await (const event of stream) {
+						events.push(event);
+					}
+				})();
+				await vi.advanceTimersByTimeAsync(2_000);
+				await consumer;
+				return events.find((e) => e.type === "tool_execution_end");
+			};
+
+			// A longer per-call override (2s) survives the 100ms default.
+			finished.length = 0;
+			const overridden = await runOnce({ value: "long", timeout: 2 }, 100);
+			expect(overridden?.type === "tool_execution_end" ? overridden.isError : undefined).toBe(false);
+			expect(finished).toEqual(["long"]);
+
+			// timeout 0 disables the timer entirely.
+			finished.length = 0;
+			const disabled = await runOnce({ value: "unlimited", timeout: 0 }, 100);
+			expect(disabled?.type === "tool_execution_end" ? disabled.isError : undefined).toBe(false);
+			expect(finished).toEqual(["unlimited"]);
+
+			// No override keeps the 100ms default and times out the 500ms tool.
+			finished.length = 0;
+			const timedOut = await runOnce({ value: "slow" }, 100);
+			expect(timedOut?.type === "tool_execution_end" ? timedOut.isError : undefined).toBe(true);
+			expect(finished).toEqual([]);
+		} finally {
+			vi.useRealTimers();
+		}
 	});
 });
 

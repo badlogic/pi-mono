@@ -10,7 +10,12 @@ const BASH_CHECKPOINT_INTERVAL_MS = 2_000;
 
 const bashSchema = Type.Object({
 	command: Type.String({ description: "Bash command to execute" }),
-	timeout: Type.Optional(Type.Number({ description: "Timeout in seconds (optional, no default timeout)" })),
+	timeout: Type.Optional(
+		Type.Number({
+			description:
+				"Timeout in seconds. Defaults to 180 (3 minutes) when omitted; pass 0 to disable the timer, or a finite number of seconds for a longer limit.",
+		}),
+	),
 });
 
 export type BashToolInput = Static<typeof bashSchema>;
@@ -54,7 +59,7 @@ export function createBashTool<TContext extends ExecutionToolContext = Execution
 	return {
 		name: "bash",
 		label: "bash",
-		description: `Execute a bash command in the current working directory. Returns combined stdout and stderr. Output is truncated to last ${DEFAULT_MAX_LINES} lines or ${DEFAULT_MAX_BYTES / 1024}KB (whichever is hit first). If truncated, full output is saved to a temp file. Optionally provide a timeout in seconds.`,
+		description: `Execute a bash command in the current working directory. Returns combined stdout and stderr. Output is truncated to last ${DEFAULT_MAX_LINES} lines or ${DEFAULT_MAX_BYTES / 1024}KB (whichever is hit first). If truncated, full output is saved to a temp file. Timeout defaults to 180 seconds; pass a timeout in seconds for a longer limit, or 0 to disable the timer.`,
 		parameters: bashSchema,
 		async execute(_toolCallId, { command, timeout }, onUpdate, toolContext, _invocation, context) {
 			validateTimeout(timeout);

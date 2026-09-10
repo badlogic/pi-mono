@@ -23,6 +23,17 @@ import type {
 	StreamFn,
 } from "./types.ts";
 
+/**
+ * Default per-tool-call timeout in milliseconds.
+ *
+ * Every tool call gets this timer unless the model specifies otherwise for
+ * that call. Tools that accept a numeric `timeout` argument in seconds (for
+ * example `bash`/`powershell`) use it as the override: a finite number
+ * replaces the default for that call, `0` disables the timer, and an omitted
+ * argument keeps the default.
+ */
+export const DEFAULT_TOOL_TIMEOUT_MS = 180_000;
+
 export type AgentEventSink = (event: AgentEvent) => Promise<void> | void;
 
 /**
@@ -456,7 +467,7 @@ async function executeToolCallsSequential(
 				isError: preparation.isError,
 			};
 		} else {
-			const executed = await executePreparedToolCall(preparation, signal, emit);
+			const executed = await executePreparedToolCall(preparation, config, signal, emit);
 			finalized = await finalizeExecutedToolCall(
 				currentContext,
 				assistantMessage,
@@ -527,7 +538,7 @@ async function executeToolCallsParallel(
 				await emitToolExecutionEnd(finalized, emit);
 				return finalized;
 			}
-			const executed = await executePreparedToolCall(preparation, signal, emit);
+			const executed = await executePreparedToolCall(preparation, config, signal, emit);
 			const finalized = await finalizeExecutedToolCall(
 				currentContext,
 				assistantMessage,
@@ -674,46 +685,99 @@ async function prepareToolCall(
 	}
 }
 
+/**
+ * Resolve the loop-level timeout for one tool call.
+ *
+ * Tools that accept a numeric `timeout` argument in seconds let the model
+ * specify otherwise per call: a finite number replaces the default for that
+ * call and `0` disables the timer. Unknown, non-numeric, or negative values
+ * keep the default so a malformed override cannot silently disable the timer.
+ */
+function resolveToolTimeoutMs(args: unknown, toolTimeoutMs: number | undefined): number | undefined {
+	const effectiveDefault = toolTimeoutMs ?? DEFAULT_TOOL_TIMEOUT_MS;
+	if (
+		typeof args === "object" &&
+		args !== null &&
+		"timeout" in args &&
+		typeof (args as { timeout?: unknown }).timeout === "number"
+	) {
+		const overrideSeconds = (args as { timeout: number }).timeout;
+		if (overrideSeconds === 0) return undefined;
+		if (Number.isFinite(overrideSeconds) && overrideSeconds > 0) return overrideSeconds * 1000;
+	}
+	if (effectiveDefault === 0) return undefined;
+	if (!Number.isFinite(effectiveDefault) || effectiveDefault < 0) return DEFAULT_TOOL_TIMEOUT_MS;
+	return effectiveDefault;
+}
+
+function formatToolTimeoutError(toolName: string, timeoutMs: number): string {
+	const seconds = Math.round(timeoutMs / 100) / 10;
+	return (
+		`Tool "${toolName}" timed out after ${seconds} seconds. ` +
+		`The tool call exceeded its time limit; re-issue it with a longer ` +
+		`timeout (for example a "timeout" argument in seconds) or split the work into smaller steps.`
+	);
+}
+
 async function executePreparedToolCall(
 	prepared: PreparedToolCall,
+	config: AgentLoopConfig,
 	signal: AbortSignal | undefined,
 	emit: AgentEventSink,
 ): Promise<ExecutedToolCallOutcome> {
 	const updateEvents: Promise<void>[] = [];
 	let acceptingUpdates = true;
+	const timeoutMs = resolveToolTimeoutMs(prepared.args, config.toolTimeoutMs);
+	let timeoutHandle: ReturnType<typeof setTimeout> | undefined;
+	let timedOut = false;
 
 	try {
-		const result = await prepared.tool.execute(
-			prepared.toolCall.id,
-			prepared.args as never,
-			signal,
-			(partialResult) => {
-				if (!acceptingUpdates) return;
-				updateEvents.push(
-					Promise.resolve(
-						emit({
-							type: "tool_execution_update",
-							toolCallId: prepared.toolCall.id,
-							toolName: prepared.toolCall.name,
-							args: prepared.toolCall.arguments,
-							partialResult,
-						}),
-					),
-				);
-			},
-		);
+		const execution = prepared.tool.execute(prepared.toolCall.id, prepared.args as never, signal, (partialResult) => {
+			if (!acceptingUpdates) return;
+			updateEvents.push(
+				Promise.resolve(
+					emit({
+						type: "tool_execution_update",
+						toolCallId: prepared.toolCall.id,
+						toolName: prepared.toolCall.name,
+						args: prepared.toolCall.arguments,
+						partialResult,
+					}),
+				),
+			);
+		});
+		let result: AgentToolResult<any>;
+		if (timeoutMs === undefined) {
+			result = await execution;
+		} else {
+			result = await new Promise<AgentToolResult<any>>((resolve, reject) => {
+				timeoutHandle = setTimeout(() => {
+					timedOut = true;
+					acceptingUpdates = false;
+					reject(new Error(formatToolTimeoutError(prepared.toolCall.name, timeoutMs)));
+				}, timeoutMs);
+				execution.then(resolve, reject);
+			});
+		}
 		acceptingUpdates = false;
 		await Promise.all(updateEvents);
 		return { result, isError: false };
 	} catch (error) {
 		acceptingUpdates = false;
 		await Promise.all(updateEvents);
+		if (timedOut && signal?.aborted) {
+			return {
+				result: createErrorToolResult("Operation aborted"),
+				isError: true,
+			};
+		}
 		return {
 			result: createErrorToolResult(error instanceof Error ? error.message : String(error)),
 			isError: true,
 		};
 	} finally {
 		acceptingUpdates = false;
+		if (timeoutHandle !== undefined) clearTimeout(timeoutHandle);
 	}
 }
 

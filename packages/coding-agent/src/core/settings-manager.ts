@@ -151,6 +151,7 @@ export interface Settings {
 	httpProxy?: string; // Proxy URL applied as HTTP_PROXY and HTTPS_PROXY for Pi-managed HTTP clients
 	httpIdleTimeoutMs?: number; // HTTP header/body idle timeout in milliseconds; 0 disables it
 	websocketConnectTimeoutMs?: number; // WebSocket connect/open handshake timeout in milliseconds; 0 disables it
+	toolTimeoutMs?: number; // Default per-tool-call timeout in milliseconds; 0 disables the loop-level timer; default: 180000
 	tuiMode?: TuiMode; // default: "regular"
 	fullscreenExitOutput?: FullscreenExitOutput; // default: "transcript"; no effect in regular TUI mode
 	fullscreenScrollbar?: ScrollViewScrollbar; // default: "auto"; no effect in regular TUI mode
@@ -956,6 +957,24 @@ export class SettingsManager {
 
 	getWebSocketConnectTimeoutMs(): number | undefined {
 		return parseTimeoutSetting(this.settings.websocketConnectTimeoutMs, "websocketConnectTimeoutMs");
+	}
+
+	getToolTimeoutMs(): number {
+		const value = this.settings.toolTimeoutMs;
+		if (value === undefined) return 180_000;
+		if (!Number.isFinite(value) || value < 0) {
+			throw new Error(`Invalid toolTimeoutMs setting: ${String(value)}`);
+		}
+		return Math.floor(value);
+	}
+
+	setToolTimeoutMs(timeoutMs: number): void {
+		if (!Number.isFinite(timeoutMs) || timeoutMs < 0) {
+			throw new Error(`Invalid toolTimeoutMs setting: ${String(timeoutMs)}`);
+		}
+		this.globalSettings.toolTimeoutMs = Math.floor(timeoutMs);
+		this.markModified("toolTimeoutMs");
+		this.save();
 	}
 
 	getHideThinkingBlock(): boolean {

@@ -269,6 +269,23 @@ export interface AgentLoopConfig extends SimpleStreamOptions {
 	toolExecution?: ToolExecutionMode;
 
 	/**
+	 * Default per-tool-call timeout in milliseconds.
+	 *
+	 * The loop enforces this timer around every tool `execute()` call. When it
+	 * fires, the tool result becomes an error naming the tool and the elapsed
+	 * limit. The model can specify otherwise per call through a numeric
+	 * `timeout` argument in seconds on tools that accept one (for example
+	 * `bash`/`powershell`): a finite number replaces the default for that call
+	 * and `0` disables the timer.
+	 *
+	 * Set to `0` to disable the loop-level timer entirely (tools may still
+	 * enforce their own timeouts). Must be a finite number >= 0.
+	 *
+	 * Default: 180000 (3 minutes).
+	 */
+	toolTimeoutMs?: number;
+
+	/**
 	 * Called before a tool is executed, after arguments have been validated.
 	 *
 	 * Return `{ block: true }` to prevent execution. The loop emits an error tool result instead.

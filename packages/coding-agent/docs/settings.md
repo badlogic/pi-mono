@@ -211,6 +211,7 @@ Keep `retry.provider.maxRetries` at `0` unless provider-level retries are explic
 | `transport` | string | `"auto"` | Preferred transport for providers that support multiple transports: `"sse"`, `"websocket"`, `"websocket-cached"`, or `"auto"` |
 | `httpIdleTimeoutMs` | number | `300000` | HTTP header/body idle timeout in milliseconds, also used by providers with explicit stream idle timeouts. Set to `0` to disable. |
 | `websocketConnectTimeoutMs` | number | `15000` | WebSocket connect/open handshake timeout in milliseconds for providers that support WebSocket transports. Set to `0` to disable. |
+| `toolTimeoutMs` | number | `180000` | Default per-tool-call timeout in milliseconds (3 minutes). Every tool call gets this timer unless the model specifies otherwise for that call through a numeric `timeout` argument in seconds (for example `bash`/`powershell`): a finite number replaces the default for that call, `0` disables the timer. Set to `0` to disable the loop-level timer entirely. |
 
 ### Terminal & Images
 
