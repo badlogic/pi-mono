@@ -12,7 +12,6 @@ import type {
 } from "@anthropic-ai/sdk/resources/beta/messages/messages.js";
 import { calculateCost } from "../models.ts";
 import type {
-	AnthropicMessagesCompat,
 	Api,
 	AssistantMessage,
 	CacheRetention,
@@ -182,15 +181,13 @@ function shouldUseServerSideFallbackBeta(model: Model<"anthropic-messages">): bo
 	return (model.compat?.allowedFallbackModels?.length ?? 0) > 0;
 }
 
-function getAnthropicCompat(
-	model: Model<"anthropic-messages">,
-): Required<
-	Omit<AnthropicMessagesCompat, "forceAdaptiveThinking" | "allowedFallbackModels" | "supportsMidConvoEffort">
-> {
+function getAnthropicCompat(model: Model<"anthropic-messages">) {
+	const isOpenRouter = model.provider === "openrouter" || model.baseUrl.includes("openrouter.ai");
 	return {
 		supportsEagerToolInputStreaming: model.compat?.supportsEagerToolInputStreaming ?? true,
 		supportsLongCacheRetention: model.compat?.supportsLongCacheRetention ?? true,
-		sendSessionAffinityHeaders: model.compat?.sendSessionAffinityHeaders ?? false,
+		sendSessionAffinityHeaders: model.compat?.sendSessionAffinityHeaders ?? isOpenRouter,
+		sessionAffinityFormat: model.compat?.sessionAffinityFormat ?? (isOpenRouter ? "openrouter" : undefined),
 		supportsCacheControlOnTools: model.compat?.supportsCacheControlOnTools ?? true,
 		supportsTemperature: model.compat?.supportsTemperature ?? true,
 		allowEmptySignature: model.compat?.allowEmptySignature ?? false,
@@ -952,8 +949,12 @@ function createClient(
 	}
 
 	// API key or header-owned auth.
-	const sessionAffinityHeaders: ProviderHeaders =
-		sessionId && getAnthropicCompat(model).sendSessionAffinityHeaders ? { "x-session-affinity": sessionId } : {};
+	const compat = getAnthropicCompat(model);
+	const sessionAffinityHeaders: ProviderHeaders = {};
+	if (sessionId && compat.sendSessionAffinityHeaders) {
+		const header = compat.sessionAffinityFormat === "openrouter" ? "x-session-id" : "x-session-affinity";
+		sessionAffinityHeaders[header] = sessionId;
+	}
 	const defaultHeaders = mergeClientHeaders(
 		{
 			accept: "application/json",

@@ -260,6 +260,15 @@ function createAnthropicModel(): Model<"anthropic-messages"> {
 	};
 }
 
+function createOpenRouterModel(): Model<"anthropic-messages"> {
+	return {
+		...createAnthropicModel(),
+		id: "anthropic/claude-opus-4.8",
+		provider: "openrouter",
+		baseUrl: "https://openrouter.ai/api",
+	};
+}
+
 function createContext(tools: Tool[] = [tool]): Context {
 	return {
 		messages: [{ role: "user", content: "Use the tool", timestamp: Date.now() }],
@@ -331,7 +340,7 @@ function getTools(body: Record<string, unknown>): Record<string, unknown>[] {
 	return tools as Record<string, unknown>[];
 }
 
-describe("Fireworks Anthropic session affinity and tool compat", () => {
+describe("Anthropic-compatible session affinity and tool compat", () => {
 	it("sends x-session-affinity header for Fireworks models", async () => {
 		const model = createFireworksModel();
 		// Need a real port, capture will assign one
@@ -359,6 +368,35 @@ describe("Fireworks Anthropic session affinity and tool compat", () => {
 		});
 
 		expect(request.headers["x-session-affinity"]).toBeUndefined();
+	});
+
+	// Regression test for https://github.com/earendil-works/pi/issues/9102
+	it("sends only x-session-id for OpenRouter models", async () => {
+		const request = await captureAnthropicRequest(createOpenRouterModel(), createContext(), {
+			sessionId: "openrouter-session-1",
+		});
+
+		expect(request.headers["x-session-id"]).toBe("openrouter-session-1");
+		expect(request.headers["x-session-affinity"]).toBeUndefined();
+	});
+
+	it("omits OpenRouter session headers when cacheRetention is none", async () => {
+		const request = await captureAnthropicRequest(createOpenRouterModel(), createContext(), {
+			sessionId: "openrouter-session-2",
+			cacheRetention: "none",
+		});
+
+		expect(request.headers["x-session-id"]).toBeUndefined();
+		expect(request.headers["x-session-affinity"]).toBeUndefined();
+	});
+
+	it("allows OpenRouter session headers to be disabled", async () => {
+		const model = { ...createOpenRouterModel(), compat: { sendSessionAffinityHeaders: false } };
+		const request = await captureAnthropicRequest(model, createContext(), {
+			sessionId: "openrouter-session-3",
+		});
+
+		expect(request.headers["x-session-id"]).toBeUndefined();
 	});
 
 	it("omits cache_control on tools for Fireworks models", async () => {

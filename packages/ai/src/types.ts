@@ -625,7 +625,7 @@ export interface OpenAICompletionsCompat {
 	supportsStrictMode?: boolean;
 	/** Cache control convention for prompt caching. "anthropic" applies Anthropic-style `cache_control` markers to the system prompt, last tool definition, and last user, assistant, or tool-result text content. */
 	cacheControlFormat?: "anthropic";
-	/** Whether to send session-affinity data from `options.sessionId`. Default: false. */
+	/** Whether to send session-affinity data from `options.sessionId`. Default: true for OpenRouter endpoints, false otherwise. */
 	sendSessionAffinityHeaders?: boolean;
 	/** Provider-specific deferred tool serialization mode. */
 	deferredToolsMode?: "kimi";
@@ -684,6 +684,8 @@ export interface AnthropicMessagesCompat {
 	 * Default: false.
 	 */
 	sendSessionAffinityHeaders?: boolean;
+	/** Session-affinity format. `"openrouter"` sends `x-session-id`; when unset, sends `x-session-affinity`. */
+	sessionAffinityFormat?: "openrouter";
 	/**
 	 * Whether the provider supports Anthropic-style `cache_control` markers on
 	 * tool definitions. When false, `cache_control` is omitted from tool params.
