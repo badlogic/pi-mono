@@ -366,6 +366,48 @@ describe("ModelRegistry", () => {
 				}
 			}
 		});
+
+		test("model-level baseUrl takes precedence over provider-level", async () => {
+			const originalEnv = process.env.TEST_MODEL_BASE_URL_12345;
+			process.env.TEST_MODEL_BASE_URL_12345 = "https://model-level.example.com/v1";
+
+			try {
+				writeRawModelsJson({
+					"custom-provider": {
+						baseUrl: "$TEST_PROVIDER_BASE_URL_UNUSED",
+						apiKey: "test-key",
+						api: "anthropic-messages",
+						models: [
+							{
+								id: "test-model",
+								name: "Test Model",
+								baseUrl: "$TEST_MODEL_BASE_URL_12345",
+								reasoning: false,
+								input: ["text"],
+								cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+								contextWindow: 100000,
+								maxTokens: 8000,
+							},
+						],
+					},
+				});
+
+				const registry = await createModelRegistry(authStorage, modelsJsonPath);
+				const model = registry.find("custom-provider", "test-model");
+
+				const auth = await registry.getApiKeyAndHeaders(model!);
+				expect(auth.ok).toBe(true);
+				if (auth.ok) {
+					expect(auth.baseUrl).toBe("https://model-level.example.com/v1");
+				}
+			} finally {
+				if (originalEnv === undefined) {
+					delete process.env.TEST_MODEL_BASE_URL_12345;
+				} else {
+					process.env.TEST_MODEL_BASE_URL_12345 = originalEnv;
+				}
+			}
+		});
 	});
 
 	describe("custom models merge behavior", () => {

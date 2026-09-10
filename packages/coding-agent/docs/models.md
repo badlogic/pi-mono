@@ -175,6 +175,8 @@ If your command is slow, expensive, rate-limited, or should keep using a previou
 
 `/model` availability checks use configured auth presence and do not execute shell commands.
 
+`baseUrl` is resolved at request time and overrides the model's endpoint for the outgoing request. A model-level `baseUrl` (in `models`) takes precedence over the provider-level `baseUrl`. Built-in providers that derive their endpoint from credentials (e.g. GitHub Copilot) keep that derived endpoint; a configured `baseUrl` only applies when the built-in auth does not set one.
+
 ### Custom Headers
 
 ```json

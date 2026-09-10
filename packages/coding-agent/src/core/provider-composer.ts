@@ -293,13 +293,6 @@ function configuredHeaders(
 	return { ...config?.headers, ...extension?.headers };
 }
 
-function configuredBaseUrl(
-	config: ModelsJsonProvider | undefined,
-	extension: ProviderConfigInput | undefined,
-): string | undefined {
-	return extension?.baseUrl ?? config?.baseUrl;
-}
-
 async function configContextEnv(
 	values: readonly string[],
 	ctx: AuthContext,
@@ -326,7 +319,6 @@ function composeApiKeyAuth(
 	// OAuth-only providers get no fabricated API-key login method.
 	if (!inherited && rawKey === undefined && oauth) return undefined;
 	const rawHeaders = configuredHeaders(config, extension);
-	const rawBaseUrl = configuredBaseUrl(config, extension);
 	const authHeader = extension?.authHeader ?? config?.authHeader ?? false;
 	return {
 		name: inherited?.name ?? "API key",
@@ -364,7 +356,7 @@ function composeApiKeyAuth(
 						? { auth: { apiKey: input.credential.key }, env: input.credential.env, source: "stored credential" }
 						: undefined;
 			} else if (rawKey !== undefined) {
-				const env = await configContextEnv([rawKey, rawBaseUrl ?? ""], input.ctx);
+				const env = await configContextEnv([rawKey], input.ctx);
 				const key = resolveConfigValueOrThrow(rawKey, `API key for provider "${providerId}"`, env);
 				result = inherited
 					? await inherited.resolve({ ...input, credential: { type: "api_key", key } })
@@ -374,17 +366,9 @@ function composeApiKeyAuth(
 			}
 			if (!result) return undefined;
 			const explicitEnv = { ...(input.credential?.env ?? {}), ...(result.env ?? {}) };
-			const headerEnv = await configContextEnv(
-				[...Object.values(rawHeaders ?? {}), rawBaseUrl ?? ""],
-				input.ctx,
-				explicitEnv,
-			);
+			const headerEnv = await configContextEnv(Object.values(rawHeaders ?? {}), input.ctx, explicitEnv);
 			const headers = resolveHeadersOrThrow(rawHeaders, `provider "${providerId}"`, headerEnv);
-			const auth = withConfiguredAuth(result.auth, headers, authHeader);
-			const baseUrl = rawBaseUrl
-				? resolveConfigValueOrThrow(rawBaseUrl, `baseUrl for provider "${providerId}"`, headerEnv)
-				: undefined;
-			return { ...result, auth: baseUrl ? { ...auth, baseUrl } : auth };
+			return { ...result, auth: withConfiguredAuth(result.auth, headers, authHeader) };
 		},
 	};
 }
@@ -398,25 +382,18 @@ function composeOAuthAuth(
 	const oauth = extension?.oauth ? adaptOAuth(extension.oauth) : base?.auth.oauth;
 	if (!oauth) return undefined;
 	const rawHeaders = configuredHeaders(config, extension);
-	const rawBaseUrl = configuredBaseUrl(config, extension);
 	const authHeader = extension?.authHeader ?? config?.authHeader ?? false;
 	return {
 		...oauth,
 		toAuth: async (credential) => {
+			const auth = await oauth.toAuth(credential);
 			const env = credential.env;
 			const headers = resolveHeadersOrThrow(
 				rawHeaders,
 				`provider "${providerId}"`,
 				typeof env === "object" && env !== null ? (env as Record<string, string>) : undefined,
 			);
-			const auth = withConfiguredAuth(await oauth.toAuth(credential), headers, authHeader);
-			if (!rawBaseUrl) return auth;
-			const baseUrl = resolveConfigValueOrThrow(
-				rawBaseUrl,
-				`baseUrl for provider "${providerId}"`,
-				typeof env === "object" && env !== null ? (env as Record<string, string>) : undefined,
-			);
-			return { ...auth, baseUrl };
+			return withConfiguredAuth(auth, headers, authHeader);
 		},
 	};
 }
@@ -565,6 +542,27 @@ export function resolveConfiguredModelHeaders(
 		`model "${model.provider}/${model.id}"`,
 		env,
 	);
+}
+
+function rawConfiguredBaseUrl(
+	model: Model<Api>,
+	config: ModelsJsonProvider | undefined,
+	extension: ProviderConfigInput | undefined,
+): string | undefined {
+	const definition = config?.models?.find((entry) => entry.id === model.id);
+	const extensionModel = extension?.models?.find((entry) => entry.id === model.id);
+	return definition?.baseUrl ?? extensionModel?.baseUrl ?? config?.baseUrl ?? extension?.baseUrl;
+}
+
+export function resolveConfiguredBaseUrl(
+	model: Model<Api>,
+	config: ModelsJsonProvider | undefined,
+	extension: ProviderConfigInput | undefined,
+	env?: Record<string, string>,
+): string | undefined {
+	const raw = rawConfiguredBaseUrl(model, config, extension);
+	if (raw === undefined) return undefined;
+	return resolveConfigValueOrThrow(raw, `baseUrl for model "${model.provider}/${model.id}"`, env);
 }
 
 export interface CompatibilityRequestConfig {

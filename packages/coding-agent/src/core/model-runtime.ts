@@ -49,6 +49,7 @@ import {
 	configuredRequestAuthStatus,
 	type ProviderConfigInput,
 	resolveCompatibilityRequestConfig,
+	resolveConfiguredBaseUrl,
 	resolveConfiguredModelHeaders,
 	validateExtensionProvider,
 } from "./provider-composer.ts";
@@ -476,17 +477,27 @@ export class ModelRuntime implements Models {
 		if (typeof providerOrModel === "string") return this.models.getAuth(providerOrModel, overrides);
 		const resolution = await this.models.getAuth(providerOrModel, overrides);
 		if (!resolution) return undefined;
+		const requestEnv = { ...(resolution.env ?? {}), ...(overrides.env ?? {}) };
 		const configuredHeaders = resolveConfiguredModelHeaders(
 			providerOrModel,
 			this.config.getProvider(providerOrModel.provider),
 			this.extensionProviders.get(providerOrModel.provider),
-			{ ...(resolution.env ?? {}), ...(overrides.env ?? {}) },
+			requestEnv,
+		);
+		const configuredBaseUrl = resolveConfiguredBaseUrl(
+			providerOrModel,
+			this.config.getProvider(providerOrModel.provider),
+			this.extensionProviders.get(providerOrModel.provider),
+			requestEnv,
 		);
 		return {
 			...resolution,
 			auth: {
 				...resolution.auth,
 				headers: mergeHeaders(resolution.auth.headers, configuredHeaders),
+				...(configuredBaseUrl !== undefined && resolution.auth.baseUrl === undefined
+					? { baseUrl: configuredBaseUrl }
+					: {}),
 			},
 		};
 	}
