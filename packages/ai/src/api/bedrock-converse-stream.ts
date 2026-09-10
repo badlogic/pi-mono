@@ -57,7 +57,7 @@ import { parseStreamingJson } from "../utils/json-parse.ts";
 import { resolveHttpProxyUrlForTarget } from "../utils/node-http-proxy.ts";
 import { getProviderEnvValue } from "../utils/provider-env.ts";
 import { sanitizeSurrogates } from "../utils/sanitize-unicode.ts";
-import { renderSystemMessageAsUserText } from "../utils/system-messages.ts";
+import { extractInitialSystemPrompt, renderSystemMessageAsUserText } from "../utils/system-messages.ts";
 import { getJsonSchemaToolParameters, resolveJsonSchemaStrictSampling } from "./constrained-sampling.ts";
 import {
 	adjustMaxTokensForThinking,
@@ -236,6 +236,7 @@ export const stream: StreamFunction<"bedrock-converse-stream", BedrockOptions> =
 		let responseRequestId: string | undefined;
 
 		try {
+			context = extractInitialSystemPrompt(context);
 			const supportsStrictMode = model.compat?.supportsStrictMode ?? false;
 			const client = new BedrockRuntimeClient(config);
 			let observedRawResponse = false;

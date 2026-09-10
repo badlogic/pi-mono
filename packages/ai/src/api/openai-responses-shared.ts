@@ -28,11 +28,12 @@ import type {
 	ToolCall,
 	Usage,
 } from "../types.ts";
+import { resolveToolHistory } from "../utils/deferred-tools.ts";
 import type { AssistantMessageEventStream } from "../utils/event-stream.ts";
 import { shortHash } from "../utils/hash.ts";
 import { parseStreamingJson } from "../utils/json-parse.ts";
 import { sanitizeSurrogates } from "../utils/sanitize-unicode.ts";
-import { addedToolNames, getSystemMessageText } from "../utils/system-messages.ts";
+import { addedToolNames, extractInitialSystemPrompt, getSystemMessageText } from "../utils/system-messages.ts";
 import {
 	appendGrammarToolInputJsonDelta,
 	type GrammarToolInputJsonBuffer,
@@ -144,6 +145,7 @@ export function convertResponsesMessages<TApi extends Api>(
 	allowedToolCallProviders: ReadonlySet<string>,
 	options?: ConvertResponsesMessagesOptions,
 ): ResponseInput {
+	context = extractInitialSystemPrompt(context);
 	const messages: ResponseInput = [];
 	const loadedToolNames = new Set<string>();
 
@@ -174,10 +176,19 @@ export function convertResponsesMessages<TApi extends Api>(
 
 	const transformedMessages = transformMessages(context.messages, model, normalizeToolCallId);
 	const grammarToolInputProperties = options?.grammarToolInputProperties ?? new Map<string, string>();
+	const toolHistory = resolveToolHistory({ ...context, messages: transformedMessages });
+	const activeTools = new Map(toolHistory.initial.map((tool) => [tool.name, tool]));
+	const appendToolSnapshot = (): void => {
+		messages.push({
+			type: "additional_tools",
+			role: "developer",
+			tools: convertResponsesTools([...activeTools.values()], options?.toolOptions),
+		});
+	};
 
 	/** Load deferred definitions at this point of the transcript, once each. */
 	const appendDeferredToolLoads = (names: readonly string[], seed: string): void => {
-		if (options?.deferredToolsMode === undefined) return;
+		if (options?.deferredToolsMode !== "tool-search") return;
 		const added: Tool[] = [];
 		for (const name of names) {
 			const tool = options.deferredTools?.get(name);
@@ -186,14 +197,6 @@ export function convertResponsesMessages<TApi extends Api>(
 			added.push(tool);
 		}
 		if (added.length === 0) return;
-		if (options.deferredToolsMode === "additional-tools") {
-			messages.push({
-				type: "additional_tools",
-				role: "developer",
-				tools: convertResponsesTools(added, options.toolOptions),
-			} satisfies ResponseInputItem);
-			return;
-		}
 		const addedNames = added.map((tool) => tool.name);
 		const searchCallId = `pi_tool_load_${shortHash(`${seed}:${addedNames.join(",")}`)}`;
 		messages.push({
@@ -222,8 +225,17 @@ export function convertResponsesMessages<TApi extends Api>(
 		});
 	}
 
+	if (options?.deferredToolsMode === "additional-tools" && activeTools.size > 0) appendToolSnapshot();
 	let msgIndex = 0;
 	for (const msg of transformedMessages) {
+		if (options?.deferredToolsMode === "additional-tools" && msg.role === "system") {
+			const change = toolHistory.changes.get(msg);
+			if (change && (change.added.length > 0 || change.removed.length > 0)) {
+				for (const tool of change.removed) activeTools.delete(tool.name);
+				for (const tool of change.added) activeTools.set(tool.name, tool);
+				appendToolSnapshot();
+			}
+		}
 		if (msg.role === "system") {
 			appendDeferredToolLoads(addedToolNames(msg), `system:${msgIndex}`);
 			const text = getSystemMessageText(msg);
@@ -309,7 +321,10 @@ export function convertResponsesMessages<TApi extends Api>(
 						itemId = undefined;
 					}
 
-					const canReplayNamespace = isSameModel || options?.deferredTools?.has(toolCall.name) === true;
+					const canReplayNamespace =
+						isSameModel ||
+						options?.deferredTools?.has(toolCall.name) === true ||
+						(options?.deferredToolsMode === "additional-tools" && toolHistory.definitions.has(toolCall.name));
 
 					if (customInputProperty !== undefined) {
 						output.push({
@@ -358,6 +373,13 @@ export function convertResponsesMessages<TApi extends Api>(
 				});
 			}
 
+			if (options?.deferredToolsMode === "additional-tools") {
+				const change = toolHistory.changes.get(msg);
+				if (change) {
+					for (const tool of change.added) activeTools.set(tool.name, tool);
+					appendToolSnapshot();
+				}
+			}
 			appendDeferredToolLoads(addedToolNames(msg), msg.toolCallId);
 		}
 		msgIndex++;

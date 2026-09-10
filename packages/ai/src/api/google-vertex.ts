@@ -30,6 +30,7 @@ import { providerHeadersToRecord } from "../utils/headers.ts";
 import { getPiUserAgent } from "../utils/pi-user-agent.ts";
 import { getProviderEnvValue } from "../utils/provider-env.ts";
 import { sanitizeSurrogates } from "../utils/sanitize-unicode.ts";
+import { extractInitialSystemPrompt } from "../utils/system-messages.ts";
 import type { GoogleApiThinkingLevel, ResolvedGoogleThinkingLevel } from "./google-shared.ts";
 import {
 	convertMessages,
@@ -461,6 +462,7 @@ function buildParams(
 	context: Context,
 	options: GoogleVertexOptions = {},
 ): GenerateContentParameters {
+	context = extractInitialSystemPrompt(context);
 	const contents = convertMessages(model, context);
 	const tools = declaredTools(context);
 

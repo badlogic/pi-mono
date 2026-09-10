@@ -22,6 +22,7 @@ Unified LLM API with provider collections, automatic auth resolution, token and 
   - [Environment Variables](#environment-variables)
 - [Tools](#tools)
   - [Defining Tools](#defining-tools)
+  - [Transcript Instructions and Tools](#transcript-instructions-and-tools)
   - [Handling Tool Calls](#handling-tool-calls)
   - [Streaming Tool Calls with Partial JSON](#streaming-tool-calls-with-partial-json)
   - [Validating Tool Arguments](#validating-tool-arguments)
@@ -523,6 +524,36 @@ const patchTool: Tool = {
   }
 };
 ```
+
+### Transcript Instructions and Tools
+
+New consumers can keep instructions and tool definitions entirely in messages:
+
+```typescript
+const context: Context = {
+  messages: [
+    { role: 'system', content: 'You are a helpful assistant.', toolsAdded: [weatherTool], timestamp: 1 },
+    { role: 'user', content: 'What is the weather?', timestamp: 2 }
+  ]
+};
+```
+
+`Context.systemPrompt` and `Context.tools` remain optional conveniences for **initial** instructions and tools, not the current active loadout. `Context.tools` is equivalent to an initial system message with `toolsAdded`. Leading system-message text becomes the provider's initial instructions, following `Context.systemPrompt` if supplied. Later system messages stay chronological. `toolsAdded` carries complete definitions; `toolsRemoved` withdraws tools. Within a message, removals precede additions. Keep your executable tool registry separate and reject calls to unavailable tools.
+
+Before constructing a transcript with mid-conversation changes, inspect native support:
+
+```typescript
+import { getTranscriptCapabilities } from '@earendil-works/pi-ai';
+
+const capabilities = getTranscriptCapabilities(model);
+// midConversationSystemMessages, midConversationToolAdditions, midConversationToolRemovals
+```
+
+These capabilities describe system-message transitions for the selected model/API, not legacy tool-result loading. When required capabilities are false, supply a different transcript with only initial instructions and tools. Existing adapter fallbacks may otherwise downgrade instructions to tagged user text or declare tools at the top level; those fallbacks do not preserve native transition semantics. Rewriting history can invalidate provider-bound reasoning and cached prefixes.
+
+Supported OpenAI Responses models use complete `additional_tools` snapshots, including an empty snapshot to unload everything. They never also send top-level `tools`, which cannot be unloaded. Supported Anthropic models declare real tools normally and introduce or withdraw them through `tool_addition`/`tool_removal` references at their transcript positions. Exactly one dummy tool is always declared with `defer_loading: true`, even when the real loadout is empty, to enable deferred loading without changing the cached prefix when tools first appear. Real tools introduced this way are not marked deferred.
+
+Legacy `ToolResultMessage.addedToolNames` is deprecated but remains supported on a best-effort basis: its definitions are resolved from the supplied tool catalog and loaded at the first marker unless already used. Use self-contained `SystemMessage.toolsAdded` for new code.
 
 ### Handling Tool Calls
 

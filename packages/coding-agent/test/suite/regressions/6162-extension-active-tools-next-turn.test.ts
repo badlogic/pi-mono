@@ -67,7 +67,8 @@ describe("extension active tools next-turn refresh", () => {
 			await harness.session.prompt("start");
 
 			expect(harness.session.getActiveToolNames()).toEqual(["after_switch"]);
-			expect(providerToolNames).toEqual([["switch_tools"], ["after_switch"]]);
+			// pi-ai receives a stable initial loadout; the system message carries the transition.
+			expect(providerToolNames).toEqual([["switch_tools"], ["switch_tools"]]);
 			expect(systemMessageEvents.map((event) => event.type)).toEqual(["message_start", "message_end"]);
 			expect(systemMessageEvents[0]?.message).toMatchObject({
 				role: "system",
@@ -198,7 +199,7 @@ describe("extension active tools next-turn refresh", () => {
 
 			await harness.session.prompt("start");
 
-			expect(providerToolNames).toEqual([["switch_tools"], ["after_switch"]]);
+			expect(providerToolNames).toEqual([["switch_tools"], ["switch_tools"]]);
 			expect(providerSystemPrompts).toHaveLength(2);
 			expect(providerSystemPrompts[0]).toContain("keep this run override");
 			expect(providerSystemPrompts[1]).toContain("keep this run override");

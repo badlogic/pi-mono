@@ -419,11 +419,9 @@ export interface DeferredHandle {
 }
 
 /**
- * Operator instruction appended to the transcript after the conversation started.
- *
- * Providers with native mid-conversation system messages send it as one; others render
- * it as a tagged user turn. Either way it is appended, never folded into the top-level
- * system prompt, so the cached prefix and any provider conversation checks stay valid.
+ * Operator instructions and tool availability changes at this point in the transcript.
+ * A leading system message supplies initial instructions. Later system messages require
+ * native support to retain their instruction role; unsupported adapters render tagged user text.
  *
  * Rendering of a persisted message must depend only on the fields stored on it and on
  * the model. Adapters must never reinterpret existing fields, because a resumed session
@@ -435,9 +433,8 @@ export interface SystemMessage {
 	role: "system";
 	content: string | TextContent[];
 	/**
-	 * Complete definitions of tools that become available at this point. Adapters keep
-	 * these declared for the rest of the conversation and surface them here, so
-	 * `Context.tools` only needs to hold the tools that are callable right now.
+	 * Complete definitions of tools that become available at this point, independently
+	 * of `Context.tools`. Removals are applied before additions in the same message.
 	 */
 	toolsAdded?: Tool[];
 	/**
@@ -489,8 +486,10 @@ export interface ToolResultMessage<TDetails = any> {
 	usage?: Usage;
 	/**
 	 * Names from `Context.tools` that became available after this result.
-	 * Providers with native deferred tool loading use this as the load point;
+	 * Providers with native deferred tool loading use this as a best-effort load point;
 	 * other providers ignore it and use `Context.tools` normally.
+	 *
+	 * @deprecated Use a `SystemMessage` with complete `toolsAdded` definitions.
 	 */
 	addedToolNames?: string[];
 	isError: boolean;
@@ -552,10 +551,10 @@ export interface Tool<TParameters extends TSchema = TSchema> {
 }
 
 export interface Context {
-	/** Stable top-level prompt used as the provider cache prefix. */
+	/** Optional initial instructions, preceding instructions in messages. */
 	systemPrompt?: string;
 	messages: Message[];
-	/** Tools callable right now. Tools declared earlier in the transcript stay declared. */
+	/** Optional initial tools. Message tool changes determine subsequent availability. */
 	tools?: Tool[];
 }
 

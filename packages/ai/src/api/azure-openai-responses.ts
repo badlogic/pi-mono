@@ -10,7 +10,7 @@ import type {
 	StreamFunction,
 	StreamOptions,
 } from "../types.ts";
-import { declaredTools } from "../utils/deferred-tools.ts";
+import { declaredTools, splitDeferredTools } from "../utils/deferred-tools.ts";
 import { formatProviderError, normalizeProviderError } from "../utils/error-body.ts";
 import { AssistantMessageEventStream } from "../utils/event-stream.ts";
 import { headersToRecord } from "../utils/headers.ts";
@@ -280,9 +280,24 @@ function buildParams(
 		model.compat?.supportsOpenAIGrammarTools ?? false,
 	),
 ) {
-	const tools = declaredTools(context);
+	const deferredToolsMode = model.compat?.supportsAdditionalTools
+		? "additional-tools"
+		: model.compat?.supportsToolSearch
+			? "tool-search"
+			: undefined;
+	const placement = splitDeferredTools(context, {
+		toolResultMarkers: deferredToolsMode !== undefined,
+		systemMarkers: deferredToolsMode !== undefined,
+	});
+	const tools = deferredToolsMode === "additional-tools" ? [] : placement.immediate;
 	const messages = convertResponsesMessages(model, context, AZURE_TOOL_CALL_PROVIDERS, {
 		grammarToolInputProperties,
+		deferredToolsMode,
+		deferredTools: placement.deferred,
+		toolOptions: {
+			supportsStrictMode: model.compat?.supportsStrictMode ?? true,
+			supportsOpenAIGrammarTools: model.compat?.supportsOpenAIGrammarTools ?? false,
+		},
 	});
 
 	const params: ResponseCreateParamsStreaming = {

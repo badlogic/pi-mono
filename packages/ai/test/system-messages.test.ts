@@ -122,14 +122,13 @@ describe("tool placement", () => {
 		expect(declaredTools(context).map((tool) => tool.name)).toEqual(["bash", "read", "write"]);
 	});
 
-	test("prefers the definition recorded on the message over the live one", () => {
+	test("loads a message-defined tool without a top-level tool catalog", () => {
 		const recorded = makeTool("late_tool", "recorded");
 		const context: Context = {
 			messages: [
 				{ role: "user", content: "hi", timestamp: 1 },
 				{ role: "system", content: "added", toolsAdded: [recorded], timestamp: 2 },
 			],
-			tools: [makeTool("late_tool", "live")],
 		};
 		const placement = splitDeferredTools(context, { toolResultMarkers: true, systemMarkers: true });
 		expect(placement.immediate).toEqual([]);
@@ -180,19 +179,19 @@ describe("Anthropic mid-conversation system messages", () => {
 					timestamp: 2,
 				},
 			],
-			tools: [makeTool("read"), lateTool],
+			tools: [makeTool("read"), removedTool],
 		};
 		const payload = await captureAnthropic(getModel("anthropic", "claude-fable-5-1"), context);
 
 		expect(payload.betas).toContain("mid-conversation-tool-changes-2026-07-01");
 		expect(payload.tools?.map((tool) => `${tool.name}${tool.defer_loading ? "(d)" : ""}`)).toEqual([
-			"edit",
 			"read",
+			"edit",
+			"late_tool",
 			`${PLACEHOLDER}(d)`,
-			"late_tool(d)",
 		]);
-		expect(contentRoles(payload)).toEqual(["user", "system"]);
-		expect(payload.messages[1]?.content).toEqual([
+		expect(contentRoles(payload)).toEqual(["user", "system", "system"]);
+		expect(payload.messages[2]?.content).toEqual([
 			{ type: "text", text: "Plan mode is on." },
 			{ type: "tool_removal", tool: { type: "tool_reference", name: "edit" } },
 			{
@@ -222,24 +221,24 @@ describe("Anthropic mid-conversation system messages", () => {
 				makeAssistant(),
 				{ role: "user", content: "again", timestamp: 6 },
 			],
-			tools: [makeTool("read"), lateTool],
+			tools: [makeTool("read")],
 		};
 		const payload = await captureAnthropic(getModel("anthropic", "claude-fable-5-1"), context);
 
-		expect(contentRoles(payload)).toEqual(["user", "user", "system", "assistant", "user"]);
-		expect(payload.messages[2]?.content).toEqual([
+		expect(contentRoles(payload)).toEqual(["user", "user", "system", "system", "assistant", "user"]);
+		expect(payload.messages[3]?.content).toEqual([
 			{ type: "text", text: "Plan mode is on." },
 			{ type: "tool_addition", tool: { type: "tool_reference", name: "late_tool" } },
 		]);
-		// The moved message keeps its tool deferred, so the declared tool list does not change.
+		// The directive controls availability; only the dummy is deferred.
 		expect(payload.tools?.map((tool) => `${tool.name}${tool.defer_loading ? "(d)" : ""}`)).toEqual([
 			"read",
+			"late_tool",
 			`${PLACEHOLDER}(d)`,
-			"late_tool(d)",
 		]);
 	});
 
-	test("holds a leading system message back until after the first user message", async () => {
+	test("extracts a leading system message into the top-level instructions", async () => {
 		const context: Context = {
 			systemPrompt: "base",
 			messages: [
@@ -249,7 +248,10 @@ describe("Anthropic mid-conversation system messages", () => {
 		};
 		const payload = await captureAnthropic(getModel("anthropic", "claude-fable-5-1"), context);
 
-		expect(contentRoles(payload)).toEqual(["user", "system"]);
+		expect(contentRoles(payload)).toEqual(["user"]);
+		expect((payload as { system?: Array<{ text: string }> }).system?.map((block) => block.text)).toEqual([
+			"base\n\nchanged",
+		]);
 	});
 
 	test("falls back to user text on models without native support", async () => {
@@ -268,7 +270,7 @@ describe("Anthropic mid-conversation system messages", () => {
 		expect(payload.messages[1]?.content).toEqual([
 			{ type: "text", text: "<system_update>\nchanged\n</system_update>", cache_control: { type: "ephemeral" } },
 		]);
-		expect(payload.tools?.map((tool) => tool.name)).toEqual(["edit", "read", PLACEHOLDER]);
+		expect(payload.tools?.map((tool) => tool.name)).toEqual(["read", PLACEHOLDER]);
 	});
 
 	test("never folds system messages into the top-level prompt or rewrites assistant turns", async () => {

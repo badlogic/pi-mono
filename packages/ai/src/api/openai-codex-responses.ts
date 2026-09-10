@@ -32,7 +32,7 @@ import { AssistantMessageEventStream } from "../utils/event-stream.ts";
 import { headersToRecord } from "../utils/headers.ts";
 import { resolveHttpProxyUrlForTarget } from "../utils/node-http-proxy.ts";
 import { getPiUserAgent } from "../utils/pi-user-agent.ts";
-import { supportsMidConversationToolChanges } from "../utils/system-messages.ts";
+import { extractInitialSystemPrompt } from "../utils/system-messages.ts";
 import { uuidv7 } from "../utils/uuid.ts";
 import { createGrammarToolInputProperties } from "./constrained-sampling.ts";
 import { clampOpenAIPromptCacheKey } from "./openai-prompt-cache.ts";
@@ -524,6 +524,7 @@ function buildRequestBody(
 		model.compat?.supportsOpenAIGrammarTools ?? false,
 	),
 ): RequestBody {
+	context = extractInitialSystemPrompt(context);
 	const supportsStrictMode = model.compat?.supportsStrictMode ?? true;
 	const supportsOpenAIGrammarTools = model.compat?.supportsOpenAIGrammarTools ?? false;
 	const deferredToolsMode = model.compat?.supportsAdditionalTools
@@ -533,7 +534,7 @@ function buildRequestBody(
 			: undefined;
 	const toolPlacement = splitDeferredTools(context, {
 		toolResultMarkers: deferredToolsMode !== undefined,
-		systemMarkers: supportsMidConversationToolChanges(model),
+		systemMarkers: deferredToolsMode !== undefined,
 	});
 	const messages = convertResponsesMessages(model, context, CODEX_TOOL_CALL_PROVIDERS, {
 		includeSystemPrompt: false,
@@ -568,7 +569,7 @@ function buildRequestBody(
 		body.service_tier = options.serviceTier;
 	}
 
-	if (toolPlacement.immediate.length > 0) {
+	if (deferredToolsMode !== "additional-tools" && toolPlacement.immediate.length > 0) {
 		body.tools = convertResponsesTools(toolPlacement.immediate, {
 			strict: null,
 			supportsStrictMode,

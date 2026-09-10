@@ -150,7 +150,9 @@ describe("openai-responses provider defaults", () => {
 
 		expect(capturedPayload).toMatchObject({
 			tool_choice: "required",
-			tools: [expect.objectContaining({ name: "ping" })],
+			input: expect.arrayContaining([
+				expect.objectContaining({ type: "additional_tools", tools: [expect.objectContaining({ name: "ping" })] }),
+			]),
 		});
 	});
 

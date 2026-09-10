@@ -1,87 +1,96 @@
-import type { Context, Tool } from "../types.ts";
-import { addedToolNames } from "./system-messages.ts";
+import type { Context, Message, Tool } from "../types.ts";
 
 type ToolNameNormalizer = (name: string) => string;
 
-const identityToolName: ToolNameNormalizer = (name) => name;
+export interface ToolChange {
+	added: Tool[];
+	removed: Tool[];
+}
+
+/** Provider-neutral tool history. Current availability is obtained by replaying changes forward. */
+export interface ToolHistory {
+	initial: Tool[];
+	definitions: Map<string, Tool>;
+	changes: Map<Message, ToolChange>;
+}
+
+export function resolveToolHistory(context: Context, normalizeName: ToolNameNormalizer = (name) => name): ToolHistory {
+	const initial = new Map<string, Tool>();
+	for (const tool of context.tools ?? []) initial.set(normalizeName(tool.name), tool);
+	const definitions = new Map(initial);
+	const changes = new Map<Message, ToolChange>();
+	for (const message of context.messages) {
+		if (message.role !== "system") continue;
+		const added = message.toolsAdded ?? [];
+		const removed = message.toolsRemoved ?? [];
+		for (const tool of [...added, ...removed]) {
+			const name = normalizeName(tool.name);
+			if (!definitions.has(name)) definitions.set(name, tool);
+		}
+	}
+
+	// Legacy results carry only names. Resolve them from the supplied catalog and
+	// move their initial declarations to the first marker, unless already used.
+	// First-class system changes never depend on this compatibility path.
+	const seen = new Set<string>();
+	for (const message of context.messages) {
+		if (message.role === "assistant") {
+			for (const block of message.content) {
+				if (block.type === "toolCall") seen.add(normalizeName(block.name));
+			}
+		} else if (message.role === "system") {
+			changes.set(message, { added: message.toolsAdded ?? [], removed: message.toolsRemoved ?? [] });
+			for (const tool of message.toolsAdded ?? []) seen.add(normalizeName(tool.name));
+		} else if (message.role === "toolResult") {
+			const added: Tool[] = [];
+			for (const rawName of message.addedToolNames ?? []) {
+				const name = normalizeName(rawName);
+				const tool = definitions.get(name);
+				if (!tool || seen.has(name)) continue;
+				seen.add(name);
+				initial.delete(name);
+				added.push(tool);
+			}
+			if (added.length > 0) changes.set(message, { added, removed: [] });
+		}
+	}
+	return { initial: [...initial.values()], definitions, changes };
+}
 
 export interface ToolPlacementOptions {
-	/** Whether a tool marked on a tool result can load at that result. */
 	toolResultMarkers: boolean;
-	/** Whether a tool carried by a system message can load at that message. */
 	systemMarkers: boolean;
 	normalizeName?: ToolNameNormalizer;
 }
 
 export interface ToolPlacement {
-	/**
-	 * Tools declared from the first request on. Sorted by normalized name so the
-	 * order depends only on the set of names, never on when a tool was removed
-	 * or which order the caller listed the active tools in.
-	 */
 	immediate: Tool[];
-	/** Tools that load at a transcript marker, keyed by normalized name, in marker order. */
 	deferred: Map<string, Tool>;
 }
 
-/** Every tool a request must declare, for transports without deferred loading. */
+/** Definitions needed for historical calls as well as currently available tools. */
 export function declaredTools(context: Context): Tool[] {
-	return splitDeferredTools(context, { toolResultMarkers: false, systemMarkers: false }).immediate;
+	return [...resolveToolHistory(context).definitions]
+		.sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
+		.map(([, tool]) => tool);
 }
 
-/**
- * Decide which tools a request declares and where each definition loads.
- *
- * The declared set is append-only for the life of a conversation: every tool in
- * `Context.tools` plus every tool a system message added or removed earlier. A
- * removed tool stays declared, because dropping it would change the cached
- * prefix; the transport withdraws it in the transcript or the harness rejects
- * calls to it. Definitions carried by messages win over `Context.tools` so the
- * rendered history does not change when a tool's live definition changes.
- */
 export function splitDeferredTools(context: Context, options: ToolPlacementOptions): ToolPlacement {
-	const normalizeName = options.normalizeName ?? identityToolName;
-
-	const definitions = new Map<string, Tool>();
-	for (const message of context.messages) {
-		if (message.role !== "system") continue;
-		for (const tool of [...(message.toolsRemoved ?? []), ...(message.toolsAdded ?? [])]) {
-			const name = normalizeName(tool.name);
-			if (!definitions.has(name)) definitions.set(name, tool);
-		}
-	}
-	// Among live tools the last definition wins (OAuth canonicalization can map two names onto one).
-	const activeTools = new Map<string, Tool>();
-	for (const tool of context.tools ?? []) activeTools.set(normalizeName(tool.name), tool);
-	for (const [name, tool] of activeTools) {
-		if (!definitions.has(name)) definitions.set(name, tool);
-	}
-
+	const normalizeName = options.normalizeName ?? ((name: string) => name);
+	const history = resolveToolHistory(context, normalizeName);
+	const immediate = new Map(history.initial.map((tool) => [normalizeName(tool.name), tool]));
 	const deferred = new Map<string, Tool>();
-	const usedNames = new Set<string>();
-	const placedImmediate = new Set<string>();
-	const placeMarked = (name: string): void => {
-		const definition = definitions.get(name);
-		if (definition === undefined || deferred.has(name) || placedImmediate.has(name)) return;
-		if (usedNames.has(name)) placedImmediate.add(name);
-		else deferred.set(name, definition);
-	};
-	for (const message of context.messages) {
-		if (message.role === "assistant") {
-			for (const block of message.content) {
-				if (block.type === "toolCall") usedNames.add(normalizeName(block.name));
-			}
-			continue;
+	for (const [message, change] of history.changes) {
+		const canDefer = message.role === "system" ? options.systemMarkers : options.toolResultMarkers;
+		for (const tool of change.added) {
+			const name = normalizeName(tool.name);
+			if (immediate.has(name) || deferred.has(name)) continue;
+			if (canDefer) deferred.set(name, tool);
+			else immediate.set(name, tool);
 		}
-		const markersEnabled =
-			message.role === "toolResult" ? options.toolResultMarkers : message.role === "system" && options.systemMarkers;
-		if (!markersEnabled) continue;
-		for (const name of addedToolNames(message)) placeMarked(normalizeName(name));
 	}
-
-	const immediate = [...definitions]
-		.filter(([name]) => !deferred.has(name))
-		.sort(([left], [right]) => (left < right ? -1 : left > right ? 1 : 0))
-		.map(([, tool]) => tool);
-	return { immediate, deferred };
+	return {
+		immediate: [...immediate].sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0)).map(([, tool]) => tool),
+		deferred,
+	};
 }

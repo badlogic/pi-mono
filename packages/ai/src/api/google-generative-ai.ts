@@ -25,6 +25,7 @@ import { AssistantMessageEventStream } from "../utils/event-stream.ts";
 import { providerHeadersToRecord } from "../utils/headers.ts";
 import { getPiUserAgent } from "../utils/pi-user-agent.ts";
 import { sanitizeSurrogates } from "../utils/sanitize-unicode.ts";
+import { extractInitialSystemPrompt } from "../utils/system-messages.ts";
 import type { GoogleApiThinkingLevel, ResolvedGoogleThinkingLevel } from "./google-shared.ts";
 import {
 	convertMessages,
@@ -359,6 +360,7 @@ function buildParams(
 	context: Context,
 	options: GoogleOptions = {},
 ): GenerateContentParameters {
+	context = extractInitialSystemPrompt(context);
 	const contents = convertMessages(model, context);
 	const tools = declaredTools(context);
 

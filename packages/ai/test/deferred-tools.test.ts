@@ -15,6 +15,7 @@ interface AnthropicToolPayload {
 interface AnthropicContentBlock {
 	type: string;
 	text?: string;
+	tool?: { type: string; name: string };
 	tool_use_id?: string;
 	content?: string | Array<{ type: string; tool_name?: string }>;
 	source?: {
@@ -238,19 +239,19 @@ describe("deferred tools", () => {
 		expect(payload.tools?.[0]?.defer_loading).toBeUndefined();
 	});
 
-	it("omits the deferred placeholder without tool references or immediate tools", async () => {
+	it("omits the placeholder without support but keeps it for an empty supported loadout", async () => {
 		const withoutSupport = await capturePayload<AnthropicPayload>(getModel("anthropic", "claude-haiku-4-5"), {
 			messages: [makeUserMessage(1)],
 			tools: [makeTool("base_tool")],
 		});
 		expect(withoutSupport.tools?.map((tool) => tool.name)).toEqual(["base_tool"]);
 
-		// Anthropic rejects requests where every tool is deferred, so no tools means no placeholder.
+		// The dummy must exist before the first real tool is introduced.
 		const withoutTools = await capturePayload<AnthropicPayload>(getModel("anthropic", "claude-opus-4-6"), {
 			messages: [makeUserMessage(1)],
 			tools: [],
 		});
-		expect(withoutTools.tools).toBeUndefined();
+		expect(withoutTools.tools).toMatchObject([{ name: PLACEHOLDER, defer_loading: true }]);
 	});
 
 	it("preserves tool output as sibling content after emitting references", async () => {
@@ -297,11 +298,14 @@ describe("deferred tools", () => {
 
 		const payload = await capturePayload<AnthropicPayload>(getModel("anthropic", "claude-opus-4-8"), context);
 
-		expect(anthropicUserTools(payload)).toMatchObject([
-			{ name: "base_tool" },
-			{ name: "late_tool", defer_loading: true },
-		]);
-		expect(findAnthropicToolResult(payload).content).toEqual([{ type: "tool_reference", tool_name: "late_tool" }]);
+		expect(anthropicUserTools(payload).map((tool) => tool.name)).toEqual(["base_tool", "late_tool"]);
+		expect(anthropicUserTools(payload).every((tool) => tool.defer_loading === undefined)).toBe(true);
+		expect(findAnthropicToolResult(payload).content).toBe("done");
+		expect(
+			payload.messages.flatMap((message) => (typeof message.content === "string" ? [] : message.content)),
+		).toContainEqual(
+			expect.objectContaining({ type: "tool_addition", tool: { type: "tool_reference", name: "late_tool" } }),
+		);
 	});
 
 	it("does not resurrect a marked tool missing from Context.tools", async () => {
@@ -383,14 +387,15 @@ describe("deferred tools", () => {
 		}
 	});
 
-	it("keeps one immediate Anthropic tool when every current tool is marked", async () => {
+	it("loads a legacy marked tool without an immediate placeholder", async () => {
 		const context = makeContext([makeTool("late_tool")]);
 		const payload = await capturePayload<AnthropicPayload>(getModel("anthropic", "claude-opus-4-6"), context);
 
-		expect(payload.tools).toMatchObject([{ name: "late_tool" }, { name: PLACEHOLDER, defer_loading: true }]);
-		expect(payload.tools?.[0]?.defer_loading).toBeUndefined();
-		const content = findAnthropicToolResult(payload).content;
-		expect(Array.isArray(content) && content.some((block) => block.type === "tool_reference")).toBe(false);
+		expect(payload.tools).toMatchObject([
+			{ name: PLACEHOLDER, defer_loading: true },
+			{ name: "late_tool", defer_loading: true },
+		]);
+		expect(findAnthropicToolResult(payload).content).toEqual([{ type: "tool_reference", tool_name: "late_tool" }]);
 	});
 
 	it("supports explicit Anthropic compatibility overrides", async () => {
@@ -499,13 +504,15 @@ describe("deferred tools", () => {
 	it("loads an OpenAI Responses tool through additional_tools", async () => {
 		const context = makeContext([makeTool("base_tool"), makeTool("late_tool")]);
 		const payload = await capturePayload<OpenAIPayload>(getModel("openai", "gpt-5.4"), context);
-		const additionalTools = payload.input?.find(
-			(item): item is OpenAIAdditionalTools => item.type === "additional_tools",
-		);
+		const additionalTools = payload.input?.filter(isOpenAIAdditionalTools).at(-1);
 
-		expect(openAIToolNames(payload)).toEqual(["base_tool"]);
+		expect(payload.tools).toBeUndefined();
+		expect(additionalToolSnapshots(payload)).toEqual([["base_tool"], ["base_tool", "late_tool"]]);
 		expect(additionalTools).toMatchObject({ role: "developer" });
-		expect(additionalTools?.tools).toMatchObject([{ type: "function", name: "late_tool" }]);
+		expect(additionalTools?.tools).toMatchObject([
+			{ type: "function", name: "base_tool" },
+			{ type: "function", name: "late_tool" },
+		]);
 		expect(additionalTools?.tools.every((tool) => tool.defer_loading === undefined)).toBe(true);
 		expect(payload.input?.some((item) => item.type === "tool_search_call")).toBe(false);
 		expect(payload.input?.some((item) => item.type === "tool_search_output")).toBe(false);
@@ -523,7 +530,7 @@ describe("deferred tools", () => {
 					timestamp: 2,
 				},
 			],
-			tools: [makeTool("base_tool"), lateTool],
+			tools: [makeTool("base_tool")],
 		};
 		const payload = await capturePayload<OpenAIPayload>(getModel("openai", "gpt-5.4"), context);
 		const additionalToolsIndex = (payload.input ?? []).findIndex(isOpenAIAdditionalTools);
@@ -531,8 +538,8 @@ describe("deferred tools", () => {
 			(item) => "role" in item && item.role === "developer" && "content" in item,
 		);
 
-		expect(openAIToolNames(payload)).toEqual(["base_tool"]);
-		expect(additionalToolSnapshots(payload)).toEqual([["late_tool"]]);
+		expect(payload.tools).toBeUndefined();
+		expect(additionalToolSnapshots(payload)).toEqual([["base_tool"], ["base_tool", "late_tool"]]);
 		expect(additionalToolsIndex).toBeGreaterThanOrEqual(0);
 		expect(payload.input?.[instructionIndex]).toMatchObject({
 			role: "developer",
@@ -540,7 +547,7 @@ describe("deferred tools", () => {
 		});
 	});
 
-	it("keeps a removed tool declared and sorts the top-level tools by name", async () => {
+	it("withdraws a tool through a complete replacement snapshot", async () => {
 		const removedTool = makeTool("removed_tool");
 		const context: Context = {
 			messages: [
@@ -552,12 +559,15 @@ describe("deferred tools", () => {
 					timestamp: 2,
 				},
 			],
-			tools: [makeTool("zeta_tool"), makeTool("base_tool")],
+			tools: [makeTool("zeta_tool"), makeTool("base_tool"), removedTool],
 		};
 		const payload = await capturePayload<OpenAIPayload>(getModel("openai", "gpt-5.4"), context);
 
-		expect(openAIToolNames(payload)).toEqual(["base_tool", "removed_tool", "zeta_tool"]);
-		expect(payload.input?.some((item) => item.type === "additional_tools")).toBe(false);
+		expect(payload.tools).toBeUndefined();
+		expect(additionalToolSnapshots(payload)).toEqual([
+			["zeta_tool", "base_tool", "removed_tool"],
+			["zeta_tool", "base_tool"],
+		]);
 		expect(payload.input).toContainEqual(
 			expect.objectContaining({ role: "developer", content: "removed_tool is no longer available" }),
 		);
@@ -606,9 +616,10 @@ describe("deferred tools", () => {
 			(item) => item.type === "function_call" && item.name === "late_tool",
 		);
 
-		expect(additionalToolIndexes).toHaveLength(1);
-		expect(additionalToolIndexes[0]).toBeLessThan(lateCallIndex);
-		expect(openAIToolNames(payload)).toEqual(["base_tool"]);
+		expect(additionalToolIndexes).toHaveLength(2);
+		expect(additionalToolIndexes[1]).toBeLessThan(lateCallIndex);
+		expect(payload.tools).toBeUndefined();
+		expect(additionalToolSnapshots(payload)).toEqual([["base_tool"], ["base_tool", "late_tool"]]);
 	});
 
 	it("falls back to client tool search when additional_tools is unsupported", async () => {
@@ -631,7 +642,7 @@ describe("deferred tools", () => {
 		expect(payload.input?.some((item) => item.type === "additional_tools")).toBe(false);
 	});
 
-	it("declares a system-added tool immediately when only tool search is supported", async () => {
+	it("loads a system-added tool when only tool search is supported", async () => {
 		const model: Model<"openai-responses"> = {
 			...getModel("openai", "gpt-5.4"),
 			provider: "openai-proxy",
@@ -643,15 +654,15 @@ describe("deferred tools", () => {
 				makeUserMessage(1),
 				{ role: "system", content: "late_tool is now available", toolsAdded: [lateTool], timestamp: 2 },
 			],
-			tools: [makeTool("base_tool"), lateTool],
+			tools: [makeTool("base_tool")],
 		};
 		const payload = await capturePayload<OpenAIPayload>(model, context);
 		const searchOutput = payload.input?.find(
 			(item): item is OpenAIToolSearchOutput => item.type === "tool_search_output",
 		);
 
-		expect(openAIToolNames(payload)).toEqual(["base_tool", "late_tool"]);
-		expect(searchOutput).toBeUndefined();
+		expect(openAIToolNames(payload)).toEqual(["base_tool"]);
+		expect(searchOutput?.tools).toMatchObject([{ name: "late_tool", defer_loading: true }]);
 	});
 
 	it.each(["gpt-5.2", "gpt-5.4-nano", "gpt-5.5-pro"] as const)(
@@ -696,7 +707,8 @@ describe("deferred tools", () => {
 			makeCodexToken(),
 		);
 
-		expect(openAIToolNames(additionalTools)).toEqual(["base_tool"]);
+		expect(additionalTools.tools).toBeUndefined();
+		expect(additionalToolSnapshots(additionalTools)).toEqual([["base_tool"], ["base_tool", "late_tool"]]);
 		expect(additionalTools.input?.some((item) => item.type === "additional_tools")).toBe(true);
 		expect(additionalTools.input?.some((item) => item.type === "tool_search_output")).toBe(false);
 		expect(openAIToolNames(toolSearch)).toEqual(["base_tool"]);

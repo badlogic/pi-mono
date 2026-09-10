@@ -7,6 +7,7 @@ import {
 	type AssistantMessage,
 	type Context,
 	EventStream,
+	type Tool,
 	type ToolResultMessage,
 	validateToolArguments,
 } from "@earendil-works/pi-ai";
@@ -292,11 +293,19 @@ async function streamAssistantResponse(
 	// Convert to LLM-compatible messages (AgentMessage[] → Message[])
 	const llmMessages = await config.convertToLlm(messages);
 
-	// Build LLM context
+	// The agent owns the current executable loadout; pi-ai accepts an initial
+	// loadout plus forward transcript changes. Rewind only at this boundary.
+	const initialDefinitions = new Map<string, Tool>(context.tools?.map((tool) => [tool.name, tool]));
+	for (let index = llmMessages.length - 1; index >= 0; index--) {
+		const message = llmMessages[index];
+		if (message.role !== "system") continue;
+		for (const tool of message.toolsAdded ?? []) initialDefinitions.delete(tool.name);
+		for (const tool of message.toolsRemoved ?? []) initialDefinitions.set(tool.name, tool);
+	}
 	const llmContext: Context = {
 		systemPrompt: context.systemPrompt,
 		messages: llmMessages,
-		tools: context.tools,
+		tools: [...initialDefinitions].sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0)).map(([, tool]) => tool),
 	};
 
 	// Resolve API key (important for expiring tokens)

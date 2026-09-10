@@ -33,7 +33,7 @@ import type {
 	ToolCall,
 	ToolResultMessage,
 } from "../types.ts";
-import { splitDeferredTools } from "../utils/deferred-tools.ts";
+import { declaredTools, resolveToolHistory, splitDeferredTools, type ToolHistory } from "../utils/deferred-tools.ts";
 import { appendAssistantMessageDiagnostic } from "../utils/diagnostics.ts";
 import { AssistantMessageEventStream } from "../utils/event-stream.ts";
 import { headersToRecord } from "../utils/headers.ts";
@@ -44,6 +44,7 @@ import { retryProviderRequest } from "../utils/provider-retry.ts";
 import { sanitizeSurrogates } from "../utils/sanitize-unicode.ts";
 import {
 	addedToolNames,
+	extractInitialSystemPrompt,
 	getSystemMessageText,
 	renderSystemMessageAsUserText,
 	supportsMidConversationToolChanges,
@@ -199,8 +200,9 @@ const MID_CONVERSATION_TOOL_CHANGES_BETA = "mid-conversation-tool-changes-2026-0
  * mid-session load through `tool_reference` without invalidating the cache or
  * failing the Fable 5.1 thinking-block conversation check. Claude Code does the
  * same with its `DeferredToolPlaceholder` tool. The name is deliberately unlike
- * anything a harness would register. The model never sees the name; Anthropic
- * requires at least one non-deferred tool, so it is only added alongside one.
+ * anything a harness would register. Include it even with an empty loadout.
+ * Real tools introduced by tool_addition remain normal declarations: the
+ * directive determines where they become available, not defer_loading.
  */
 const DEFERRED_TOOL_PLACEHOLDER: Tool = {
 	name: "__pi_deferred_tool_placeholder__",
@@ -598,6 +600,7 @@ export const stream: StreamFunction<"anthropic-messages", AnthropicOptions> = (
 				client = created.client;
 				isOAuth = created.isOAuthToken;
 			}
+			const tools = declaredTools(context);
 			let params = buildParams(model, context, isOAuth, options);
 			const nextParams = await options?.onPayload?.(params, model);
 			if (nextParams !== undefined) {
@@ -684,9 +687,7 @@ export const stream: StreamFunction<"anthropic-messages", AnthropicOptions> = (
 						const block: Block = {
 							type: "toolCall",
 							id: event.content_block.id,
-							name: isOAuth
-								? fromClaudeCodeName(event.content_block.name, context.tools)
-								: event.content_block.name,
+							name: isOAuth ? fromClaudeCodeName(event.content_block.name, tools) : event.content_block.name,
 							arguments: (event.content_block.input as Record<string, any>) ?? {},
 							partialJson: "",
 							index: event.index,
@@ -1058,28 +1059,37 @@ function buildParams(
 	isOAuthToken: boolean,
 	options?: AnthropicOptions,
 ): MessageCreateParamsStreaming {
+	context = extractInitialSystemPrompt(context);
 	const { cacheControl } = getCacheControl(model, options?.cacheRetention, options?.env);
 	const compat = getAnthropicCompat(model);
 	const transformedMessages = transformMessages(context.messages, model, normalizeToolCallId);
 	const normalizeToolName = isOAuthToken ? toClaudeCodeName : (name: string) => name;
 	const systemToolChanges = supportsMidConversationToolChanges(model);
-	const toolPlacement = splitDeferredTools(
-		{ ...context, messages: transformedMessages },
-		{
-			toolResultMarkers: compat.supportsToolReferences,
-			// A tool added by a system message can only load there through a tool_addition block.
-			systemMarkers: systemToolChanges,
-			normalizeName: normalizeToolName,
-		},
-	);
-	let immediateTools = toolPlacement.immediate;
-	let deferredTools = [...toolPlacement.deferred.values()];
-	if (immediateTools.length === 0 && deferredTools.length > 0) {
-		immediateTools = deferredTools;
+	let normalTools: Tool[];
+	let deferredTools: Tool[];
+	let history: ToolHistory | undefined;
+	if (systemToolChanges) {
+		history = resolveToolHistory({ ...context, messages: transformedMessages }, normalizeToolName);
+		// tool_addition determines when these normal declarations become visible.
+		normalTools = [...history.definitions.values()];
 		deferredTools = [];
+		if (history.initial.length > 0) {
+			transformedMessages.unshift({ role: "system", content: "", toolsAdded: history.initial, timestamp: 0 });
+		}
+	} else {
+		const placement = splitDeferredTools(
+			{ ...context, messages: transformedMessages },
+			{
+				toolResultMarkers: compat.supportsToolReferences,
+				systemMarkers: false,
+				normalizeName: normalizeToolName,
+			},
+		);
+		normalTools = placement.immediate;
+		deferredTools = [...placement.deferred.values()];
 	}
 	const deferredToolNames = new Set(deferredTools.map((tool) => normalizeToolName(tool.name)));
-	if (compat.supportsToolReferences && immediateTools.length > 0) {
+	if (systemToolChanges || compat.supportsToolReferences) {
 		deferredTools = [DEFERRED_TOOL_PLACEHOLDER, ...deferredTools];
 	}
 	const converted = convertMessages(
@@ -1090,7 +1100,7 @@ function buildParams(
 		deferredToolNames,
 		normalizeToolName,
 		model.compat?.supportsMidConvoEffort === true ? model.provider : undefined,
-		{ native: compat.supportsMidConvoSystemMessages, toolChanges: systemToolChanges },
+		{ native: compat.supportsMidConvoSystemMessages, toolChanges: systemToolChanges, history },
 	);
 	const activeEffort = options?.effort ?? "high";
 	const betaFeatures = getBetaFeatures(model, context, isOAuthToken, options);
@@ -1142,14 +1152,14 @@ function buildParams(
 		params.temperature = options.temperature;
 	}
 
-	if (immediateTools.length > 0 || deferredTools.length > 0) {
+	if (normalTools.length > 0 || deferredTools.length > 0) {
 		params.tools = [
 			...convertTools(
-				immediateTools,
+				normalTools,
 				isOAuthToken,
 				compat.supportsEagerToolInputStreaming,
 				compat.supportsStrictTools,
-				compat.supportsCacheControlOnTools ? cacheControl : undefined,
+				!systemToolChanges && compat.supportsCacheControlOnTools ? cacheControl : undefined,
 			),
 			...convertTools(
 				deferredTools,
@@ -1268,6 +1278,8 @@ interface SystemMessageRendering {
 	native: boolean;
 	/** Whether native system messages may carry `tool_addition` and `tool_removal` blocks. */
 	toolChanges: boolean;
+	/** Resolve legacy names-only markers into native additions without deferring real tools. */
+	history?: ToolHistory;
 }
 
 function convertMessages(
@@ -1447,6 +1459,16 @@ function convertMessages(
 				);
 				toolResults.push(converted.toolResult);
 				siblingContent.push(...converted.siblingContent);
+				const additions = systemMessages.history?.changes.get(transformedMessages[j])?.added;
+				if (additions?.length) {
+					pendingSystem.push({
+						role: "system",
+						content: additions.map((tool) => ({
+							type: "tool_addition",
+							tool: { type: "tool_reference", name: normalizeToolName(tool.name) },
+						})),
+					});
+				}
 				j++;
 			}
 
@@ -1515,7 +1537,13 @@ function insertThinkingLevelMessages(
 }
 
 function shouldUseFineGrainedToolStreamingBeta(model: Model<"anthropic-messages">, context: Context): boolean {
-	return !!context.tools?.length && !getAnthropicCompat(model).supportsEagerToolInputStreaming;
+	const compat = getAnthropicCompat(model);
+	return (
+		(supportsMidConversationToolChanges(model) ||
+			compat.supportsToolReferences ||
+			declaredTools(context).length > 0) &&
+		!compat.supportsEagerToolInputStreaming
+	);
 }
 
 function convertTools(

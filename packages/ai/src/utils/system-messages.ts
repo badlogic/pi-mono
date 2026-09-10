@@ -1,4 +1,4 @@
-import type { Api, Message, Model, SystemMessage } from "../types.ts";
+import type { Api, Context, Message, Model, SystemMessage } from "../types.ts";
 
 export function getSystemMessageText(message: SystemMessage): string {
 	return typeof message.content === "string" ? message.content : message.content.map((block) => block.text).join("\n");
@@ -12,6 +12,56 @@ export function getSystemMessageText(message: SystemMessage): string {
 export function renderSystemMessageAsUserText(message: SystemMessage): string {
 	const text = getSystemMessageText(message);
 	return text.length > 0 ? `<system_update>\n${text}\n</system_update>` : "";
+}
+
+/** Extract only leading instruction text. Keep tool changes at their original message position. */
+export function extractInitialSystemPrompt(context: Context): Context {
+	const first = context.messages[0];
+	if (first?.role !== "system") return context;
+	const text = getSystemMessageText(first);
+	if (!text) return context;
+	return {
+		...context,
+		systemPrompt: [context.systemPrompt, text].filter((part) => part !== undefined && part !== "").join("\n\n"),
+		messages: [{ ...first, content: "" }, ...context.messages.slice(1)],
+	};
+}
+
+export interface TranscriptCapabilities {
+	midConversationSystemMessages: boolean;
+	midConversationToolAdditions: boolean;
+	midConversationToolRemovals: boolean;
+}
+
+/** Native transcript support, not lossy user-text or top-level-tool fallbacks. */
+export function getTranscriptCapabilities(model: Model<Api>): TranscriptCapabilities {
+	const compat = model.compat;
+	const toolChanges = supportsMidConversationToolChanges(model);
+	const kimi =
+		model.api === "openai-completions" &&
+		compat !== undefined &&
+		"deferredToolsMode" in compat &&
+		compat.deferredToolsMode === "kimi";
+	const systemMessages =
+		toolChanges ||
+		RESPONSES_APIS.has(model.api) ||
+		(model.api === "anthropic-messages" &&
+			compat !== undefined &&
+			"supportsMidConvoSystemMessages" in compat &&
+			compat.supportsMidConvoSystemMessages === true) ||
+		(model.api === "openai-completions" && (model.provider === "openai" || kimi)) ||
+		model.api === "mistral-conversations";
+	return {
+		midConversationSystemMessages: systemMessages,
+		midConversationToolAdditions:
+			toolChanges ||
+			kimi ||
+			(RESPONSES_APIS.has(model.api) &&
+				compat !== undefined &&
+				"supportsToolSearch" in compat &&
+				compat.supportsToolSearch === true),
+		midConversationToolRemovals: toolChanges,
+	};
 }
 
 /** Responses transports, where `supportsAdditionalTools` provides transcript-anchored tool loads. */

@@ -35,7 +35,7 @@ const echoTool: Tool<typeof echoToolSchema> = {
 /**
  * Test 1: Live cross-provider handoff
  *
- * 1. Use github-copilot gpt-5.2-codex to generate a tool call
+ * 1. Use github-copilot gpt-5.3-codex to generate a tool call
  * 2. Switch to openrouter openai/gpt-5.2-codex and complete
  * 3. Switch to openai-codex gpt-5.5 and complete
  *
@@ -45,7 +45,7 @@ describe("Tool Call ID Normalization - Live Handoff", () => {
 	it.skipIf(!copilotToken || !openrouterKey)(
 		"github-copilot -> openrouter should normalize pipe-separated IDs",
 		async () => {
-			const copilotModel = getModel("github-copilot", "gpt-5.2-codex");
+			const copilotModel = getModel("github-copilot", "gpt-5.3-codex");
 			const openrouterModel = getModel("openrouter", "openai/gpt-5.2-codex");
 
 			// Step 1: Generate tool call with github-copilot
@@ -115,7 +115,7 @@ describe("Tool Call ID Normalization - Live Handoff", () => {
 	it.skipIf(!copilotToken || !codexToken)(
 		"github-copilot -> openai-codex should normalize pipe-separated IDs",
 		async () => {
-			const copilotModel = getModel("github-copilot", "gpt-5.2-codex");
+			const copilotModel = getModel("github-copilot", "gpt-5.3-codex");
 			const codexModel = getModel("openai-codex", "gpt-5.5");
 
 			// Step 1: Generate tool call with github-copilot
