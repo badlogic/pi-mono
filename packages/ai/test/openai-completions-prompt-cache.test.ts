@@ -201,6 +201,17 @@ describe("openai-completions prompt caching", () => {
 		expect(payload?.prompt_cache_retention).toBe(cacheRetention === "long" ? "24h" : undefined);
 	});
 
+	it("lets a proxy disable cache keys independently of long retention", async () => {
+		const model = createModel({
+			baseUrl: "https://proxy.example.com/v1",
+			compat: { supportsPromptCacheKey: false, supportsLongCacheRetention: true },
+		});
+		const { payload } = await captureRequest({ cacheRetention: "long", sessionId: "session-proxy" }, model);
+
+		expect(payload?.prompt_cache_key).toBeUndefined();
+		expect(payload?.prompt_cache_retention).toBe("24h");
+	});
+
 	it("does not invent an identity for an opted-in proxy", async () => {
 		const model = createModel({
 			baseUrl: "https://proxy.example.com/v1",

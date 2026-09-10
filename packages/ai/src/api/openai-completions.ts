@@ -804,16 +804,16 @@ function buildParams(
 ) {
 	const messages = convertMessages(model, context, compat, { grammarToolInputProperties });
 	const cacheControl = getCompatCacheControl(compat, cacheRetention);
+	const supportsPromptCacheKey =
+		compat.supportsPromptCacheKey ??
+		(model.baseUrl.includes("api.openai.com") || (cacheRetention === "long" && compat.supportsLongCacheRetention));
 
 	const params: OpenAI.Chat.Completions.ChatCompletionCreateParamsStreaming = {
 		model: model.id,
 		messages,
 		stream: true,
 		prompt_cache_key:
-			cacheRetention !== "none" &&
-			(compat.supportsPromptCacheKey ??
-				(model.baseUrl.includes("api.openai.com") ||
-					(cacheRetention === "long" && compat.supportsLongCacheRetention)))
+			cacheRetention !== "none" && supportsPromptCacheKey
 				? clampOpenAIPromptCacheKey(options?.sessionId)
 				: undefined,
 		prompt_cache_retention: cacheRetention === "long" && compat.supportsLongCacheRetention ? "24h" : undefined,

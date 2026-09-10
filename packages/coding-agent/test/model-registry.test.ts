@@ -555,6 +555,27 @@ describe("ModelRegistry", () => {
 			expect(compat?.supportsEagerToolInputStreaming).toBe(false);
 		});
 
+		test("custom models inherit and override prompt cache key support independently of long retention", async () => {
+			const provider: ModelsJsonProvider = {
+				baseUrl: "https://proxy.example.com/v1",
+				api: "openai-completions",
+				compat: { supportsPromptCacheKey: true, supportsLongCacheRetention: false },
+				models: [{ id: "inherited" }, { id: "disabled", compat: { supportsPromptCacheKey: false } }],
+			};
+			writeRawModelsJson({ demo: provider });
+
+			const registry = await createModelRegistry(authStorage, modelsJsonPath);
+			expect(registry.getError()).toBeUndefined();
+			expect(registry.find("demo", "inherited")?.compat).toMatchObject({
+				supportsPromptCacheKey: true,
+				supportsLongCacheRetention: false,
+			});
+			expect(registry.find("demo", "disabled")?.compat).toMatchObject({
+				supportsPromptCacheKey: false,
+				supportsLongCacheRetention: false,
+			});
+		});
+
 		test("compat schema accepts long cache retention flag", async () => {
 			writeRawModelsJson({
 				demo: {
@@ -786,6 +807,22 @@ describe("ModelRegistry", () => {
 
 			expect((sonnet?.compat as OpenAICompletionsCompat | undefined)?.supportsFinishReason).toBe(false);
 			expect((opus?.compat as OpenAICompletionsCompat | undefined)?.supportsFinishReason).toBe(true);
+		});
+
+		test("built-in models inherit prompt cache key support unless overridden", async () => {
+			const provider: ModelsJsonProvider = {
+				baseUrl: "https://proxy.example.com/v1",
+				compat: { supportsPromptCacheKey: true },
+				modelOverrides: {
+					"gpt-4o-mini": { compat: { supportsPromptCacheKey: false } },
+				},
+			};
+			writeRawModelsJson({ openai: provider });
+
+			const registry = await createModelRegistry(authStorage, modelsJsonPath);
+			expect(registry.getError()).toBeUndefined();
+			expect(registry.find("openai", "gpt-4o")?.compat).toMatchObject({ supportsPromptCacheKey: true });
+			expect(registry.find("openai", "gpt-4o-mini")?.compat).toMatchObject({ supportsPromptCacheKey: false });
 		});
 
 		test("model override deep merges compat settings", async () => {
