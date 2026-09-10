@@ -45,7 +45,9 @@ describe("overlay CJK boundary regression", () => {
 	});
 
 	it("keeps image lines intact for regular layout composition", () => {
-		const imageLine = "\x1b_Ga=T,c=2,r=1;AAAA\x1b\\";
-		assert.strictEqual(compositeTuiLine(imageLine, "sibling", 0, 7, 20), imageLine);
+		const imageLines = ["\x1b_Ga=T,c=2,r=1;AAAA\x1b\\", "\x1b]1337;File=inline=1;width=2;height=auto:AAAA\x07"];
+		for (const imageLine of imageLines) {
+			assert.strictEqual(compositeTuiLine(imageLine, "sibling", 0, 7, 20), imageLine);
+		}
 	});
 });

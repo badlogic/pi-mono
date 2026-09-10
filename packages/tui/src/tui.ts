@@ -383,9 +383,12 @@ export class Container implements Component {
  */
 const SEGMENT_RESET = "\x1b[0m\x1b]8;;\x07";
 
-/** Remove Kitty graphics payloads while preserving surrounding text and styles. */
-function stripKittyImageSequences(line: string): string {
-	return line.replace(/\x1b_G[\s\S]*?\x1b\\/g, "");
+/** Remove terminal image payloads while preserving surrounding text and styles. */
+function stripImageSequences(line: string): string {
+	return line
+		.replace(/\x1b\[\d+A(?=\x1b_G|\x1b\]1337;File=)/g, "")
+		.replace(/\x1b_G[\s\S]*?(?:\x1b\\|\x07)/g, "")
+		.replace(/\x1b\]1337;File=[\s\S]*?(?:\x07|\x1b\\)/g, "");
 }
 
 /** Composite overlay content into a terminal line at a fixed column. */
@@ -1373,7 +1376,7 @@ export abstract class TuiBase extends Container implements TUI {
 		overlayWidth: number,
 		totalWidth: number,
 	): string {
-		return compositeTuiLine(stripKittyImageSequences(baseLine), overlayLine, startCol, overlayWidth, totalWidth);
+		return compositeTuiLine(stripImageSequences(baseLine), overlayLine, startCol, overlayWidth, totalWidth);
 	}
 
 	/**

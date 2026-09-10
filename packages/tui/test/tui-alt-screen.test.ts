@@ -296,6 +296,46 @@ describe("TuiAltScreen", () => {
 		}
 	});
 
+	it("composites an overlay over an iTerm2 image and restores it", async () => {
+		setCapabilities({ images: "iterm2", trueColor: true, hyperlinks: true });
+		try {
+			const terminal = new RecordingTerminal(20, 3);
+			const tui = new TuiAltScreen(terminal);
+			const imageLine = "\x1b]1337;File=inline=1;width=2;height=auto:AAAA\x07";
+			tui.addChild({ render: () => [imageLine], invalidate: () => {} });
+			tui.start();
+			await terminal.waitForRender();
+
+			const overlayEventCount = terminal.events.length;
+			const overlayHandle = tui.showOverlay(new InputOverlay(), { anchor: "top-left", width: 20 });
+			await terminal.waitForRender();
+			const overlayWrites = terminal.events
+				.slice(overlayEventCount)
+				.filter((event): event is { type: "write"; data: string } => event.type === "write")
+				.map((event) => event.data)
+				.join("");
+
+			assert.ok(overlayWrites.includes("overlay"));
+			assert.ok(overlayWrites.includes("\x1b[2J"));
+			assert.ok(!overlayWrites.includes(imageLine));
+
+			const restoreEventCount = terminal.events.length;
+			overlayHandle.hide();
+			await terminal.waitForRender();
+			const restoreWrites = terminal.events
+				.slice(restoreEventCount)
+				.filter((event): event is { type: "write"; data: string } => event.type === "write")
+				.map((event) => event.data)
+				.join("");
+
+			assert.ok(restoreWrites.includes("\x1b[2J"));
+			assert.ok(restoreWrites.includes(imageLine));
+			tui.stop();
+		} finally {
+			resetCapabilitiesCache();
+		}
+	});
+
 	it("routes wheel input to the scroll view under the pointer", async () => {
 		const terminal = new VirtualTerminal(20, 4);
 		const tui = new TuiAltScreen(terminal);
