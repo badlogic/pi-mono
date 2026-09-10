@@ -190,7 +190,11 @@ describe("ModelRuntime auth options", () => {
 			env: { REQUEST_SCOPED_API_KEY: "request-key", REQUEST_SCOPED_HEADER: "request-header" },
 		});
 
-		expect(auth?.auth).toEqual({ apiKey: "request-key", headers: { "x-request-value": "request-header" } });
+		expect(auth?.auth).toEqual({
+			apiKey: "request-key",
+			baseUrl: "https://example.test/v1",
+			headers: { "x-request-value": "request-header" },
+		});
 	});
 
 	it("lets an explicit Authorization header override authHeader case-insensitively", async () => {
