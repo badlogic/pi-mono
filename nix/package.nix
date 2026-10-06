@@ -106,10 +106,7 @@ stdenv.mkDerivation (finalAttrs: {
   ]
   ++ lib.optionals stdenv.hostPlatform.isLinux [ autoPatchelfHook ];
 
-  buildInputs = [ nodejs ] ++ lib.optionals stdenv.hostPlatform.isLinux [
-    stdenv.cc.cc.lib
-    libxcb
-  ];
+  buildInputs = lib.optionals stdenv.hostPlatform.isLinux [ libxcb ];
 
   dontStrip = true;
 
