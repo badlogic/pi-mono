@@ -23,14 +23,10 @@
         "x86_64-darwin"
         "x86_64-linux"
       ];
-      forAllSystems = nixpkgs.lib.genAttrs systems;
-      nixpkgsFor = system: if system == "x86_64-darwin" then nixpkgs-darwin-x64 else nixpkgs;
-      packageFor =
-        system:
-        let
-          pkgs = import (nixpkgsFor system) { inherit system; };
-        in
-        pkgs.callPackage ./nix/package.nix { source = self; };
+      nixpkgsFor = system: (if system == "x86_64-darwin" then nixpkgs-darwin-x64 else nixpkgs).legacyPackages.${system};
+      packageFor = system: (nixpkgsFor system).callPackage ./nix/package.nix { source = self; };
+      lib = nixpkgs.lib;
+      forAllSystems = lib.genAttrs systems;
     in
     {
       packages = forAllSystems (system: {
