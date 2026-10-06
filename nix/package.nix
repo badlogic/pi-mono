@@ -139,7 +139,8 @@ stdenv.mkDerivation (finalAttrs: {
             xclip
           ]
         )
-      }
+      } \
+      --set-default PI_SKIP_VERSION_CHECK 1
 
     runHook postInstall
   '';
