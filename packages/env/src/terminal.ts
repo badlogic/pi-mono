@@ -17,6 +17,12 @@ export interface TerminalOptions {
 	onData: (bytes: Uint8Array) => void;
 }
 
+/** The foreground job of a terminal: its process group id, and its leader's name if the system tells. */
+export interface TerminalForeground {
+	pid: number;
+	name?: string;
+}
+
 /**
  * A program running in a pseudo-terminal of a pi-env daemon. It ends when the program exits, `close()` kills it, or
  * the connection is lost (the daemon then kills it).
@@ -62,6 +68,17 @@ export class RemoteTerminal {
 	/** Kill the program and everything in its session. */
 	close(): void {
 		this.#abort.abort();
+	}
+
+	/**
+	 * The job in the terminal's foreground when it is not the program itself: what a shell runs, such as an editor.
+	 * Undefined while the program is in front (a shell at its prompt). Rejects once the terminal has ended.
+	 */
+	async foreground(): Promise<TerminalForeground | undefined> {
+		const reply = await this.#connection.request("ptyForeground", { target: this.#id }, { session: this.#session });
+		const foreground = reply.json.foreground as { pid: number; name: string | null } | null;
+		if (!foreground) return undefined;
+		return { pid: foreground.pid, ...(foreground.name ? { name: foreground.name } : {}) };
 	}
 
 	#request(op: string, json: Json, payload?: Uint8Array): void {

@@ -51,12 +51,12 @@ between chunks with `aborted`. `watch` stops and finishes with `{}`. Other opera
 
 ## Scheduling
 
-File operations run on a fixed pool of worker threads; `exec`, `pty` and `watch` run on their own threads. `ptyWrite`
-and `ptyResize` are answered in arrival order by the thread that reads frames, so keystrokes never swap. Chunk writes to one
-handle run in arrival order. Results, errors, pings and `watch` events are sent before queued command output, and
-results with payloads above 64 KiB queue behind output too, so a slow link delays bulk data, not replies. Output of a
-command without an output window waits while more than 4 MiB of output is unsent, which slows the command as a full
-pipe would.
+File operations run on a fixed pool of worker threads; `exec`, `pty` and `watch` run on their own threads. `ptyWrite`,
+`ptyResize` and `ptyForeground` are answered in arrival order by the thread that reads frames, so keystrokes never
+swap. Chunk writes to one handle run in arrival order. Results, errors, pings and `watch` events are sent before queued
+command output, and results with payloads above 64 KiB queue behind output too, so a slow link delays bulk data, not
+replies. Output of a command without an output window waits while more than 4 MiB of output is unsent, which slows the
+command as a full pipe would.
 
 ## Liveness
 
@@ -127,3 +127,8 @@ While a `pty` request runs, `ptyWrite { target }` writes its payload to the term
 `ptyResize { target, cols, rows }` changes its size (the program gets `SIGWINCH`); `target` is the id of the `pty`
 request. Both return `{}` at once; input is queued and written in order, waiting while the program does not read it.
 Once the terminal has ended, they fail with `EBADF`.
+
+`ptyForeground { target }` reports the terminal's foreground process group when it is not the program's own:
+`{ foreground: { pid, name } }`, where `pid` is the group's id and `name` its leader's process name (`null` if unknown),
+or `{ foreground: null }` while the program itself is in front. For a shell this tells a running job (an editor, a
+build) from the prompt; background jobs are not reported. It fails with `EBADF` once the terminal has ended.

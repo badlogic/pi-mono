@@ -71,6 +71,35 @@ describe.skipIf(process.platform === "win32")("openTerminal", () => {
 		expect(await terminal.exited).toBe(3);
 	}, 20_000);
 
+	it("reports the job in the foreground, not the shell at its prompt", async () => {
+		const { connection, cwd } = connect();
+		const output = collector();
+		const terminal = await openTerminal(connection, {
+			cwd,
+			// Interactive, for job control: the shell puts each job in front of the terminal.
+			argv: ["/bin/sh", "-i"],
+			env: { PS1: "$ ", TERM: "xterm-256color" },
+			cols: 80,
+			rows: 24,
+			onData: output.onData,
+		});
+		terminal.write("echo READY\n");
+		await output.waitFor("READY");
+		expect(await terminal.foreground()).toBeUndefined();
+		terminal.write("sleep 100\n");
+		let foreground = await terminal.foreground();
+		for (let tries = 0; !foreground && tries < 100; tries++) {
+			await new Promise((resolve) => setTimeout(resolve, 20));
+			foreground = await terminal.foreground();
+		}
+		expect(foreground?.pid).toBeGreaterThan(0);
+		expect(foreground?.pid).not.toBe(terminal.pid);
+		if (process.platform === "darwin" || process.platform === "linux") expect(foreground?.name).toBe("sleep");
+		terminal.close();
+		await expect(terminal.exited).rejects.toMatchObject({ code: "aborted" });
+		await expect(terminal.foreground()).rejects.toMatchObject({ code: "EBADF" });
+	}, 20_000);
+
 	it("delivers raw bytes, not decoded text", async () => {
 		const { connection, cwd } = connect();
 		const output = collector();

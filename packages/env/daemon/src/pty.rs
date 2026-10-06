@@ -1,5 +1,6 @@
 //! `pty`: a program in a pseudo-terminal, for interactive terminals. Unlike `exec`, output is the terminal's raw
-//! bytes, and the program reads input: `ptyWrite` and `ptyResize` address the running `pty` request by its id.
+//! bytes, and the program reads input: `ptyWrite`, `ptyResize` and `ptyForeground` address the running `pty` request by
+//! its id.
 
 use crate::errors::Failure;
 use crate::exec::{Control, Groups};
@@ -19,11 +20,14 @@ const EXIT_GRACE: std::time::Duration = std::time::Duration::from_millis(100);
 /// Largest terminal size accepted, in cells.
 const MAX_CELLS: u64 = 4096;
 
-/// What `ptyWrite` and `ptyResize` reach: the terminal of one running `pty` request.
+/// What `ptyWrite`, `ptyResize` and `ptyForeground` reach: the terminal of one running `pty` request.
 pub struct Terminal {
     input: Sender<Vec<u8>>,
     #[cfg(unix)]
     master: Arc<std::fs::File>,
+    /// The program's process id, which is also its process group's (it leads the terminal's session).
+    #[cfg(unix)]
+    pid: u32,
 }
 
 /// Running terminals by the id of their `pty` request.
@@ -116,6 +120,27 @@ pub fn resize(terminals: &Terminals, json: &Value) -> Result<Value, Failure> {
     Ok(json!({}))
 }
 
+/// The process group in the terminal's foreground when it is not the program's own: a job a shell started, such as an
+/// editor. `{ foreground: null }` while the program itself is in front (a shell at its prompt).
+pub fn foreground(terminals: &Terminals, json: &Value) -> Result<Value, Failure> {
+    let terminal = find(terminals, json)?;
+    #[cfg(unix)]
+    {
+        let group = unix::foreground(&terminal.master)
+            .map_err(|error| Failure::io(&error, "tcgetpgrp", "pty"))?;
+        if group <= 0 || group as u32 == terminal.pid {
+            return Ok(json!({ "foreground": null }));
+        }
+        let name = unix::process_name(group);
+        Ok(json!({ "foreground": { "pid": group, "name": name } }))
+    }
+    #[cfg(not(unix))]
+    {
+        let _ = terminal;
+        Ok(json!({ "foreground": null }))
+    }
+}
+
 #[cfg(not(unix))]
 pub fn run(
     _id: u32,
@@ -168,6 +193,7 @@ pub fn run(
         Arc::new(Terminal {
             input,
             master: master.clone(),
+            pid,
         }),
     );
     output.control(Frame::new(
@@ -321,6 +347,38 @@ mod unix {
         // SAFETY: TIOCSWINSZ reads one winsize from a valid pointer.
         check(unsafe { libc::ioctl(master.as_raw_fd(), libc::TIOCSWINSZ as _, &size) })?;
         Ok(())
+    }
+
+    /// The terminal's foreground process group.
+    pub fn foreground(master: &File) -> io::Result<libc::pid_t> {
+        // SAFETY: tcgetpgrp on a descriptor the terminal owns.
+        let group = unsafe { libc::tcgetpgrp(master.as_raw_fd()) };
+        if group < 0 {
+            Err(io::Error::last_os_error())
+        } else {
+            Ok(group)
+        }
+    }
+
+    /// A process's name, if it still runs and the system tells.
+    #[cfg(target_vendor = "apple")]
+    pub fn process_name(pid: libc::pid_t) -> Option<String> {
+        let mut buffer = [0u8; 256];
+        // SAFETY: proc_name writes at most `buffer.len()` bytes and returns how many.
+        let length =
+            unsafe { libc::proc_name(pid, buffer.as_mut_ptr().cast(), buffer.len() as u32) };
+        (length > 0).then(|| String::from_utf8_lossy(&buffer[..length as usize]).into_owned())
+    }
+
+    #[cfg(any(target_os = "linux", target_os = "android"))]
+    pub fn process_name(pid: libc::pid_t) -> Option<String> {
+        let name = std::fs::read_to_string(format!("/proc/{pid}/comm")).ok()?;
+        Some(name.trim_end().to_string()).filter(|name| !name.is_empty())
+    }
+
+    #[cfg(not(any(target_vendor = "apple", target_os = "linux", target_os = "android")))]
+    pub fn process_name(_pid: libc::pid_t) -> Option<String> {
+        None
     }
 
     fn cloexec(fd: libc::c_int) -> io::Result<()> {

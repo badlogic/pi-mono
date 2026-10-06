@@ -26,5 +26,5 @@ export {
 	sshArguments,
 	sshConnection,
 } from "./ssh.ts";
-export { openTerminal, RemoteTerminal, type TerminalOptions } from "./terminal.ts";
+export { openTerminal, RemoteTerminal, type TerminalForeground, type TerminalOptions } from "./terminal.ts";
 export { RemoteWatcher, type RemoteWatchOptions } from "./watch.ts";

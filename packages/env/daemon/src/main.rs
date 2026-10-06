@@ -400,12 +400,19 @@ fn serve_frames(server: &Arc<Server>, input: &mut impl Read) -> io::Result<()> {
     let jobs = start_workers();
     while let Some(request) = frame::read_frame(input)? {
         match request.kind {
-            REQUEST if matches!(request.json["op"].as_str(), Some("ptyWrite" | "ptyResize")) => {
+            REQUEST
+                if matches!(
+                    request.json["op"].as_str(),
+                    Some("ptyWrite" | "ptyResize" | "ptyForeground")
+                ) =>
+            {
                 // Answered here, in arrival order: through the worker pool, two writes could swap.
-                let reply = if request.json["op"].as_str() == Some("ptyWrite") {
-                    pty::write(&server.terminals, &request.json, request.payload)
-                } else {
-                    pty::resize(&server.terminals, &request.json)
+                let reply = match request.json["op"].as_str() {
+                    Some("ptyWrite") => {
+                        pty::write(&server.terminals, &request.json, request.payload)
+                    }
+                    Some("ptyResize") => pty::resize(&server.terminals, &request.json),
+                    _ => pty::foreground(&server.terminals, &request.json),
                 };
                 server.output.control(match reply {
                     Ok(json) => Frame::new(RESULT, request.id, json),
