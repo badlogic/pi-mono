@@ -15,18 +15,27 @@
 }:
 
 let
+  inherit (lib)
+    importJSON
+    removePrefix
+    optionals
+    getExe
+    makeBinPath
+    licenses
+    sourceTypes
+    ;
   nodejs = nodejs_22;
-  packageJson = lib.importJSON (source + "/packages/coding-agent/package.json");
+  packageJson = importJSON (source + "/packages/coding-agent/package.json");
   # Lockfile root used by the pi.dev installer. It pins the coding agent's
   # runtime dependency tree and is kept in sync with package-lock.json by
   # `npm run check`.
   installLock = source + "/packages/coding-agent/install-lock";
-  modelCatalogPin = lib.importJSON ./model-catalog.json;
+  modelCatalogPin = importJSON ./model-catalog.json;
   modelCatalog = fetchurl {
     name = "pi-model-catalog.json";
     # The typed catalog is the representation whose bytes the revision hashes.
     url = "https://pi.dev/api/models/revisions/${modelCatalogPin.revision}?types=chat,image,classifier";
-    sha256 = lib.removePrefix "sha256-" modelCatalogPin.revision;
+    sha256 = removePrefix "sha256-" modelCatalogPin.revision;
   };
 
   workspacePackages = stdenv.mkDerivation {
@@ -104,9 +113,9 @@ stdenv.mkDerivation (finalAttrs: {
     importNpmLock.npmConfigHook
     makeBinaryWrapper
   ]
-  ++ lib.optionals stdenv.hostPlatform.isLinux [ autoPatchelfHook ];
+  ++ optionals stdenv.hostPlatform.isLinux [ autoPatchelfHook ];
 
-  buildInputs = lib.optionals stdenv.hostPlatform.isLinux [ libxcb ];
+  buildInputs = optionals stdenv.hostPlatform.isLinux [ libxcb ];
 
   dontStrip = true;
 
@@ -119,13 +128,13 @@ stdenv.mkDerivation (finalAttrs: {
     makeBinaryWrapper ${lib.getExe nodejs} "$out/bin/pi" \
       --add-flags "$out/lib/pi/node_modules/@earendil-works/pi-coding-agent/dist/bundle/cli.js" \
       --prefix PATH : ${
-        lib.makeBinPath (
+        makeBinPath (
           [
             nodejs
             fd
             ripgrep
           ]
-          ++ lib.optionals stdenv.hostPlatform.isLinux [
+          ++ optionals stdenv.hostPlatform.isLinux [
             wl-clipboard
             xclip
           ]
@@ -139,11 +148,11 @@ stdenv.mkDerivation (finalAttrs: {
   installCheckPhase = ''
     runHook preInstallCheck
     test "$("$out/bin/pi" --version)" = "${packageJson.version}"
-    ${lib.getExe nodejs} -e \
+    ${getExe nodejs} -e \
       "require('$out/lib/pi/node_modules/esbuild').transformSync('const value: number = 1', { loader: 'ts' })"
     # Load host-platform TUI helpers directly so missing native dependencies
     # fail the build rather than silently disabling clipboard support.
-    ${lib.getExe nodejs} -e \
+    ${getExe nodejs} -e \
       "const fs = require('node:fs');
        const path = require('node:path');
        const dir = '$out/lib/pi/node_modules/@earendil-works/pi-tui/native/' + process.platform + '/prebuilds/' + process.platform + '-' + process.arch;
@@ -152,7 +161,7 @@ stdenv.mkDerivation (finalAttrs: {
            if (file.endsWith('.node')) require(path.join(dir, file));
          }
        }"
-    ${lib.getExe nodejs} -e \
+    ${getExe nodejs} -e \
       "require('$out/lib/pi/node_modules/@silvia-odwyer/photon-node')"
     runHook postInstallCheck
   '';
@@ -160,7 +169,7 @@ stdenv.mkDerivation (finalAttrs: {
   meta = {
     description = packageJson.description;
     homepage = "https://pi.dev";
-    license = lib.licenses.mit;
+    license = licenses.mit;
     mainProgram = finalAttrs.pname;
     platforms = [
       "aarch64-darwin"
@@ -168,7 +177,7 @@ stdenv.mkDerivation (finalAttrs: {
       "x86_64-darwin"
       "x86_64-linux"
     ];
-    sourceProvenance = with lib.sourceTypes; [
+    sourceProvenance = with sourceTypes; [
       fromSource
       binaryNativeCode
     ];
