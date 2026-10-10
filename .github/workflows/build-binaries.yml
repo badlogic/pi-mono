@@ -465,6 +465,14 @@ jobs:
     with:
       release_tag: ${{ github.event.inputs.tag || github.ref_name }}
 
+  build-rpm-packages:
+    uses: ./.github/workflows/build-rpm.yml
+    needs: publish-github-release
+    permissions:
+      contents: write
+    with:
+      release_tag: ${{ github.event.inputs.tag || github.ref_name }}
+
   cleanup-draft-github-release:
     runs-on: ubuntu-latest
     needs:

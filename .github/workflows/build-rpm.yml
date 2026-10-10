@@ -1,0 +1,142 @@
+name: Build RPM Packages
+
+on:
+  workflow_call:
+    inputs:
+      release_tag:
+        description: 'Release tag (e.g., v1.1.0)'
+        required: true
+        type: string
+  workflow_dispatch:
+    inputs:
+      release_tag:
+        description: 'Release tag to build RPMs for (e.g., v1.1.0). Must have a GitHub Release with binary assets.'
+        required: true
+        type: string
+
+permissions: {}
+
+jobs:
+  build-rpm:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: linux-x64
+            rpm_arch: x86_64
+          - platform: linux-arm64
+            rpm_arch: aarch64
+    env:
+      RELEASE_TAG: ${{ inputs.release_tag }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Install rpmbuild
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq rpm rpm2cpio
+
+      - name: Download Linux binary archive from release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          mkdir -p release-assets
+          gh release download "${RELEASE_TAG}" \
+            --pattern "pi-${{ matrix.platform }}.tar.gz" \
+            --dir release-assets
+
+      - name: Extract binary archive
+        run: |
+          set -euo pipefail
+          mkdir -p extracted
+          tar -xzf "release-assets/pi-${{ matrix.platform }}.tar.gz" -C extracted
+
+      - name: Build RPM package
+        run: |
+          set -euo pipefail
+          VERSION="${RELEASE_TAG#v}"
+          mkdir -p rpm-output
+          ./scripts/build-rpm.sh \
+            --input extracted/pi \
+            --arch "${{ matrix.rpm_arch }}" \
+            --version "${VERSION}" \
+            --out rpm-output
+
+      - name: Test RPM package (structural)
+        run: |
+          set -euo pipefail
+          VERSION="${RELEASE_TAG#v}"
+          RPM_FILE=$(find rpm-output -name "*.rpm" -type f | head -1)
+          ./scripts/test-rpm.sh "${RPM_FILE}" --expected-version "${VERSION}"
+
+      - name: Test install/remove cycle in Fedora container
+        run: |
+          set -euo pipefail
+          VERSION="${RELEASE_TAG#v}"
+          RPM_FILE=$(find rpm-output -name "*.rpm" -type f -printf '%f\n' | head -1)
+
+          # Only run install tests for the native architecture (x86_64 on GitHub runners)
+          if [[ "${{ matrix.rpm_arch }}" == "x86_64" ]]; then
+            docker run --rm \
+              -v "$(pwd)/rpm-output:/rpms:ro" \
+              -v "$(pwd)/scripts:/scripts:ro" \
+              fedora:latest \
+              bash -c "
+                dnf install -y -q procps &&
+                rpm -ivh /rpms/${RPM_FILE} &&
+                pi --version &&
+                pi --help &&
+                rpm -e pi-coding-agent &&
+                ! command -v pi
+              "
+            echo "PASS: Fedora container install/remove cycle"
+          else
+            echo "SKIP: install/remove cycle for ${{ matrix.rpm_arch }} (cross-arch)"
+          fi
+
+      - name: Upload RPM package
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: rpm-${{ matrix.rpm_arch }}-${{ inputs.release_tag }}
+          path: rpm-output/*.rpm
+          if-no-files-found: error
+          retention-days: 14
+
+  upload-to-release:
+    runs-on: ubuntu-latest
+    needs: build-rpm
+    permissions:
+      contents: write
+    env:
+      RELEASE_TAG: ${{ inputs.release_tag }}
+    steps:
+      - name: Download x86_64 RPM
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: rpm-x86_64-${{ inputs.release_tag }}
+          path: rpms
+
+      - name: Download aarch64 RPM
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: rpm-aarch64-${{ inputs.release_tag }}
+          path: rpms
+
+      - name: Upload RPMs to GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          for rpm in rpms/*.rpm; do
+            echo "Uploading $(basename "$rpm") to release ${RELEASE_TAG}..."
+            gh release upload "${RELEASE_TAG}" "$rpm" --clobber
+          done
+          echo "All RPM packages uploaded to ${RELEASE_TAG}"
