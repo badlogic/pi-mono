@@ -457,6 +457,14 @@ jobs:
 
           gh release edit "${RELEASE_TAG}" --draft=false
 
+  build-deb-packages:
+    uses: ./.github/workflows/build-deb.yml
+    needs: publish-github-release
+    permissions:
+      contents: write
+    with:
+      release_tag: ${{ github.event.inputs.tag || github.ref_name }}
+
   cleanup-draft-github-release:
     runs-on: ubuntu-latest
     needs:

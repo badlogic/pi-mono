@@ -1,0 +1,140 @@
+name: Build Deb Packages
+
+on:
+  workflow_call:
+    inputs:
+      release_tag:
+        description: 'Release tag (e.g., v1.1.0)'
+        required: true
+        type: string
+  workflow_dispatch:
+    inputs:
+      release_tag:
+        description: 'Release tag to build debs for (e.g., v1.1.0). Must have a GitHub Release with binary assets.'
+        required: true
+        type: string
+
+permissions: {}
+
+jobs:
+  build-deb:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: linux-x64
+            deb_arch: amd64
+          - platform: linux-arm64
+            deb_arch: arm64
+    env:
+      RELEASE_TAG: ${{ inputs.release_tag }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Download Linux binary archive from release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          mkdir -p release-assets
+          gh release download "${RELEASE_TAG}" \
+            --pattern "pi-${{ matrix.platform }}.tar.gz" \
+            --dir release-assets
+
+      - name: Extract binary archive
+        run: |
+          set -euo pipefail
+          mkdir -p extracted
+          tar -xzf "release-assets/pi-${{ matrix.platform }}.tar.gz" -C extracted
+
+      - name: Build deb package
+        run: |
+          set -euo pipefail
+          VERSION="${RELEASE_TAG#v}"
+          mkdir -p deb-output
+          ./scripts/build-deb.sh \
+            --input extracted/pi \
+            --arch "${{ matrix.deb_arch }}" \
+            --version "${VERSION}" \
+            --out deb-output
+
+      - name: Test deb package
+        run: |
+          set -euo pipefail
+          VERSION="${RELEASE_TAG#v}"
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq lintian
+          DEB_FILE="deb-output/pi-coding-agent_${VERSION}-1_${{ matrix.deb_arch }}.deb"
+          ./scripts/test-deb.sh "${DEB_FILE}" --expected-version "${VERSION}"
+
+      - name: Test install/remove cycle in container
+        run: |
+          set -euo pipefail
+          VERSION="${RELEASE_TAG#v}"
+          DEB_FILE="pi-coding-agent_${VERSION}-1_${{ matrix.deb_arch }}.deb"
+
+          # Only run install tests for the native architecture (amd64 on ubuntu runners)
+          if [[ "${{ matrix.deb_arch }}" == "amd64" ]]; then
+            docker run --rm \
+              -v "$(pwd)/deb-output:/debs:ro" \
+              -v "$(pwd)/scripts:/scripts:ro" \
+              debian:bookworm-slim \
+              bash -c "
+                apt-get update -qq &&
+                apt-get install -y -qq procps &&
+                dpkg -i /debs/${DEB_FILE} &&
+                pi --version &&
+                pi --help &&
+                dpkg -r pi-coding-agent &&
+                ! command -v pi
+              "
+            echo "PASS: container install/remove cycle"
+          else
+            echo "SKIP: install/remove cycle for ${{ matrix.deb_arch }} (cross-arch)"
+          fi
+
+      - name: Upload deb package
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: deb-${{ matrix.deb_arch }}-${{ inputs.release_tag }}
+          path: deb-output/*.deb
+          if-no-files-found: error
+          retention-days: 14
+
+  upload-to-release:
+    runs-on: ubuntu-latest
+    needs: build-deb
+    permissions:
+      contents: write
+    env:
+      RELEASE_TAG: ${{ inputs.release_tag }}
+    steps:
+      - name: Download amd64 deb
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: deb-amd64-${{ inputs.release_tag }}
+          path: debs
+
+      - name: Download arm64 deb
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: deb-arm64-${{ inputs.release_tag }}
+          path: debs
+
+      - name: Upload debs to GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          for deb in debs/*.deb; do
+            echo "Uploading $(basename "$deb") to release ${RELEASE_TAG}..."
+            gh release upload "${RELEASE_TAG}" "$deb" --clobber
+          done
+          echo "All deb packages uploaded to ${RELEASE_TAG}"
