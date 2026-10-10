@@ -4,7 +4,7 @@
 
 ### Breaking Changes
 
-- Moved the published theme JSON Schema to `schemas/theme.schema.json` and made theme loading reject unknown top-level properties and unknown properties under `colors` or `export`. Update existing theme `$schema` references to the new path, define reusable custom colors under `vars`, and remove unsupported metadata.
+- Published generated configuration schemas for models, settings, keybindings, and themes at `https://pi.dev/schemas/*.schema.json`. The theme schema moved to `https://pi.dev/schemas/theme.schema.json`; themes loaded during startup now receive the same schema validation as later reloads. Update theme `$schema` references, define reusable colors under `vars`, and remove unsupported metadata.
 
 ### Changed
 
