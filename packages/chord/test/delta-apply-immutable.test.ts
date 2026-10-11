@@ -247,6 +247,45 @@ describe("checked immutable operation application", () => {
 });
 
 describe("immutable application complexity", () => {
+	it("appends to an array not yet copied in one copy, sharing everything else", () => {
+		const entries = Array.from({ length: 1_000 }, (_, index) => ({ index }));
+		const base = freezeDeep({ log: { entries, meta: { count: 1_000 } }, other: { value: 1 } });
+		const result = applyImmutable(base, [
+			["p", ["log", "entries"], 1_000, 0, [{ index: 1_000 }]],
+			["p", ["log", "entries"], 1_001, 0, [{ index: 1_001 }]],
+		]);
+		expect(result.log.entries).toHaveLength(1_002);
+		expect(result.log.entries.slice(-2)).toEqual([{ index: 1_000 }, { index: 1_001 }]);
+		expect(base.log.entries).toHaveLength(1_000);
+		expect(result.log.entries[0]).toBe(entries[0]);
+		expect(result.log.meta).toBe(base.log.meta);
+		expect(result.other).toBe(base.other);
+		expect(result.log).not.toBe(base.log);
+
+		const rootArray = freezeDeep([1, 2]);
+		expect(applyImmutable(rootArray, [["p", [], 2, 0, [3]]])).toEqual([1, 2, 3]);
+		expect(rootArray).toEqual([1, 2]);
+		// An appended item that is itself an array stays one element.
+		expect(applyImmutable(rootArray, [["p", [], 2, 0, [[3, 4]]]])).toEqual([1, 2, [3, 4]]);
+		// Invalid paths fail with the general path's errors.
+		const invalid: [Op, typeof PathError | typeof UnsafePathError][] = [
+			[["p", ["values", "missing"], 0, 0, []], PathError],
+			[["p", ["missing"], 0, 0, []], PathError],
+			[["p", ["values", 0], 0, 0, []], PathError],
+			[["p", ["__proto__"], 0, 0, []], UnsafePathError],
+			[["p", ["list", "x"], 0, 0, []], PathError],
+			[["p", ["text"], 0, 0, []], PathError],
+			[["p", ["list", -1], 0, 0, []], UnsafePathError],
+			[["p", ["list", 1.5], 0, 0, []], UnsafePathError],
+			[["p", ["list", 0, "constructor"], 0, 0, []], UnsafePathError],
+		];
+		const document = freezeDeep({ values: [] as JsonValue[], list: [[1]], text: "a" });
+		for (const [op, error] of invalid)
+			expect(() => applyImmutable(document, [op]), JSON.stringify(op)).toThrow(error);
+		// An insert that is not at the end takes the general path.
+		expect(applyImmutable(rootArray, [["p", [], 1, 0, [9]]])).toEqual([1, 9, 2]);
+	});
+
 	it("copies a wide object once rather than once per repeated write", () => {
 		const width = 20_000;
 		const base: Record<string, JsonValue> = {};
