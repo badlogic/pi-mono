@@ -3660,6 +3660,18 @@ type LiveState = {
   }[];
   /** Live compaction tasks in task ID order; absent when none (section 8.7). */
   compactions?: CompactionStatus[];
+  /**
+   * The newest compaction failure since a compaction last produced a summary (section 8.7), so a client can show it
+   * after the task ended.
+   */
+  compactionFailure?: CompactionFailure;
+};
+
+type CompactionFailure = {
+  taskId: TaskId<CompactionResult>;
+  reason: CompactionReason;
+  /** The failed or faulted outcome's error message, or why the scheduler orphaned the task. */
+  error: string;
 };
 
 type CompactionStatus = {
@@ -3738,6 +3750,8 @@ type GenerationCheckpoint =
       compacted?: TaskId<CompactionResult>;
       /** Error text of the overflow that started `compacted`; checked once when `prepare` resumes. */
       overflow?: string;
+      /** Set when the blocking threshold started `compacted`; its outcome is checked once when `prepare` resumes. */
+      threshold?: true;
     }
   | {
       phase: "request";
@@ -3795,8 +3809,15 @@ The run's inputs live in `pi.live.run`, not in the task input.
   - Above `contextWindow - reserveTokens`, the blocking threshold: instead of
     appending, one commit creates a compaction owned by the generation with reason
     `threshold`, adds its status, and commits `waiting` on it with `allSettled`
-    and checkpoint `{ phase: "prepare", attempt, compacted }`. Whatever its
-    outcome, `prepare` then runs again and sends the request.
+    and checkpoint `{ phase: "prepare", attempt, compacted, threshold: true }`.
+    When `prepare` resumes, it reads the compaction's outcome once. If the
+    compaction completed, with or without a summary (nothing to compact, or
+    declined), `prepare` continues and sends the request. If it failed,
+    faulted, was orphaned, or was aborted directly, the generation fails with
+    `model_error` without a request, and its inputs settle `unanswered` with
+    detail `Compaction failed: <error>` (`Compaction was aborted` for an
+    abort). A failed compaction leaves a context above the blocking threshold,
+    where a request would at best leave no room for the answer.
   - Above `contextWindow - reserveTokens - backgroundTokens` with
     `backgroundTokens > 0` and no compaction status in `pi.live`: the commit that
     moves to `request` also creates a background compaction, owned by the
@@ -4146,8 +4167,8 @@ the conversation.
 
 where `wrapped` is `"The conversation history before this point was compacted
 into the following summary:\n\n<summary>\n"`, the summary, and
-`"\n</summary>"`. The commit that places it also removes the task's status and
-commits the task's `completed` outcome:
+`"\n</summary>"`. The commit that places it also removes the task's status,
+removes `pi.live.compactionFailure`, and commits the task's `completed` outcome:
 
 - A blocking compaction appends the entry directly and completes with
   `{ entryId }`. Its generation holds the run and waits, so nothing else writes
@@ -4173,10 +4194,18 @@ aborted with its generation, before the generation's abort handler runs
 (section 5.5). A summary that is already queued is a write submission:
 conversation abort keeps it, and `Submission.abort()` withdraws it.
 
-When a blocking compaction ends without an `entryId`, because it found nothing
-to compact, was declined, failed, faulted, or was aborted directly, a threshold
-generation sends its request anyway and an overflow generation fails with
-`model_error` (section 8.3).
+**Failure.** The commit that fails a compaction (`model_error`, `no_model`)
+removes its status and sets `pi.live.compactionFailure` to its task, reason,
+and error message, replacing an older failure; the Harness cleanup does the
+same for a compaction the scheduler faults or orphans, with the fault's
+message or the orphan reason. Only a compaction that produces a summary
+removes it; one that is aborted or finds nothing to compact leaves it.
+
+When a blocking compaction ends without an `entryId`, an overflow generation
+fails with `model_error`. A threshold generation sends its request anyway
+when the compaction completed (it found nothing to compact or was declined),
+and fails with `model_error` when it failed, faulted, was orphaned, or was
+aborted directly (section 8.3).
 
 
 ## 9. Document observation and Chord
@@ -4424,6 +4453,8 @@ type AgentEvent =
       nestedTools: readonly NestedToolSlot[];
       /** `pi.live.compactions` (section 8.2). */
       compactions: readonly CompactionStatus[];
+      /** `pi.live.compactionFailure` (section 8.2). */
+      compactionFailure?: CompactionFailure;
       inbox: readonly { id: SubmissionId; mode: InboxItem["mode"] }[];
       /** `pi.agent`; `{}` when absent. */
       agent: AgentState;
@@ -4457,7 +4488,7 @@ type AgentEvent =
   | { type: "task_failed"; taskId: TaskId; kind: string; message: string }
   | { type: "compaction_start"; taskId: TaskId; reason: CompactionReason; blocking: boolean }
   /** The task's receipt tells whether it produced a summary; the summary entry has its own events. */
-  | { type: "compaction_end"; taskId: TaskId; reason: CompactionReason };
+  | { type: "compaction_end"; taskId: TaskId; reason: CompactionReason; error?: string };
 
 /** One change to the in-flight assistant message, relative to that message. */
 type MessageChange =
@@ -4531,8 +4562,9 @@ Events derive from committed changes:
   gains or drops `retry`, or gains `deferred` or moves its `pollAt`.
 - `task_failed`: a task of the conversation settles `faulted` or `orphaned`.
 - `compaction_start`/`compaction_end`: a status appears in or disappears from
-  `pi.live.compactions`. A retry backoff shows only in the snapshot's
-  `compactions`. A queued summary is placed later with its own
+  `pi.live.compactions`. `compaction_end` carries `error` when the same commit
+  recorded the task in `pi.live.compactionFailure`. A retry backoff shows only
+  in the snapshot's `compactions`. A queued summary is placed later with its own
   `message_start`/`message_end` and `submission` events.
 
 One commit produces one batch, in this order: `tool_execution_start`,

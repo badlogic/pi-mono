@@ -15,7 +15,14 @@ import type {
 	Tx,
 } from "../types.ts";
 import { orderToolResults } from "./context.ts";
-import { addCompactionStatus, compactionStatus, LiveDoc, type LiveState, removeCompactionStatus } from "./live.ts";
+import {
+	addCompactionStatus,
+	compactionStatus,
+	failCompactionStatus,
+	LiveDoc,
+	type LiveState,
+	removeCompactionStatus,
+} from "./live.ts";
 import { ensureProviderSessionId } from "./provider.ts";
 import { admitSubmission } from "./submissions.ts";
 import type {
@@ -197,8 +204,8 @@ export const CompactionTask = defineTask<CompactionInput, CompactionCheckpoint, 
 					if (status !== undefined) status.retry = { at: until, error: message.errorMessage ?? "" };
 					return { status: "running", checkpoint: { phase: "retry", ...request, until } };
 				}
-				removeCompactionStatus(live, runtime.taskId);
 				const text = summaryFailure(message);
+				failCompactionStatus(live, runtime.taskId, text);
 				return {
 					status: "terminal",
 					outcome: { status: "failed", error: { message: text, detail: { reason: "model_error" } } },
@@ -416,6 +423,7 @@ async function placeSummary(
 	summary: string,
 ): Promise<Next> {
 	removeCompactionStatus(live, runtime.taskId);
+	delete live.compactionFailure;
 	const text = `${SUMMARY_PREFIX}${summary}${SUMMARY_SUFFIX}`;
 	const entry = {
 		kind: CompactionEntry.kind,
@@ -450,7 +458,7 @@ async function failNoModel(runtime: Runtime, ref: ModelRef | undefined, context:
 	const message =
 		ref === undefined ? "No model is configured" : `Model ${ref.provider}/${ref.modelId} is not available`;
 	await runtime.commit(async (tx) => {
-		removeCompactionStatus(await tx.doc(LiveDoc, runtime.conversationId), runtime.taskId);
+		failCompactionStatus(await tx.doc(LiveDoc, runtime.conversationId), runtime.taskId, message);
 		return { status: "terminal", outcome: { status: "failed", error: { message, detail: { reason: "no_model" } } } };
 	}, context);
 }

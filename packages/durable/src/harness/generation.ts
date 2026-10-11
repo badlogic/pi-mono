@@ -21,6 +21,7 @@ import type {
 	NextTaskState,
 	SubmissionId,
 	TaskId,
+	TaskOutcome,
 	TaskRuntime,
 	Tx,
 	TypedEntry,
@@ -56,6 +57,8 @@ export type GenerationCheckpoint =
 			compacted?: TaskId<CompactionResult>;
 			/** Error text of the overflow that started `compacted`; checked once when `prepare` resumes. */
 			overflow?: string;
+			/** Set when the blocking threshold started `compacted`; its outcome is checked once when `prepare` resumes. */
+			threshold?: true;
 	  }
 	| {
 			phase: "request";
@@ -130,11 +133,19 @@ export const GenerationTask = defineTask<GenerationInput, GenerationCheckpoint, 
 			const { model, thinkingLevel } = agent;
 			const resolved = model === undefined ? undefined : runtime.models.getModel(model.provider, model.modelId);
 			if (model === undefined || resolved === undefined) return failNoModel(runtime, model, context);
-			const { attempt, compacted, overflow } = task.state.checkpoint;
+			const { attempt, compacted, overflow, threshold: blocked } = task.state.checkpoint;
 			if (compacted !== undefined && overflow !== undefined) {
 				const [outcome] = await runtime.outcomes([compacted], context);
 				if (outcome?.status !== "completed" || outcome.result.entryId === undefined) {
 					return failModelError(runtime, overflow, context);
+				}
+			}
+			// A threshold compaction that found nothing to compact or was declined leaves a request that may still fit. One
+			// that failed left a context it judged too large: sending it would at best leave no room for the answer.
+			if (compacted !== undefined && blocked === true) {
+				const [outcome] = await runtime.outcomes([compacted], context);
+				if (outcome !== undefined && outcome.status !== "completed") {
+					return failModelError(runtime, compactionFailure(outcome), context);
 				}
 			}
 			const view = await runtime.context(conversationId, context);
@@ -158,7 +169,7 @@ export const GenerationTask = defineTask<GenerationInput, GenerationCheckpoint, 
 				// Compact first and prepare again; the transcript is unchanged until the compaction appends.
 				await runtime.commit(async (tx): Promise<Next> => {
 					const child = await createCompaction(tx, conversationId, { reason: "threshold" }, runtime.taskId);
-					const checkpoint = { phase: "prepare", attempt, compacted: child } as const;
+					const checkpoint = { phase: "prepare", attempt, compacted: child, threshold: true } as const;
 					return { status: "waiting", checkpoint, on: [child], policy: "allSettled" };
 				}, context);
 				return;
@@ -325,6 +336,19 @@ function thresholdCompaction(
 		tokens > blocking ? "blocking" : policy.backgroundTokens > 0 && tokens > background ? "background" : undefined;
 	if (over === undefined || selectCut(view, policy.keepRecentTokens) === undefined) return undefined;
 	return over;
+}
+
+/** Error text for a generation whose blocking compaction ended without completing. */
+function compactionFailure(outcome: Exclude<TaskOutcome<CompactionResult>, { status: "completed" }>): string {
+	switch (outcome.status) {
+		case "failed":
+		case "faulted":
+			return `Compaction failed: ${outcome.error.message}`;
+		case "orphaned":
+			return `Compaction failed: ${outcome.reason}`;
+		case "aborted":
+			return "Compaction was aborted";
+	}
 }
 
 /** Settle the run's inputs `unanswered` with `model_error` and fail with `text`. */

@@ -1004,6 +1004,43 @@ describe("background threshold compaction", () => {
 		await chat.harness.close(context);
 	});
 
+	it("records a failure in pi.live, the snapshot, and compaction_end until a summary is produced", async () => {
+		const chat = await open({ contextWindow: 2000 });
+		await history(chat);
+		chat.setup.settings.compaction = BACKGROUND;
+		const events: AgentEvent[] = [];
+		const stream = await watchEvents(chat.harness, chat.root.id, context);
+		stream.start(async (batch) => {
+			events.push(...batch);
+		});
+		chat.faux.summaries.push(failure("bad request"));
+		await turn(chat, text("u4", 100), text("a4", 100));
+		await waitFor(() => events.some((event) => event.type === "compaction_end"));
+		const recorded = (await live(chat)).compactionFailure;
+		expect(recorded).toMatchObject({ reason: "threshold", error: "Summarization failed: bad request" });
+		expect(events.find((event) => event.type === "compaction_end")).toEqual({
+			type: "compaction_end",
+			taskId: recorded!.taskId,
+			reason: "threshold",
+			error: "Summarization failed: bad request",
+		});
+		const reopened = await watchEvents(chat.harness, chat.root.id, context);
+		expect(reopened.snapshot.compactionFailure).toEqual(recorded);
+		await reopened.stop();
+		// A compaction that produces a summary removes the failure, and ends without an error.
+		chat.setup.settings.compaction = MANUAL;
+		chat.faux.summaries.push(summary());
+		const manual = await chat.root.compact(undefined, context);
+		expect((await result(chat, manual)).status).toBe("completed");
+		expect((await live(chat)).compactionFailure).toBeUndefined();
+		await waitFor(() => events.some((event) => event.type === "compaction_end" && event.taskId === manual));
+		expect(events.find((event) => event.type === "compaction_end" && event.taskId === manual)).not.toHaveProperty(
+			"error",
+		);
+		await stream.stop();
+		await chat.harness.close(context);
+	});
+
 	it("stops through abortTask() and Conversation.abort() with background", async () => {
 		for (const stop of ["task", "conversation"] as const) {
 			const chat = await open({ contextWindow: 2000 });
@@ -1074,38 +1111,63 @@ describe("blocking threshold compaction", () => {
 		await chat.harness.close(context);
 	});
 
-	for (const [name, prepare] of [
-		[
-			"declines",
-			(chat: Chat) => addHooks(chat.setup.registry, CompactionTask, { beforeCompact: () => ({ decline: true }) }),
-		],
-		["fails", (chat: Chat) => chat.faux.summaries.push(failure("bad request"))],
-	] as const) {
-		it(`sends the request anyway when its compaction ${name}`, async () => {
-			const chat = await open({ contextWindow: 1000 });
-			await history(chat);
-			chat.setup.settings.compaction = BLOCKING;
-			prepare(chat);
-			await turn(chat, text("u4", 200), "a4");
-			expect((await kinds(chat.root)).includes("pi.compaction")).toBe(false);
-			expect(firstUserText(chat.faux.agentRequests.at(-1)!.messages)).toBe(text("u1", 100));
-			await chat.harness.close(context);
-		});
-	}
+	it("sends the request anyway when its compaction declines", async () => {
+		const chat = await open({ contextWindow: 1000 });
+		await history(chat);
+		chat.setup.settings.compaction = BLOCKING;
+		addHooks(chat.setup.registry, CompactionTask, { beforeCompact: () => ({ decline: true }) });
+		await turn(chat, text("u4", 200), "a4");
+		expect((await kinds(chat.root)).includes("pi.compaction")).toBe(false);
+		expect(firstUserText(chat.faux.agentRequests.at(-1)!.messages)).toBe(text("u1", 100));
+		expect((await live(chat)).compactionFailure).toBeUndefined();
+		await chat.harness.close(context);
+	});
 
-	it("sends the request anyway when its compaction is aborted directly", async () => {
+	// A failed compaction leaves a context it judged too large; sending it once filled a 1M window and got an empty
+	// `length` answer on every turn while the failure stayed invisible.
+	it("fails the run with the compaction's error, without a request, when its compaction fails", async () => {
+		const chat = await open({ contextWindow: 1000 });
+		await history(chat);
+		chat.setup.settings.compaction = BLOCKING;
+		chat.faux.summaries.push(failure("bad request"));
+		const requests = chat.faux.agentRequests.length;
+		const input = await chat.root.submit({ type: "input", content: text("u4", 200) }, context);
+		expect(await input.wait(context)).toMatchObject({
+			status: "unanswered",
+			reason: "model_error",
+			detail: "Compaction failed: Summarization failed: bad request",
+		});
+		expect(chat.faux.agentRequests).toHaveLength(requests);
+		expect((await kinds(chat.root)).at(-1)).toBe("pi.user");
+		const state = await live(chat);
+		expect(state.compactions).toBeUndefined();
+		expect(state.compactionFailure).toMatchObject({
+			reason: "threshold",
+			error: "Summarization failed: bad request",
+		});
+		await chat.harness.close(context);
+	});
+
+	it("fails the run when its compaction is aborted directly", async () => {
 		const chat = await open({ contextWindow: 1000 });
 		await history(chat);
 		chat.setup.settings.compaction = BLOCKING;
 		const reached = deferred();
 		chat.faux.summaries.push(gated(deferred(), summary(), reached));
-		chat.faux.agent.push(answer("a4"));
+		const requests = chat.faux.agentRequests.length;
 		const input = await chat.root.submit({ type: "input", content: text("u4", 200) }, context);
 		await reached.promise;
 		const [child] = await compactionTasks(chat);
 		await chat.harness.abortTask(child!.id, context);
-		expect((await input.wait(context)).status).toBe("done");
+		expect(await input.wait(context)).toMatchObject({
+			status: "unanswered",
+			reason: "model_error",
+			detail: "Compaction was aborted",
+		});
+		expect(chat.faux.agentRequests).toHaveLength(requests);
 		expect((await kinds(chat.root)).includes("pi.compaction")).toBe(false);
+		// Aborting is not a failure.
+		expect((await live(chat)).compactionFailure).toBeUndefined();
 		await chat.harness.close(context);
 	});
 
@@ -1889,7 +1951,7 @@ describe("compaction edge cases", () => {
 		await chat.harness.close(context);
 	});
 
-	it("sends the request anyway when its blocking compaction faults", async () => {
+	it("fails the run when its blocking compaction faults, and records the fault", async () => {
 		const chat = await open({ contextWindow: 1000 });
 		await history(chat);
 		chat.setup.settings.compaction = BLOCKING;
@@ -1897,10 +1959,17 @@ describe("compaction edge cases", () => {
 		chat.setup.models.completeSimple = () => {
 			throw new Error("no credentials");
 		};
-		await turn(chat, text("u4", 200), "a4");
+		const input = await chat.root.submit({ type: "input", content: text("u4", 200) }, context);
+		expect(await input.wait(context)).toMatchObject({
+			status: "unanswered",
+			reason: "model_error",
+			detail: "Compaction failed: no credentials",
+		});
 		chat.setup.models.completeSimple = completeSimple;
 		expect((await kinds(chat.root)).includes("pi.compaction")).toBe(false);
-		expect((await live(chat)).compactions).toBeUndefined();
+		const state = await live(chat);
+		expect(state.compactions).toBeUndefined();
+		expect(state.compactionFailure).toMatchObject({ reason: "threshold", error: "no credentials" });
 		await chat.harness.close(context);
 	});
 

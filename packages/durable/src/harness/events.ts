@@ -15,7 +15,7 @@ import type {
 } from "../types.ts";
 import { AgentDoc } from "./agent.ts";
 import type { InboxItem, InboxState } from "./inbox.ts";
-import type { CompactionStatus, LiveState, NestedToolSlot, ToolSlot } from "./live.ts";
+import type { CompactionFailure, CompactionStatus, LiveState, NestedToolSlot, ToolSlot } from "./live.ts";
 import { NestedCallDoc, type NestedCallState } from "./tool.ts";
 import type { AgentState, CompactionReason, Harness, NestedToolExecutionResult, ToolDiagnostic } from "./types.ts";
 import { UsageDoc, type UsageState } from "./usage.ts";
@@ -49,6 +49,8 @@ export type SnapshotEvent = {
 	nestedTools: readonly NestedToolSlot[];
 	/** `pi.live.compactions`: live compactions with their attempt and retry backoff. */
 	compactions: readonly CompactionStatus[];
+	/** `pi.live.compactionFailure`: the newest compaction failure since a compaction last produced a summary. */
+	compactionFailure?: CompactionFailure;
 	inbox: readonly QueuedItem[];
 	/** `pi.agent`; `{}` when absent. */
 	agent: AgentState;
@@ -90,8 +92,11 @@ export type AgentEvent =
 	| { type: "usage_changed"; usage: UsageState }
 	| { type: "task_failed"; taskId: TaskId; kind: string; message: string }
 	| { type: "compaction_start"; taskId: TaskId; reason: CompactionReason; blocking: boolean }
-	/** The task's receipt tells whether it produced a summary; the summary entry has its own events. */
-	| { type: "compaction_end"; taskId: TaskId; reason: CompactionReason };
+	/**
+	 * The task's receipt tells whether it produced a summary; the summary entry has its own events. `error` is set when
+	 * the compaction failed, faulted, or was orphaned, as in `pi.live.compactionFailure`.
+	 */
+	| { type: "compaction_end"; taskId: TaskId; reason: CompactionReason; error?: string };
 
 /**
  * Which call a tool event is about. `toolCallId` is the call's ID in the transcript and in tool events: the provider's
@@ -143,6 +148,7 @@ function snapshotOf(view: ConversationView): SnapshotEvent {
 		tools: live.tools ?? [],
 		nestedTools: live.nestedTools ?? [],
 		compactions: live.compactions ?? [],
+		...(live.compactionFailure === undefined ? {} : { compactionFailure: live.compactionFailure }),
 		inbox: queued(inbox),
 		agent: agent ?? AgentDoc.definition.initial(),
 		usage: usage ?? UsageDoc.definition.initial(),
@@ -360,9 +366,11 @@ function translate(
 	// Compaction ends, task failures, then turn and run ends.
 	const compactionsBefore = was.live.compactions ?? [];
 	const compactions = now.live.compactions ?? [];
+	const failure = now.live.compactionFailure;
 	for (const { taskId, reason } of compactionsBefore) {
 		if (!compactions.some((status) => status.taskId === taskId)) {
-			events.push({ type: "compaction_end", taskId, reason });
+			const error = failure?.taskId === taskId ? failure.error : undefined;
+			events.push({ type: "compaction_end", taskId, reason, ...(error === undefined ? {} : { error }) });
 		}
 	}
 	// A generation's turn ends when its outcome is committed: at a `completing` hold or at terminal, whichever comes
