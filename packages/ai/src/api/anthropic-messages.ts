@@ -225,7 +225,17 @@ function getAnthropicCompat(model: Model<"anthropic-messages">) {
 		supportsStrictTools: model.compat?.supportsStrictTools ?? false,
 		supportsMidConvoSystemMessages: model.compat?.supportsMidConvoSystemMessages ?? false,
 		supportsMidConvoToolChanges: model.compat?.supportsMidConvoToolChanges ?? false,
+		supportsToolReferences: model.compat?.supportsToolReferences ?? defaultSupportsToolReferences(model),
 	};
+}
+
+function defaultSupportsToolReferences(model: Model<"anthropic-messages">): boolean {
+	if (model.provider !== "anthropic") return false;
+	const version = model.id.match(/^claude-(?:opus|sonnet|fable)-(\d+)(?:-(\d+))?(?:-|$)/);
+	if (!version) return false;
+	const major = Number(version[1]);
+	const minor = version[2] && version[2].length < 8 ? Number(version[2]) : 0;
+	return major > 4 || (major === 4 && minor >= 5);
 }
 
 export interface AnthropicOptions extends StreamOptions {
@@ -1140,6 +1150,13 @@ function buildParams(
 	const initialTools = initialSystemMessage?.toolsAdded ?? [];
 	const nativeToolChanges =
 		compat.supportsMidConvoSystemMessages && compat.supportsMidConvoToolChanges && initialTools.length > 0;
+	const normalizeToolName = isOAuthToken ? toClaudeCodeName : (name: string) => name;
+	const placedTools = splitDeferredTools(
+		nativeToolChanges ? initialTools : getCurrentTools(context.messages),
+		conversationMessages,
+		compat.supportsToolReferences,
+		normalizeToolName,
+	);
 	const converted = convertMessages(
 		conversationMessages,
 		isOAuthToken,
@@ -1150,6 +1167,8 @@ function buildParams(
 			? (tools) =>
 					convertTools(tools, isOAuthToken, compat.supportsEagerToolInputStreaming, compat.supportsStrictTools)
 			: undefined,
+		new Set(placedTools.deferred.map((tool) => normalizeToolName(tool.name))),
+		normalizeToolName,
 	);
 	const activeEffort = options?.effort ?? "high";
 	const betaFeatures = getBetaFeatures(model, context, isOAuthToken, nativeToolChanges, options);
@@ -1209,7 +1228,7 @@ function buildParams(
 		// every tool change.
 		params.tools = [
 			...convertTools(
-				initialTools,
+				placedTools.active,
 				isOAuthToken,
 				compat.supportsEagerToolInputStreaming,
 				compat.supportsStrictTools,
@@ -1217,17 +1236,26 @@ function buildParams(
 			),
 			DEFERRED_TOOL_PLACEHOLDER,
 		];
-	} else {
-		const tools = getCurrentTools(context.messages);
-		if (tools.length > 0) {
-			params.tools = convertTools(
-				tools,
+	} else if (placedTools.active.length > 0) {
+		params.tools = convertTools(
+			placedTools.active,
+			isOAuthToken,
+			compat.supportsEagerToolInputStreaming,
+			compat.supportsStrictTools,
+			toolCacheControl,
+		);
+	}
+	if (placedTools.deferred.length > 0) {
+		params.tools?.push(
+			...convertTools(
+				placedTools.deferred,
 				isOAuthToken,
 				compat.supportsEagerToolInputStreaming,
 				compat.supportsStrictTools,
-				toolCacheControl,
-			);
-		}
+				undefined,
+				true,
+			),
+		);
 	}
 
 	// Managed effort models always use adaptive thinking so prefix mismatches can
@@ -1291,12 +1319,66 @@ function normalizeToolCallId(id: string): string {
 	return id.replace(/[^a-zA-Z0-9_-]/g, "_").slice(0, 64);
 }
 
-function convertToolResult(msg: ToolResultMessage): ContentBlockParam {
+function splitDeferredTools(
+	tools: Tool[],
+	messages: Message[],
+	enabled: boolean,
+	normalizeName: (name: string) => string,
+): { active: Tool[]; deferred: Tool[] } {
+	const uniqueTools = [...new Map(tools.map((tool) => [normalizeName(tool.name), tool])).values()];
+	if (!enabled) return { active: uniqueTools, deferred: [] };
+	const calledNames = new Set<string>();
+	const loadedNames = new Set<string>();
+	for (const message of messages) {
+		if (message.role === "assistant") {
+			for (const block of message.content) {
+				if (block.type === "toolCall") calledNames.add(normalizeName(block.name));
+			}
+		} else if (message.role === "toolResult") {
+			for (const name of message.addedToolNames ?? []) {
+				if (!calledNames.has(normalizeName(name))) loadedNames.add(normalizeName(name));
+			}
+		}
+	}
+	const isDeferred = (tool: Tool) => {
+		const name = normalizeName(tool.name);
+		return loadedNames.has(name) || (tool.deferLoading === true && !calledNames.has(name));
+	};
+	const active = uniqueTools.filter((tool) => !isDeferred(tool));
+	const deferred = uniqueTools.filter(isDeferred);
+	// Anthropic rejects requests where every tool is deferred.
+	return active.length > 0 ? { active, deferred } : { active: deferred, deferred: [] };
+}
+
+function convertToolResult(
+	msg: ToolResultMessage,
+	isOAuthToken: boolean,
+	deferredToolNames: ReadonlySet<string>,
+	loadedToolNames: Set<string>,
+	normalizeToolName: (name: string) => string,
+): { toolResult: ContentBlockParam; siblingContent: ContentBlockParam[] } {
+	const references: Array<{ type: "tool_reference"; tool_name: string }> = [];
+	for (const name of msg.addedToolNames ?? []) {
+		const normalizedName = normalizeToolName(name);
+		if (!deferredToolNames.has(normalizedName) || loadedToolNames.has(normalizedName)) continue;
+		loadedToolNames.add(normalizedName);
+		references.push({ type: "tool_reference", tool_name: isOAuthToken ? toClaudeCodeName(name) : name });
+	}
+	const convertedContent = convertContentBlocks(msg.content);
+	// Reference-only results cannot mix ordinary text/images into the same result.
 	return {
-		type: "tool_result",
-		tool_use_id: msg.toolCallId,
-		content: convertContentBlocks(msg.content),
-		is_error: msg.isError,
+		toolResult: {
+			type: "tool_result",
+			tool_use_id: msg.toolCallId,
+			content: references.length > 0 ? references : convertedContent,
+			is_error: msg.isError,
+		},
+		siblingContent:
+			references.length === 0
+				? []
+				: typeof convertedContent === "string"
+					? [{ type: "text", text: convertedContent }]
+					: convertedContent,
 	};
 }
 
@@ -1313,9 +1395,12 @@ function convertMessages(
 	managedProvider?: string,
 	/** Converts tool definitions for native `tool_addition` blocks; undefined when tool changes are not native. */
 	convertToolDefinitions?: (tools: Tool[]) => BetaTool[],
+	deferredToolNames: ReadonlySet<string> = new Set(),
+	normalizeToolName: (name: string) => string = (name) => name,
 ): ConvertedAnthropicMessages {
 	const params: MessageParam[] = [];
 	const assistantLevels = new Map<number, AnthropicEffort>();
+	const loadedToolNames = new Set<string>();
 	// Later system messages are held back and emitted directly before the next assistant
 	// message (or at the end of the transcript). Anthropic requires `tool_result` blocks to
 	// immediately follow their `tool_use`, so a system message between them is rejected; this
@@ -1462,9 +1547,18 @@ function convertMessages(
 		} else if (msg.role === "toolResult") {
 			// Collect all consecutive toolResult messages, needed for z.ai Anthropic endpoint.
 			const toolResults: ContentBlockParam[] = [];
+			const siblingContent: ContentBlockParam[] = [];
 			let j = i;
 			while (j < transformedMessages.length && transformedMessages[j].role === "toolResult") {
-				toolResults.push(convertToolResult(transformedMessages[j] as ToolResultMessage));
+				const converted = convertToolResult(
+					transformedMessages[j] as ToolResultMessage,
+					isOAuthToken,
+					deferredToolNames,
+					loadedToolNames,
+					normalizeToolName,
+				);
+				toolResults.push(converted.toolResult);
+				siblingContent.push(...converted.siblingContent);
 				j++;
 			}
 
@@ -1473,7 +1567,7 @@ function convertMessages(
 
 			params.push({
 				role: "user",
-				content: toolResults,
+				content: [...toolResults, ...siblingContent],
 			});
 		}
 	}
@@ -1579,6 +1673,7 @@ function convertTools(
 	supportsEagerToolInputStreaming: boolean,
 	supportsStrictTools: boolean,
 	cacheControl?: CacheControlEphemeral,
+	deferLoading = false,
 ): BetaTool[] {
 	if (!tools) return [];
 
@@ -1605,6 +1700,7 @@ function convertTools(
 			...(supportsEagerToolInputStreaming ? { eager_input_streaming: true } : {}),
 			...(strict === true ? { strict: true } : {}),
 			input_schema: inputSchema,
+			...(deferLoading ? { defer_loading: true } : {}),
 			...(cacheControl && index === tools.length - 1 ? { cache_control: cacheControl } : {}),
 		};
 	});

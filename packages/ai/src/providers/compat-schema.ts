@@ -408,6 +408,10 @@ export const OpenAIResponsesCompatSchema = Type.Object(
 
 export const AnthropicMessagesCompatSchema = Type.Object(
 	{
+		supportsToolReferences: optionalCompatBoolean({
+			description:
+				"Whether client-side tool search can load deferred tools with tool_reference blocks. Defaults to true for first-party Opus, Sonnet, and Fable models from Claude 4.5 onward; false otherwise.",
+		}),
 		supportsEagerToolInputStreaming: Type.Optional(
 			Type.Boolean({
 				description:
