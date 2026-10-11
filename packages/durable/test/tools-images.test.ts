@@ -318,6 +318,7 @@ describe("read of images, with the Photon image processor", () => {
 		]);
 	});
 
+	// Multiple full-image encodes can exceed Vitest's 5s default on shared CI runners.
 	it("re-encodes a PNG too large for the byte limit as JPEG at its size, and shrinks it when that is not enough", async () => {
 		const result = await read("big.png", noisyPng(1100, 1100), { images: processor });
 		const jpeg = onlyImage(result);
@@ -330,7 +331,7 @@ describe("read of images, with the Photon image processor", () => {
 		expect(shrunk!.data.length).toBeLessThanOrEqual(tight.maxBytes);
 		expect(shrunk!.resized?.from).toEqual({ width: 2000, height: 2000 });
 		expect(shrunk!.resized!.to.width).toBeLessThan(2000);
-	});
+	}, 60_000);
 
 	it("keeps at least one pixel on each side of an extreme aspect ratio", async () => {
 		const result = await processor.prepare(encode(6000, 2, "png"), "image/png", DEFAULT_IMAGE_LIMITS);
