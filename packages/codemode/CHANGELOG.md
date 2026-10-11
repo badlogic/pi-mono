@@ -7,7 +7,7 @@
 - Added `RemoteCodemodeSandbox`, which runs each script's VM in another isolate while tools run in the caller. `CodemodeSandboxDurableObject` from the new `@earendil-works/pi-codemode/cloudflare` entry is its remote end, deployed as its own Cloudflare Worker. `examples/cloudflare` shows the setup
 - Added `InlineCodemodeSandbox`, which runs the VM on the calling thread for runtimes without worker threads. Its `interruptBudget` limits scripts that compute without awaiting a tool
 - Added the `@earendil-works/pi-codemode/portable` entry, which has no Node imports, and `CodemodeSandboxBase`, the API all three sandboxes share
-- Added `sandbox.start()`, a deterministic run whose calls the host answers itself (`onCall`, `run.deliver()`), so a host can replay a script after a restart: a virtual clock from `startedAt`, randomness from `seed`, UTC, no `WeakRef`/`FinalizationRegistry`, results applied in the order the host numbers them, the VM's fingerprint (`onStarted`), and the calls issued after each result (`onIdle`). Works with every sandbox; `execute()` is unchanged
+- Added `sandbox.start()`, a deterministic run whose calls the host answers itself (`onCall`, `run.deliver()`), so a host can replay a script after a restart: a virtual clock from `startedAt`, randomness from `seed`, UTC, no `WeakRef`/`FinalizationRegistry`, results applied in the order the host numbers them, the VM's fingerprint (`onStarted`), the calls issued after each result (`onIdle`), and whether the run has its outcome (`run.finished`). Works with every sandbox; `execute()` is unchanged
 
 ### Changed
 

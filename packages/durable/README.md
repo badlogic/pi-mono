@@ -14,6 +14,7 @@ Built on [`@earendil-works/pi-ai`](../ai/README.md) for model access and `@earen
 - [Persist and Resume](#persist-and-resume)
 - [Extensions](#extensions)
 - [Tools](#tools)
+- [Code Mode](#code-mode)
 - [System Prompt](#system-prompt)
 - [Per-Conversation Agent](#per-conversation-agent)
 - [Settings](#settings)
@@ -252,6 +253,21 @@ await root.configure({ modelTools: { remove: [bash] } }, context);
 ### Tasks a restart abandons
 
 A task that its creator awaits only in memory, and that the creator never resumes after a restart, can be created with `abandonOnRestart: true`. When a later Harness starts scheduling and finds it still live, it is aborted with `abortReason: "restart"`, together with everything it owns, before any of it runs again. Nested calls of tools that are not replay-safe get this automatically, and so do the child tasks such a tool creates with `api.createTask()`. A task abandoned this way whose definition is missing waits until its extension is installed, so its abort handler still cleans up. Its caller, and the conversation, wait with it; `harness.inspect()` shows it as blocked. Aborting it then orphans it, as any abort does.
+
+## Code Mode
+
+`@earendil-works/pi-durable/codemode` adds a `codemode` tool: the model writes JavaScript that calls the conversation's tools as `await tools.<name>(args)`, in a QuickJS sandbox (`@earendil-works/pi-codemode`). Each call is a nested tool call, and only the script's output reaches the model. The script survives a restart: it resumes where it was, without running its finished calls again.
+
+```typescript
+import { CodemodeSandbox } from "@earendil-works/pi-codemode";
+import { createCodemodeExtension } from "@earendil-works/pi-durable/codemode";
+
+registry.install(createCodemodeExtension({ sandbox: new CodemodeSandbox({ memoryLimitBytes: 256 * 1024 * 1024 }) }));
+```
+
+On Cloudflare, pass a `RemoteCodemodeSandbox` instead. A failed nested call rejects in the script with its error text; its `structuredOutput`, if any, is on the error as `error.structuredOutput`. `store(key, value)` and `load(key)` keep JSON values per conversation; a fork sees them as they were at its entry.
+
+How it survives a restart: the sandbox runs the script deterministically (a virtual clock, seeded randomness, UTC), and the tool writes each result the script gets to a journal before handing it over. After a restart, the tool runs the script again and hands it the journaled results in the same order, so it makes the same calls with the same arguments; these reattach to their nested calls by key, and then the script continues. A rerun ends the call with an error instead when the script takes another path than before, when the sandbox's fingerprint or the code mode version changed, or when its `timeout_ms` passed meanwhile. A nested call running at the restart follows its own replay policy.
 
 ## System Prompt
 

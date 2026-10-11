@@ -3551,6 +3551,67 @@ Harness instances must never own the same Session concurrently: open the new one
 after the old one's `close()` resolved, when none of its invocation code runs
 any more (section 2.2).
 
+### 7.6 Code mode
+
+`@earendil-works/pi-durable/codemode` provides the `codemode` tool (`createCodemodeExtension({ sandbox })`):
+`callers: ["model"]`, `replay: "safe"`. Its argument is a script, run with
+pi-codemode's deterministic `sandbox.start()`. The script calls the agent's
+`callable` tools as `tools.<name>(args)`; each call is a nested call with key
+`c<id>`, the VM's own number for the call. A success resolves with the nested
+result's `structuredOutput`; every error rejects, with that `structuredOutput`
+as message when it is a non-empty string (the joined texts of a content list),
+else the error diagnostics' messages, and the value as `error.structuredOutput`.
+
+Three documents, two of them scoped to the code mode call's task:
+
+- `pi.codemode.run`: `start`, written once before the VM starts (module
+  version, `startedAt`, seed, the VM's fingerprint once reported, the deadline
+  from `timeout_ms`, the tools and globals the script sees, the store
+  snapshot), and `result`, the outcome, written once.
+- `pi.codemode.journal`: `entries`, one per result delivered to the VM, in
+  delivery order: the call's ID, the clock value, `issuedAfter` (the calls the VM
+  had issued after processing it, from its acknowledgment), and for a global its
+  name, arguments, and outcome; and `firstIssued`, the calls the VM had issued
+  after the script's first run.
+- `pi.codemode.store`: conversation-scoped, `history: "rewindable"`,
+  `fork: "asOf"`; a successful script's `store()` writes are applied per key in
+  the transaction that writes its `result`.
+
+Live, a finished call's result is appended to the journal and then delivered as
+result number `entry index + 1`, with the clock at the entry's time; one journal
+commit is in flight at a time and later results join the next. Acknowledged
+counts are recorded with the next journal commit, or at once when the VM has
+processed everything delivered. A call is launched only once the count of the
+drain that made it is committed, so every key an attempt admitted is at most its
+last recorded count.
+
+A rerun (`execute()` after recovery) returns a stored `result` without a VM.
+Otherwise it ends the call with a stored error result, admitting no new nested
+call, when the module version differs or the deadline passed; it starts the VM
+from `start` and does the same when the fingerprint the VM reports differs, before
+delivering or reattaching anything. It then delivers the journal in order, each
+entry once the VM has issued its call; a tool's result comes from its nested
+call by key, a global's from the journal after comparing name and arguments.
+Calls the journal does not have are held until the last journaled result is
+acknowledged. Divergence ends the call with a stored error result, then stops the
+VM with an error the script cannot catch: a count that differs from a recorded
+`issuedAfter`, a VM that waits without having issued the next entry's call, a
+key or global called with another name or arguments, or a script that ends while
+processing an entry whose `issuedAfter` was recorded (or during its first run
+with a non-empty journal), or before issuing a call that a later entry answers.
+A live call whose key an earlier attempt admitted with another tool or other
+arguments diverges the same way. Every recorded count, `firstIssued`
+included, must equal the replay's. On a rerun, live calls are held until the
+acknowledgment of the last journaled result, or of the first run when the
+journal is empty; by then the counts have matched, so the script has made every
+call an earlier attempt could have admitted. Every held call's key is checked
+against its stored nested call, whatever the call's target, and only when none
+differs are they launched; later calls are new. Nothing is admitted or delivered once the run
+has its outcome. A script that ends before using every entry
+is otherwise fine: the live run ended there too. A count the replay acknowledges
+but the journal lacks is recorded with the first live commit. Nested calls admitted before the restart may
+resume on their own whatever the rerun decides; the call's cleanup aborts them.
+
 ## 8. Built-in tasks
 
 The initial implementation provides:

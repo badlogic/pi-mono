@@ -215,6 +215,11 @@ export interface CodemodeRunOptions {
 export interface CodemodeRun {
 	readonly result: Promise<CodemodeResult>;
 	/**
+	 * Whether the run has its outcome: the script ended, timed out, or failed, or the run was aborted. Set when that is
+	 * decided, before `result` settles (which waits for the VM to stop); calls can no longer be answered.
+	 */
+	readonly finished: boolean;
+	/**
 	 * Answer call `id` as result number `seq`. Results are numbered 1, 2, ... without gaps, and the VM applies them
 	 * strictly in that order, whatever order they arrive in: after a gap it waits for the missing number. While it
 	 * processes this one, its clock reads `now` (ms since the epoch), or the previous value if `now` is earlier.

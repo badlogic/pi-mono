@@ -340,6 +340,16 @@ for (const [backend, create] of Object.entries(BACKENDS)) {
 			expect(() => recorded.run.deliver(1, STARTED_AT, 1, { ok: true, value: null })).not.toThrow();
 		});
 
+		it("is finished once it has its outcome", async () => {
+			const sandbox = create();
+			const recorded = start(sandbox, "await tools.wait(1); return 2");
+			await waitFor(() => recorded.calls.length === 1);
+			expect(recorded.run.finished).toBe(false);
+			recorded.run.deliver(1, STARTED_AT, 1, { ok: true, value: null });
+			await recorded.run.result;
+			expect(recorded.run.finished).toBe(true);
+		});
+
 		it("rejects a call that is not waiting and a result number used twice", async () => {
 			const sandbox = create();
 			const recorded = start(sandbox, "await Promise.all([tools.wait(1), tools.wait(2)])");
