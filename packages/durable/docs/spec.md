@@ -3591,6 +3591,11 @@ processed everything delivered. A call is launched only once the count of the
 drain that made it is committed, so every key an attempt admitted is at most its
 last recorded count.
 
+A run the sandbox ends as `aborted` without the call having asked for it (the
+host closed the sandbox, for example before closing the Harness) decides
+nothing: the call stores no outcome and ends with its invocation, so a later
+attempt replays the script.
+
 A rerun (`execute()` after recovery) returns a stored `result` without a VM.
 Otherwise it ends the call with a stored error result, admitting no new nested
 call, when the module version differs or the deadline passed; it starts the VM

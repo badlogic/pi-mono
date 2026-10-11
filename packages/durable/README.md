@@ -265,7 +265,7 @@ import { createCodemodeExtension } from "@earendil-works/pi-durable/codemode";
 registry.install(createCodemodeExtension({ sandbox: new CodemodeSandbox({ memoryLimitBytes: 256 * 1024 * 1024 }) }));
 ```
 
-On Cloudflare, pass a `RemoteCodemodeSandbox` instead. A failed nested call rejects in the script with its error text; its `structuredOutput`, if any, is on the error as `error.structuredOutput`. `store(key, value)` and `load(key)` keep JSON values per conversation; a fork sees them as they were at its entry.
+On Cloudflare, pass a `RemoteCodemodeSandbox` instead. Closing the sandbox while a script runs (for example when shutting down) is not an outcome: the script resumes with the next process's sandbox. A failed nested call rejects in the script with its error text; its `structuredOutput`, if any, is on the error as `error.structuredOutput`. `store(key, value)` and `load(key)` keep JSON values per conversation; a fork sees them as they were at its entry.
 
 How it survives a restart: the sandbox runs the script deterministically (a virtual clock, seeded randomness, UTC), and the tool writes each result the script gets to a journal before handing it over. After a restart, the tool runs the script again and hands it the journaled results in the same order, so it makes the same calls with the same arguments; these reattach to their nested calls by key, and then the script continues. A rerun ends the call with an error instead when the script takes another path than before, when the sandbox's fingerprint or the code mode version changed, or when its `timeout_ms` passed meanwhile. A nested call running at the restart follows its own replay policy.
 

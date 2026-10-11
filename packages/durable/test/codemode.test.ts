@@ -457,6 +457,36 @@ describe("durable code mode", () => {
 		await harness.close(context);
 	});
 
+	it("stores no outcome when the host closes the sandbox, and replays the script after a restart", async () => {
+		const chat = codemodeChat();
+		const path = await sqlitePath();
+		chat.setup.faux.setResponses([
+			script(`await tools.echo({ text: "a" }); await tools.hold({}); return "done";`),
+			DONE,
+		]);
+		let opened = await openChat(await openNodeSqliteStorage(path), chat.setup);
+		const id = (await opened.root.submit({ type: "input", content: "go" }, context)).id;
+		await chat.holds.reached.promise;
+		const task = await scriptTask(opened.harness);
+		// A host shutting down closes the sandbox before the Harness.
+		await chat.sandbox.close();
+		await new Promise((resolve) => setTimeout(resolve, 100));
+		expect((await opened.harness.snapshot(CodemodeRunDoc, task, context))?.result).toBeUndefined();
+		await opened.harness.close(context);
+		// The next process has a new sandbox.
+		chat.holds.block = false;
+		addTool(
+			chat.setup.registry,
+			createCodemodeTool({ sandbox: new CodemodeSandbox({ memoryLimitBytes: 64 * 1024 * 1024 }) }),
+		);
+		opened = await openChat(await openNodeSqliteStorage(path), chat.setup);
+		opened.harness.resume();
+		expect((await (await opened.harness.submission(id, context))!.wait(context)).status).toBe("done");
+		expect(await resultText(chat.setup, opened.root)).toEqual({ text: "done", isError: false });
+		expect(Object.fromEntries(chat.echo)).toEqual({ a: 1 });
+		await opened.harness.close(context);
+	});
+
 	it("aborts a call still running when the script ends", async () => {
 		const chat = codemodeChat();
 		chat.setup.faux.setResponses([script(`tools.hold({}); await tools.echo({ text: "a" }); return 1;`), DONE]);

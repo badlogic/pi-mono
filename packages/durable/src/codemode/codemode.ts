@@ -388,6 +388,17 @@ class CodemodeCall {
 			if (this.failure !== undefined) throw this.failure;
 			if (this.ended !== undefined) return this.ended;
 			context.abortSignal?.throwIfAborted();
+			// Aborted, but not by this call: the host closed the sandbox, for example while shutting down before closing the
+			// Harness. That decides nothing about the script: store nothing and end with this invocation, so a later attempt
+			// replays it.
+			if (!result.ok && result.error.kind === "aborted" && !this.controller.signal.aborted) {
+				await new Promise<void>((resolve) => {
+					if (context.abortSignal === undefined || context.abortSignal.aborted) resolve();
+					else context.abortSignal.addEventListener("abort", () => resolve(), { once: true });
+				});
+				context.abortSignal?.throwIfAborted();
+				throw new Error("The code mode sandbox was closed while the script ran");
+			}
 			// A replay that ends where the live run went on is a divergence (design §4.3).
 			const during = result.during;
 			// Within the replayed part, the first run included: a rerun without journal entries replays that much too.
