@@ -25,6 +25,7 @@
 
 ### Fixed
 
+- Compaction no longer includes thinking in the summarization request. Replayed thinking is often not in the live context, so a request that included it could be larger than the context it summarized and fail with "prompt is too long" on every attempt.
 - A throwing `onReport` no longer replaces the error being reported or becomes an unhandled rejection, a throwing `now()` is reported once and `Date.now` used, and a watch listener's error is reported as well as ending the watch with `listener_error`.
 - A task whose fault write failed no longer runs again in the same process.
 - The scheduler no longer visits every live task on each pass: abort cascades start only from tasks with cancellation intent, owned live work and idle scopes are walks down an in-memory ownership index, and reservation, finalization, and failFast checks keep their own candidate sets. A chain of 500 owned tasks that took 12 s to settle takes 50 ms, 20,000 take 1.5 s; a tool making 8000 parallel nested calls finishes in 2.7 s instead of 18.8 s, with one document per nested call instead of one growing index (`npm run bench:scheduler-fanout`).

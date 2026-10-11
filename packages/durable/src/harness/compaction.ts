@@ -347,7 +347,12 @@ function summaryPrompt(messages: readonly Message[], instructions: string | unde
 	return `<conversation>\n${serializeConversation(messages)}\n</conversation>\n\n${SUMMARIZATION_PROMPT}${focus}`;
 }
 
-/** Messages as plain text, so the summarizer reads a transcript instead of continuing it. System messages are omitted. */
+/**
+ * Messages as plain text, so the summarizer reads a transcript instead of continuing it. System messages are omitted.
+ * Thinking is omitted too: providers return summaries of the real reasoning, and replayed thinking is often not part of
+ * the live context (a block that does not match its request is dropped), so including it can make the request larger
+ * than the context it summarizes. Visible text, tool calls, and tool results record what happened.
+ */
 export function serializeConversation(messages: readonly Message[]): string {
 	const parts: string[] = [];
 	for (const message of messages) {
@@ -355,7 +360,6 @@ export function serializeConversation(messages: readonly Message[]): string {
 			const text = contentText(message.content);
 			if (text.length > 0) parts.push(`[User]: ${text}`);
 		} else if (message.role === "assistant") {
-			const thinking = message.content.flatMap((content) => (content.type === "thinking" ? [content.thinking] : []));
 			const text = message.content.flatMap((content) => (content.type === "text" ? [content.text] : []));
 			const calls = message.content.flatMap((content) =>
 				content.type === "toolCall"
@@ -366,7 +370,6 @@ export function serializeConversation(messages: readonly Message[]): string {
 						]
 					: [],
 			);
-			if (thinking.length > 0) parts.push(`[Assistant thinking]: ${thinking.join("\n")}`);
 			if (text.length > 0) parts.push(`[Assistant]: ${text.join("\n")}`);
 			if (calls.length > 0) parts.push(`[Assistant tool calls]: ${calls.join("; ")}`);
 		} else if (message.role === "toolResult") {

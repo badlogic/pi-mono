@@ -4104,9 +4104,11 @@ Phases:
   captured tail, and the cut as `firstKept`.
 - `summarize` derives the summarized messages again from the context at `tail`,
   which is immutable, and serializes them to text: `[User]: ...`,
-  `[Assistant thinking]: ...`, `[Assistant]: ...`,
-  `[Assistant tool calls]: name(key=json, ...)`, and `[Tool result]: ...`
-  truncated to 2000 characters; system messages are omitted. The request has no
+  `[Assistant]: ...`, `[Assistant tool calls]: name(key=json, ...)`, and
+  `[Tool result]: ...` truncated to 2000 characters; system messages and
+  thinking are omitted (replayed thinking is often not part of the live
+  context, so it could make the request larger than the context it
+  summarizes). The request has no
   tools and two messages: a system message with the built-in summarization
   system prompt, and a user message with the serialized text in
   `<conversation>` tags followed by the built-in summarization prompt, and

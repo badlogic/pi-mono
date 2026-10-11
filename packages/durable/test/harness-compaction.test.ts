@@ -344,7 +344,7 @@ describe("range selection", () => {
 });
 
 describe("serialization", () => {
-	it("writes a transcript, truncates tool results, and omits system messages", () => {
+	it("writes a transcript, truncates tool results, and omits system messages and thinking", () => {
 		const call = fauxToolCall("read", { path: "a.ts" }, { id: "c" });
 		const messages: Message[] = [
 			{ role: "system", content: "", sections: { s: "hidden" }, timestamp: 0 },
@@ -357,7 +357,8 @@ describe("serialization", () => {
 		const serialized = serializeConversation(messages);
 		expect(serialized).not.toContain("hidden");
 		expect(serialized).toContain("[User]: hello");
-		expect(serialized).toContain("[Assistant thinking]: hmm");
+		expect(serialized).not.toContain("hmm");
+		expect(serialized).not.toContain("[Assistant thinking]");
 		expect(serialized).toContain("[Assistant]: sure");
 		expect(serialized).toContain('[Assistant tool calls]: read(path="a.ts")');
 		expect(serialized).toContain(`[Tool result]: ${"y".repeat(2000)}\n\n[... 500 more characters truncated]`);
