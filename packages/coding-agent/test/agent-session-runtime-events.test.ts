@@ -156,6 +156,34 @@ describe("AgentSessionRuntime session lifecycle events", () => {
 		]);
 	});
 
+	it("starts new sessions and resumes sessions in the requested working directory", async () => {
+		const { runtimeHost } = await createRuntimeHost(() => {});
+		const originalCwd = runtimeHost.session.sessionManager.getCwd();
+		const originalSessionDir = runtimeHost.session.sessionManager.getSessionDir();
+		const worktreeCwd = join(originalCwd, "worktree");
+		mkdirSync(worktreeCwd);
+
+		const result = await runtimeHost.newSession({ cwd: "worktree" });
+		expect(result.cancelled).toBe(false);
+		expect(runtimeHost.session.sessionManager.getCwd()).toBe(worktreeCwd);
+		expect(runtimeHost.session.sessionManager.getSessionDir()).not.toBe(originalSessionDir);
+
+		await runtimeHost.session.prompt("worktree session");
+		const worktreeSessionFile = runtimeHost.session.sessionFile;
+		const switchResult = await runtimeHost.switchSession(worktreeSessionFile!, { cwdOverride: originalCwd });
+		expect(switchResult.cancelled).toBe(false);
+		expect(runtimeHost.session.sessionManager.getCwd()).toBe(originalCwd);
+	});
+
+	it("rejects an invalid new-session working directory without replacing the session", async () => {
+		const { runtimeHost } = await createRuntimeHost(() => {});
+		const originalCwd = runtimeHost.session.sessionManager.getCwd();
+		await expect(runtimeHost.newSession({ cwd: "missing" })).rejects.toThrow(
+			"Session working directory is not a directory",
+		);
+		expect(runtimeHost.session.sessionManager.getCwd()).toBe(originalCwd);
+	});
+
 	it("honors session_before_switch cancellation", async () => {
 		const events: RecordedSessionEvent[] = [];
 		const { runtimeHost } = await createRuntimeHost((pi) => {

@@ -216,6 +216,16 @@ These operations are command-only because calling them from lifecycle handlers c
 
 Session replacement invalidates the old context. Capture only plain data before switching, then use the fresh context supplied to `withSession` for session-bound work.
 
+`ctx.newSession({ cwd })` starts a new session in an existing working directory. Extensions can create a Git worktree with `pi.exec()` and then pass its path to `newSession`; the new session uses the default session directory for that cwd unless the current session uses a custom directory. `ctx.switchSession(sessionPath, { cwdOverride })` resumes a session file with a different working directory.
+
+```ts
+const result = await pi.exec("git", ["worktree", "add", "-b", branch, worktreePath, "HEAD"], { cwd: ctx.cwd });
+if (result.code !== 0) throw new Error(result.stderr || "Failed to create worktree");
+const { cancelled } = await ctx.newSession({ cwd: worktreePath });
+```
+
+If switching is cancelled, the created worktree remains available; the extension can remove it or let the user switch later.
+
 <a id="state-management"></a>
 <a id="persist-state"></a>
 

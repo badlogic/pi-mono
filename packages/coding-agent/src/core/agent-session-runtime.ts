@@ -1,4 +1,4 @@
-import { constants, copyFileSync, existsSync, mkdirSync } from "node:fs";
+import { constants, copyFileSync, existsSync, mkdirSync, statSync } from "node:fs";
 import { basename, join, parse, resolve } from "node:path";
 import { resolvePath } from "../utils/paths.ts";
 import type { AgentSession } from "./agent-session.ts";
@@ -224,20 +224,30 @@ export class AgentSessionRuntime {
 	}
 
 	async newSession(options?: {
+		cwd?: string;
 		parentSession?: string;
 		setup?: (sessionManager: SessionManager) => Promise<void>;
 		withSession?: (ctx: ReplacedSessionContext) => Promise<void>;
 	}): Promise<{ cancelled: boolean }> {
+		const currentSessionManager = this.session.sessionManager;
+		const currentCwd = currentSessionManager.getCwd();
+		const cwd = resolvePath(options?.cwd ?? currentCwd, currentCwd);
+		if (!existsSync(cwd) || !statSync(cwd).isDirectory()) {
+			throw new Error(`Session working directory is not a directory: ${cwd}`);
+		}
 		const beforeResult = await this.emitBeforeSwitch("new");
 		if (beforeResult.cancelled) {
 			return beforeResult;
 		}
 
 		const previousSessionFile = this.session.sessionFile;
-		const sessionDir = this.session.sessionManager.getSessionDir();
-		const sessionManager = this.session.sessionManager.isPersisted()
-			? SessionManager.create(this.cwd, sessionDir)
-			: SessionManager.inMemory(this.cwd);
+		const sessionDir =
+			cwd !== currentCwd && currentSessionManager.usesDefaultSessionDir()
+				? undefined
+				: currentSessionManager.getSessionDir();
+		const sessionManager = currentSessionManager.isPersisted()
+			? SessionManager.create(cwd, sessionDir)
+			: SessionManager.inMemory(cwd);
 		if (options?.parentSession) {
 			sessionManager.newSession({ parentSession: options.parentSession });
 		}
@@ -245,7 +255,7 @@ export class AgentSessionRuntime {
 		await this.teardownCurrent("new", sessionManager.getSessionFile());
 		this.apply(
 			await this.createRuntime({
-				cwd: this.cwd,
+				cwd,
 				agentDir: this.services.agentDir,
 				sessionManager,
 				sessionStartEvent: { type: "session_start", reason: "new", previousSessionFile },

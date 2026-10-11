@@ -407,6 +407,8 @@ export interface ExtensionCommandContext extends ExtensionContext {
 
 	/** Start a new session, optionally with initialization. */
 	newSession(options?: {
+		/** Start the new session in this working directory. Defaults to the current session's cwd. */
+		cwd?: string;
 		parentSession?: string;
 		setup?: (sessionManager: SessionManager) => Promise<void>;
 		withSession?: (ctx: ReplacedSessionContext) => Promise<void>;
@@ -427,7 +429,11 @@ export interface ExtensionCommandContext extends ExtensionContext {
 	/** Switch to a different session file. */
 	switchSession(
 		sessionPath: string,
-		options?: { withSession?: (ctx: ReplacedSessionContext) => Promise<void> },
+		options?: {
+			/** Resume the session using this working directory instead of its stored cwd. */
+			cwdOverride?: string;
+			withSession?: (ctx: ReplacedSessionContext) => Promise<void>;
+		},
 	): Promise<{ cancelled: boolean }>;
 
 	/** Reload extensions, skills, prompts, themes, and context files. */
@@ -2208,6 +2214,7 @@ export interface ExtensionContextActions {
 export interface ExtensionCommandContextActions {
 	waitForIdle: () => Promise<void>;
 	newSession: (options?: {
+		cwd?: string;
 		parentSession?: string;
 		setup?: (sessionManager: SessionManager) => Promise<void>;
 		withSession?: (ctx: ReplacedSessionContext) => Promise<void>;
@@ -2222,7 +2229,10 @@ export interface ExtensionCommandContextActions {
 	) => Promise<{ cancelled: boolean }>;
 	switchSession: (
 		sessionPath: string,
-		options?: { withSession?: (ctx: ReplacedSessionContext) => Promise<void> },
+		options?: {
+			cwdOverride?: string;
+			withSession?: (ctx: ReplacedSessionContext) => Promise<void>;
+		},
 	) => Promise<{ cancelled: boolean }>;
 	reload: () => Promise<void>;
 }
