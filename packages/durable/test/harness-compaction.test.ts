@@ -261,6 +261,18 @@ describe("range selection", () => {
 		expect(cut).toBe(9);
 	});
 
+	it("never cuts at a display-only entry where the budget is reached (#10407)", () => {
+		const entries = [
+			entry("pi.user", [user(text("u1", 100))]),
+			entry("pi.assistant", [assistant(text("a1", 100))]),
+			entry("chat.message", []),
+			entry("pi.assistant", [assistant(text("a2", 100))]),
+		];
+		// The budget is reached at a1; the display-only entry after it is skipped for the assistant a2.
+		expect(selectCut(view(entries), 150)).toBe(1);
+		expect(selectCut(view(entries), 50)).toBe(3);
+	});
+
 	it("keeps a huge last tool result together with its assistant", () => {
 		const entries = [
 			entry("pi.user", [user("u")]),

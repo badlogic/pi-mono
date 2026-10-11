@@ -182,6 +182,11 @@ async function status(harness: Harness, id: TaskId) {
 	return (await harness.getTask(id, context))!.state;
 }
 
+/** A write that affects model context, so it queues while busy; a data-only write would be appended at once. */
+function queuedNote(text: string) {
+	return { kind: "note", model: [{ role: "user", content: text, timestamp: 0 }] } as const;
+}
+
 async function openHarness(storage: Storage = new MemoryStorage()) {
 	const opened = await openTasks(storage, [Hold, Waiter, Spawner]);
 	const root = await opened.harness.root(context);
@@ -652,7 +657,7 @@ describe("ownership", () => {
 		const background = await ownedChild(root, "background", { background: true });
 		await busy(root, foreground.owner);
 		const input = (await root.submit({ type: "input", content: "later" }, context)).id;
-		const write = (await root.submit({ type: "write", entry: { kind: "note" } }, context)).id;
+		const write = (await root.submit({ type: "write", entry: queuedNote("w") }, context)).id;
 		await root.abort(context);
 		for (const id of [foreground.owner, foreground.inner]) {
 			expect((await status(harness, id)).status).toBe("terminal");
@@ -693,7 +698,7 @@ describe("ownership", () => {
 		await busy(child, tree.inner);
 		const own = (await root.submit({ type: "input", content: "own" }, context)).id;
 		const below = (await child.submit({ type: "input", content: "below" }, context)).id;
-		const write = (await child.submit({ type: "write", entry: { kind: "note" } }, context)).id;
+		const write = (await child.submit({ type: "write", entry: queuedNote("w") }, context)).id;
 		await harness.abortTask(tree.owner, context);
 		await harness.waitForTask(tree.inner, context);
 		const statusOf = async (id: typeof own) =>

@@ -394,11 +394,27 @@ await root.submit({ type: "write", entry: { kind: "app.note", data: "user opened
 
 - **Steers** are placed after the current tool round and join the running work.
 - **Follow-ups** are placed when the run answers, and start the next run.
-- **Writes** append an entry without asking the model anything.
+- **Writes** append an entry without asking the model anything. A write of only `kind` and `data` changes nothing the model sees, so it is appended at once, even mid-run, and is never queued: a chat message shows in the transcript as soon as it is sent. It can therefore appear before items submitted earlier that are still queued, except behind a queued reset, where it waits so the reset does not hide it. A write with `model`, `head`, or `edits` waits for the next boundary like a steer.
 - `await submission.abort(context)` withdraws a queued submission.
 - The [settings](#settings) `steeringMode: "all"` and `followUpMode: "all"` place every queued item at once instead of one per turn.
 
-If a run fails, queued items stay in the inbox until the next submission places them, oldest first.
+If a run fails, queued items stay in the inbox until the next input or queued write places them, oldest first.
+
+An input is placed as a `pi.user` entry. To show it as something else, give it an `entry` with your kind and data; the model still sees `content` as the user message:
+
+```typescript
+await root.submit(
+	{
+		type: "input",
+		content: "ann: can you check the build?",
+		entry: { kind: "chat.mention", data: { author: "ann", text: "can you check the build?" } },
+	},
+	context,
+);
+// placed as { kind: "chat.mention", data: { author: "ann", ... }, model: [{ role: "user", content: "ann: can you check the build?" }] }
+```
+
+It behaves like any other input: it starts a run, steers, follows up, or rejects, and is answered. While queued, its inbox item carries the entry. The kind must not start with `pi.`.
 
 ## Reset and Handoff
 

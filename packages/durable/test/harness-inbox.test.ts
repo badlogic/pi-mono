@@ -77,6 +77,11 @@ function holdTool(setup: ChatSetup, gate: Deferred, result: ToolExecutionResult 
 	);
 }
 
+/** A write that affects model context, so it queues while busy; a data-only write would be appended at once. */
+function queuedNote(text: string) {
+	return { kind: "note", model: [{ role: "user", content: text, timestamp: 0 }] } as const;
+}
+
 const HOLD = fauxAssistantMessage([fauxToolCall("hold", {}, { id: "c1" })], { stopReason: "toolUse" });
 
 async function status(submission: Submission): Promise<SubmissionRecord> {
@@ -111,7 +116,7 @@ describe("inbox", () => {
 		const input = await root.submit({ type: "input", content: "a" }, context);
 		await first.reached;
 		const f1 = await root.submit({ type: "input", content: "f1" }, context);
-		const write = await root.submit({ type: "write", entry: { kind: "note", data: "w" } }, context);
+		const write = await root.submit({ type: "write", entry: queuedNote("w") }, context);
 		const f2 = await root.submit({ type: "input", content: "f2", whenBusy: "followUp" }, context);
 		for (const submission of [f1, write, f2]) expect((await status(submission)).status).toBe("queued");
 		expect(await inbox(harness, root)).toEqual([
@@ -126,7 +131,7 @@ describe("inbox", () => {
 		expect(transcript(await allEntries(root))).toEqual([
 			"pi.user:a",
 			"pi.assistant:first",
-			"note",
+			"note:w",
 			"pi.user:f1",
 			"pi.assistant:second",
 			"pi.user:f2",
@@ -389,7 +394,7 @@ describe("inbox", () => {
 		const { harness, root } = await openChat(new MemoryStorage(), setup);
 		const input = await root.submit({ type: "input", content: "a" }, context);
 		await first.reached;
-		const kept = await root.submit({ type: "write", entry: { kind: "note" } }, context);
+		const kept = await root.submit({ type: "write", entry: queuedNote("kept") }, context);
 		const withdrawn = await root.submit({ type: "input", content: "f" }, context);
 		expect(await withdrawn.abort(context)).toBe("aborted");
 		expect(await withdrawn.wait(context)).toMatchObject({ status: "unanswered", reason: "aborted" });
@@ -461,17 +466,17 @@ describe("inbox", () => {
 		});
 		const input = await root.submit({ type: "input", content: "a" }, context);
 		await first.reached;
-		const w1 = await root.submit({ type: "write", entry: { kind: "note" } }, context);
+		const w1 = await root.submit({ type: "write", entry: queuedNote("w") }, context);
 		const f1 = await root.submit({ type: "input", content: "f1" }, context);
-		const w2 = await root.submit({ type: "write", entry: { kind: "note" } }, context);
+		const w2 = await root.submit({ type: "write", entry: queuedNote("w") }, context);
 		const f2 = await root.submit({ type: "input", content: "f2" }, context);
-		const w3 = await root.submit({ type: "write", entry: { kind: "note" } }, context);
+		const w3 = await root.submit({ type: "write", entry: queuedNote("w") }, context);
 		expect(ops).toEqual([
-			[["p", ["items"], 0, 0, [{ id: w1.id, mode: "write", entry: { kind: "note" } }]]],
+			[["p", ["items"], 0, 0, [{ id: w1.id, mode: "write", entry: queuedNote("w") }]]],
 			[["p", ["items"], 1, 0, [{ id: f1.id, mode: "followUp", content: "f1" }]]],
-			[["p", ["items"], 2, 0, [{ id: w2.id, mode: "write", entry: { kind: "note" } }]]],
+			[["p", ["items"], 2, 0, [{ id: w2.id, mode: "write", entry: queuedNote("w") }]]],
 			[["p", ["items"], 3, 0, [{ id: f2.id, mode: "followUp", content: "f2" }]]],
-			[["p", ["items"], 4, 0, [{ id: w3.id, mode: "write", entry: { kind: "note" } }]]],
+			[["p", ["items"], 4, 0, [{ id: w3.id, mode: "write", entry: queuedNote("w") }]]],
 		]);
 		first.release();
 		await input.wait(context);
@@ -517,14 +522,14 @@ describe("inbox", () => {
 		const { harness, root } = await openChat(new MemoryStorage(), setup);
 		const input = await root.submit({ type: "input", content: "a" }, context);
 		await first.reached;
-		const write = await root.submit({ type: "write", entry: { kind: "note" } }, context);
+		const write = await root.submit({ type: "write", entry: queuedNote("w") }, context);
 		first.release();
 		await input.wait(context);
 		const entries = await allEntries(root);
 		expect(transcript(entries)).toEqual([
 			"pi.user:a",
 			"pi.assistant:first",
-			"note",
+			"note:w",
 			"pi.user:more",
 			"pi.assistant:second",
 		]);

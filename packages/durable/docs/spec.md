@@ -2251,7 +2251,8 @@ wait in the built-in inbox document, an ordered list of tagged items:
 
 ```ts
 type InboxItem =
-  | { readonly id: SubmissionId; readonly mode: "steer" | "followUp"; readonly content: UserInput }
+  /** `entry` is the input's `InputEntry` (`kind` and optional `data`), present when given. */
+  | { readonly id: SubmissionId; readonly mode: "steer" | "followUp"; readonly content: UserInput; readonly entry?: InputEntry }
   /** `entry` is the write's `EntryDraft`, stored as plain JSON. */
   | { readonly id: SubmissionId; readonly mode: "write"; readonly entry: JsonObject };
 
@@ -2268,8 +2269,24 @@ type InboxState = { items: InboxItem[] };
 | view mount | `docs["pi.inbox"]` |
 | created | with every Harness conversation (section 2.2) |
 
-Items are in ID order. A queued input stores its content; its `pi.user` entry
-gets the Harness clock's timestamp at placement. Queued submissions belong to
+Items are in ID order. A queued input stores its content and its entry's kind
+and data; its entry gets the Harness clock's timestamp at placement.
+
+An input is placed as one entry whose `model` is the user message of its
+`content`: a `pi.user` entry, or, with `entry: { kind, data }`, an entry of that
+kind carrying that data. Only `kind` and `data` are taken from `entry`; admission
+rejects a kind that is not a non-empty string or starts with `pi.`. Nothing in
+the Harness reads input entries by kind; context, compaction, events, and run
+accounting go by `model` and the submission records.
+
+A write of only `kind` and `data`, with no `model`, `head`, or `edits` (present
+counts, even if empty), is display-only: it changes no model context, so admission
+appends it and settles it `done` in the same commit, busy or idle, ahead of
+earlier submissions still queued. Between a tool call and its result it changes
+nothing, because results are ordered by message. The one exception is a queued
+reset: appended before it, the entry would fall out of the context the reset
+starts, so a display-only write queues behind a queued reset and is placed after
+it at the same boundary. Queued submissions belong to
 their conversation, so a fork starts with an empty inbox.
 
 Run control lives in the built-in live document `pi.live` (section 8). Its
@@ -2288,8 +2305,9 @@ Admission and terminal transitions:
 | action | submission state | other writes |
 |---|---|---|
 | input, idle with empty inbox | `placed`, with user entry | create run and generation |
+| display-only write, no queued reset | `done`, with entry | append entry; no run |
 | write, idle with empty inbox | `done`, with entry | append entry; no run |
-| input or write, busy or non-empty inbox | `queued` | append inbox item |
+| input or other write, busy or non-empty inbox | `queued` | append inbox item |
 | boundary places user item | `placed`, with entry | add ID to current or successor run |
 | boundary places write | `done`, with entry | append entry |
 | run answers | input `done`, with required answer entry | remove `run`, or hand it to a successor |
@@ -2303,8 +2321,9 @@ writes no record and reports `ConversationBusy`. An idle input queues with mode
 `steer` when `whenBusy` is `steer` and `followUp` otherwise.
 
 An idle conversation with a non-empty inbox, for example after a failed run,
-queues every new submission behind the waiting items and runs a final boundary
-in the same commit. Order is preserved: a follow-up queued before the failure is
+queues every new input and every write that is not display-only behind the
+waiting items and runs a final boundary in the same commit. A display-only write
+is appended without one, so a chat message never restarts failed work. Order is preserved: a follow-up queued before the failure is
 selected before the new input.
 
 A `Submission` waits until `done` or `unanswered`; abort withdraws only a still-
@@ -2366,7 +2385,7 @@ Only successful run ends apply the final boundary: an answer, `terminate`, or
 `handoff`. Failure, a run task's abort handler, fault, and orphan settle the
 run's inputs `unanswered` and leave the inbox alone (`Conversation.abort()`
 separately withdraws queued user items); the queued items stay visible in
-`pi.inbox` until the next submission's boundary or their withdrawal.
+`pi.inbox` until the next input or queued write runs a boundary, or their withdrawal.
 
 Selected and stale items are removed positionally while retained item order is
 preserved. Chord's Astra operation generator must express scattered removals
@@ -3404,9 +3423,12 @@ Generation preparation takes these steps against its phase snapshot:
    append one positional `pi.system` entry when they differ.
 
 Preparation does not recheck the transcript before appending: only the Harness
-writes to a busy conversation, through submissions, run tasks, boundaries, and a
-blocking compaction, which appends only while its generation waits for it
-(section 8.7), so the transcript it read is still current (section 12).
+writes model context to a busy conversation, through submissions, run tasks,
+boundaries, and a blocking compaction, which appends only while its generation
+waits for it (section 8.7), so the context it read is still current (section 12).
+Display-only writes (section 6) may land meanwhile; they contribute no messages,
+and the system entry planning, the compaction threshold, and the request cutoff
+depend only on contributions and the newest entry ID.
 
 Model and thinking level are request options, not prompt state.
 
@@ -4979,7 +5001,8 @@ These are contracts, not invitations to add defensive machinery:
   use a write submission.
 - **Queued items after a failed run:** failure and task abort leave the inbox alone.
   Queued follow-ups wait in `pi.inbox`, and their `wait()` does not settle, until
-  the next submission's boundary places them or the host withdraws them. A
+  the next input or queued write's boundary places them or the host withdraws
+  them; a display-only write runs no boundary. A
   compaction summary is such a submission: when a manual or background
   compaction finishes in that idle conversation, its final boundary places the
   waiting follow-ups and starts a run.

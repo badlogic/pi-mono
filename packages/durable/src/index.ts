@@ -86,6 +86,7 @@ export type {
 	HookRegistration,
 	HookResult,
 	HooksOf,
+	InputEntry,
 	InputSubmissionDraft,
 	ModelRef,
 	NestedToolExecutionResult,

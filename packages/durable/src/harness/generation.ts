@@ -119,8 +119,9 @@ export const GenerationTask = defineTask<GenerationInput, GenerationCheckpoint, 
 	phases: {
 		/**
 		 * Render the system prompt and tool loadout and append the positional `pi.system` entries they need, then move to
-		 * `request`. The agent and settings resolved here are fixed for this request. Only the Harness writes to a busy
-		 * conversation, so the transcript read here is still the tail at the commit.
+		 * `request`. The agent and settings resolved here are fixed for this request. Only the Harness writes model
+		 * context to a busy conversation, so the context read here is still current at the commit; display-only entries
+		 * may land meanwhile.
 		 */
 		prepare: async (task, runtime, context) => {
 			const { conversationId } = runtime;
