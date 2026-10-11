@@ -83,6 +83,125 @@ describe("schemaToType", () => {
 		).toBe("{\n  // Outer\n  outer?: {\n    // Inner\n    inner?: string;\n  };\n}");
 	});
 
+	// https://github.com/earendil-works/pi/issues/10707
+	it("puts constraints the type cannot express on property comment lines", () => {
+		expect(
+			schemaToType({
+				type: "object",
+				properties: {
+					timeoutMs: {
+						type: "integer",
+						minimum: 0,
+						maximum: 30000,
+						default: 0,
+						description: "Wait in milliseconds.",
+					},
+					id: { type: "string", pattern: "^[a-z]+$", maxLength: 8 },
+					tags: { type: "array", items: { type: "string" }, maxItems: 5, uniqueItems: true, deprecated: true },
+					name: { type: "string" },
+				},
+				required: ["id"],
+			}),
+		).toBe(
+			[
+				"{",
+				"  // @maxLength 8 @pattern ^[a-z]+$",
+				"  id: string;",
+				"  name?: string;",
+				"  // @maxItems 5 @uniqueItems @deprecated",
+				"  tags?: Array<string>;",
+				"  // Wait in milliseconds.",
+				"  // @integer @minimum 0 @maximum 30000 @default 0",
+				"  timeoutMs?: number;",
+				"}",
+			].join("\n"),
+		);
+	});
+
+	it("reads constraints of optional fields from the non-null branch", () => {
+		// Pydantic's `limit: int | None = Field(None, ge=1, le=100)`.
+		expect(
+			schemaToType({
+				type: "object",
+				properties: {
+					limit: {
+						anyOf: [{ type: "integer", minimum: 1, maximum: 100 }, { type: "null" }],
+						default: null,
+						title: "Limit",
+					},
+				},
+			}),
+		).toBe("{\n  // @integer @minimum 1 @maximum 100\n  limit?: number | null;\n}");
+		// Constraints of the property and the branch both apply.
+		expect(
+			schemaToType({
+				type: "object",
+				properties: {
+					n: {
+						anyOf: [{ type: "integer", minimum: 10, maximum: 50, format: "int32" }, { type: "null" }],
+						minimum: 0,
+						maximum: 20,
+						format: "port",
+					},
+				},
+			}),
+		).toBe("{\n  // @integer @minimum 10 @maximum 20 @format port @format int32\n  n?: number | null;\n}");
+	});
+
+	it("reads draft-04 boolean exclusive bounds", () => {
+		expect(
+			schemaToType({
+				type: "object",
+				properties: {
+					n: { type: "integer", minimum: 0, exclusiveMinimum: true, maximum: 10, exclusiveMaximum: false },
+					m: { anyOf: [{ type: "number", maximum: 5, exclusiveMaximum: true }, { type: "null" }], maximum: 8 },
+				},
+			}),
+		).toBe(
+			[
+				"{",
+				"  // @maximum 8 @exclusiveMaximum 5",
+				"  m?: number | null;",
+				"  // @integer @exclusiveMinimum 0 @maximum 10",
+				"  n?: number;",
+				"}",
+			].join("\n"),
+		);
+	});
+
+	it("leaves out long tags and escapes line terminators", () => {
+		expect(
+			schemaToType({
+				type: "object",
+				properties: { config: { type: "object", default: { text: "x".repeat(100) } } },
+			}),
+		).toBe("{ config?: { [key: string]: unknown; }; }");
+		expect(
+			schemaToType({
+				type: "object",
+				properties: {
+					sep: { type: "string", pattern: "^[\r\n\u2028\u2029]$", default: "\u2028", description: "a\u2028b" },
+				},
+			}),
+		).toBe(
+			[
+				"{",
+				"  // a",
+				"  // b",
+				'  // @pattern ^[\\u000d\\u000a\\u2028\\u2029]$ @default "\\u2028"',
+				"  sep?: string;",
+				"}",
+			].join("\n"),
+		);
+	});
+
+	it("drops constraint tags before rendering a type over the budget as unknown", () => {
+		const schema = { type: "object", properties: { n: { type: "integer", minimum: 1 } } };
+		expect(schemaToType(schema)).toBe("{\n  // @integer @minimum 1\n  n?: number;\n}");
+		expect(schemaToType(schema, { maxChars: 20 })).toBe("{ n?: number; }");
+		expect(schemaToType(schema, { maxChars: 10 })).toBe("unknown");
+	});
+
 	it("resolves local references and stops at recursive ones", () => {
 		const schema = {
 			type: "object",

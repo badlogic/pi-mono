@@ -11,6 +11,7 @@
 
 ### Changed
 
+- `schemaToType()` and the declarations built on it show property constraints the TypeScript type cannot express as tags on the property's comment line, such as `// @integer @minimum 0 @maximum 30000 @default 0`. Covered keywords: `integer`, numeric bounds, `multipleOf`, string length, `pattern`, `format`, array length, `uniqueItems`, non-null `default`, and `deprecated`; constraints of nullable `anyOf`/`oneOf` fields are read from the non-null branch, and draft-04 boolean `exclusiveMinimum`/`exclusiveMaximum` are shown as exclusive bounds. Property descriptions now also split on U+2028/U+2029. A type over `maxChars` is rendered again without tags before it becomes `unknown` ([#10707](https://github.com/earendil-works/pi/issues/10707))
 - The VM now polls for interrupts while it drains promise jobs, so a script such as `while (true) await null` is stopped at the same points as a synchronous loop
 
 ### Fixed

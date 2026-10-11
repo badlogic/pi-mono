@@ -10,6 +10,27 @@ const INDENT = "  ";
 export const DEFAULT_INPUT_SCHEMA_MAX_CHARS = 16_000;
 /** Local `$ref` expansions per rendered schema, so shared definitions cannot blow up the output. */
 const MAX_REF_EXPANSIONS = 32;
+/** JSON Schema keywords with a number or string value shown as `@keyword value` property tags. */
+const TAG_KEYWORDS = [
+	"minimum",
+	"exclusiveMinimum",
+	"maximum",
+	"exclusiveMaximum",
+	"multipleOf",
+	"minLength",
+	"maxLength",
+	"pattern",
+	"format",
+	"minItems",
+	"maxItems",
+];
+/** Tag keywords whose values all hold at once, so only the largest (lower) or smallest (upper) matters. */
+const LOWER_BOUNDS = new Set(["minimum", "exclusiveMinimum", "minLength", "minItems"]);
+const UPPER_BOUNDS = new Set(["maximum", "exclusiveMaximum", "maxLength", "maxItems"]);
+/** Longest property tag; longer ones (large defaults, long patterns) are left out. */
+const MAX_TAG_CHARS = 80;
+/** Characters that end a `//` comment. */
+const LINE_TERMINATORS = /[\r\n\u2028\u2029]/g;
 
 /**
  * TypeScript types for MCP results, from the MCP `CallToolResult` schema, so `CallToolResult<T>`
@@ -220,14 +241,18 @@ function union(types: string[]): string {
 
 /**
  * Convert a JSON Schema to a TypeScript type expression: objects on one line (`{ a: string; b?: number; }`) with properties sorted by name,
- * or one property per line with `//` comments when a property has a description; `Array<T>` for
- * arrays. Local references (`#/$defs/...`, `#/definitions/...`) resolve against `schema`;
- * recursive and remote references render as `unknown`. A result longer than `maxChars` renders as
- * `unknown`.
+ * or one property per line with `//` comments when a property has a description or constraints the
+ * type cannot express (`// @integer @minimum 1 @default 20`); `Array<T>` for arrays. Local references
+ * (`#/$defs/...`, `#/definitions/...`) resolve against `schema`; recursive and remote references
+ * render as `unknown`. A result longer than `maxChars` is rendered again without the constraint tags,
+ * and renders as `unknown` if it is still too long.
  */
 export function schemaToType(schema: CodemodeJsonSchema, options: { maxChars?: number } = {}): string {
-	const type = toType(schema, { root: schema, resolving: new Set(), expansions: 0 });
-	return options.maxChars !== undefined && type.length > options.maxChars ? "unknown" : type;
+	const render = (tags: boolean) => toType(schema, { root: schema, resolving: new Set(), expansions: 0, tags });
+	const type = render(true);
+	if (options.maxChars === undefined || type.length <= options.maxChars) return type;
+	const untagged = render(false);
+	return untagged.length <= options.maxChars ? untagged : "unknown";
 }
 
 interface SchemaContext {
@@ -235,6 +260,8 @@ interface SchemaContext {
 	/** References being expanded on the current path, to stop at recursive types. */
 	resolving: Set<string>;
 	expansions: number;
+	/** Whether property comments include constraint tags. */
+	tags: boolean;
 }
 
 function resolveRef(ref: string, root: CodemodeJsonSchema): CodemodeJsonSchema | undefined {
@@ -324,6 +351,52 @@ function descriptionOf(property: unknown): string {
 	return isObject(property) && typeof property.description === "string" ? property.description.trim() : "";
 }
 
+/**
+ * Constraints of a property that its TypeScript type cannot express, as JSDoc-style tags:
+ * `@integer @minimum 1 @maximum 100 @default 20`. Empty when there are none.
+ */
+function constraintTags(property: unknown): string {
+	if (!isObject(property)) return "";
+	// Optional fields such as Pydantic's `int | None` keep their constraints in the non-null branch.
+	// The branch's constraints apply together with the property's, so both are read.
+	const variants = Array.isArray(property.anyOf) ? property.anyOf : property.oneOf;
+	const nonNull = Array.isArray(variants) ? variants.filter((v) => !isObject(v) || v.type !== "null") : [];
+	// Draft-04 and OpenAPI 3.0 make `minimum`/`maximum` exclusive with a boolean `exclusiveMinimum`/`exclusiveMaximum`.
+	const schemas = (nonNull.length === 1 && isObject(nonNull[0]) ? [property, nonNull[0]] : [property]).map(
+		(schema): Record<string, unknown> => ({
+			...schema,
+			...(schema.exclusiveMinimum === true ? { minimum: undefined, exclusiveMinimum: schema.minimum } : {}),
+			...(schema.exclusiveMaximum === true ? { maximum: undefined, exclusiveMaximum: schema.maximum } : {}),
+		}),
+	);
+
+	const tags: string[] = [];
+	const isInteger = (type: unknown) => type === "integer" || (Array.isArray(type) && type.includes("integer"));
+	if (schemas.some((schema) => isInteger(schema.type))) tags.push("@integer");
+	for (const keyword of TAG_KEYWORDS) {
+		const values = schemas.map((schema) => schema[keyword]);
+		if (LOWER_BOUNDS.has(keyword) || UPPER_BOUNDS.has(keyword)) {
+			const numbers = values.filter((value) => typeof value === "number");
+			if (numbers.length === 0) continue;
+			tags.push(`@${keyword} ${LOWER_BOUNDS.has(keyword) ? Math.max(...numbers) : Math.min(...numbers)}`);
+			continue;
+		}
+		for (const value of new Set(values)) {
+			if (typeof value === "number" || typeof value === "string") tags.push(`@${keyword} ${value}`);
+		}
+	}
+	if (schemas.some((schema) => schema.uniqueItems === true)) tags.push("@uniqueItems");
+	// Annotations, unlike constraints, come from the property itself.
+	if (property.default !== undefined && property.default !== null) {
+		tags.push(`@default ${JSON.stringify(property.default)}`);
+	}
+	if (property.deprecated === true) tags.push("@deprecated");
+	return tags
+		.filter((tag) => tag.length <= MAX_TAG_CHARS)
+		.map((tag) => tag.replace(LINE_TERMINATORS, (char) => `\\u${char.charCodeAt(0).toString(16).padStart(4, "0")}`))
+		.join(" ");
+}
+
 function objectType(schema: Record<string, unknown>, context: SchemaContext): string {
 	const properties = isObject(schema.properties) ? schema.properties : {};
 	const required = new Set(Array.isArray(schema.required) ? schema.required : []);
@@ -340,13 +413,19 @@ function objectType(schema: Record<string, unknown>, context: SchemaContext): st
 		members.push("[key: string]: unknown;");
 	}
 	if (members.length === 0) return "{}";
-	if (!names.some((name) => descriptionOf(properties[name]))) return `{ ${members.join(" ")} }`;
+	const comments = names.map((name) => {
+		const lines = descriptionOf(properties[name])
+			.split(LINE_TERMINATORS)
+			.map((line) => line.trim())
+			.filter(Boolean);
+		const tags = context.tags ? constraintTags(properties[name]) : "";
+		return tags ? [...lines, tags] : lines;
+	});
+	if (!comments.some((comment) => comment.length > 0)) return `{ ${members.join(" ")} }`;
 
 	const lines = ["{"];
-	names.forEach((name, index) => {
-		for (const line of descriptionOf(properties[name]).split(/\r?\n/)) {
-			if (line.trim()) lines.push(`${INDENT}// ${line.trim()}`);
-		}
+	comments.forEach((comment, index) => {
+		for (const line of comment) lines.push(`${INDENT}// ${line}`);
 		lines.push(`${INDENT}${members[index].replaceAll("\n", `\n${INDENT}`)}`);
 	});
 	for (const member of members.slice(names.length)) lines.push(`${INDENT}${member}`);
