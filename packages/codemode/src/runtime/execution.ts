@@ -25,10 +25,16 @@ import { toCodemodeIdentifier } from "../identifier.ts";
 import type {
 	CodemodeCall,
 	CodemodeCallStatus,
+	CodemodeDeclaredGlobal,
+	CodemodeDeclaredTool,
+	CodemodeDuring,
 	CodemodeError,
 	CodemodeExecuteOptions,
+	CodemodeOutcome,
 	CodemodeOutputItem,
 	CodemodeResult,
+	CodemodeRun,
+	CodemodeRunOptions,
 	CodemodeSandboxBaseOptions,
 	CodemodeStoreWrites,
 	CodemodeTool,
@@ -142,14 +148,39 @@ interface PendingCall {
 	controller: AbortController;
 }
 
+/** Checks global names: identifiers or `namespace.member`, not shadowing a built-in global or each other. */
+function checkGlobals(globals: readonly CodemodeDeclaredGlobal[]): void {
+	const names = new Set<string>();
+	const namespaces = new Set<string>();
+	for (const global of globals) {
+		const parts = global.name.split(".");
+		if (parts.length > 2 || !parts.every((part) => IDENTIFIER.test(part)) || RESERVED_GLOBALS.has(parts[0])) {
+			throw new Error(`Invalid global name "${global.name}"`);
+		}
+		if (names.has(global.name)) throw new Error(`Global "${global.name}" is already registered`);
+		if (parts.length === 2) namespaces.add(parts[0]);
+		names.add(global.name);
+	}
+	for (const name of namespaces) {
+		if (names.has(name)) throw new Error(`Global "${name}" conflicts with the namespace "${name}"`);
+	}
+}
+
+/** Callbacks of a host-controlled run: its calls go to the caller, which answers them with `deliver()`. */
+type Control = Pick<CodemodeRunOptions, "onStarted" | "onCall" | "onIdle">;
+
 interface ExecutionOptions {
 	code: string;
-	tools: ReadonlyMap<string, CodemodeTool>;
-	globals: ReadonlyMap<string, CodemodeTool>;
+	tools: readonly CodemodeDeclaredTool[];
+	globals: readonly CodemodeDeclaredGlobal[];
+	/** Run the script's calls; unused when `control` is set. */
+	executors: { tools: ReadonlyMap<string, CodemodeTool>; globals: ReadonlyMap<string, CodemodeTool> };
 	timeoutMs: number;
 	signal: AbortSignal | undefined;
 	memoryLimitBytes: number | undefined;
 	store: Record<string, string>;
+	deterministic?: { startedAt: number; seed: number };
+	control?: Control;
 	launch: VmLauncher;
 }
 
@@ -160,8 +191,10 @@ class Execution {
 	private channel: VmChannel | undefined;
 	/** Replies produced before the launcher returned the channel. */
 	private unsent: HostToWorkerMessage[] = [];
-	private readonly tools: ReadonlyMap<string, CodemodeTool>;
-	private readonly globals: ReadonlyMap<string, CodemodeTool>;
+	private readonly executors: ExecutionOptions["executors"];
+	private readonly control: Control | undefined;
+	/** Result numbers `deliver()` used. */
+	private readonly delivered = new Set<number>();
 	private readonly signal: AbortSignal | undefined;
 	private readonly timer: ReturnType<typeof setTimeout> | undefined;
 	private readonly output: CodemodeOutputItem[] = [];
@@ -173,8 +206,8 @@ class Execution {
 		this.promise = new Promise<CodemodeResult>((resolve) => {
 			this.resolveResult = resolve;
 		});
-		this.tools = options.tools;
-		this.globals = options.globals;
+		this.executors = options.executors;
+		this.control = options.control;
 		this.signal = options.signal;
 
 		if (Number.isFinite(options.timeoutMs)) {
@@ -194,17 +227,15 @@ class Execution {
 
 		const data: VmStartData = {
 			code: options.code,
-			tools: [...options.tools.values()].map((tool) => ({
+			tools: options.tools.map((tool) => ({
 				name: tool.name,
-				jsName: toCodemodeIdentifier(tool.name),
+				jsName: tool.jsName ?? toCodemodeIdentifier(tool.name),
 				description: tool.description ?? "",
 			})),
-			globals: [...options.globals.values()].map((global) => ({
-				name: global.name,
-				spread: global.spread === true,
-			})),
+			globals: options.globals.map((global) => ({ name: global.name, spread: global.spread === true })),
 			memoryLimitBytes: options.memoryLimitBytes,
 			store: options.store,
+			...(options.deterministic ? { deterministic: options.deterministic } : {}),
 		};
 		const events: VmEvents = {
 			message: (message) => this.receive(message),
@@ -223,6 +254,46 @@ class Execution {
 				this.finish({ kind: "sandbox", message: errorMessage(error) });
 			},
 		);
+	}
+
+	/** `CodemodeRun.deliver()`. */
+	deliver(seq: number, now: number, id: number, outcome: CodemodeOutcome): void {
+		if (this.finished) return;
+		if (!Number.isFinite(now)) throw new Error(`The clock value of result ${seq} is not a finite number`);
+		if (!Number.isInteger(seq) || seq < 1 || this.delivered.has(seq)) {
+			throw new Error(`Result number ${seq} is not a positive integer used once`);
+		}
+		const pending = this.pending.get(id);
+		if (pending === undefined) throw new Error(`Call ${id} is not waiting for a result`);
+		if (!outcome.ok && outcome.properties !== undefined) {
+			const { properties } = outcome;
+			if (typeof properties !== "object" || properties === null || Array.isArray(properties)) {
+				throw new Error(`The properties of result ${seq} are not an object`);
+			}
+		}
+		// Serialized before anything is recorded, so a value JSON cannot hold leaves the call waiting for another answer.
+		const payload = outcome.ok
+			? outcome.value === undefined
+				? undefined
+				: JSON.stringify(outcome.value)
+			: outcome.message;
+		const properties =
+			!outcome.ok && outcome.properties !== undefined ? JSON.stringify(outcome.properties) : undefined;
+		this.delivered.add(seq);
+		this.pending.delete(id);
+		if (pending.record) {
+			pending.record.status = outcome.ok ? "ok" : "error";
+			pending.record.durationMs = performance.now() - pending.startedAt;
+		}
+		this.post({
+			type: "result",
+			id,
+			ok: outcome.ok,
+			payload,
+			seq,
+			now,
+			...(properties === undefined ? {} : { properties }),
+		});
 	}
 
 	abort(message: string): Promise<CodemodeResult> {
@@ -264,7 +335,14 @@ class Execution {
 				break;
 			case "call":
 				if (this.pending.has(message.id)) throw new BridgeError(`duplicate call id ${message.id}`);
-				void this.handleCall(message);
+				if (this.control) this.forwardCall(message, this.control);
+				else void this.handleCall(message);
+				break;
+			case "started":
+				this.control?.onStarted?.(message.fingerprint);
+				break;
+			case "idle":
+				this.control?.onIdle?.(message.seq, message.issued);
 				break;
 			case "done":
 				this.handleDone(message);
@@ -278,11 +356,22 @@ class Execution {
 	private handleDone(message: Extract<WorkerToHostMessage, { type: "done" }>): void {
 		// Decode everything before finish(), which must not throw once it starts.
 		if (!message.ok) {
-			this.finish(parseScriptError(message.error));
+			this.finish(parseScriptError(message.error), undefined, undefined, message.during);
 			return;
 		}
 		const value = message.value === undefined ? undefined : parseBridgeJson(message.value, "return value");
-		this.finish(undefined, value, parseStoreWrites(message.writes));
+		this.finish(undefined, value, parseStoreWrites(message.writes), message.during);
+	}
+
+	/** A host-controlled run: record the call and hand it to the caller, which answers with `deliver()`. */
+	private forwardCall(message: Extract<WorkerToHostMessage, { type: "call" }>, control: Control): void {
+		const { id, name, target } = message;
+		const args = message.args === undefined ? undefined : parseBridgeJson(message.args, "call arguments");
+		const record: CodemodeCall | undefined =
+			target === "tool" ? { name, status: "cancelled", durationMs: 0 } : undefined;
+		if (record) this.calls.push(record);
+		this.pending.set(id, { record, startedAt: performance.now(), controller: new AbortController() });
+		control.onCall({ id, target, name, args });
 	}
 
 	private async handleCall(message: Extract<WorkerToHostMessage, { type: "call" }>): Promise<void> {
@@ -296,7 +385,7 @@ class Execution {
 		let status: CodemodeCallStatus;
 		let reply: HostToWorkerMessage;
 		try {
-			const tool = (isTool ? this.tools : this.globals).get(name);
+			const tool = (isTool ? this.executors.tools : this.executors.globals).get(name);
 			if (!tool) throw new Error(`Unknown ${isTool ? "tool" : "global"} "${name}"`);
 			const args: unknown = message.args === undefined ? undefined : JSON.parse(message.args);
 			const value = await tool.execute(args, { signal: pending.controller.signal });
@@ -317,7 +406,12 @@ class Execution {
 		this.post(reply);
 	}
 
-	private finish(error: CodemodeError | undefined, value?: unknown, writes?: CodemodeStoreWrites): void {
+	private finish(
+		error: CodemodeError | undefined,
+		value?: unknown,
+		writes?: CodemodeStoreWrites,
+		during?: CodemodeDuring,
+	): void {
 		if (this.finished) return;
 		this.finished = true;
 		clearTimeout(this.timer);
@@ -331,14 +425,16 @@ class Execution {
 		this.pending.clear();
 		this.unsent = [];
 
+		const ended = during === undefined ? {} : { during: { seq: during.seq, issued: during.issued } };
 		const result: CodemodeResult = error
-			? { ok: false, error, output: this.output, calls: this.calls }
+			? { ok: false, error, output: this.output, calls: this.calls, ...ended }
 			: {
 					ok: true,
 					value,
 					output: this.output,
 					calls: this.calls,
 					storeWrites: writes ?? { set: {}, delete: [] },
+					...ended,
 				};
 		if (!this.channel) {
 			this.resolveResult(result);
@@ -374,19 +470,8 @@ export class CodemodeSandboxBase {
 		this.memoryLimitBytes = options.memoryLimitBytes;
 		this.launch = launch;
 		for (const tool of options.tools ?? []) this.registerTool(tool);
-		const namespaces = new Set<string>();
-		for (const global of options.globals ?? []) {
-			const parts = global.name.split(".");
-			if (parts.length > 2 || !parts.every((part) => IDENTIFIER.test(part)) || RESERVED_GLOBALS.has(parts[0])) {
-				throw new Error(`Invalid global name "${global.name}"`);
-			}
-			if (this.globalsByName.has(global.name)) throw new Error(`Global "${global.name}" is already registered`);
-			if (parts.length === 2) namespaces.add(parts[0]);
-			this.globalsByName.set(global.name, global);
-		}
-		for (const name of namespaces) {
-			if (this.globalsByName.has(name)) throw new Error(`Global "${name}" conflicts with the namespace "${name}"`);
-		}
+		checkGlobals(options.globals ?? []);
+		for (const global of options.globals ?? []) this.globalsByName.set(global.name, global);
 	}
 
 	/** Throws if a tool with the same name is already registered. */
@@ -414,10 +499,12 @@ export class CodemodeSandboxBase {
 	 */
 	execute(code: string, options: CodemodeExecuteOptions = {}): Promise<CodemodeResult> {
 		if (this.closed) return Promise.reject(new Error("Sandbox is closed"));
+		const tools = new Map(this.toolsByName);
 		const execution = new Execution({
 			code,
-			tools: new Map(this.toolsByName),
-			globals: this.globalsByName,
+			tools: [...tools.values()],
+			globals: [...this.globalsByName.values()],
+			executors: { tools, globals: this.globalsByName },
 			timeoutMs: options.timeoutMs ?? this.timeoutMs,
 			signal: options.signal,
 			memoryLimitBytes: this.memoryLimitBytes,
@@ -426,6 +513,49 @@ export class CodemodeSandboxBase {
 		});
 		this.running.add(execution);
 		return execution.promise.finally(() => this.running.delete(execution));
+	}
+
+	/**
+	 * Run `code` deterministically, with the caller answering its calls: the same script, start time, seed, tools,
+	 * globals, and store, answered with the same results in the same `seq` order, makes the same calls with the same
+	 * arguments and produces the same output, on any VM with the same fingerprint. A host can therefore replay it
+	 * after a restart. The VM runs in UTC, its clock reads `startedAt` and then the `now` of the result being
+	 * processed, its randomness comes from `seed`, and `WeakRef` and `FinalizationRegistry` do not exist.
+	 *
+	 * The sandbox's own tools and globals are not used: the run declares its own, and every call goes to
+	 * `options.onCall`. Never rejects for script failures; abort through `options.signal` to end the run with an
+	 * error the script cannot catch.
+	 */
+	start(code: string, options: CodemodeRunOptions): CodemodeRun {
+		if (this.closed) throw new Error("Sandbox is closed");
+		if (!Number.isFinite(options.startedAt) || options.startedAt < 0) {
+			throw new Error("startedAt must be a non-negative number of milliseconds since the epoch");
+		}
+		if (!Number.isInteger(options.seed) || options.seed < 0 || options.seed > 0xffffffff) {
+			throw new Error("seed must be a 32-bit unsigned integer");
+		}
+		const tools = options.tools ?? [];
+		if (new Set(tools.map((tool) => tool.name)).size !== tools.length) throw new Error("Tool names must be unique");
+		const scriptNames = tools.map((tool) => tool.jsName ?? toCodemodeIdentifier(tool.name));
+		if (new Set(scriptNames).size !== tools.length) throw new Error("Tool script names must be unique");
+		const globals = options.globals ?? [];
+		checkGlobals(globals);
+		const execution = new Execution({
+			code,
+			tools,
+			globals,
+			executors: { tools: new Map(), globals: new Map() },
+			timeoutMs: options.timeoutMs ?? Number.POSITIVE_INFINITY,
+			signal: options.signal,
+			memoryLimitBytes: this.memoryLimitBytes,
+			store: serializeStore(options.store),
+			deterministic: { startedAt: options.startedAt, seed: options.seed },
+			control: { onStarted: options.onStarted, onCall: options.onCall, onIdle: options.onIdle },
+			launch: this.launch,
+		});
+		this.running.add(execution);
+		const result = execution.promise.finally(() => this.running.delete(execution));
+		return { result, deliver: (seq, now, id, outcome) => execution.deliver(seq, now, id, outcome) };
 	}
 
 	/** Aborts in-flight executions (they resolve with `kind: "aborted"`) and rejects new ones. */

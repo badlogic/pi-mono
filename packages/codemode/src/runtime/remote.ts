@@ -163,7 +163,12 @@ export function serveCodemodeRemote(
 					}
 					break;
 				}
+				case "started":
+					buffered.push(typed);
+					break;
+				// Sent at once: a host replaying a script waits for it to see that the script issued no further call.
 				case "call":
+				case "idle":
 					exchange([...takeBuffer(), typed]).then(reply, () => end(undefined));
 					break;
 				default:

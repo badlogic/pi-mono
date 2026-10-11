@@ -86,7 +86,11 @@ export interface CodemodeStoreWrites {
 	delete: string[];
 }
 
-/** `output` is kept for failed executions too, up to the failure. `exit()` completes with `value: undefined`. */
+/**
+ * `output` is kept for failed executions too, up to the failure. `exit()` completes with `value: undefined`.
+ * `during`: in a {@link CodemodeSandboxBase.start} run that the script itself ended (it returned, threw, or exited),
+ * the result being processed when it did.
+ */
 export type CodemodeResult =
 	| {
 			ok: true;
@@ -94,8 +98,15 @@ export type CodemodeResult =
 			output: CodemodeOutputItem[];
 			calls: CodemodeCall[];
 			storeWrites: CodemodeStoreWrites;
+			during?: CodemodeDuring;
 	  }
-	| { ok: false; error: CodemodeError; output: CodemodeOutputItem[]; calls: CodemodeCall[] };
+	| {
+			ok: false;
+			error: CodemodeError;
+			output: CodemodeOutputItem[];
+			calls: CodemodeCall[];
+			during?: CodemodeDuring;
+	  };
 
 /** Options every sandbox accepts, wherever its VM runs. */
 export interface CodemodeSandboxBaseOptions {
@@ -135,6 +146,81 @@ export interface CodemodeSandboxOptions extends CodemodeSandboxBaseOptions {
 	 * specifier of an embedded build entrypoint; other hosts usually use a URL.
 	 */
 	workerUrl?: string | URL;
+}
+
+/** A call the script made in a {@link CodemodeSandboxBase.start} run, answered with `CodemodeRun.deliver()`. */
+export interface CodemodeHostCall {
+	/** The VM's own number for the call, `1`, `2`, ... in the order the script made its calls (tools and globals). */
+	id: number;
+	target: "tool" | "global";
+	name: string;
+	/** What the script passed, after a JSON round trip; for spread globals the argument list. */
+	args: unknown;
+}
+
+/** A tool as a {@link CodemodeSandboxBase.start} run's script sees it: `tools.<name>` and its `ALL_TOOLS` entry. */
+export interface CodemodeDeclaredTool {
+	name: string;
+	/**
+	 * The identifier the script uses, `tools.<jsName>`. Default: `toCodemodeIdentifier(name)`. A host that replays a run
+	 * passes the one the run started with, so a changed mapping cannot rename a tool under a resumed script.
+	 */
+	jsName?: string;
+	description?: string;
+}
+
+/** A global as a {@link CodemodeSandboxBase.start} run's script sees it; the same names as `globals` allow. */
+export interface CodemodeDeclaredGlobal {
+	name: string;
+	spread?: boolean;
+}
+
+/**
+ * A call's answer. A rejection becomes an `Error` with `message` in the script, carrying the own properties of
+ * `properties` (JSON values; `name`, `message`, and `stack` are ignored), for example `{ structuredOutput }`.
+ */
+export type CodemodeOutcome =
+	| { ok: true; value: unknown }
+	| { ok: false; message: string; properties?: Record<string, unknown> };
+
+/** In a {@link CodemodeSandboxBase.start} run: the result the VM was processing when the script finished, 0 for its first run, and the calls issued by then. */
+export interface CodemodeDuring {
+	seq: number;
+	issued: number;
+}
+
+export interface CodemodeRunOptions {
+	/** The VM clock's start, in ms since the epoch: `Date.now()` until the first result arrives. */
+	startedAt: number;
+	/** Seeds `Math.random()` and the VM's other randomness. A 32-bit unsigned integer. */
+	seed: number;
+	tools?: CodemodeDeclaredTool[];
+	globals?: CodemodeDeclaredGlobal[];
+	store?: Readonly<Record<string, unknown>>;
+	signal?: AbortSignal;
+	/** Deadline of this run in ms. Default: none (not the sandbox's default). */
+	timeoutMs?: number;
+	/** The VM's fingerprint, before the script runs and before any of its calls. */
+	onStarted?(fingerprint: string): void;
+	/** The script made a call. Answer it with `CodemodeRun.deliver()`, now or later. */
+	onCall(call: CodemodeHostCall): void;
+	/**
+	 * The VM processed result `seq` (`0`: the script's first run, before any result) and waits again, having issued
+	 * `issued` calls in total.
+	 */
+	onIdle?(seq: number, issued: number): void;
+}
+
+/** A running {@link CodemodeSandboxBase.start} execution. */
+export interface CodemodeRun {
+	readonly result: Promise<CodemodeResult>;
+	/**
+	 * Answer call `id` as result number `seq`. Results are numbered 1, 2, ... without gaps, and the VM applies them
+	 * strictly in that order, whatever order they arrive in: after a gap it waits for the missing number. While it
+	 * processes this one, its clock reads `now` (ms since the epoch), or the previous value if `now` is earlier.
+	 * Throws for a call that is not waiting for an answer, a `seq` used before, or a `now` that is not finite.
+	 */
+	deliver(seq: number, now: number, id: number, outcome: CodemodeOutcome): void;
 }
 
 export interface CodemodeExecuteOptions {

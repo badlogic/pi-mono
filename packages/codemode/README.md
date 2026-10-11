@@ -293,6 +293,37 @@ const codemodeTool: AgentTool = {
 
 `result.output` items already have the shape of `@earendil-works/pi-ai`'s `TextContent` and `ImageContent`. Calling `tool.execute()` directly skips the agent's `beforeToolCall` and `afterToolCall` hooks. To apply them to nested calls too, run each call through `runToolCall()` from `@earendil-works/pi-agent-core`, as the [mcp-codemode example](https://github.com/earendil-works/pi/tree/main/packages/agent/examples/mcp-codemode) does. That example also rejects failed nested calls inside the script and combines codemode with MCP tools.
 
+## Deterministic runs
+
+`sandbox.start(code, options)` runs a script so that a host can run it again after a restart and get the same behavior, for example to resume it from a durable log of its calls' results. `execute()` is unaffected.
+
+The VM only runs when the host hands it something, and has no timers or I/O, so it is deterministic except for what it reads from its environment. `start()` fixes that:
+
+- **Time:** `Date.now()` reads `startedAt`, then the `now` of the result being processed, never going backwards. `performance.now()` counts from `startedAt`.
+- **Randomness:** `Math.random()` and the VM's other randomness come from `seed`.
+- **Timezone:** UTC, whatever the host's.
+- **Garbage collection:** `WeakRef` and `FinalizationRegistry` do not exist.
+- **Result order:** the host answers each call with a result number (1, 2, ...), and the VM applies results strictly in that order, whatever order a transport delivers them in.
+
+The run declares its own tools and globals, and the host answers every call itself:
+
+```ts
+const run = sandbox.start(code, {
+	startedAt: Date.now(),
+	seed: 7,
+	tools: [{ name: "read", description: "Read a file" }],
+	onStarted: (fingerprint) => {}, // what the VM is: engine versions, prelude hash, limits
+	onCall: (call) => {
+		// call.id is the VM's own number for the call, in the order the script made them.
+		void readFile(call.args).then((text) => run.deliver(nextResult++, Date.now(), call.id, { ok: true, value: text }));
+	},
+	onIdle: (seq, issued) => {}, // after result `seq` (0: the first run), `issued` calls in total
+});
+const result = await run.result;
+```
+
+A run has no deadline unless `timeoutMs` is given. Result numbers must run 1, 2, ... without gaps. The same script, `startedAt`, `seed`, tools (with their `jsName`), globals and store, answered with the same results in the same order, makes the same calls with the same arguments and produces the same output on any VM with the same fingerprint. To end a run with an error the script cannot catch, abort its `signal`.
+
 ## Results
 
 `execute()` never rejects for script failures. `result.error.kind` is one of:

@@ -73,6 +73,7 @@ export function inlineLauncher(
 			data,
 			wasm: module,
 			maxStackSize: INLINE_MAX_STACK_SIZE,
+			interruptBudget,
 			shouldInterrupt: () => {
 				if (stopped || settled || exhausted) return true;
 				if (++polls <= interruptBudget) return false;
