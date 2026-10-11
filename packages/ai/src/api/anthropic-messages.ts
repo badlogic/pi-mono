@@ -1292,10 +1292,17 @@ function normalizeToolCallId(id: string): string {
 }
 
 function convertToolResult(msg: ToolResultMessage): ContentBlockParam {
+	// Anthropic rejects error tool results carrying non-text blocks ("all content must be
+	// type 'text' if 'is_error' is true"), so images are dropped from error results.
+	let content = msg.content;
+	if (msg.isError) {
+		const textBlocks = msg.content.filter((block): block is TextContent => block.type === "text");
+		content = textBlocks.length > 0 ? textBlocks : [{ type: "text", text: "(error)" }];
+	}
 	return {
 		type: "tool_result",
 		tool_use_id: msg.toolCallId,
-		content: convertContentBlocks(msg.content),
+		content: convertContentBlocks(content),
 		is_error: msg.isError,
 	};
 }
