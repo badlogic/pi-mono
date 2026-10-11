@@ -1,10 +1,10 @@
 /**
  * Scheduler memory benchmark. Under one live parent task, N subagent cycles run and end: a tool task owned by the
  * parent, a conversation owned by the tool task, and a task in that conversation. Reports the scheduler's ownership
- * index sizes and the heap after GC once all cycles ended, then the storage reads a later message into an old subagent
+ * index sizes and the bytes live objects retain (from heap snapshots) once all cycles ended, then the storage reads a later message into an old subagent
  * conversation costs. On SQLite, so durable history stays out of the heap.
  *
- *   node --conditions=source --experimental-strip-types --expose-gc test/scheduler-memory-bench.ts [cycles...]
+ *   node --conditions=source --experimental-strip-types test/scheduler-memory-bench.ts [cycles...]
  */
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -21,9 +21,7 @@ import {
 	type TaskId,
 } from "../src/index.ts";
 import { openNodeSqliteStorage } from "../src/storage/sqlite/node.ts";
-
-const gc = (globalThis as { gc?: () => void }).gc;
-if (gc === undefined) throw new Error("Run with --expose-gc");
+import { retainedBytes } from "./heap-retained.ts";
 
 const waiting = new Map<string, () => void>();
 /** Holds until released by name, then completes. */
@@ -73,8 +71,7 @@ async function run(cycles: number) {
 			(tx) => tx.createTask(Hold, { name: "parent" }, { ownership: { kind: "conversation" } }),
 			context,
 		);
-		gc!();
-		const heapBefore = process.memoryUsage().heapUsed;
+		const heapBefore = await retainedBytes();
 		let first: ConversationId | undefined;
 		const started = performance.now();
 		for (let n = 0; n < cycles; n++) {
@@ -99,8 +96,7 @@ async function run(cycles: number) {
 			first ??= child;
 		}
 		const ms = Math.round(performance.now() - started);
-		gc!();
-		const heapAfter = process.memoryUsage().heapUsed;
+		const heapAfter = await retainedBytes();
 		const sizes = (harness as unknown as Record<symbol, Sizes>)[SCHEDULER_INDEX_SIZES]!;
 		// A later message into an old subagent conversation: a task created there, run, and ended.
 		const readsBefore = reads.count;

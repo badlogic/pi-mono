@@ -302,6 +302,7 @@ const harness = await Harness.open(storage, {
 		progress: { partialIntervalMs: 100, outputIntervalMs: 100 },
 		toolExecution: "parallel",
 		contextRetentionMs: 600_000, // idle conversations keep their context in memory this long (checked lazily where timers cannot be unreferenced)
+		documentRetentionMs: 600_000, // loaded documents nothing observes stay in memory this long after their last use; observed ones always
 		get followUpMode() {
 			return userSettings.followUpMode;
 		},
@@ -616,7 +617,7 @@ const usage = await harness.usage(context); // { models: { "openai/gpt-6-sol": U
 |---|---|---|
 | Memory | `MemoryStorage` from the package root | Nothing is persisted. |
 | SQLite | `openNodeSqliteStorage(file)` from `@earendil-works/pi-durable/storage/sqlite/node` | One database file. WAL mode with `synchronous = NORMAL`: commits survive process crashes; the newest may be lost on power or host failure. |
-| JSONL | `openNodeJsonlStorage(directory, context)` from `@earendil-works/pi-durable/storage/jsonl/node` | Append-only files in one directory. Pass `{ fsync: true }` to flush before each commit marker. |
+| JSONL | `openNodeJsonlStorage(directory, context)` from `@earendil-works/pi-durable/storage/jsonl/node` | Append-only files in one directory. Pass `{ fsync: true }` to flush before each commit marker. Keeps the whole history in memory too, so memory grows with it; use SQLite for long-running agents. |
 | Cloudflare Durable Object | `openDurableObjectSqliteStorage(ctx.storage)` from `@earendil-works/pi-durable/storage/sqlite/cloudflare` | The SQLite storage of one SQLite-backed Durable Object; commits are its storage transactions. |
 
 One process owns a storage at a time; there is no cross-process locking. The portable SQLite and JSONL cores (`/storage/sqlite`, `/storage/jsonl`) run without Node APIs, for example on Bun or in Cloudflare Durable Objects, given an asynchronous `SqliteDatabase` facade or a `FileSystem` from `@earendil-works/pi-durable/env`.

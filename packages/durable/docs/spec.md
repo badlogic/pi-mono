@@ -415,6 +415,8 @@ type HarnessSettings = {
   readonly followUpMode?: QueueMode;
   /** How long an idle conversation keeps its last context read in memory; busy ones always keep it. */
   readonly contextRetentionMs?: number;
+  /** How long a loaded document no watch or document state observes stays in memory after its last use (section 4). */
+  readonly documentRetentionMs?: number;
 };
 
 /** Resolved: every field over its built-in default, object fields merged. */
@@ -427,6 +429,7 @@ type Settings = {
   readonly steeringMode: QueueMode; // "one-at-a-time"
   readonly followUpMode: QueueMode; // "one-at-a-time"
   readonly contextRetentionMs: number; // 600000
+  readonly documentRetentionMs: number; // 600000
 };
 
 /** Stored choices of one conversation; names, not objects. Unset fields follow the host. */
@@ -1566,6 +1569,24 @@ must acquire all of its document baselines and commit subscription in one
 Session-line operation so it never exposes a mixture from one commit.
 
 ## 4. Transactions and storage ownership
+
+The Session keeps the documents it loads or creates in memory, as Chord
+trackers, so reads and changes need no Storage access. The cache is bounded by
+use, not by history: a document no watch or document state observes leaves it
+once it was not read or written for `documentRetentionMs` (default ten
+minutes; `0` drops it right after use), and the next access loads it from
+Storage. An observed document never leaves. Eviction runs on the mutation line,
+after each commit and when an unreferenced timer for the next expiry fires
+(the oldest idle document's, or sooner once the retention is shortened), so a
+transaction never loses a tracker it holds. A retention that is not a number of
+milliseconds, `0` or more, means the default; `Infinity` keeps documents. An
+observer pins the incarnation it observes, and releases it when that
+incarnation retires. Where timers cannot be
+unreferenced, as in Cloudflare Workers, only commits evict. A document that is
+used again and again moves to the back of the eviction order at most once per
+granule, a tenth of the retention up to one second. Task documents also retire
+with their task (section 5.5). `createSession(storage, { documentRetentionMs })`
+sets it for a plain Session; the Harness reads its settings at each use.
 
 A Session commit callback may be asynchronous. It owns the Session mutation
 line through callback execution, preparation, storage settlement, committed

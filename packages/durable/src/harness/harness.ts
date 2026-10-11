@@ -177,7 +177,8 @@ class HarnessImpl<Tool extends ToolRegistration> extends SessionImpl implements 
 	constructor(rawStorage: Storage, options: HarnessOptions<Tool>, context: Context) {
 		const report = safeReport(options.onReport);
 		const now = safeNow(options.now, report);
-		super(rawStorage, now);
+		// Read at each use, as all settings are, but only this field: it is read on every commit.
+		super(rawStorage, now, () => options.settings?.documentRetentionMs);
 		// Every component reads and writes through the Session's failure guard: `rawStorage` serves only `super()`.
 		const storage = this.storage;
 		this.#options = options;

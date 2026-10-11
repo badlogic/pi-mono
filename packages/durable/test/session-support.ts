@@ -125,7 +125,8 @@ export function openTestSession(): {
 	readonly publications: CommitPublication[];
 } {
 	const storage = new ControlledStorage();
-	const session = new SessionImpl(storage);
+	// These tests pin the cache's identities and loads, so documents stay as long as the default keeps them.
+	const session = new SessionImpl(storage, Date.now, () => 600_000);
 	const publications: CommitPublication[] = [];
 	session.subscribeCommits((publication) => {
 		publications.push(publication);

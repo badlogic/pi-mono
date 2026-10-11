@@ -101,14 +101,15 @@
 	"scripts": {
 		"clean": "shx rm -rf dist",
 		"build": "tsc -p tsconfig.build.json",
-		"test": "vitest --run",
+		"test": "vitest --run && PI_DURABLE_DOCUMENT_RETENTION_MS=0 vitest --run",
 		"bench:storage": "vitest bench --config vitest.benchmark.config.ts",
 		"bench:storage:memory": "node --conditions=source --experimental-strip-types test/storage-memory.ts",
 		"bench:tool-output": "node --conditions=source --experimental-strip-types --expose-gc test/tool-output-bench.ts",
 		"bench:nested-tools": "node --conditions=source --experimental-strip-types --expose-gc test/nested-tools-bench.ts",
 		"bench:nested-images": "node --conditions=source --experimental-strip-types --expose-gc test/nested-images-bench.ts",
 		"bench:scheduler-fanout": "node --conditions=source --experimental-strip-types test/scheduler-fanout-bench.ts",
-		"bench:scheduler-memory": "node --conditions=source --experimental-strip-types --expose-gc test/scheduler-memory-bench.ts",
+		"bench:scheduler-memory": "node --conditions=source --experimental-strip-types test/scheduler-memory-bench.ts",
+		"bench:document-cache": "node --conditions=source --experimental-strip-types test/session-document-cache-bench.ts",
 		"prepublishOnly": "npm run clean && npm run build"
 	},
 	"keywords": [

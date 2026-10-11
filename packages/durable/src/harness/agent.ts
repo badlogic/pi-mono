@@ -1,5 +1,6 @@
 import { copyJson, type Draft } from "@earendil-works/chord";
 import { defineDoc } from "../documents.ts";
+import { documentRetention } from "../session/session.ts";
 import type { ConversationId, ConversationRecord, Tx } from "../types.ts";
 import type {
 	Agent,
@@ -69,6 +70,7 @@ export function resolveSettings(settings: HarnessSettings | undefined): Settings
 		steeringMode: settings?.steeringMode ?? "one-at-a-time",
 		followUpMode: settings?.followUpMode ?? "one-at-a-time",
 		contextRetentionMs: settings?.contextRetentionMs ?? DEFAULT_CONTEXT_RETENTION_MS,
+		documentRetentionMs: documentRetention(settings?.documentRetentionMs),
 	};
 }
 

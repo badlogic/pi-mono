@@ -518,6 +518,12 @@ export type HarnessSettings = {
 	 * Busy conversations always keep it; `0` drops it once the conversation is idle.
 	 */
 	readonly contextRetentionMs?: number;
+	/**
+	 * How long a loaded document that no watch or document state observes stays in memory after its last read or write;
+	 * the next access loads it from Storage. Observed documents always stay. Default ten minutes; `0` drops one right
+	 * after use; `Infinity` keeps them. Anything else that is not a number of milliseconds means the default.
+	 */
+	readonly documentRetentionMs?: number;
 };
 
 /** Resolved settings: every field over its built-in default, object fields merged. */
@@ -532,6 +538,7 @@ export type Settings = {
 	readonly steeringMode: QueueMode;
 	readonly followUpMode: QueueMode;
 	readonly contextRetentionMs: number;
+	readonly documentRetentionMs: number;
 };
 
 /** What `HarnessOptions.env` builds an environment for. */

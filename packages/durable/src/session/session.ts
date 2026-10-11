@@ -3,6 +3,7 @@ import { awaitWithContext, BACKGROUND_CONTEXT, withoutAbortSignal } from "@earen
 import { type Op, track } from "@earendil-works/chord/delta";
 import {
 	type AnyDocToken,
+	addressId,
 	checkRecordScope,
 	checkRecordVersion,
 	materializeDocument,
@@ -65,12 +66,39 @@ import { type LoadedDocument, Transaction, type TransactionHost, type Transactio
  * Open a Session kernel over one storage backend. `now` is the wall clock for task times; default `Date.now`. The first
  * error a Storage method throws fails the Session (`SessionFailed`); see `SessionImpl`.
  */
-export function createSession(storage: Storage, options?: { readonly now?: () => number }): Session {
-	return new SessionImpl(storage, options?.now);
+export function createSession(
+	storage: Storage,
+	options?: { readonly now?: () => number; readonly documentRetentionMs?: number },
+): Session {
+	const retention = options?.documentRetentionMs;
+	return new SessionImpl(storage, options?.now, retention === undefined ? undefined : () => retention);
+}
+
+/** Default document retention: ten minutes, as for kept contexts. */
+let defaultRetention = 600_000;
+
+/** Internal, for tests: the retention of every Session that keeps the default, as a suite run with eviction at once. */
+export function setDefaultDocumentRetention(ms: number): void {
+	defaultRetention = ms;
 }
 
 /**
+ * A retention as given, when it is a number of milliseconds, `0` or more (`Infinity` keeps documents); otherwise the
+ * default.
+ */
+export function documentRetention(ms: number | undefined): number {
+	return typeof ms === "number" && ms >= 0 ? ms : defaultRetention;
+}
+
+/** Longest delay `setTimeout` supports; a longer retention waits in several steps. */
+const MAX_TIMER_DELAY = 2_147_483_647;
+
+/**
  * Session kernel: one mutation line, the loaded document tracker cache, and committed publication.
+ *
+ * The cache is bounded by use: a document with no watch or document state attached leaves it once it was not read or
+ * written for the retention period, and the next access loads it from Storage. Eviction runs as a job on the mutation
+ * line, so no transaction ever holds a tracker that leaves.
  *
  * Only committed state is observable. Every commit callback, preparation, Storage settlement, adoption, and
  * publication enqueue runs while the line is held; listeners run later.
@@ -84,6 +112,17 @@ export function createSession(storage: Storage, options?: { readonly now?: () =>
 export class SessionImpl implements Session {
 	readonly #storage: Storage;
 	readonly #documents = new Map<string, LoadedDocument>();
+	/** Cached documents with no observer attached, by address, oldest use first, with the time of that use. */
+	readonly #idleDocuments = new Map<string, number>();
+	/** Observers attached per document incarnation (record ID); a cached incarnation with any is never evicted. */
+	readonly #attachedDocuments = new Map<DocumentId, number>();
+	readonly #clock: () => number;
+	readonly #documentRetentionMs: () => number;
+	/** The pending eviction: a timer for the oldest idle document, or a line job when the retention is 0. */
+	#documentSweep: { readonly at: number; readonly timer: ReturnType<typeof setTimeout> | undefined } | undefined;
+	#sweepJobs = 0;
+	/** Set once a timer could not be unreferenced: then none is kept, and the end of each commit evicts what expired. */
+	#documentTimersUnavailable = false;
 	readonly #commitListeners = new Set<(publication: CommitPublication, context: Context) => void>();
 	/** The Session's own listeners, such as its scheduler's: they keep memory in step with storage, so a throw fails it. */
 	readonly #internalListeners = new Set<(publication: CommitPublication, context: Context) => void>();
@@ -110,20 +149,45 @@ export class SessionImpl implements Session {
 		return this.#failed.promise;
 	}
 
-	constructor(storage: Storage, now: () => number = Date.now) {
+	constructor(
+		storage: Storage,
+		now: () => number = Date.now,
+		documentRetentionMs: () => number | undefined = () => undefined,
+	) {
 		// Waits race it; none has to.
 		this.#failed.promise.catch(() => {});
 		this.#storage = new GuardedStorage(storage, this);
+		// Cache bookkeeping must never change the outcome of the operation it follows: a clock or a retention setting
+		// that throws counts as now, and as the default.
+		this.#clock = () => {
+			try {
+				return now();
+			} catch {
+				return Date.now();
+			}
+		};
+		this.#documentRetentionMs = () => {
+			try {
+				return documentRetention(documentRetentionMs());
+			} catch {
+				return documentRetention(undefined);
+			}
+		};
 		this.#host = {
 			storage: this.#storage,
 			now,
-			cached: (id) => this.#documents.get(id),
+			cached: (id) => {
+				const cached = this.#documents.get(id);
+				if (cached !== undefined) this.#touchDocument(id);
+				return cached;
+			},
 			load: (definition, addressId, address, context) => this.#loadDocument(definition, addressId, address, context),
 			install: (document) => {
 				this.#documents.set(document.addressId, document);
+				this.#touchDocument(document.addressId);
 			},
 			evict: (id, recordId) => {
-				if (this.#documents.get(id)?.record.id === recordId) this.#documents.delete(id);
+				if (this.#documents.get(id)?.record.id === recordId) this.#dropDocument(id);
 			},
 			conversationCreated: (tx, record) => this.conversationCreated(tx, record),
 		};
@@ -232,6 +296,7 @@ export class SessionImpl implements Session {
 		const resolved = resolveAddress(definition, args);
 		const context = args[resolved.nextArgument] as Context;
 		const cached = this.#documents.get(resolved.id);
+		if (cached?.valueVersion === definition.version) this.#touchDocument(resolved.id);
 		const loaded =
 			cached?.valueVersion === definition.version
 				? cached
@@ -426,6 +491,8 @@ export class SessionImpl implements Session {
 						this.#commitListeners.clear();
 						this.#internalListeners.clear();
 						this.#documents.clear();
+						this.#idleDocuments.clear();
+						this.#attachedDocuments.clear();
 						try {
 							await this.#storage.close(cleanup);
 						} catch (error) {
@@ -451,6 +518,8 @@ export class SessionImpl implements Session {
 
 	/** Run the close listeners once, each on its own: one that fails is reported, and the rest still run. */
 	#notifyClose(): void {
+		if (this.#documentSweep?.timer !== undefined) clearTimeout(this.#documentSweep.timer);
+		this.#documentSweep = undefined;
 		const listeners = [...this.#closeListeners];
 		this.#closeListeners.clear();
 		for (const listener of listeners) contained(listener, (error) => this.report(error));
@@ -503,7 +572,119 @@ export class SessionImpl implements Session {
 	unloadDocuments(): Promise<void> {
 		return this.#enqueue(async () => {
 			this.#documents.clear();
+			this.#idleDocuments.clear();
 		});
+	}
+
+	/**
+	 * Internal, for tests: how many documents the cache holds, how many are idle, how many incarnations are pinned, and how
+	 * many sweep jobs were queued on the line so far.
+	 */
+	get documentCacheSizes(): {
+		readonly cached: number;
+		readonly idle: number;
+		readonly attached: number;
+		readonly sweeps: number;
+	} {
+		return {
+			cached: this.#documents.size,
+			idle: this.#idleDocuments.size,
+			attached: this.#attachedDocuments.size,
+			sweeps: this.#sweepJobs,
+		};
+	}
+
+	/** Note a use of a cached document: an unattached one becomes the newest idle one, and an eviction is scheduled. */
+	#touchDocument(addressId: string): void {
+		const cached = this.#documents.get(addressId);
+		if (cached === undefined || this.#attachedDocuments.has(cached.record.id)) return;
+		const now = this.#clock();
+		const since = this.#idleDocuments.get(addressId);
+		// A hot document moves to the back at most once per granule, a tenth of the retention up to 1 s: it may then leave
+		// up to a granule early, which costs a reload, while a commit-heavy workload skips the reordering.
+		if (since !== undefined && now - since < Math.min(1_000, this.#documentRetentionMs() / 10)) return;
+		this.#idleDocuments.delete(addressId);
+		this.#idleDocuments.set(addressId, now);
+		// A pending sweep for the oldest document comes first unless the retention was shortened since; then it moves up.
+		if (this.#documentSweep === undefined || this.#documentSweep.at > now + this.#documentRetentionMs()) {
+			this.#scheduleDocumentSweep();
+		}
+	}
+
+	#dropDocument(addressId: string): void {
+		this.#documents.delete(addressId);
+		this.#idleDocuments.delete(addressId);
+	}
+
+	/**
+	 * Schedule the eviction of the oldest idle document: on the line at once when the retention is 0, otherwise when it
+	 * expires, by a timer that never keeps the process alive. Where timers cannot be unreferenced, as in Cloudflare
+	 * Workers, none is kept: the end of each commit evicts what expired.
+	 */
+	#scheduleDocumentSweep(): void {
+		if (this.#closing !== undefined) return;
+		const oldest = this.#idleDocuments.values().next();
+		if (oldest.done === true) return;
+		const at = oldest.value + this.#documentRetentionMs();
+		if (this.#documentSweep !== undefined && this.#documentSweep.at <= at) return;
+		if (this.#documentSweep?.timer !== undefined) clearTimeout(this.#documentSweep.timer);
+		// The pending sweep stays set until its job runs, so touches while the line is busy queue no more.
+		const sweep = { at, timer: undefined as ReturnType<typeof setTimeout> | undefined };
+		const run = (): void => {
+			this.#sweepJobs++;
+			this.#enqueue(async () => {
+				if (this.#documentSweep === sweep) this.#documentSweep = undefined;
+				if (this.#closing === undefined) this.#sweepDocuments();
+			}).catch(() => {});
+		};
+		const delay = at - this.#clock();
+		this.#documentSweep = sweep;
+		if (delay <= 0) {
+			queueMicrotask(run);
+			return;
+		}
+		if (this.#documentTimersUnavailable) {
+			this.#documentSweep = undefined;
+			return;
+		}
+		const timer = setTimeout(run, Math.min(delay, MAX_TIMER_DELAY));
+		const unref = (timer as { unref?: unknown }).unref;
+		if (typeof unref !== "function") {
+			clearTimeout(timer);
+			this.#documentTimersUnavailable = true;
+			this.#documentSweep = undefined;
+			return;
+		}
+		unref.call(timer);
+		sweep.timer = timer;
+	}
+
+	/** On the line: evict the idle documents whose retention passed, oldest first, then schedule the next eviction. */
+	#sweepDocuments(): void {
+		const expired = this.#clock() - this.#documentRetentionMs();
+		for (const [addressId, since] of this.#idleDocuments) {
+			if (since > expired) break;
+			this.#dropDocument(addressId);
+		}
+		this.#scheduleDocumentSweep();
+	}
+
+	/** Pin a cached incarnation for one observer; the returned release unpins it once, idle again after the last. */
+	#pinDocument(addressId: string, recordId: DocumentId): () => void {
+		this.#attachedDocuments.set(recordId, (this.#attachedDocuments.get(recordId) ?? 0) + 1);
+		this.#idleDocuments.delete(addressId);
+		let pinned = true;
+		return () => {
+			if (!pinned) return;
+			pinned = false;
+			const count = (this.#attachedDocuments.get(recordId) ?? 1) - 1;
+			if (count > 0) {
+				this.#attachedDocuments.set(recordId, count);
+				return;
+			}
+			this.#attachedDocuments.delete(recordId);
+			if (this.#documents.get(addressId)?.record.id === recordId) this.#touchDocument(addressId);
+		};
 	}
 
 	async #runCommit<T>(
@@ -521,11 +702,20 @@ export class SessionImpl implements Session {
 			this.#assertHealthy();
 		} catch (error) {
 			await tx.settleFailure();
+			this.#sweepDocuments();
 			throw error;
 		}
-		const writes = await tx.settleSuccess();
+		let writes: readonly StorageWrite[];
+		try {
+			writes = await tx.settleSuccess();
+		} catch (error) {
+			// Settlement aborted every change already.
+			this.#sweepDocuments();
+			throw error;
+		}
 		if (writes.length === 0) {
 			tx.discard();
+			this.#sweepDocuments();
 			return result;
 		}
 		let seq: Seq;
@@ -545,7 +735,9 @@ export class SessionImpl implements Session {
 			this.fail(error);
 			throw error;
 		}
+		for (const document of documents) this.#touchDocument(addressId(document.record));
 		this.#publish(seq, writes, documents, context);
+		this.#sweepDocuments();
 		return result;
 	}
 
@@ -596,11 +788,20 @@ export class SessionImpl implements Session {
 		checkRecordVersion(definition, loaded.record, loaded.storedVersion);
 		let unsubscribeCommit = (): void => {};
 		let unsubscribeClose = (): void => {};
+		// Attached, the incarnation stays cached; once its last observer detaches, or it retires, it is idle again.
+		const unpin = this.#pinDocument(loaded.addressId, loaded.record.id);
 		const detach = (): void => {
 			unsubscribeCommit();
 			unsubscribeClose();
+			unpin();
 		};
-		const observer = create(loaded.tracker.value, detach);
+		let observer: O;
+		try {
+			observer = create(loaded.tracker.value, detach);
+		} catch (error) {
+			unpin();
+			throw error;
+		}
 		const observed = { version: loaded.valueVersion };
 		unsubscribeCommit = this.observeCommits((publication, context) => {
 			for (const change of publication.changes) {
@@ -610,6 +811,8 @@ export class SessionImpl implements Session {
 				const ops = observedOperations(observed, change);
 				// A migration-only base changes nothing for an observer of the new version.
 				if (ops.length === 0) continue;
+				// A retired incarnation never changes again: its observers keep their last value but pin nothing.
+				if (change.value === null) unpin();
 				observer.advance(change.value, ops, frameContext);
 			}
 		});
@@ -625,8 +828,11 @@ export class SessionImpl implements Session {
 	): Promise<LoadedDocument | undefined> {
 		const cached = this.#documents.get(addressId);
 		// A tracker serves only tokens of the version its value was materialized for; others reload from Storage.
-		if (cached?.valueVersion === definition.version) return cached;
-		if (cached !== undefined) this.#documents.delete(addressId);
+		if (cached?.valueVersion === definition.version) {
+			this.#touchDocument(addressId);
+			return cached;
+		}
+		if (cached !== undefined) this.#dropDocument(addressId);
 		const record = await this.#storage.findDocument(address, "current", context);
 		if (record === undefined) return undefined;
 		const stored = await this.#storage.document(record.id, "current", context);
@@ -641,6 +847,7 @@ export class SessionImpl implements Session {
 			tracker: track(value),
 		};
 		this.#documents.set(addressId, loaded);
+		this.#touchDocument(addressId);
 		return loaded;
 	}
 
