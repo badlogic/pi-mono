@@ -855,6 +855,7 @@ async function listSessionsFromDir(
  */
 export class SessionManager {
 	private sessionId: string = "";
+	private sessionId: string = "";
 	private sessionFile: string | undefined;
 	private sessionDir: string;
 	private cwd: string;
@@ -981,9 +982,7 @@ export class SessionManager {
 		if (!this.persist || !this.sessionFile) return;
 		const fd = openSync(this.sessionFile, "w");
 		try {
-			for (const entry of this.fileEntries) {
-				writeFileSync(fd, `${JSON.stringify(entry)}\n`);
-			}
+			writeFileSync(fd, this.fileEntries.map((e) => `${JSON.stringify(e)}\n`).join(""));
 		} finally {
 			closeSync(fd);
 		}
@@ -1015,11 +1014,15 @@ export class SessionManager {
 
 	_persist(entry: SessionEntry): void {
 		if (!this.persist || !this.sessionFile) return;
-
+		const line = `${JSON.stringify(entry)}\n`;
+		// P5 (ms-22-p5-jsonl): appends stay synchronously durable — the session-manager
+		// suite pins same-tick reload visibility — so batching may only coalesce writes
+		// INSIDE one call boundary. The initial file creation and the rewrite carry every
+		// buffered entry in ONE write each (was one write per entry).
 		const hasAssistant = this.fileEntries.some((e) => e.type === "message" && e.message.role === "assistant");
 		if (!hasAssistant) {
 			if (this.flushed) {
-				appendFileSync(this.sessionFile, `${JSON.stringify(entry)}\n`);
+				appendFileSync(this.sessionFile, line);
 			} else {
 				// Mark as not flushed so when assistant arrives, all entries get written
 				this.flushed = false;
@@ -1030,15 +1033,13 @@ export class SessionManager {
 		if (!this.flushed) {
 			const fd = openSync(this.sessionFile, "wx");
 			try {
-				for (const e of this.fileEntries) {
-					writeFileSync(fd, `${JSON.stringify(e)}\n`);
-				}
+				writeFileSync(fd, this.fileEntries.map((e) => `${JSON.stringify(e)}\n`).join(""));
 			} finally {
 				closeSync(fd);
 			}
 			this.flushed = true;
 		} else {
-			appendFileSync(this.sessionFile, `${JSON.stringify(entry)}\n`);
+			appendFileSync(this.sessionFile, line);
 		}
 	}
 

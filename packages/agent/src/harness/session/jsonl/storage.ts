@@ -16,6 +16,7 @@ import {
 	type SessionStats,
 	type SessionStorage,
 } from "../types.ts";
+import { AppendBatcher } from "./append-batcher.ts";
 import { encodeHeader, encodeMutation, metadataFromHeader, parseHeader, parseMutation } from "./codec.ts";
 import { fileResult, invalidFile, JsonlDecodeError } from "./errors.ts";
 import type { JsonlSessionMetadata, JsonlSessionRepoFileSystem, JsonlV4Header } from "./types.ts";
@@ -48,12 +49,17 @@ async function publishFileAtomically(
 export class JsonlSessionStorage implements SessionStorage<JsonlSessionMetadata> {
 	private readonly fs: JsonlSessionRepoFileSystem;
 	private readonly metadata: JsonlSessionMetadata;
-	private readonly state = new SessionState();
+	private state = new SessionState();
+	private readonly appends: AppendBatcher<void>;
 	private tail: Promise<void> = Promise.resolve();
+	private writeAcks: Promise<void>[] | undefined;
 
 	constructor(fs: JsonlSessionRepoFileSystem, metadata: JsonlSessionMetadata) {
 		this.fs = fs;
 		this.metadata = structuredClone(metadata);
+		this.appends = new AppendBatcher<void>(async (bytes) =>
+			this.fs.appendFile(this.metadata.path, bytes),
+		);
 	}
 
 	static async create(
@@ -112,15 +118,23 @@ export class JsonlSessionStorage implements SessionStorage<JsonlSessionMetadata>
 		await publishFileAtomically(this.fs, path, async (tempPath) => {
 			const targetStorage = await JsonlSessionStorage.create(this.fs, tempPath, header);
 			for (const mutation of mutations) {
-				await targetStorage.appendMutation(mutation);
+				// Staging keeps the upstream one-write-per-mutation, post-write ordering:
+				// awaiting the ack stops the populate on the first failed append exactly
+				// where callers expect, before the atomic rename can publish a partial fork.
+				await targetStorage.appendMutationAwaited(mutation);
 				targetStorage.applyMutation(mutation);
 			}
+			// The atomic publish must not rename the temp file while batched appends are
+			// still pending — the forked file would be stale and the writes would land on
+			// a new ghost temp path.
+			await targetStorage.drain();
 		});
 		return JsonlSessionStorage.load(this.fs, path);
 	}
 
 	async drain(): Promise<void> {
 		await this.tail;
+		await this.appends.flush();
 	}
 
 	async getMetadata(): Promise<JsonlSessionMetadata> {
@@ -256,19 +270,60 @@ export class JsonlSessionStorage implements SessionStorage<JsonlSessionMetadata>
 	}
 
 	private enqueue<T>(operation: () => Promise<T>): Promise<T> {
-		const result = this.tail.then(operation);
+		const writeAcks: Promise<void>[] = [];
+		const result = this.tail
+			.then(() => {
+				this.writeAcks = writeAcks;
+				return operation();
+			})
+			.finally(() => {
+				this.writeAcks = undefined;
+			});
 		this.tail = result.then(
 			() => undefined,
 			() => undefined,
 		);
-		return result;
+		// P5 crash contract: the caller's promise resolves only after every write carrying
+		// this operation's mutations has reached the OS (kill-9 never loses committed turns),
+		// while the serialized chain itself advances without waiting on the write so queued
+		// appends may coalesce into one write syscall.
+		return result.then(
+			async (value) => {
+				try {
+					await Promise.all(writeAcks);
+				} catch (error) {
+					// Pinned contract: after an append failure the state must not advance
+					// and the queue must not be poisoned — settle every other pending
+					// write, then converge on the durable log (the file is the truth).
+					await Promise.allSettled(writeAcks);
+					await this.appends.flush();
+					try {
+						const recovered = await JsonlSessionStorage.load(this.fs, this.metadata.path);
+						this.state = recovered.state;
+					} catch {
+						// Best-effort convergence: the append error is the contract; a missing
+						// or unreadable file must not replace it.
+					}
+					throw error;
+				}
+				return value;
+			},
+			async (error) => {
+				await Promise.allSettled(writeAcks);
+				throw error;
+			},
+		);
 	}
 
-	private async appendMutation(mutation: SessionMutation): Promise<void> {
-		fileResult(
-			await this.fs.appendFile(this.metadata.path, encodeMutation(mutation)),
-			`Failed to append session ${this.metadata.path}`,
-		);
+	private appendMutation(mutation: SessionMutation): Promise<void> {
+		const writeAck = this.appends.append(encodeMutation(mutation));
+		if (this.writeAcks) this.writeAcks.push(writeAck);
+		return Promise.resolve();
+	}
+
+	/** Post-write ordering for callers outside the batching window (fork staging). */
+	private appendMutationAwaited(mutation: SessionMutation): Promise<void> {
+		return this.appends.append(encodeMutation(mutation));
 	}
 
 	private applyMutation(mutation: SessionMutation): void {
