@@ -3339,8 +3339,9 @@ maps coordinates back. The Photon processor decodes every image, returns it as
 it is when it is upright, inline, and within the limits, and otherwise
 re-encodes it as PNG or JPEG (JPEG first for JPEG sources). `@earendil-works/pi-durable/images` provides `createPhotonImages(wasm)`,
 on Photon's WebAssembly, given its module or bytes; `/images/node` reads the
-wasm from the installed package and `/images/cloudflare` imports it as a
-Workers module. Neither is loaded unless imported. A conversation whose model
+wasm from the installed package and prepares images in a worker thread, which
+exits after 30 s without images (`{ worker: false }` prepares them inline);
+`/images/cloudflare` imports it as a Workers module and prepares inline. Neither is loaded unless imported. A conversation whose model
 does not take images still gets the image; pi-ai replaces it with a placeholder
 in requests, and the diagnostic says so.
 

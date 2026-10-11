@@ -158,7 +158,7 @@ import { createCodingTools } from "@earendil-works/pi-durable/tools";
 registry.install(createCodingTools({ images: await createNodePhotonImages() }));
 ```
 
-A model without image input sees a placeholder instead of the image, and `read` says so in a diagnostic. The Photon processor works on the calling thread, about a second and a half for a 12-megapixel photo, and decoding takes the image's full size in WebAssembly memory, which does not shrink again; leave it out on memory-constrained hosts such as Cloudflare Workers unless images stay small.
+A model without image input sees a placeholder instead of the image, and `read` says so in a diagnostic. `/images/node` prepares images in a worker thread, so a large photo (a second or two of work) never blocks the event loop; the worker exits after 30 s without images, freeing Photon's WebAssembly memory (`createNodePhotonImages({ worker: false, idleMs })`). Elsewhere, `createPhotonImages()` and `/images/cloudflare` work on the calling thread, and decoding takes the image's full size in WebAssembly memory, which does not shrink again; leave the processor out on memory-constrained hosts such as Cloudflare Workers unless images stay small.
 
 Define your own tool with a TypeBox schema. `defineTool()` types `args` from `parameters`, which the Harness validates before `execute()`. `api.output()` streams running output, which becomes the result when `execute()` returns no `output`:
 
