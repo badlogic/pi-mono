@@ -134,6 +134,33 @@ export const CodemodeStoreDoc = defineDoc<{ values: Record<string, JsonValue> }>
 	initial: () => ({ values: {} }),
 });
 
+/** One tool call a script made, as the code mode call's details show it. */
+export type CodemodeNestedCall = {
+	/** The VM's number for the call; its nested call ID is \`<callId>/c<id>\`. */
+	id: number;
+	name: string;
+	/** Compact JSON of the arguments, cut for display. */
+	args: string;
+	status: "running" | "ok" | "error" | "cancelled";
+	durationMs?: number;
+	/** Error text, cut for display. */
+	error?: string;
+};
+
+/**
+ * The code mode call's details, in its result: its tool calls in the order it made them, with their status. Calls to
+ * globals are not listed. While the script runs, UIs show its nested calls from \`pi.live.nestedTools\`, so the list is
+ * written once, with the result.
+ */
+export type CodemodeToolDetails = { calls: CodemodeNestedCall[] };
+
+const ARGS_PREVIEW_CHARS = 200;
+const ERROR_PREVIEW_CHARS = 500;
+
+function cut(text: string, max: number): string {
+	return text.length > max ? `${text.slice(0, max - 3)}...` : text;
+}
+
 /** A function scripts call as a top-level global; its result is journaled. */
 export type CodemodeGlobal = {
 	readonly name: string;
@@ -257,6 +284,8 @@ class CodemodeCall {
 	/** Set once the call decided an outcome other than the script's own (divergence, mismatch) or failed. */
 	private ended: ToolExecutionResult | undefined;
 	private failure: unknown;
+	/** The script's tool calls for \`details\`, by VM call ID. */
+	private readonly rows = new Map<number, CodemodeNestedCall>();
 	/** Resolves once the VM's fingerprint is checked or recorded; nothing is delivered or admitted before. */
 	private gate!: Promise<void>;
 	private openGate!: () => void;
@@ -385,10 +414,11 @@ class CodemodeCall {
 	}
 
 	/** Store an outcome the call decided, and end the VM if it runs; returns the outcome. */
-	private async decide(result: ToolExecutionResult): Promise<ToolExecutionResult> {
+	private async decide(decided: ToolExecutionResult): Promise<ToolExecutionResult> {
+		const result = { ...decided, details: this.details() as unknown as JsonValue };
 		await this.api.commit(async (tx) => {
 			const run = await tx.doc(CodemodeRunDoc, this.api.taskId);
-			run.result ??= copyJson(result as JsonValue, { omitUndefinedProperties: true }) as JsonObject;
+			run.result ??= copyJson(result as unknown as JsonValue, { omitUndefinedProperties: true }) as JsonObject;
 		}, this.context);
 		return result;
 	}
@@ -417,12 +447,12 @@ class CodemodeCall {
 
 	/** The script's own outcome, stored with its store writes in one transaction. */
 	private async complete(result: CodemodeResult): Promise<ToolExecutionResult> {
-		const tool = toolResult(result);
+		const tool = { ...toolResult(result), details: this.details() as unknown as JsonValue };
 		const writes = result.ok ? result.storeWrites : undefined;
 		return this.api.commit(async (tx) => {
 			const run = await tx.doc(CodemodeRunDoc, this.api.taskId);
 			if (run.result !== undefined) return run.result as ToolExecutionResult;
-			run.result = copyJson(tool as JsonValue, { omitUndefinedProperties: true }) as JsonObject;
+			run.result = copyJson(tool as unknown as JsonValue, { omitUndefinedProperties: true }) as JsonObject;
 			if (writes !== undefined && (Object.keys(writes.set).length > 0 || writes.delete.length > 0)) {
 				const store = await tx.doc(CodemodeStoreDoc, this.api.conversationId);
 				for (const key of writes.delete) delete store.values[key];
@@ -463,6 +493,7 @@ class CodemodeCall {
 
 	private onCall(call: CodemodeHostCall): void {
 		if (this.stopped) return;
+		if (call.target === "tool") this.started(call);
 		this.issued = Math.max(this.issued, call.id);
 		const index = this.replaying ? (this.replayIndex.get(call.id) ?? -1) : -1;
 		if (index === -1) {
@@ -637,7 +668,33 @@ class CodemodeCall {
 		// Passed as the script gave them; validation reports arguments that are not an object.
 		const args = (call.args ?? {}) as JsonObject;
 		const result = await this.api.executeTool(call.name, args, this.context, { key: `c${call.id}` });
-		return outcomeOf(call.name, result);
+		const outcome = outcomeOf(call.name, result);
+		this.finishRow(call.id, outcome, result.durationMs);
+		return outcome;
+	}
+
+	/** The script made a tool call: its row appears, running, also while it waits to launch. */
+	private started(call: CodemodeHostCall): void {
+		if (this.rows.has(call.id)) return;
+		const args = call.args === undefined ? "" : (JSON.stringify(call.args) ?? "");
+		this.rows.set(call.id, { id: call.id, name: call.name, args: cut(args, ARGS_PREVIEW_CHARS), status: "running" });
+	}
+
+	/** A tool call ended: its row gets its status, duration, and error. */
+	private finishRow(id: number, outcome: CodemodeOutcome, durationMs: number | undefined): void {
+		const row = this.rows.get(id);
+		if (row === undefined) return;
+		row.status = outcome.ok ? "ok" : "error";
+		if (durationMs !== undefined) row.durationMs = durationMs;
+		if (!outcome.ok) row.error = cut(outcome.message, ERROR_PREVIEW_CHARS);
+	}
+
+	/** The rows in call order; calls still running when the script ended were cancelled. */
+	private details(): CodemodeToolDetails {
+		const calls = [...this.rows.values()]
+			.sort((a, b) => a.id - b.id)
+			.map((row) => (row.status === "running" ? { ...row, status: "cancelled" as const } : row));
+		return { calls };
 	}
 
 	private async callGlobal(call: CodemodeHostCall, global: CodemodeGlobal | undefined): Promise<CodemodeOutcome> {

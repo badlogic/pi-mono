@@ -3562,6 +3562,12 @@ result's `structuredOutput`; every error rejects, with that `structuredOutput`
 as message when it is a non-empty string (the joined texts of a content list),
 else the error diagnostics' messages, and the value as `error.structuredOutput`.
 
+The result's \`details\` list the script's tool calls in call order
+(\`CodemodeToolDetails\`: id, name, cut arguments, status \`ok\`/\`error\`/
+\`cancelled\`, duration, cut error), written once with the result; a call still
+running or not yet launched when the script ended is \`cancelled\`. While the
+script runs, UIs show its nested calls from \`pi.live.nestedTools\`.
+
 Three documents, two of them scoped to the code mode call's task:
 
 - `pi.codemode.run`: `start`, written once before the VM starts (module

@@ -117,6 +117,7 @@
 		"bench:scheduler-memory": "node --conditions=source --experimental-strip-types test/scheduler-memory-bench.ts",
 		"bench:document-cache": "node --conditions=source --experimental-strip-types test/session-document-cache-bench.ts",
 		"bench:document-append": "node --conditions=source --experimental-strip-types test/document-append-bench.ts",
+		"bench:codemode": "node --conditions=source --experimental-strip-types test/codemode-bench.ts",
 		"prepublishOnly": "npm run clean && npm run build"
 	},
 	"keywords": [

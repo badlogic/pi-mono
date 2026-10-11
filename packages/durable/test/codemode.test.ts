@@ -17,6 +17,7 @@ import {
 	type CodemodeGlobal,
 	CodemodeJournalDoc,
 	CodemodeRunDoc,
+	type CodemodeToolDetails,
 	createCodemodeTool,
 } from "../src/codemode/codemode.ts";
 import { openNodeSqliteStorage } from "../src/storage/sqlite/node.ts";
@@ -428,6 +429,32 @@ describe("durable code mode", () => {
 		opened.harness.resume();
 		expect((await (await opened.harness.submission(id, context))!.wait(context)).status).toBe("done");
 		await opened.harness.close(context);
+	});
+
+	it("lists the script's tool calls in its result's details", async () => {
+		const chat = codemodeChat();
+		addTool(
+			chat.setup.registry,
+			tool("fails", async () => ({ output: [{ type: "text", text: "permission denied" }], isError: true })),
+		);
+		chat.setup.faux.setResponses([
+			script(
+				`await tools.echo({ text: "a" }); try { await tools.fails({}); } catch {} tools.hold({ id: 9 }); return 1;`,
+			),
+			DONE,
+		]);
+		const { harness, root } = await openChat(await openNodeSqliteStorage(await sqlitePath()), chat.setup);
+		await (await root.submit({ type: "input", content: "go" }, context)).wait(context);
+		const entry = (await allEntries(root)).find((candidate) => ToolResultEntry.is(candidate))!;
+		const details = (entry.model![0] as { details?: CodemodeToolDetails }).details;
+		// A call still running, or not yet launched, when the script ended shows as cancelled.
+		expect(details?.calls).toMatchObject([
+			{ id: 1, name: "echo", args: '{"text":"a"}', status: "ok" },
+			{ id: 2, name: "fails", args: "{}", status: "error", error: "permission denied" },
+			{ id: 3, name: "hold", args: '{"id":9}', status: "cancelled" },
+		]);
+		expect(details?.calls[0]?.durationMs).toBeGreaterThanOrEqual(0);
+		await harness.close(context);
 	});
 
 	it("aborts a call still running when the script ends", async () => {
