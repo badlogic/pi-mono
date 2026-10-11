@@ -528,8 +528,11 @@ async function finalResult(
 			runtime.report(new Error(broken));
 		}
 	}
-	// Without a schema, programs get the output itself; the model reads only `output`, so model-issued calls skip it.
-	if (input.kind === "nested" && tool.structuredOutputSchema === undefined) {
+	// Without a schema, or for an error result without structured output, programs get the output itself, so they get
+	// the error's text; the model reads only `output`, so model-issued calls skip it.
+	const schemaValue =
+		tool.structuredOutputSchema !== undefined && !(final.isError === true && final.structuredOutput === undefined);
+	if (input.kind === "nested" && !schemaValue) {
 		final = { ...final, structuredOutput: outputValue(bounded.content) as JsonValue };
 	}
 	return { ...final, output: bounded.content, diagnostics: [...(final.diagnostics ?? []), ...harness] };

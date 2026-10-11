@@ -208,9 +208,8 @@ describe("structured output", () => {
 			addTool(setup.registry, returning(name, result, schema ? { structuredOutputSchema: Count } : {}));
 			const received = await nested(setup, name);
 			expect(received.isError).toBe(true);
-			// The broken value is dropped; a schema-less tool's error result still carries its output, here none.
-			if (schema) expect(received).not.toHaveProperty("structuredOutput");
-			else expect(received.structuredOutput).toBe("");
+			// The broken value is dropped; the error result carries the bounded output instead, here none.
+			expect(received.structuredOutput).toBe("");
 			expect(codes(received)).toEqual(["invalid_structured_output"]);
 			expect(received.diagnostics[0]?.message).toContain(message);
 
@@ -237,7 +236,7 @@ describe("structured output", () => {
 		expect(received).not.toHaveProperty("structuredOutput");
 	});
 
-	it("lets an error result of a schema tool omit structured output, and keeps none of its output", async () => {
+	it("gives callers the output of a schema tool's error result without structured output", async () => {
 		const setup = chatSetup();
 		addTool(
 			setup.registry,
@@ -247,9 +246,38 @@ describe("structured output", () => {
 				{ structuredOutputSchema: Count },
 			),
 		);
-		const received = await nested(setup, "fails");
-		expect(received).toMatchObject({ isError: true, diagnostics: [] });
-		expect(received).not.toHaveProperty("structuredOutput");
+		// Its text reaches the caller: what a code mode script's rejection carries.
+		expect(await nested(setup, "fails")).toMatchObject({ isError: true, structuredOutput: "nope", diagnostics: [] });
+
+		// A thrown error's message is in its tool_error diagnostic, not in the output.
+		const thrown = chatSetup();
+		addTool(
+			thrown.registry,
+			defineTool({
+				name: "throws",
+				description: "throws",
+				parameters: Type.Object({}),
+				structuredOutputSchema: Count,
+				execute: async () => {
+					throw new Error("permission denied");
+				},
+			}),
+		);
+		expect(await nested(thrown, "throws")).toMatchObject({
+			isError: true,
+			structuredOutput: "",
+			diagnostics: [{ code: "tool_error", message: "permission denied" }],
+		});
+
+		// An error result that has structured output keeps it.
+		const kept = chatSetup();
+		const withValue = {
+			output: [{ type: "text" as const, text: "nope" }],
+			structuredOutput: { count: 0 },
+			isError: true,
+		};
+		addTool(kept.registry, returning("fails", withValue, { structuredOutputSchema: Count }));
+		expect(await nested(kept, "fails")).toMatchObject({ isError: true, structuredOutput: { count: 0 } });
 	});
 
 	it("keeps structured output when afterTool replaces the output, and validates one afterTool replaces", async () => {

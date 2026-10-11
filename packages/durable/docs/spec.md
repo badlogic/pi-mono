@@ -2856,7 +2856,7 @@ interface ToolExecutionApi<TDetails extends JsonValue = JsonValue> extends Docum
 type NestedToolExecutionResult = {
   /** The nested call's tool task. */
   readonly taskId: TaskId;
-  /** A schema tool's validated `structuredOutput`, else its bounded output, collapsed (below). */
+  /** A schema tool's validated `structuredOutput`; else, and for an error result without one, its bounded output, collapsed (below). */
   readonly structuredOutput?: JsonValue;
   readonly isError: boolean;
   readonly details?: JsonValue;
@@ -2984,14 +2984,19 @@ on an error result, where it may omit it; the Harness validates it after the
 programs get its bounded output, the content the model sees without the
 rendered diagnostics, for a success and for an error alike: one text item as
 its string, one image as its `ImageContent`, no items as `""`, and anything
-else as the content list. So a
-hook that redacts a schema-less tool's output redacts what programs get. An
+else as the content list. A schema tool's error result without
+`structuredOutput` gives programs its bounded output the same way, so they get
+the text of a returned error, for example `"permission denied: /etc"`. A
+thrown error's message is in its `tool_error` diagnostic, not in the output,
+so programs read it there, as they do for any tool. So a
+hook that redacts a tool's output redacts what programs get of a schema-less
+tool and of an error result without structured output. An
 error result the Harness writes itself (unavailable, invalid arguments,
 blocked, interrupted, aborted, abandoned, or a scheduler fault) has no
-`structuredOutput`; its diagnostics say what went wrong, as they do for a
-schema tool's error result without one. A nested call whose result breaks this gets an error result
-with an `invalid_structured_output` diagnostic, without the broken value: a
-schema tool's then has no `structuredOutput`, a schema-less tool's its output;
+`structuredOutput`; its diagnostics say what went wrong. A thrown error
+becomes a `tool_error` diagnostic with its message. A nested call whose result breaks this gets an error result
+with an `invalid_structured_output` diagnostic, without the broken value, and
+with its bounded output as `structuredOutput`;
 a model-issued call, whose `structuredOutput` the model never sees, only loses
 it, and the break is reported through `HarnessOptions.onReport`. `structuredOutput` has no size bound;
 keeping it small is the tool's job, as `bash` keeps its retained tail and the
