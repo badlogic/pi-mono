@@ -28,6 +28,7 @@
 
 ### Fixed
 
+- A wait that closes a cycle through waits and held owners is rejected by `runtime.commit()`, naming the cycle, instead of leaving every task on it waiting forever; waiting on itself or on an owner chain were the only cycles caught. A background task may now wait on the owner of its conversation, which is no cycle ([#10411](https://github.com/earendil-works/pi/issues/10411); tests and approach from [#10533](https://github.com/earendil-works/pi/pull/10533) by [@odysseus0](https://github.com/odysseus0))
 - Appending to an array in a document no longer costs a walk over the whole array per commit: Chord's delta tracker plans inserts and removals that keep the remaining elements in order from the changed ranges alone, and builds an appended array in one copy instead of two. 32,000 one-item appends, one commit each, take 1.4 s instead of 11.3 s; what remains is the copy each immutable value needs (`npm run bench:document-append`).
 - A generation whose blocking threshold compaction failed, faulted, was orphaned, or was aborted directly now fails with `model_error` (`Compaction failed: <error>`) instead of sending its request anyway. The context was still above the blocking threshold, so the request at best left no room for the answer: a session at 996K of a 1M window got an empty `length` answer on every turn, with no visible error.
 

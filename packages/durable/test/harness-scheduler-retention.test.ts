@@ -540,7 +540,9 @@ describe("scheduler retention", () => {
 		await harness.close(context);
 	});
 
-	it("still rejects waiting on a forgotten ended owner", async () => {
+	// A wait on an ended task closes no cycle (#10411), also when the ended task owns the waiter's conversation and the
+	// scheduler forgot it: the wait resumes at once.
+	it("lets a task wait on a forgotten ended owner", async () => {
 		const opened = await openTasks(await openNodeSqliteStorage(await sqlitePath()), [Hold, Waiter]);
 		const root = await opened.harness.root(context);
 		opened.harness.resume();
@@ -557,8 +559,7 @@ describe("scheduler retention", () => {
 			context,
 		);
 		const outcome = (await opened.harness.waitForTask(waiter, context)).state.outcome;
-		expect(outcome).toMatchObject({ status: "faulted" });
-		expect(JSON.stringify(outcome)).toMatch(/cannot wait on itself or its owner/);
+		expect(outcome).toMatchObject({ status: "completed" });
 		await opened.harness.close(context);
 	});
 });

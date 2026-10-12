@@ -1827,8 +1827,8 @@ commit, so the checkpoint or outcome is atomic with the callback's entries,
 documents, and child tasks and is type-checked against the task's checkpoint and
 result types. Returning nothing leaves the state unchanged. A terminal or
 completing state drops the memos. A `waiting` state ends the invocation even
-when its checkpoint is unchanged; it rejects when `on` names a missing task, the
-task itself, or a task on its owner chain, which could never finish first, and
+when its checkpoint is unchanged; it rejects when `on` names a missing task or
+closes a wait cycle (section 5.5), which no task on it could finish first, and
 an empty `on` resumes at the next scheduling pass. `pending` is never returned;
 only reconciliation and handover write it.
 
@@ -2224,8 +2224,17 @@ finish.
 The task stops without an invocation and resumes at `checkpoint` once every task
 in `on` is terminal. `on` may name any tasks, including already terminal ones;
 tasks the waiting task does not own, whose `owner` is not the waiting task,
-require `policy: "allSettled"`. `on` may not name a missing task, the task
-itself, or a task on its owner chain (section 5.1). With `failFast`, the first
+require `policy: "allSettled"`. `on` may not name a missing task or close a
+cycle in the wait-for graph (section 5.1), whose edges run from each task to the
+tasks it waits on and to its live ordinary owned work, which holds it as
+`completing`. A task waiting on itself, or on an owner that holds it, closes the
+shortest such cycles; a background task may wait on the owner of its
+conversation, which it does not hold. The check follows both kinds of edge from
+the tasks in `on`, visiting each task once, and the rejection names the cycle.
+Only durable waits are edges: a wait held only in memory, such as
+`runtime.waitForTask()` or a nested call's, is not checked. An abort-marked
+task waits only for its owned work, so its `on` is no edge.
+With `failFast`, the first
 task in `on` that holds or ends with a non-`completed` outcome gives every other
 live task in `on` an abort mark, in the scheduler's next reconcile commit. The waiting task itself is not marked:
 it resumes once all of `on` is terminal and reads their outcomes with

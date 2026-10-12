@@ -1470,8 +1470,12 @@ export class TaskScheduler {
 	}
 
 	/**
-	 * A wait names existing tasks other than the waiter and its owners, which could never finish first; `failFast` only
-	 * tasks the waiter owns. An abort handler cannot wait.
+	 * A wait names existing tasks, and `failFast` only tasks the waiter owns. It may not close a cycle in the wait-for
+	 * graph, whose edges run from each task to what it waits on and to its live ordinary owned work (spec §5.5); waiting
+	 * on itself or on an owner holding it are the shortest such cycles. An abort handler cannot wait.
+	 *
+	 * Invariant: the wait-for graph is acyclic. Only a wait adds an edge between existing tasks, as a new task has only
+	 * incoming edges, so checking each wait maintains it.
 	 */
 	async #validateWait(
 		tx: Transaction,
@@ -1482,19 +1486,71 @@ export class TaskScheduler {
 	): Promise<void> {
 		if (invocation.mode === "abort") throw new Error(`Abort handler of task ${current.id} cannot wait`);
 		const overlay = overlayOf(tx);
-		await this.#loadChain(parentOf(current));
-		const owners = new Set<TaskId>();
-		for (const step of this.#above(parentOf(current))) if ("task" in step) owners.add(step.task);
+		const targets: TaskId[] = [];
 		for (const id of on) {
-			if (id === current.id || owners.has(id)) {
-				throw new Error(`Task ${current.id} cannot wait on itself or its owner ${id}`);
-			}
 			const member = overlay.tasks.get(id) ?? this.#live.get(id) ?? (await this.#storage.task(id, this.#context));
 			if (member === undefined) throw new Error(`Task ${id} does not exist`);
 			if (policy === "failFast" && member.owner !== current.id) {
 				throw new Error(`Task ${current.id} can wait failFast only on tasks it owns; ${id} is not one`);
 			}
+			// A live child already holds the waiter (task-owned tasks are never background): waiting on it adds no edge. A
+			// terminal task has no edges.
+			if (member.state.status !== "terminal" && member.owner !== current.id) targets.push(id);
 		}
+		if (targets.length === 0) return;
+		const cycle = await this.#waitCycle(current.id, targets, overlay);
+		if (cycle !== undefined) {
+			throw new Error(
+				`Task ${current.id} cannot wait on ${cycle[0]}: ${[current.id, ...cycle].join(" -> ")} is a wait cycle`,
+			);
+		}
+	}
+
+	/**
+	 * The path from a member of `on` back to `task` in the wait-for graph, if the wait would close a cycle (spec §5.1).
+	 * An edge X -> Y means X cannot settle before Y: Y is in the `on` of waiting X that is not abort-marked, or Y is live
+	 * ordinary owned work of X,
+	 * which holds X as `completing`. Each task is visited once and each subtree walked once, so a check is bounded by the
+	 * live work it reaches.
+	 */
+	async #waitCycle(task: TaskId, on: readonly TaskId[], overlay: Overlay): Promise<TaskId[] | undefined> {
+		// Owned work is found by walks down, which need the chains of every live task loaded.
+		await this.#loadScopes(false);
+		const from = new Map<TaskId, TaskId | undefined>();
+		const walked = new Set<TaskId>();
+		const pending: TaskId[] = [];
+		const reach = (id: TaskId, via: TaskId | undefined) => {
+			if (from.has(id)) return;
+			from.set(id, via);
+			pending.push(id);
+		};
+		const path = (end: TaskId): TaskId[] => {
+			const steps: TaskId[] = [];
+			for (let at: TaskId | undefined = end; at !== undefined; at = from.get(at)) steps.unshift(at);
+			return steps;
+		};
+		for (const id of on) reach(id, undefined);
+		for (let id = pending.pop(); id !== undefined; id = pending.pop()) {
+			if (id === task) return path(id);
+			const record = overlay.tasks.get(id) ?? this.#live.get(id);
+			if (record === undefined || record.state.status === "terminal") continue;
+			// An abort-marked task waits only for its owned work, as abort runs bottom-up (`#waitingOn`).
+			if (record.state.status === "waiting" && !record.abortRequested) {
+				for (const member of record.state.on) reach(member, id);
+			}
+			if (walked.has(id)) continue;
+			walked.add(id);
+			// Below a walked task the walk does not go again: its own walk covered what lies below.
+			const found: TaskId[] = [];
+			const walk = this.#walkDown(id, { overlay, enter: (below) => !walked.has(below) });
+			for (const { id: below, node, live } of walk) {
+				if (live === undefined || node.background) continue;
+				found.push(below);
+				reach(below, id);
+			}
+			for (const below of found) walked.add(below);
+		}
+		return undefined;
 	}
 
 	/** End an invocation: its runtime operations reject from now on, its signal aborts, its watches stop, and its task is free. */
