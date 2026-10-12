@@ -51,10 +51,12 @@ import type {
 	ProviderRequestOptions,
 	ProviderStreams,
 	SimpleStreamOptions,
+	StreamOptions,
 	TranscriptContext,
 	Usage,
 } from "./types.ts";
 import { operationSignal, raceWithAbortSignal } from "./utils/abort.ts";
+import { isOpenCodeEndpoint, withOpenCodeSessionHeader } from "./utils/headers.ts";
 import {
 	assertChatModel,
 	assertClassifierInputSupported,
@@ -1069,6 +1071,15 @@ export function createProvider<TApi extends Api = Api>(input: CreateProviderOpti
 	};
 	const apiFor = (model: Model<Api>): ProviderStreams | undefined => single ?? byApi?.[model.api];
 
+	// OpenCode's zen endpoints reject requests without a per-conversation routing
+	// header. Inject it for any model served by an OpenCode endpoint, regardless of
+	// the provider id, so custom routes pointed at OpenCode work like the built-ins.
+	const withOpenCodeSession = <T extends StreamOptions>(model: Model<Api>, options: T | undefined): T | undefined => {
+		if (!options?.sessionId || !isOpenCodeEndpoint(model.baseUrl)) return options;
+		const headers = withOpenCodeSessionHeader(options.headers, options.sessionId);
+		return headers === options.headers ? options : { ...options, headers };
+	};
+
 	const dispatch = (
 		model: Model<Api>,
 		run: (streams: ProviderStreams) => AssistantMessageEventStream,
@@ -1120,9 +1131,10 @@ export function createProvider<TApi extends Api = Api>(input: CreateProviderOpti
 			: undefined,
 		filterModels: input.filterModels,
 		filterAllModels: input.filterAllModels,
-		stream: (model, context, options) => dispatch(model, (streams) => streams.stream(model, context, options)),
+		stream: (model, context, options) =>
+			dispatch(model, (streams) => streams.stream(model, context, withOpenCodeSession(model, options))),
 		streamSimple: (model, context, options) =>
-			dispatch(model, (streams) => streams.streamSimple(model, context, options)),
+			dispatch(model, (streams) => streams.streamSimple(model, context, withOpenCodeSession(model, options))),
 	};
 
 	if (streams.some((entry) => entry.fetchDeferred !== undefined)) {

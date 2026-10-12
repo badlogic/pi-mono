@@ -4,6 +4,7 @@
 
 ### Fixed
 
+- Fixed the `x-opencode-session` header not being sent to custom provider routes pointed at OpenCode: it is now keyed off the endpoint (any `opencode.ai` base URL) instead of the provider id, so custom provider routes work like the built-in `opencode`/`opencode-go` ones ([#9326](https://github.com/earendil-works/pi/issues/9326))
 - Fixed Mistral streams being aborted mid-generation (e.g. during long thinking) after the request timeout; the timeout now applies only to waiting for response headers ([#10609](https://github.com/earendil-works/pi/issues/10609))
 
 ## [1.1.0] - 2026-10-07
