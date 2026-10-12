@@ -72,7 +72,11 @@ describe("RemoteExecutionEnv", () => {
 
 	it("reports the remote system in Node's names", async () => {
 		const { connection } = environment();
-		expect(nodePlatform(await connection.info())).toEqual({ platform: process.platform, arch: process.arch });
+		const { platform, arch } = nodePlatform(await connection.info());
+		expect(platform).toBe(process.platform);
+		// CI runs the darwin-x64 release daemon on arm64 macOS through Rosetta, so it reports x64 to arm64 Node.
+		const rosetta = process.platform === "darwin" && process.arch === "arm64" && arch === "x64";
+		if (!rosetta) expect(arch).toBe(process.arch);
 		expect(nodePlatform({ os: "windows", arch: "aarch64" })).toEqual({ platform: "win32", arch: "arm64" });
 		expect(nodePlatform({ os: "macos", arch: "x86_64" })).toEqual({ platform: "darwin", arch: "x64" });
 	});
@@ -102,7 +106,8 @@ describe("RemoteExecutionEnv", () => {
 		expect([listed.entries.length, listed.truncated]).toEqual([10_100, false]);
 		const bounded = getOrThrow(await env.listFiles(".", { maxEntries: 5000 }, context));
 		expect([bounded.entries.length, bounded.truncated]).toEqual([5000, true]);
-	});
+		// Creating 10,000 files takes several seconds on Windows CI.
+	}, 30_000);
 
 	it("times out a command that produces no output", async () => {
 		const { env } = environment();
