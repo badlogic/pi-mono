@@ -1,14 +1,13 @@
 /**
  * Minimal Mode Example - Demonstrates a "minimal" tool display mode
  *
- * This extension overrides built-in tools to provide custom rendering:
- * - Collapsed mode: Only shows the tool call (command/path), no output
- * - Expanded mode: Shows full output like the built-in renderers
+ * Overrides how built-in tools are drawn with `registerToolRenderer`, without
+ * re-registering the tools. Re-registering a tool replaces its whole definition,
+ * including `execute`, which clobbers extensions that reroute a built-in tool
+ * elsewhere. A tool renderer only changes how calls and results are drawn.
  *
- * This demonstrates how a "minimal mode" could work, where ctrl+o cycles through:
- * - Standard: Shows truncated output (current default)
- * - Expanded: Shows full output (current expanded)
- * - Minimal: Shows only tool call, no output (this extension's collapsed mode)
+ * - Collapsed mode: only the tool call (command/path), no output
+ * - Expanded mode: full output like the built-in renderers
  *
  * Usage:
  *   pi -e ./minimal-mode.ts
@@ -16,56 +15,49 @@
  * Then use ctrl+o to toggle between minimal (collapsed) and full (expanded) views.
  */
 
-import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
-import {
-	createBashToolDefinition,
-	createEditToolDefinition,
-	createFindToolDefinition,
-	createGrepToolDefinition,
-	createLsToolDefinition,
-	createReadToolDefinition,
-	createWriteToolDefinition,
-} from "@earendil-works/pi-coding-agent";
+import type { ExtensionAPI, Theme, ToolRenderers } from "@earendil-works/pi-coding-agent";
 import { Text } from "@earendil-works/pi-tui";
 import { homedir } from "os";
 
-/**
- * Shorten a path by replacing home directory with ~
- */
+// A renderer resolver sees any tool, so `args` arrives as `unknown`. Each entry
+// narrows it to that tool's shape.
+type ReadArgs = { path?: string; offset?: number; limit?: number };
+type BashArgs = { command?: string; timeout?: number };
+type WriteArgs = { path?: string; content?: string };
+type EditArgs = { path?: string };
+type FindArgs = { pattern?: string; path?: string; limit?: number };
+type GrepArgs = { pattern?: string; path?: string; glob?: string; limit?: number };
+type LsArgs = { path?: string; limit?: number };
+
+/** Shorten a path by replacing the home directory with ~. */
 function shortenPath(path: string): string {
 	const home = homedir();
-	if (path.startsWith(home)) {
-		return `~${path.slice(home.length)}`;
-	}
-	return path;
+	return path.startsWith(home) ? `~${path.slice(home.length)}` : path;
 }
 
-function createBuiltInTools(cwd: string) {
-	return {
-		read: createReadToolDefinition(cwd),
-		bash: createBashToolDefinition(cwd),
-		edit: createEditToolDefinition(cwd),
-		write: createWriteToolDefinition(cwd),
-		find: createFindToolDefinition(cwd),
-		grep: createGrepToolDefinition(cwd),
-		ls: createLsToolDefinition(cwd),
-	};
+/** First text block of a tool result, if any. */
+function firstText(result: { content: Array<{ type: string; text?: string }> }): string | undefined {
+	const block = result.content.find((c) => c.type === "text");
+	return block?.type === "text" ? block.text : undefined;
 }
 
-export default function (pi: ExtensionAPI) {
-	const tools = createBuiltInTools(process.cwd());
+/** Render a text body indented under the call, preserving blank lines. */
+function body(text: string, theme: Theme): Text {
+	const output = text
+		.trim()
+		.split("\n")
+		.map((line) => theme.fg("toolOutput", line))
+		.join("\n");
+	return new Text(`\n${output}`, 0, 0);
+}
 
-	// =========================================================================
-	// Read Tool
-	// =========================================================================
-	pi.registerTool({
-		...tools.read,
-
-		renderCall(args, theme, _context) {
+const renderers: Record<string, ToolRenderers> = {
+	read: {
+		renderCall(rawArgs, theme) {
+			const args = rawArgs as ReadArgs;
 			const path = shortenPath(args.path || "");
 			let pathDisplay = path ? theme.fg("accent", path) : theme.fg("toolOutput", "...");
 
-			// Show line range if specified
 			if (args.offset !== undefined || args.limit !== undefined) {
 				const startLine = args.offset ?? 1;
 				const endLine = args.limit !== undefined ? startLine + args.limit - 1 : "";
@@ -74,281 +66,120 @@ export default function (pi: ExtensionAPI) {
 
 			return new Text(`${theme.fg("toolTitle", theme.bold("read"))} ${pathDisplay}`, 0, 0);
 		},
-
-		renderResult(result, { expanded }, theme, _context) {
-			// Minimal mode: show nothing in collapsed state
-			if (!expanded) {
-				return new Text("", 0, 0);
-			}
-
-			// Expanded mode: show full output
-			const textContent = result.content.find((c) => c.type === "text");
-			if (!textContent || textContent.type !== "text") {
-				return new Text("", 0, 0);
-			}
-
-			const lines = textContent.text.split("\n");
-			const output = lines.map((line) => theme.fg("toolOutput", line)).join("\n");
-			return new Text(`\n${output}`, 0, 0);
+		renderResult(result, { expanded }, theme) {
+			if (!expanded) return new Text("", 0, 0);
+			const text = firstText(result);
+			return text ? body(text, theme) : new Text("", 0, 0);
 		},
-	});
+	},
 
-	// =========================================================================
-	// Bash Tool
-	// =========================================================================
-	pi.registerTool({
-		...tools.bash,
-
-		renderCall(args, theme, _context) {
+	bash: {
+		renderCall(rawArgs, theme) {
+			const args = rawArgs as BashArgs;
 			const command = args.command || "...";
-			const timeout = args.timeout as number | undefined;
-			const timeoutSuffix = timeout ? theme.fg("muted", ` (timeout ${timeout}s)`) : "";
-
+			const timeoutSuffix = args.timeout ? theme.fg("muted", ` (timeout ${args.timeout}s)`) : "";
 			return new Text(theme.fg("toolTitle", theme.bold(`$ ${command}`)) + timeoutSuffix, 0, 0);
 		},
-
-		renderResult(result, { expanded }, theme, _context) {
-			// Minimal mode: show nothing in collapsed state
-			if (!expanded) {
-				return new Text("", 0, 0);
-			}
-
-			// Expanded mode: show full output
-			const textContent = result.content.find((c) => c.type === "text");
-			if (!textContent || textContent.type !== "text") {
-				return new Text("", 0, 0);
-			}
-
-			const output = textContent.text
-				.trim()
-				.split("\n")
-				.map((line) => theme.fg("toolOutput", line))
-				.join("\n");
-
-			if (!output) {
-				return new Text("", 0, 0);
-			}
-
-			return new Text(`\n${output}`, 0, 0);
+		renderResult(result, { expanded }, theme) {
+			if (!expanded) return new Text("", 0, 0);
+			const text = firstText(result);
+			return text ? body(text, theme) : new Text("", 0, 0);
 		},
-	});
+	},
 
-	// =========================================================================
-	// Write Tool
-	// =========================================================================
-	pi.registerTool({
-		...tools.write,
-
-		renderCall(args, theme, _context) {
+	write: {
+		renderCall(rawArgs, theme) {
+			const args = rawArgs as WriteArgs;
 			const path = shortenPath(args.path || "");
 			const pathDisplay = path ? theme.fg("accent", path) : theme.fg("toolOutput", "...");
 			const lineCount = args.content ? args.content.split("\n").length : 0;
 			const lineInfo = lineCount > 0 ? theme.fg("muted", ` (${lineCount} lines)`) : "";
-
 			return new Text(`${theme.fg("toolTitle", theme.bold("write"))} ${pathDisplay}${lineInfo}`, 0, 0);
 		},
-
-		renderResult(result, { expanded }, theme, _context) {
-			// Minimal mode: show nothing (file was written)
-			if (!expanded) {
-				return new Text("", 0, 0);
-			}
-
-			// Expanded mode: show error if any
-			if (result.content.some((c) => c.type === "text" && c.text)) {
-				const textContent = result.content.find((c) => c.type === "text");
-				if (textContent?.type === "text" && textContent.text) {
-					return new Text(`\n${theme.fg("error", textContent.text)}`, 0, 0);
-				}
-			}
-
-			return new Text("", 0, 0);
+		renderResult(result, { expanded }, theme) {
+			if (!expanded) return new Text("", 0, 0);
+			const text = firstText(result);
+			return text ? new Text(`\n${theme.fg("error", text)}`, 0, 0) : new Text("", 0, 0);
 		},
-	});
+	},
 
-	// =========================================================================
-	// Edit Tool
-	// =========================================================================
-	pi.registerTool({
-		...tools.edit,
+	edit: {
+		// The built-in edit tool draws its own shell, so replacing its renderers
+		// must opt back into the default boxed shell.
 		renderShell: "default",
-
-		renderCall(args, theme, _context) {
+		renderCall(rawArgs, theme) {
+			const args = rawArgs as EditArgs;
 			const path = shortenPath(args.path || "");
 			const pathDisplay = path ? theme.fg("accent", path) : theme.fg("toolOutput", "...");
-
 			return new Text(`${theme.fg("toolTitle", theme.bold("edit"))} ${pathDisplay}`, 0, 0);
 		},
-
-		renderResult(result, { expanded }, theme, _context) {
-			// Minimal mode: show nothing in collapsed state
-			if (!expanded) {
-				return new Text("", 0, 0);
-			}
-
-			// Expanded mode: show diff or error
-			const textContent = result.content.find((c) => c.type === "text");
-			if (!textContent || textContent.type !== "text") {
-				return new Text("", 0, 0);
-			}
-
-			// For errors, show the error message
-			const text = textContent.text;
-			if (text.includes("Error") || text.includes("error")) {
-				return new Text(`\n${theme.fg("error", text)}`, 0, 0);
-			}
-
-			// Otherwise show the text (would be nice to show actual diff here)
-			return new Text(`\n${theme.fg("toolOutput", text)}`, 0, 0);
+		renderResult(result, { expanded }, theme) {
+			if (!expanded) return new Text("", 0, 0);
+			const text = firstText(result);
+			if (!text) return new Text("", 0, 0);
+			const color = text.includes("Error") || text.includes("error") ? "error" : "toolOutput";
+			return new Text(`\n${theme.fg(color, text)}`, 0, 0);
 		},
-	});
+	},
 
-	// =========================================================================
-	// Find Tool
-	// =========================================================================
-	pi.registerTool({
-		...tools.find,
-
-		renderCall(args, theme, _context) {
-			const pattern = args.pattern || "";
+	find: {
+		renderCall(rawArgs, theme) {
+			const args = rawArgs as FindArgs;
 			const path = shortenPath(args.path || ".");
-			const limit = args.limit;
-
-			let text = `${theme.fg("toolTitle", theme.bold("find"))} ${theme.fg("accent", pattern)}`;
+			let text = `${theme.fg("toolTitle", theme.bold("find"))} ${theme.fg("accent", args.pattern || "")}`;
 			text += theme.fg("toolOutput", ` in ${path}`);
-			if (limit !== undefined) {
-				text += theme.fg("toolOutput", ` (limit ${limit})`);
-			}
-
+			if (args.limit !== undefined) text += theme.fg("toolOutput", ` (limit ${args.limit})`);
 			return new Text(text, 0, 0);
 		},
-
-		renderResult(result, { expanded }, theme, _context) {
+		renderResult(result, { expanded }, theme) {
+			const text = firstText(result);
 			if (!expanded) {
-				// Minimal: just show count
-				const textContent = result.content.find((c) => c.type === "text");
-				if (textContent?.type === "text") {
-					const count = textContent.text.trim().split("\n").filter(Boolean).length;
-					if (count > 0) {
-						return new Text(theme.fg("muted", ` → ${count} files`), 0, 0);
-					}
-				}
-				return new Text("", 0, 0);
+				const count = text?.trim().split("\n").filter(Boolean).length ?? 0;
+				return count > 0 ? new Text(theme.fg("muted", ` → ${count} files`), 0, 0) : new Text("", 0, 0);
 			}
-
-			// Expanded: show full results
-			const textContent = result.content.find((c) => c.type === "text");
-			if (!textContent || textContent.type !== "text") {
-				return new Text("", 0, 0);
-			}
-
-			const output = textContent.text
-				.trim()
-				.split("\n")
-				.map((line) => theme.fg("toolOutput", line))
-				.join("\n");
-
-			return new Text(`\n${output}`, 0, 0);
+			return text ? body(text, theme) : new Text("", 0, 0);
 		},
-	});
+	},
 
-	// =========================================================================
-	// Grep Tool
-	// =========================================================================
-	pi.registerTool({
-		...tools.grep,
-
-		renderCall(args, theme, _context) {
-			const pattern = args.pattern || "";
+	grep: {
+		renderCall(rawArgs, theme) {
+			const args = rawArgs as GrepArgs;
 			const path = shortenPath(args.path || ".");
-			const glob = args.glob;
-			const limit = args.limit;
-
-			let text = `${theme.fg("toolTitle", theme.bold("grep"))} ${theme.fg("accent", `/${pattern}/`)}`;
+			let text = `${theme.fg("toolTitle", theme.bold("grep"))} ${theme.fg("accent", `/${args.pattern || ""}/`)}`;
 			text += theme.fg("toolOutput", ` in ${path}`);
-			if (glob) {
-				text += theme.fg("toolOutput", ` (${glob})`);
-			}
-			if (limit !== undefined) {
-				text += theme.fg("toolOutput", ` limit ${limit}`);
-			}
-
+			if (args.glob) text += theme.fg("toolOutput", ` (${args.glob})`);
+			if (args.limit !== undefined) text += theme.fg("toolOutput", ` limit ${args.limit}`);
 			return new Text(text, 0, 0);
 		},
-
-		renderResult(result, { expanded }, theme, _context) {
+		renderResult(result, { expanded }, theme) {
+			const text = firstText(result);
 			if (!expanded) {
-				// Minimal: just show match count
-				const textContent = result.content.find((c) => c.type === "text");
-				if (textContent?.type === "text") {
-					const count = textContent.text.trim().split("\n").filter(Boolean).length;
-					if (count > 0) {
-						return new Text(theme.fg("muted", ` → ${count} matches`), 0, 0);
-					}
-				}
-				return new Text("", 0, 0);
+				const count = text?.trim().split("\n").filter(Boolean).length ?? 0;
+				return count > 0 ? new Text(theme.fg("muted", ` → ${count} matches`), 0, 0) : new Text("", 0, 0);
 			}
-
-			// Expanded: show full results
-			const textContent = result.content.find((c) => c.type === "text");
-			if (!textContent || textContent.type !== "text") {
-				return new Text("", 0, 0);
-			}
-
-			const output = textContent.text
-				.trim()
-				.split("\n")
-				.map((line) => theme.fg("toolOutput", line))
-				.join("\n");
-
-			return new Text(`\n${output}`, 0, 0);
+			return text ? body(text, theme) : new Text("", 0, 0);
 		},
-	});
+	},
 
-	// =========================================================================
-	// Ls Tool
-	// =========================================================================
-	pi.registerTool({
-		...tools.ls,
-
-		renderCall(args, theme, _context) {
+	ls: {
+		renderCall(rawArgs, theme) {
+			const args = rawArgs as LsArgs;
 			const path = shortenPath(args.path || ".");
-			const limit = args.limit;
-
 			let text = `${theme.fg("toolTitle", theme.bold("ls"))} ${theme.fg("accent", path)}`;
-			if (limit !== undefined) {
-				text += theme.fg("toolOutput", ` (limit ${limit})`);
-			}
-
+			if (args.limit !== undefined) text += theme.fg("toolOutput", ` (limit ${args.limit})`);
 			return new Text(text, 0, 0);
 		},
-
-		renderResult(result, { expanded }, theme, _context) {
+		renderResult(result, { expanded }, theme) {
+			const text = firstText(result);
 			if (!expanded) {
-				// Minimal: just show entry count
-				const textContent = result.content.find((c) => c.type === "text");
-				if (textContent?.type === "text") {
-					const count = textContent.text.trim().split("\n").filter(Boolean).length;
-					if (count > 0) {
-						return new Text(theme.fg("muted", ` → ${count} entries`), 0, 0);
-					}
-				}
-				return new Text("", 0, 0);
+				const count = text?.trim().split("\n").filter(Boolean).length ?? 0;
+				return count > 0 ? new Text(theme.fg("muted", ` → ${count} entries`), 0, 0) : new Text("", 0, 0);
 			}
-
-			// Expanded: show full listing
-			const textContent = result.content.find((c) => c.type === "text");
-			if (!textContent || textContent.type !== "text") {
-				return new Text("", 0, 0);
-			}
-
-			const output = textContent.text
-				.trim()
-				.split("\n")
-				.map((line) => theme.fg("toolOutput", line))
-				.join("\n");
-
-			return new Text(`\n${output}`, 0, 0);
+			return text ? body(text, theme) : new Text("", 0, 0);
 		},
-	});
+	},
+};
+
+export default function (pi: ExtensionAPI) {
+	pi.registerToolRenderer((toolName, next) => renderers[toolName] ?? next());
 }
