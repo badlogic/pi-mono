@@ -1170,17 +1170,6 @@ export class AgentSession {
 				if (assistantMsg.stopReason !== "error" && assistantMsg.stopReason !== "length") {
 					this._overflowRecoveryAttempted = false;
 				}
-
-				// Reset retry counter immediately on successful assistant response
-				// This prevents accumulation across multiple LLM calls within a turn
-				if (assistantMsg.stopReason !== "error" && this._retryAttempt > 0) {
-					this._emit({
-						type: "auto_retry_end",
-						success: true,
-						attempt: this._retryAttempt,
-					});
-					this._retryAttempt = 0;
-				}
 			}
 		}
 
@@ -1841,7 +1830,15 @@ export class AgentSession {
 				await this.agent.continue();
 			}
 		} finally {
-			if (this._agentRunAbortRequested) this._finishCancelledRetry();
+			if (this._agentRunAbortRequested || this._lastActivityOutcome === "aborted") {
+				this._finishCancelledRetry();
+			} else if (this._retryAttempt > 0) {
+				// A successful tool turn can still be followed by another provider error.
+				// Keep its retry budget until the entire automatic continuation settles.
+				const attempt = this._retryAttempt;
+				this._retryAttempt = 0;
+				this._emit({ type: "auto_retry_end", success: this._lastActivityOutcome === "completed", attempt });
+			}
 			this._failedResponse = undefined;
 			this._runSystemPromptOptions = undefined;
 			this._flushPendingBashMessages();

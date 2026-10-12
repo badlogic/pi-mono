@@ -226,6 +226,92 @@ describe("AgentSession retry and event characterization", () => {
 		expect(harness.faux.state.callCount).toBe(4);
 	});
 
+	it("bounds retries across interleaved successful tool turns", async () => {
+		const echoTool: AgentTool = {
+			name: "echo",
+			label: "Echo",
+			description: "Return a fixed result",
+			parameters: Type.Object({}),
+			execute: async () => ({ content: [{ type: "text", text: "ok" }], details: undefined }),
+		};
+		const harness = await createHarness({
+			tools: [echoTool],
+			settings: { retry: { enabled: true, maxRetries: 2, baseDelayMs: 1 } },
+		});
+		harnesses.push(harness);
+		const failure = () =>
+			fauxAssistantMessage("", { stopReason: "error", errorMessage: "Internal error during token generation" });
+		const toolTurn = () => fauxAssistantMessage([fauxToolCall("echo", {})], { stopReason: "toolUse" });
+		harness.setResponses([
+			failure(),
+			toolTurn(),
+			failure(),
+			toolTurn(),
+			failure(),
+			fauxAssistantMessage("unexpected"),
+		]);
+
+		await harness.session.prompt("test");
+
+		expect(harness.faux.state.callCount).toBe(5);
+		expect(harness.eventsOfType("auto_retry_start").map((event) => event.attempt)).toEqual([1, 2]);
+		expect(harness.eventsOfType("auto_retry_start").map((event) => event.delayMs)).toEqual([1, 2]);
+		expect(harness.eventsOfType("auto_retry_end")).toEqual([
+			{ type: "auto_retry_end", success: false, attempt: 2, finalError: "Internal error during token generation" },
+		]);
+		expect(harness.eventsOfType("agent_end").map((event) => event.willRetry)).toEqual([true, true, false]);
+		expect(harness.session.retryAttempt).toBe(0);
+
+		harness.setResponses([failure(), fauxAssistantMessage("recovered on a new prompt")]);
+		await harness.session.prompt("try again");
+		expect(harness.eventsOfType("auto_retry_start").at(-1)?.attempt).toBe(1);
+		expect(harness.eventsOfType("auto_retry_end").at(-1)).toMatchObject({ success: true, attempt: 1 });
+	});
+
+	it("reports retry success only after the recovered tool loop finishes", async () => {
+		const attemptsDuringTools: number[] = [];
+		const echoTool: AgentTool = {
+			name: "echo",
+			label: "Echo",
+			description: "Return a fixed result",
+			parameters: Type.Object({}),
+			execute: async () => {
+				attemptsDuringTools.push(harness.session.retryAttempt);
+				return { content: [{ type: "text", text: "ok" }], details: undefined };
+			},
+		};
+		const harness = await createHarness({
+			tools: [echoTool],
+			settings: { retry: { enabled: true, maxRetries: 2, baseDelayMs: 1 } },
+		});
+		harnesses.push(harness);
+		harness.setResponses([
+			fauxAssistantMessage("", { stopReason: "error", errorMessage: "overloaded_error" }),
+			fauxAssistantMessage([fauxToolCall("echo", {})], { stopReason: "toolUse" }),
+			fauxAssistantMessage("done"),
+		]);
+
+		await harness.session.prompt("test");
+
+		expect(attemptsDuringTools).toEqual([1]);
+		expect(harness.eventsOfType("auto_retry_end")).toEqual([{ type: "auto_retry_end", success: true, attempt: 1 }]);
+		expect(harness.session.retryAttempt).toBe(0);
+	});
+
+	it("does not report an aborted retry as successful", async () => {
+		const harness = await createHarness({ settings: { retry: { enabled: true, maxRetries: 2, baseDelayMs: 1 } } });
+		harnesses.push(harness);
+		harness.setResponses([
+			fauxAssistantMessage("", { stopReason: "error", errorMessage: "overloaded_error" }),
+			fauxAssistantMessage("partial", { stopReason: "aborted" }),
+		]);
+		await harness.session.prompt("test");
+		expect(harness.eventsOfType("auto_retry_end")).toEqual([
+			{ type: "auto_retry_end", success: false, attempt: 1, finalError: "Retry cancelled" },
+		]);
+		expect(harness.session.retryAttempt).toBe(0);
+	});
+
 	it("emits extension events before public event subscribers", async () => {
 		const order: string[] = [];
 		const harness = await createHarness({
