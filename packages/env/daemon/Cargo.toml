@@ -7,6 +7,7 @@ publish = false
 
 [dependencies]
 encoding_rs = "=0.8.42"
+ignore = "=0.4.33"
 notify = "=8.2.0"
 serde_json = "=1.0.151"
 

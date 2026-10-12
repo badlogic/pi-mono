@@ -47,7 +47,8 @@ contents and output travel as raw payload bytes.
 A cancel names one request. The daemon registers each request before running it, so a cancel sent right after its
 request is never lost. `exec` and `pty` kill the command's process group and finish with `aborted`; `{ mode: "kill" }` kills
 without aborting, so the command finishes with the killed process's status, as `cleanup()` does. `scanLines` stops
-between chunks with `aborted`. `watch` stops and finishes with `{}`. Other operations are short and finish normally.
+between chunks and `listFiles` between entries, with `aborted`. `watch` stops and finishes with `{}`. Other operations
+are short and finish normally.
 
 ## Scheduling
 
@@ -67,10 +68,13 @@ handles belong to the daemon that opened them, so requests on them fail instead 
 
 ## Operations
 
-`hello { protocol }` → `{ protocol, version, os, arch, home, tmpdir, cwd, driveCwds, pid }`. The first request.
-`version` is the npm package version the daemon shipped with; `os` and `arch` are Rust's `std::env::consts` values;
-`tmpdir` follows the remote Node's `os.tmpdir()` rules; `cwd` and `driveCwds` (Windows' `=C:` variables) are what
-Node's `path.resolve` falls back to for drive-relative paths.
+`hello { protocol }` → `{ protocol, version, os, arch, home, tmpdir, cwd, driveCwds, pid, features }`. The first
+request. `version` is the npm package version the daemon shipped with; `os` and `arch` are Rust's `std::env::consts`
+values (`linux`, `android`, `macos`, `windows`; `x86_64`, `aarch64`), which the client's `nodePlatform` maps to Node's
+names; `tmpdir` follows the remote Node's `os.tmpdir()` rules; `cwd` and `driveCwds` (Windows' `=C:` variables) are
+what Node's `path.resolve` falls back to for drive-relative paths. `features` lists operations added to protocol 1
+after its first release (`listFiles`); older daemons omit the field and refuse those operations as unknown, so clients
+check it first.
 
 File operations take `{ path }` (and the listed fields) and return `{}` unless noted:
 
@@ -93,6 +97,19 @@ File operations take `{ path }` (and the listed fields) and return `{}` unless n
 | `opendir` | | `{ handle }` |
 | `readdir` | `handle`, `max` | `{ entries, done }` |
 | `close` | `handle` | |
+
+`listFiles { path, hidden?, gitignore?, exclude?, maxEntries?, maxBytes?, timeoutMs? }` lists the tree below the
+directory `path` (feature `listFiles`): files, directories and symbolic links, which are not followed; other kinds of
+files are left out, and entries that cannot be read are skipped. The payload holds one record per entry: a kind byte
+(`f` file, `d` directory, `l` symbolic link), the path relative to `path` with `/` separators as UTF-8 (names that are
+not UTF-8 get replacement characters), and a NUL byte. Records come depth first, siblings in byte order of their
+names. The result is `{ count, truncated }`. Entries named `.git` and the names in `exclude` are skipped with
+everything below them. `hidden` (default true) includes names starting with `.` (and Windows' hidden files).
+`gitignore` (default true) skips, inside git work trees, what the `.gitignore` files of `path`, its subdirectories and
+its parents, `.git/info/exclude` and the global excludes file ignore, using the `ignore` crate of `fd` and ripgrep. The
+listing stops with `truncated: true` at the first entry beyond `maxEntries` (default 50 000), beyond `maxBytes` of
+payload (default 4 MiB, at most the frame limit less 64 KiB), or after `timeoutMs` (default 10 000). A missing `path`
+fails with `ENOENT`, a file with `ENOTDIR`.
 
 `info` is `{ name, kind, size, mtimeSec, mtimeNsec, dev, ino }` with `kind` one of `file`, `directory`, `symlink`, `other`.
 `readdir` entries are `{ name, raw?, info }` or `{ name, raw?, error }` when the entry's `lstat` failed. Names are
