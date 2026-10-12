@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- A link that is already closed when a host accepts or routes to it is no longer kept as a connection: before, a route that returned a dead link (a child process that exited before its link was wrapped) made every later call to that host name fail with `unavailable` until restart, and leaked the connection's ping timer.
+
 ## [1.2.0] - 2026-10-12
 
 ### Breaking Changes

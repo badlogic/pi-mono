@@ -248,6 +248,29 @@ describe("links: relay, stamping, lifetime", () => {
 		assert.deepEqual(childResult?.t === "result" ? childResult.value : undefined, { worker: "w9" });
 	});
 
+	it("a route that returns an already closed link does not poison the host name", async () => {
+		const server = createHost({ name: "server", onError: () => {} });
+		let attempt = 0;
+		server.route("session:", {
+			authorize: () => true,
+			resolve: async (name) => {
+				attempt++;
+				const [down, up] = memoryLinkPair();
+				const worker = createHost({ name, upstream: up, onError: () => {} });
+				serveCounter(worker);
+				// The first worker dies before the server wraps its link.
+				if (attempt === 1) down.close("worker exited");
+				return down;
+			},
+		});
+		const first = server.get(Counter, { name: "a" }, { at: "session:S1" });
+		await assert.rejects(first.add(1), (error: Error) => /closed/.test(error.message));
+		// The next call resolves the route again and reaches the new worker.
+		const second = server.get(Counter, { name: "a" }, { at: "session:S1" });
+		assert.equal(await second.add(2), 2);
+		assert.equal(attempt, 2);
+	});
+
 	it("authorizes before resolving and again after", async () => {
 		const c = cluster();
 		c.allow = (principal) => (principal as { guest: string }).guest !== "blocked";

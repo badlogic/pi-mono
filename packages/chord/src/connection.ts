@@ -254,6 +254,8 @@ export class Connection implements RemoteChannel {
 		this.send({ t: "hello", name: host.name, kind: host.kind, epoch: host.current.id });
 		const interval = config.pingInterval ?? 15_000;
 		const timeout = config.pingTimeout ?? 45_000;
+		// A link that was already closed closed this connection above; it needs no keepalive.
+		if (link.closed) return;
 		let n = 0;
 		this.#pinger = setInterval(() => {
 			if (Date.now() - this.#lastSeen > timeout) link.close("ping timeout");
