@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Breaking Changes
+
+- Changed `CallToolResult.structuredContent` from `Record<string, unknown>` to `unknown`: `callTool()` now accepts any JSON value as structured content, including arrays and `null`, as MCP 2026-07-28 allows, instead of failing with "Invalid MCP tools/call structured content" ([#10416](https://github.com/earendil-works/pi/issues/10416))
+
 ### Fixed
 
 - Fixed `authorizeMcp()` exchanging an authorization code whose `iss` parameter could not be checked because no authorization server metadata was discovered. It now throws `OAuthIssuerMismatchError`, whose `expected` is `undefined` in that case (RFC 9207). Reported by [@AizenvoltPrime](https://github.com/AizenvoltPrime)

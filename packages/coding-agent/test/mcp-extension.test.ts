@@ -282,8 +282,9 @@ describe("MCP tools", () => {
 	it("declares the CallToolResult scripts receive, keeping references in the server's output schema", () => {
 		const content =
 			'content: Array<{ data?: string; mimeType?: string; text?: string; type: "text" | "image" | "audio" | "resource_link" | "resource"; [key: string]: unknown; }>; isError?: boolean;';
+		// #10416: without an output schema, structured content may be any JSON value.
 		expect(renderToolOutputType(createMcpResultSchema(undefined) as never)).toBe(
-			`{ ${content} structuredContent?: { [key: string]: unknown; }; [key: string]: unknown; }`,
+			`{ ${content} structuredContent?: unknown; [key: string]: unknown; }`,
 		);
 
 		const hit = { type: "object", properties: { id: { type: "string" } }, required: ["id"] };
@@ -333,6 +334,12 @@ describe("MCP tools", () => {
 		expect((await convertMcpResult("docs", "t", { content: [], structuredContent: { n: 1 } })).content).toEqual([
 			{ type: "text", text: '{\n  "n": 1\n}' },
 		]);
+		// #10416: array structured content reaches the model as JSON and scripts as sent.
+		expect(await convertMcpResult("docs", "t", { content: [], structuredContent: [{ id: 1 }] })).toEqual({
+			content: [{ type: "text", text: '[\n  {\n    "id": 1\n  }\n]' }],
+			details: { server: "docs", tool: "t" },
+			structuredContent: { content: [], structuredContent: [{ id: 1 }] },
+		});
 		expect(await convertMcpResult("docs", "t", { content: [{ type: "text", text: "nope" }], isError: true })).toEqual(
 			{
 				content: [{ type: "text", text: "nope" }],

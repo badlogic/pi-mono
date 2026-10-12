@@ -161,10 +161,10 @@ export function createMcpResultSchema(structuredContentSchema: Record<string, un
 		type: "object",
 		properties: {
 			content: { type: "array", items: CONTENT_BLOCK_SCHEMA },
-			// Servers may send structured content without declaring a schema for it.
+			// Servers may send structured content without declaring a schema for it, and it may be any JSON value.
 			structuredContent: structuredContentSchema
 				? relocateSchema(structuredContentSchema, "#/properties/structuredContent")
-				: { type: "object" },
+				: {},
 			isError: { type: "boolean" },
 		},
 		required: ["content"],

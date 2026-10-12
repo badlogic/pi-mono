@@ -139,13 +139,13 @@ function validateReadResourceResult(value: unknown): ReadResourceResult {
 	return value as unknown as ReadResourceResult;
 }
 
-/** `content` is required by the spec, but servers that only return `structuredContent` omit it (the SDK defaults it too). */
+/**
+ * `content` is required by the spec, but servers that only return `structuredContent` omit it (the SDK defaults it too).
+ * `structuredContent` may be any JSON value, as MCP 2026-07-28 allows.
+ */
 function validateCallToolResult(value: unknown): CallToolResult {
 	if (!isObject(value) || (value.content !== undefined && !Array.isArray(value.content))) {
 		throw new McpError(JSON_RPC_ERROR_CODES.invalidRequest, "Invalid MCP tools/call result");
-	}
-	if (value.structuredContent !== undefined && !isObject(value.structuredContent)) {
-		throw new McpError(JSON_RPC_ERROR_CODES.invalidRequest, "Invalid MCP tools/call structured content");
 	}
 	return (value.content === undefined ? { ...value, content: [] } : value) as unknown as CallToolResult;
 }
