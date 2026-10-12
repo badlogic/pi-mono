@@ -12,8 +12,10 @@ import {
 	FileError,
 	type FileInfo,
 	type FileKind,
+	type FileListing,
 	type FileWatcher,
 	type LineScan,
+	type ListFilesOptions,
 	ok,
 	type Result,
 	type ShellExecOptions,
@@ -26,8 +28,9 @@ import {
 	type WatchChange,
 	type WatchTarget,
 } from "@earendil-works/pi-durable/env";
-import { type Connection, type Json, RemoteError, type RemoteInfo } from "./connection.ts";
+import { type Connection, type Json, nodePlatform, RemoteError, type RemoteInfo } from "./connection.ts";
 import { abortResult, toFileError } from "./errors.ts";
+import { listFilesOver } from "./list-files.ts";
 import { RemoteWatcher, type RemoteWatchOptions } from "./watch.ts";
 
 const MAX_TIMEOUT_MS = 2_147_483_647;
@@ -63,7 +66,7 @@ type RemoteDirEntry = { name: string; raw?: number[]; info?: RemoteFileInfo; err
 
 /** Node's path rules of the remote system. */
 export async function remotePath(connection: Connection): Promise<PlatformPath> {
-	return (await connection.info()).os === "windows" ? win32 : posix;
+	return nodePlatform(await connection.info()).platform === "win32" ? win32 : posix;
 }
 
 function toInfo(path: string, remote: RemoteFileInfo, paths: PlatformPath): Result<FileInfo, FileError> {
@@ -370,7 +373,7 @@ export class RemoteExecutionEnv implements ExecutionEnv {
 	/** Node's `resolvePath` on the remote system, with its home directory and working directories. */
 	async #resolve(path: string): Promise<string> {
 		const info = await this.connection.info();
-		const windows = info.os === "windows";
+		const windows = nodePlatform(info).platform === "win32";
 		const paths = windows ? win32 : posix;
 		let normalized = path;
 		if (normalized === "~") {
@@ -715,6 +718,21 @@ export class RemoteExecutionEnv implements ExecutionEnv {
 			}
 			return infos;
 		});
+	}
+
+	/** Through the daemon; `not_supported` with a daemon released before `listFiles`. */
+	async listFiles(
+		path: string,
+		options: ListFilesOptions | undefined,
+		context: Context,
+	): Promise<Result<FileListing, FileError>> {
+		let resolved: string;
+		try {
+			resolved = await this.#resolve(path);
+		} catch (error) {
+			return err(toFileError(error, path));
+		}
+		return listFilesOver(this.connection, resolved, options, context);
 	}
 
 	async #openDir(resolved: string): Promise<{ handle: Handle }> {

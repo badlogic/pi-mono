@@ -2,11 +2,13 @@ export {
 	Connection,
 	type ConnectionOptions,
 	isConnectionLost,
+	nodePlatform,
 	RemoteError,
 	type RemoteInfo,
 	type Reply,
 	type RequestOptions,
 } from "./connection.ts";
+export { LocalExecutionEnv, type LocalExecutionEnvOptions } from "./list-files.ts";
 export { RemoteExecutionEnv, type RemoteExecutionEnvOptions } from "./remote-env.ts";
 export {
 	acceptHostKey,
