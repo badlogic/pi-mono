@@ -2,7 +2,7 @@
 import { type ChildProcess, fork } from "node:child_process";
 import { createHash } from "node:crypto";
 import { unlinkSync } from "node:fs";
-import { rm } from "node:fs/promises";
+import { lstat, mkdir, rm } from "node:fs/promises";
 import { connect, createServer } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -86,7 +86,7 @@ export async function processLock(name: string): Promise<() => Promise<void>> {
 		process.platform === "win32"
 			? `\\\\.\\pipe\\chord2-${key}`
 			: file
-				? join(tmpdir(), `chord2-${key}.sock`)
+				? await lockSocketPath(`chord2-${key}.sock`)
 				: `\0chord2-${key}`;
 	const server = createServer((socket) => socket.end());
 	for (;;) {
@@ -120,6 +120,27 @@ export async function processLock(name: string): Promise<() => Promise<void>> {
 			if (file) process.removeListener("exit", removeFile);
 			server.close((error) => (error ? reject(error) : resolve()));
 		});
+}
+
+/** sun_path holds 104 bytes on macOS and the BSDs, including the terminating NUL. */
+const MAX_SOCKET_PATH_BYTES = 103;
+
+/**
+ * The lock socket's path: in the temporary directory, or, when that path does not fit in sun_path (a deep TMPDIR,
+ * such as a test runner's below macOS's per-user one), in a private per-user directory under /tmp. Other users must
+ * not be able to create or remove sockets there, so the directory has to be ours and closed to everyone else.
+ */
+async function lockSocketPath(file: string): Promise<string> {
+	const preferred = join(tmpdir(), file);
+	if (Buffer.byteLength(preferred) <= MAX_SOCKET_PATH_BYTES) return preferred;
+	const uid = process.getuid?.() ?? 0;
+	const directory = `/tmp/chord2-${uid}`;
+	await mkdir(directory, { mode: 0o700, recursive: true });
+	const stats = await lstat(directory);
+	if (!stats.isDirectory() || stats.uid !== uid || (stats.mode & 0o077) !== 0) {
+		throw new ChordError("unavailable", `lock directory ${directory} must be a directory only its owner can access`);
+	}
+	return join(directory, file);
 }
 
 function accepting(address: string): Promise<boolean> {

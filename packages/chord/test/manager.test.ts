@@ -1,11 +1,11 @@
 import assert from "node:assert/strict";
-import { readFileSync, rmSync } from "node:fs";
+import { mkdirSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, it } from "vitest";
 import { createHost, ipcLink, isChordError } from "../src/index.ts";
-import { type ControlMessage, createHostManager, type Driver, forkDriver } from "../src/manager.ts";
+import { type ControlMessage, createHostManager, type Driver, forkDriver, processLock } from "../src/manager.ts";
 import { Echo } from "./fixtures/echo.ts";
 
 const entry = fileURLToPath(new URL("./fixtures/worker.ts", import.meta.url));
@@ -22,6 +22,27 @@ const alive = (pid: number): boolean => {
 
 const driver = (env: Record<string, string> = {}, lock?: string): Driver =>
 	forkDriver({ entry, env: { HOST_NAME: "w1", ...env }, init: { greeting: "hi" }, lock });
+
+describe("processLock", () => {
+	// A socket path over 104 bytes failed with EINVAL on macOS when TMPDIR was deep (./test.sh below macOS's TMPDIR).
+	it("admits one holder when the temporary directory is too deep for a socket path", async () => {
+		const deep = join(scratch("deep"), "a".repeat(60), "b".repeat(60));
+		mkdirSync(deep, { recursive: true });
+		const previous = process.env.TMPDIR;
+		process.env.TMPDIR = deep;
+		try {
+			const name = `deep-${process.pid}`;
+			const release = await processLock(name);
+			await assert.rejects(processLock(name), (error) => isChordError(error) && error.reason === "locked");
+			await release();
+			await (await processLock(name))();
+		} finally {
+			if (previous === undefined) delete process.env.TMPDIR;
+			else process.env.TMPDIR = previous;
+			rmSync(scratch("deep"), { recursive: true, force: true });
+		}
+	});
+});
 
 describe("host manager (real child processes)", () => {
 	it("starts a child host, links it, stops it gracefully", async () => {
