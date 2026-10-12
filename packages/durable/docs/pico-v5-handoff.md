@@ -868,8 +868,6 @@ seal (§2.2 says states close after the join); cancelling `close()` cancels only
 that wait and a second `close()` awaits the same shutdown; add
 `Conversation.abort()` to the progress calls; "old and new Harness generations"
 means that after `await close()` no invocation code of the old Harness runs;
-"service withdrawal and client detach" is proposed as a runnable Chord guide
-test (facet host, in-process remote binding, host dispose before Harness close);
 "normative usage sequences" are the spec's example code blocks, copied into one
 compile-checked test.
 
@@ -885,8 +883,7 @@ does not; registry change between open and resume; handover keeps memos;
 compile tests for every §3.3/§9.1 overload (including `snapshotAsOf` rejecting a
 non-rewindable token, token overloads of `tx.entry`/`appendEntry`), the
 `SubmissionDraft` never-fields, `waitForTask<R>`, `compact()` result type, and
-an erased extension/task with narrowed input, several phases, and custom hooks;
-the Chord guide compiles (it uses a bare `Id` today) and runs.
+an erased extension/task with narrowed input, several phases, and custom hooks.
 
 Already covered, rerun only: root-replacement delta versus checkpoint, blocked
 tasks surviving open, root identity across reopen, handover cases, a reopened
@@ -897,8 +894,7 @@ Harness, then stop for final review.
 Done. The spec wording is settled as proposed (§2.2 close and progress calls,
 §5.1, §7.5, §9.1, §12). Close ends states and watches at the seal; a new Harness
 may open the Storage once the old `close()` resolved. The lifecycle tests are in
-`harness-lifecycle.test.ts`, the Chord guide runs as `chord-guide.test.ts`, and
-the spec's usage examples compile in `spec-usage.test.ts`.
+`harness-lifecycle.test.ts`, and the spec's usage examples compile in `spec-usage.test.ts`.
 
 ## 23. Task graph view
 

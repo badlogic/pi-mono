@@ -1918,8 +1918,8 @@ caller-owned. Later runtime commits reject, and close writes no task outcome. Cl
 starts no fresh phase or abort invocation. It does not set abort marks,
 terminalize tasks, retire task documents, or publish document retirement. The
 hosting layer withdraws services and
-detaches clients before it closes the Harness, for example by disposing its Chord
-facet host (see the Chord usage guide); reconnecting to a reopened Session
+detaches clients before it closes the Harness, for example by closing its Chord
+host; reconnecting to a reopened Session
 hydrates the last committed state and resumes recovery from its durable
 checkpoints.
 
