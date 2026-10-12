@@ -70,7 +70,7 @@ Options for add:
 
 Other options:
   --json                  Print the list as JSON
-  --timeout <seconds>     How long login waits for the browser (default: 300)`;
+  --timeout <seconds>     Time limit for the whole sign-in (default: 300)`;
 
 const HELP_HINT = chalk.dim(`Use "${APP_NAME} mcp --help" for usage.`);
 
