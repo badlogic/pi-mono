@@ -42,6 +42,7 @@ beforeEach(() => {
 		"WT_SESSION",
 		"WSL_DISTRO_NAME",
 		"WSLENV",
+		"PI_CLIPBOARD_OSC52",
 	])
 		vi.stubEnv(name, "");
 	mocks.platform.mockReturnValue("darwin");
@@ -149,6 +150,26 @@ describe("copyToClipboard", () => {
 		await copy;
 		expect(osc52Writes).toHaveLength(1);
 		expect(mocks.command).not.toHaveBeenCalled();
+	});
+	test.each([
+		["darwin", undefined],
+		["win32", undefined],
+		["linux", ":99"],
+	] as const)("PI_CLIPBOARD_OSC52=1 emits OSC 52 after a successful %s copy", async (platform, display) => {
+		// Regression test for #10826, #10835, #10114: remote clients without SSH markers.
+		mocks.platform.mockReturnValue(platform);
+		if (display) vi.stubEnv("DISPLAY", display);
+		vi.stubEnv("PI_CLIPBOARD_OSC52", "1");
+		await copyToClipboard("hello");
+		if (platform === "linux") {
+			expect(mocks.command).toHaveBeenCalledWith("xclip", ["-selection", "clipboard"], {
+				input: "hello",
+				timeoutMs: 5000,
+			});
+		} else {
+			expect(mocks.clipboard.setText).toHaveBeenCalledWith("hello");
+		}
+		expect(osc52Writes).toEqual([`\x1b]52;c;${Buffer.from("hello").toString("base64")}\x07`]);
 	});
 	test("a rejected native write falls back to pbcopy", async () => {
 		mocks.clipboard.setText.mockRejectedValue(new Error("native failed"));
