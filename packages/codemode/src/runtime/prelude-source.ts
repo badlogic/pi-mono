@@ -9,7 +9,7 @@
  *
  * Output helpers: `text(value)` appends a text item (non-strings are
  * JSON-stringified), `image(urlOrItem)` appends an image from a base64 `data:` URL, an
- * `{ image_url }` object, or an MCP `ImageContent` block, and `exit()` ends the script
+ * `{ image_url }` object, or an image block `{ type: "image", data, mimeType }`, and `exit()` ends the script
  * successfully. `console.*` appends text items marked as console output.
  *
  * `store(key, value)` and `load(key)` are synchronous: they work on a snapshot of
@@ -43,7 +43,7 @@ export const MAX_OUTPUT_CHARS = 16 * 1024 * 1024;
 export const MAX_OUTPUT_ITEMS = 100_000;
 
 const IMAGE_HELPER_EXPECTS =
-	"image expects a non-empty image URL string, an object with image_url, or a raw MCP image block";
+	'image expects a non-empty image URL string, an object with image_url, or an image block { type: "image", data, mimeType }';
 
 export const PRELUDE_SOURCE: string = `(function (bridge, toolsJson, globalsJson, storeJson) {
 	"use strict";
@@ -384,9 +384,9 @@ export const PRELUDE_SOURCE: string = `(function (bridge, toolsJson, globalsJson
 		}
 		if (typeof value.type !== "string") throw new TypeErrorCtor(${JSON.stringify(IMAGE_HELPER_EXPECTS)});
 		if (value.type !== "image") {
-			throw new TypeErrorCtor('image only accepts MCP image blocks, got "' + value.type + '"');
+			throw new TypeErrorCtor('image only accepts image blocks, got "' + value.type + '"');
 		}
-		if (typeof value.data !== "string" || value.data === "") throw new TypeErrorCtor("image expected MCP image data");
+		if (typeof value.data !== "string" || value.data === "") throw new TypeErrorCtor("image expected image block data");
 		if (value.data.toLowerCase().startsWith("data:")) return value.data;
 		return "data:;base64," + value.data;
 	}

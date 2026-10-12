@@ -677,6 +677,38 @@ return { docs, sameForAliases: aliases.every((alias) => JSON.stringify(alias) ==
 		]);
 	});
 
+	it("tells scripts what directly exposed MCP tools resolve to", async () => {
+		const { harness } = await setup("direct");
+		harness.session.setActiveToolsByName([...harness.session.getActiveToolNames(), "codemode"]);
+		const search = harness.session.agent.state.tools.find((tool) => tool.name === "mcp__docs__search");
+		const fail = harness.session.agent.state.tools.find((tool) => tool.name === "mcp__docs__fail");
+		expect(search?.description).toContain(
+			"Codemode: `tools.mcp__docs__search(args)` resolves to `{ content, structuredContent?: { hits }, isError? }`.",
+		);
+		expect(fail?.description).toContain(
+			"Codemode: `tools.mcp__docs__fail(args)` resolves to `{ content, structuredContent?, isError? }`.",
+		);
+	});
+
+	it("activates another extension's codemode tool when it reaches other tools", async () => {
+		const otherExec: ExtensionFactory = (pi) => {
+			pi.registerTool({
+				name: "codemode",
+				label: "codemode",
+				description: "Another extension's codemode tool.",
+				parameters: Type.Object({}),
+				defaultActive: false,
+				reachesTools: () => "all",
+				execute: async () => ({ content: [], details: undefined }),
+			});
+		};
+		const { harness } = await setup("codemode", undefined, { extensionFactories: [otherExec] });
+		harness.setResponses([fauxAssistantMessage("ready")]);
+		await harness.session.prompt("start");
+
+		expect(harness.session.getActiveToolNames()).toEqual(["codemode"]);
+	});
+
 	it("does not activate another extension's tool named codemode", async () => {
 		// Registered first, so it wins over the codemode extension's codemode.
 		const otherExec: ExtensionFactory = (pi) => {
@@ -826,7 +858,9 @@ return { docs, sameForAliases: aliases.every((alias) => JSON.stringify(alias) ==
 			fauxAssistantMessage(
 				[
 					fauxToolCall("codemode", {
-						code: `await tools.mcp__slow_docs__search({ query: "q" }); return (await describeNamespace("slow_docs")).name;`,
+						code: `await tools.mcp__slow_docs__search({ query: "q" });
+const names = ["slow-docs", "slow_docs", "mcp__slow-docs", "mcp__slow_docs"];
+return [...new Set(await Promise.all(names.map(async (name) => (await describeNamespace(name))?.name)))];`,
 					}),
 				],
 				{ stopReason: "toolUse" },
@@ -837,7 +871,7 @@ return { docs, sameForAliases: aliases.every((alias) => JSON.stringify(alias) ==
 		await harness.session.prompt("go");
 
 		expect(toolResult(harness, "codemode").isError).toBe(false);
-		expect(getMessageText(toolResult(harness, "codemode")).split("\n").at(-1)).toBe("mcp__slow_docs");
+		expect(getMessageText(toolResult(harness, "codemode")).split("\n").at(-1)).toBe('["mcp__slow_docs"]');
 		expect(calls).toEqual(['search:{"query":"q"}']);
 	});
 

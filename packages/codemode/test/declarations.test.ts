@@ -1,26 +1,7 @@
 import { describe, expect, it } from "vitest";
-import {
-	mcpStructuredContentSchema,
-	renderDeclarations,
-	renderToolSample,
-	renderToolSignature,
-	schemaToType,
-} from "../src/index.ts";
+import { renderDeclarations, renderToolSample, renderToolSignature, schemaToType } from "../src/index.ts";
 
 const execute = () => undefined;
-
-function mcpResultSchema(structuredContent?: unknown) {
-	return {
-		type: "object",
-		properties: {
-			content: { type: "array", items: { type: "object" } },
-			...(structuredContent === undefined ? {} : { structuredContent }),
-			isError: { type: "boolean" },
-			_meta: { type: "object" },
-		},
-		required: ["content"],
-	};
-}
 
 describe("schemaToType", () => {
 	it("renders primitives, literals, and unions", () => {
@@ -258,36 +239,21 @@ describe("tool declarations", () => {
 		expect(renderToolSignature({ name: "free" })).toBe("free(args: unknown): Promise<unknown>;");
 	});
 
-	it("renders MCP CallToolResult output schemas as CallToolResult<T>", () => {
-		const inputSchema = { type: "object", properties: {}, additionalProperties: false };
+	it("renders output schemas shaped like an MCP CallToolResult as plain types", () => {
+		const outputSchema = {
+			type: "object",
+			properties: {
+				content: { type: "array", items: { type: "object" } },
+				isError: { type: "boolean" },
+				_meta: { type: "object" },
+			},
+			required: ["content"],
+		};
 		expect(
-			renderToolSignature({
-				name: "mcp__sample__search",
-				inputSchema,
-				outputSchema: mcpResultSchema({
-					type: "object",
-					properties: { results: { type: "array", items: { $ref: "#/definitions/Result~1item~0v1" } } },
-					required: ["results"],
-					additionalProperties: false,
-					definitions: {
-						"Result/item~v1": {
-							type: "object",
-							properties: { id: { type: "string" }, score: { type: "number" } },
-							required: ["id", "score"],
-							additionalProperties: false,
-						},
-					},
-				}),
-			}),
+			renderToolSignature({ name: "plain", inputSchema: { type: "object", properties: {} }, outputSchema }),
 		).toBe(
-			"mcp__sample__search(args: {}): Promise<CallToolResult<{ results: Array<{ id: string; score: number; }>; }>>;",
+			"plain(args: { [key: string]: unknown; }): Promise<{ _meta?: { [key: string]: unknown; }; content: Array<{ [key: string]: unknown; }>; isError?: boolean; }>;",
 		);
-		expect(renderToolSignature({ name: "plain", inputSchema, outputSchema: mcpResultSchema() })).toBe(
-			"plain(args: {}): Promise<CallToolResult>;",
-		);
-		expect(
-			mcpStructuredContentSchema({ type: "object", properties: { content: { type: "array" } } }),
-		).toBeUndefined();
 	});
 
 	it("renders the per-tool sample", () => {

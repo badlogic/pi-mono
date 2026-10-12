@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Breaking Changes
+
+- Removed `MCP_TYPESCRIPT_PREAMBLE` and `mcpStructuredContentSchema()`. `renderToolOutputType()` and the declarations built on it render every output schema as its own type and no longer turn MCP `CallToolResult` schemas into `CallToolResult<T>`; describe MCP results in the output schema instead
+
 ### Added
 
 - Added `RemoteCodemodeSandbox`, which runs each script's VM in another isolate while tools run in the caller. `CodemodeSandboxDurableObject` from the new `@earendil-works/pi-codemode/cloudflare` entry is its remote end, deployed as its own Cloudflare Worker. `examples/cloudflare` shows the setup
@@ -12,6 +16,7 @@
 ### Changed
 
 - `schemaToType()` and the declarations built on it show property constraints the TypeScript type cannot express as tags on the property's comment line, such as `// @integer @minimum 0 @maximum 30000 @default 0`. Covered keywords: `integer`, numeric bounds, `multipleOf`, string length, `pattern`, `format`, array length, `uniqueItems`, non-null `default`, and `deprecated`; constraints of nullable `anyOf`/`oneOf` fields are read from the non-null branch, and draft-04 boolean `exclusiveMinimum`/`exclusiveMaximum` are shown as exclusive bounds. Property descriptions now also split on U+2028/U+2029. A type over `maxChars` is rendered again without tags before it becomes `unknown` ([#10707](https://github.com/earendil-works/pi/issues/10707))
+- `image()` errors describe the accepted image block as `{ type: "image", data, mimeType }` instead of an MCP image block
 - The VM now polls for interrupts while it drains promise jobs, so a script such as `while (true) await null` is stopped at the same points as a synchronous loop
 
 ### Fixed

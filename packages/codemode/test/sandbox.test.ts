@@ -163,12 +163,12 @@ describe.each(Object.keys(BACKENDS))("%s backend", (name) => {
 			const errors = result.value as string[];
 			expect(errors[0]).toMatch(/^TypeError: .*circular/);
 			expect(errors.slice(1)).toEqual([
-				"TypeError: image expects a non-empty image URL string, an object with image_url, or a raw MCP image block",
+				'TypeError: image expects a non-empty image URL string, an object with image_url, or an image block { type: "image", data, mimeType }',
 				"TypeError: remote image URLs are not supported in tool outputs. Pass a base64 data URI instead",
 				"TypeError: invalid image output. Pass a base64 data URI instead",
-				'TypeError: image only accepts MCP image blocks, got "text"',
-				"TypeError: image expected MCP image data",
-				"TypeError: image expects a non-empty image URL string, an object with image_url, or a raw MCP image block",
+				'TypeError: image only accepts image blocks, got "text"',
+				"TypeError: image expected image block data",
+				'TypeError: image expects a non-empty image URL string, an object with image_url, or an image block { type: "image", data, mimeType }',
 				...Array(6).fill(
 					"TypeError: invalid image output. The image data is not valid base64 (truncated or corrupted?)",
 				),

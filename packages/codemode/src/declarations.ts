@@ -32,87 +32,6 @@ const MAX_TAG_CHARS = 80;
 /** Characters that end a `//` comment. */
 const LINE_TERMINATORS = /[\r\n\u2028\u2029]/g;
 
-/**
- * TypeScript types for MCP results, from the MCP `CallToolResult` schema, so `CallToolResult<T>`
- * declarations can refer to them.
- */
-export const MCP_TYPESCRIPT_PREAMBLE = `type Role = "user" | "assistant";
-type MetaObject = Record<string, unknown>;
-type Annotations = {
-  audience?: Role[];
-  priority?: number;
-  lastModified?: string;
-};
-type Icon = {
-  src: string;
-  mimeType?: string;
-  sizes?: string[];
-  theme?: "light" | "dark";
-};
-type TextResourceContents = {
-  uri: string;
-  mimeType?: string;
-  _meta?: MetaObject;
-  text: string;
-};
-type BlobResourceContents = {
-  uri: string;
-  mimeType?: string;
-  _meta?: MetaObject;
-  blob: string;
-};
-type TextContent = {
-  type: "text";
-  text: string;
-  annotations?: Annotations;
-  _meta?: MetaObject;
-};
-type ImageContent = {
-  type: "image";
-  data: string;
-  mimeType: string;
-  annotations?: Annotations;
-  _meta?: MetaObject;
-};
-type AudioContent = {
-  type: "audio";
-  data: string;
-  mimeType: string;
-  annotations?: Annotations;
-  _meta?: MetaObject;
-};
-type ResourceLink = {
-  icons?: Icon[];
-  name: string;
-  title?: string;
-  uri: string;
-  description?: string;
-  mimeType?: string;
-  annotations?: Annotations;
-  size?: number;
-  _meta?: MetaObject;
-  type: "resource_link";
-};
-type EmbeddedResource = {
-  type: "resource";
-  resource: TextResourceContents | BlobResourceContents;
-  annotations?: Annotations;
-  _meta?: MetaObject;
-};
-type ContentBlock =
-  | TextContent
-  | ImageContent
-  | AudioContent
-  | ResourceLink
-  | EmbeddedResource;
-type CallToolResult<TStructured = { [key: string]: unknown }> = {
-  _meta?: MetaObject;
-  content: ContentBlock[];
-  isError?: boolean;
-  structuredContent?: TStructured;
-  [key: string]: unknown;
-};`;
-
 export interface RenderDeclarationsOptions {
 	tools?: readonly CodemodeTool[];
 	globals?: readonly CodemodeTool[];
@@ -153,8 +72,6 @@ export function renderDeclarations(options: RenderDeclarationsOptions): string {
 /**
  * One tool as a member of the `tools` object: `name(args: T): Promise<R>;` with the
  * name as the identifier scripts use. Input types longer than `inputMaxChars` render as `unknown`.
- * Tools whose output schema is an MCP `CallToolResult` render as `Promise<CallToolResult<T>>`,
- * which needs {@link MCP_TYPESCRIPT_PREAMBLE}.
  */
 export function renderToolSignature(
 	tool: Pick<CodemodeTool, "name" | "inputSchema" | "outputSchema">,
@@ -179,32 +96,8 @@ export function renderToolSample(
 	return `${tool.description?.trim() ?? ""}\n\ncodemode tool declaration:\n\`\`\`ts\n${declaration}\n\`\`\``;
 }
 
-/**
- * The `structuredContent` schema of an MCP `CallToolResult` output schema (detected by a
- * `content` array of objects, boolean `isError`, and object `_meta`), `true` when it declares none, or
- * `undefined` when the schema is not a `CallToolResult`.
- */
-export function mcpStructuredContentSchema(schema: CodemodeJsonSchema | undefined): CodemodeJsonSchema | undefined {
-	if (!isObject(schema) || !isObject(schema.properties)) return undefined;
-	const { content, isError, _meta, structuredContent } = schema.properties;
-	if (!isObject(content) || content.type !== "array" || !isObject(content.items) || content.items.type !== "object") {
-		return undefined;
-	}
-	if (!isObject(isError) || isError.type !== "boolean" || !isObject(_meta) || _meta.type !== "object")
-		return undefined;
-	return isObject(structuredContent) || typeof structuredContent === "boolean" ? structuredContent : true;
-}
-
-/**
- * The type a tool call resolves to: `CallToolResult<T>` for MCP output schemas (needs
- * {@link MCP_TYPESCRIPT_PREAMBLE}), the schema's type otherwise, and `unknown` without a schema.
- */
+/** The type a tool call resolves to: the output schema's type, and `unknown` without a schema. */
 export function renderToolOutputType(schema: CodemodeJsonSchema | undefined): string {
-	const structured = mcpStructuredContentSchema(schema);
-	if (structured !== undefined) {
-		const type = schemaToType(structured);
-		return type === "unknown" ? "CallToolResult" : `CallToolResult<${type}>`;
-	}
 	return schema === undefined ? "unknown" : schemaToType(schema);
 }
 
@@ -227,10 +120,6 @@ function docComment(description: string | undefined, indent: string): string {
 
 function propertyKey(name: string): string {
 	return IDENTIFIER.test(name) ? name : JSON.stringify(name);
-}
-
-function isObject(value: unknown): value is Record<string, unknown> {
-	return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 function union(types: string[]): string {
@@ -269,16 +158,21 @@ function resolveRef(ref: string, root: CodemodeJsonSchema): CodemodeJsonSchema |
 	let current: unknown = root;
 	for (const segment of ref.slice(2).split("/").filter(Boolean)) {
 		const key = decodeURIComponent(segment).replaceAll("~1", "/").replaceAll("~0", "~");
-		if (!isObject(current) || !(key in current)) return undefined;
-		current = current[key];
+		if (typeof current !== "object" || current === null || Array.isArray(current) || !(key in current)) {
+			return undefined;
+		}
+		current = (current as Record<string, unknown>)[key];
 	}
-	return typeof current === "boolean" || isObject(current) ? current : undefined;
+	if (typeof current === "boolean") return current;
+	return typeof current === "object" && current !== null && !Array.isArray(current)
+		? (current as Record<string, unknown>)
+		: undefined;
 }
 
 function toType(schema: CodemodeJsonSchema, context: SchemaContext): string {
 	if (schema === true) return "unknown";
 	if (schema === false) return "never";
-	if (!isObject(schema)) return "unknown";
+	if (typeof schema !== "object" || schema === null || Array.isArray(schema)) return "unknown";
 	if (typeof schema.$ref === "string") {
 		const ref = schema.$ref;
 		if (context.resolving.has(ref) || context.expansions >= MAX_REF_EXPANSIONS) return "unknown";
@@ -348,21 +242,30 @@ function arrayType(schema: Record<string, unknown>, context: SchemaContext): str
 }
 
 function descriptionOf(property: unknown): string {
-	return isObject(property) && typeof property.description === "string" ? property.description.trim() : "";
+	const description = (property as { description?: unknown } | null | undefined)?.description;
+	return typeof description === "string" ? description.trim() : "";
 }
 
 /**
  * Constraints of a property that its TypeScript type cannot express, as JSDoc-style tags:
  * `@integer @minimum 1 @maximum 100 @default 20`. Empty when there are none.
  */
-function constraintTags(property: unknown): string {
-	if (!isObject(property)) return "";
+function constraintTags(schema: unknown): string {
+	if (typeof schema !== "object" || schema === null || Array.isArray(schema)) return "";
+	const property = schema as Record<string, unknown>;
 	// Optional fields such as Pydantic's `int | None` keep their constraints in the non-null branch.
 	// The branch's constraints apply together with the property's, so both are read.
 	const variants = Array.isArray(property.anyOf) ? property.anyOf : property.oneOf;
-	const nonNull = Array.isArray(variants) ? variants.filter((v) => !isObject(v) || v.type !== "null") : [];
+	const nonNull: unknown[] = Array.isArray(variants)
+		? variants.filter((variant) => (variant as { type?: unknown } | null)?.type !== "null")
+		: [];
+	const branch = nonNull.length === 1 ? nonNull[0] : undefined;
+	const branches =
+		typeof branch === "object" && branch !== null && !Array.isArray(branch)
+			? [property, branch as Record<string, unknown>]
+			: [property];
 	// Draft-04 and OpenAPI 3.0 make `minimum`/`maximum` exclusive with a boolean `exclusiveMinimum`/`exclusiveMaximum`.
-	const schemas = (nonNull.length === 1 && isObject(nonNull[0]) ? [property, nonNull[0]] : [property]).map(
+	const schemas = branches.map(
 		(schema): Record<string, unknown> => ({
 			...schema,
 			...(schema.exclusiveMinimum === true ? { minimum: undefined, exclusiveMinimum: schema.minimum } : {}),
@@ -398,7 +301,10 @@ function constraintTags(property: unknown): string {
 }
 
 function objectType(schema: Record<string, unknown>, context: SchemaContext): string {
-	const properties = isObject(schema.properties) ? schema.properties : {};
+	const properties =
+		typeof schema.properties === "object" && schema.properties !== null && !Array.isArray(schema.properties)
+			? (schema.properties as Record<string, unknown>)
+			: {};
 	const required = new Set(Array.isArray(schema.required) ? schema.required : []);
 	const names = Object.keys(properties).sort();
 	const members = names.map((name) => {
