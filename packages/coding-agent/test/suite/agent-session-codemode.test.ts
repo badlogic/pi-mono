@@ -495,6 +495,16 @@ describe("codemode options and store", () => {
 				text: "@options only supports `max_output_tokens` and `timeout_ms`; got `yield`",
 			},
 		]);
+
+		// #10631: a misplaced options line fails before the script runs instead of running without a deadline.
+		const misplaced = await run(harness, '// count\n// @options: {"timeout_ms": 200}\nwhile (true) {}');
+		expect(misplaced.isError).toBe(true);
+		expect(misplaced.content).toEqual([
+			{
+				type: "text",
+				text: "The // @options: line must be the first line of the input; found one on line 2",
+			},
+		]);
 	});
 
 	it("limits script memory so runaway allocations fail inside the script", async () => {
