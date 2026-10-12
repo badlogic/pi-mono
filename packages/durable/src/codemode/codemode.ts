@@ -35,7 +35,7 @@
  * call with an error result.
  */
 import { type Context, copyJson, type JsonValue } from "@earendil-works/chord";
-import type { ImageContent, TextContent } from "@earendil-works/pi-ai";
+import type { TextContent } from "@earendil-works/pi-ai";
 import {
 	type CodemodeHostCall,
 	type CodemodeOutcome,
@@ -44,11 +44,12 @@ import {
 	type CodemodeSandboxBase,
 	toCodemodeIdentifier,
 } from "@earendil-works/pi-codemode/portable";
-import { parseCodemodeSource } from "@earendil-works/pi-codemode/source";
+import { CODEMODE_SOURCE_GRAMMAR, parseCodemodeSource } from "@earendil-works/pi-codemode/source";
 import { type Static, Type } from "typebox";
 import { defineDoc } from "../documents.ts";
+import type { ExecutionEnv } from "../env/index.ts";
 import { errorMessage } from "../errors.ts";
-import { defineExtension, defineTool } from "../harness/define.ts";
+import { defineExtension, defineTool, section } from "../harness/define.ts";
 import { NestedCallDoc, type ToolTaskInput } from "../harness/tool.ts";
 import type {
 	Extension,
@@ -58,17 +59,41 @@ import type {
 	ToolRegistration,
 } from "../harness/types.ts";
 import type { JsonObject } from "../types.ts";
+import {
+	type CodemodeNamespace,
+	codemodeDescription,
+	codemodeSection,
+	DEFAULT_CODEMODE_INLINE_BUDGET,
+	namespaceOf,
+	sampleOf,
+} from "./describe.ts";
+import {
+	CATALOG_GLOBALS,
+	CODEMODE_INTERNAL_PREFIX,
+	catalogCall,
+	createModelTools,
+	GENERATE_IMAGES_TOOL,
+	MAX_CONCURRENT_MODEL_CALLS,
+	MODEL_CALLS,
+} from "./models.ts";
+import { DEFAULT_MAX_OUTPUT_TOKENS, formatResult, type OutputFile } from "./output.ts";
+import { rankDocuments } from "./search.ts";
 
 /**
  * Version of everything in this module that turns stored results into what a script sees: result mapping, globals,
  * start data. Bump it when that changes, so a call started before an upgrade is not replayed by different code.
  */
-export const CODEMODE_MODULE_VERSION = 1;
+export const CODEMODE_MODULE_VERSION = 2;
 
 export const CODEMODE_TOOL_NAME = "codemode";
 
 /** One tool as the script sees it: `tools.<jsName>`. */
-type DeclaredTool = { name: string; jsName: string; description: string };
+/**
+ * `structured`: the tool declares `structuredOutputSchema`, so an error result with a value resolves with it.
+ * `hidden`: an internal tool of this extension (`pi.codemode.*`), which scripts reach only through a global such as
+ * `models.classify()`; never in `tools`, `ALL_TOOLS`, or tool search.
+ */
+type DeclaredTool = { name: string; jsName: string; description: string; structured?: true; hidden?: true };
 
 /** What a call starts with; a rerun starts the VM from exactly this. */
 type Start = {
@@ -80,12 +105,18 @@ type Start = {
 	/** `startedAt + timeout_ms` when the script set one. */
 	deadline?: number;
 	tools: DeclaredTool[];
+	/** The namespaces of the tools, as `describeNamespace()` and `searchTools()` see them. */
+	namespaces: { name: string; description?: string; instructions?: string; tools: string[] }[];
 	globals: { name: string; spread: boolean }[];
+	/** `max_output_tokens` of the script's options line, or the default. */
+	maxOutputTokens: number;
 	store: Record<string, JsonValue>;
 };
 
 type RunState = {
 	start?: Start;
+	/** Directory of the result's files (the full output, images), created once: a rerun writes the same files again. */
+	outputDir?: string;
 	/** The outcome, decided once. */
 	result?: JsonObject;
 };
@@ -136,7 +167,7 @@ export const CodemodeStoreDoc = defineDoc<{ values: Record<string, JsonValue> }>
 
 /** One tool call a script made, as the code mode call's details show it. */
 export type CodemodeNestedCall = {
-	/** The VM's number for the call; its nested call ID is \`<callId>/c<id>\`. */
+	/** The VM's number for the call; its nested call ID is `<callId>/c<id>`. */
 	id: number;
 	name: string;
 	/** Compact JSON of the arguments, cut for display. */
@@ -149,10 +180,14 @@ export type CodemodeNestedCall = {
 
 /**
  * The code mode call's details, in its result: its tool calls in the order it made them, with their status. Calls to
- * globals are not listed. While the script runs, UIs show its nested calls from \`pi.live.nestedTools\`, so the list is
+ * globals are not listed. While the script runs, UIs show its nested calls from `pi.live.nestedTools`, so the list is
  * written once, with the result.
  */
-export type CodemodeToolDetails = { calls: CodemodeNestedCall[] };
+export type CodemodeToolDetails = {
+	calls: CodemodeNestedCall[];
+	/** Temp file with the complete text output, when the output was cut to its token budget. */
+	fullOutputPath?: string;
+};
 
 const ARGS_PREVIEW_CHARS = 200;
 const ERROR_PREVIEW_CHARS = 500;
@@ -175,38 +210,67 @@ export type CodemodeToolInput = Static<typeof codemodeSchema>;
 export type CodemodeToolOptions = {
 	/** Runs the scripts: `CodemodeSandbox` on Node, `RemoteCodemodeSandbox` on Cloudflare. */
 	readonly sandbox: CodemodeSandboxBase;
+	/** Groups of tools by name prefix, such as MCP servers, for the `codemode` section and tool search. */
+	readonly namespaces?: readonly CodemodeNamespace[];
+	/** Estimated tokens the tool declarations in the `codemode` section may use. Default 3000. */
+	readonly inlineBudget?: number;
+	/** Give scripts `models.*`: the model catalog, classifiers, and image generation. Default true. */
+	readonly models?: boolean;
 	/** @internal Host functions scripts call as globals. */
 	readonly globals?: readonly CodemodeGlobal[];
 };
+
+/** Outputs bounded by the script's own token budget; the Harness's limits only stop a runaway. */
+const OUTPUT_LIMITS = { maxBytes: 4 * 1024 * 1024, maxLines: 100_000 } as const;
+
+/** Globals for finding tools, answered from the start data, so a replay sees what the first run saw. */
+const DISCOVERY_GLOBALS = ["searchTools", "describeTool", "describeNamespace"] as const;
+const DEFAULT_SEARCH_LIMIT = 8;
 
 /** The code mode tool. Scripts call the conversation's callable tools as `tools.<name>(args)`. */
 export function createCodemodeTool(options: CodemodeToolOptions): ToolRegistration<typeof codemodeSchema> {
 	return defineTool({
 		name: CODEMODE_TOOL_NAME,
-		description:
-			"Run JavaScript that calls other tools. The input is raw JavaScript, run as an async function body in a QuickJS sandbox: top-level `await` and `return` work. No Node, file system, network, or timers. `await tools.<name>({ ...args })` resolves to the tool's result and rejects with an Error on failure. `text(value)` and `console.log()` add output.",
+		description: codemodeDescription(options.models !== false),
 		parameters: codemodeSchema,
+		outputLimits: OUTPUT_LIMITS,
+		// Capable models write the script as raw text instead of a JSON-escaped string; pi-ai applies it only for them.
+		constrainedSampling: { type: "grammar", variants: { openai_lark: CODEMODE_SOURCE_GRAMMAR } },
 		callers: ["model"],
 		replay: "safe",
 		execute: (args, api, context) => new CodemodeCall(options, api, context).execute(args.code),
 	});
 }
 
-/** The `codemode` extension: the code mode tool. */
+/**
+ * The `codemode` extension: the code mode tool, and the `codemode` prompt section listing the tools scripts can call.
+ */
 export function createCodemodeExtension(options: CodemodeToolOptions): Extension {
-	return defineExtension({ name: "codemode", tools: [createCodemodeTool(options)] });
+	return defineExtension({
+		name: "codemode",
+		tools: [createCodemodeTool(options), ...(options.models === false ? [] : createModelTools())],
+		sections: [
+			section("codemode", (input) =>
+				codemodeSection(
+					input.agent.callable.filter((tool) => !tool.name.startsWith(CODEMODE_INTERNAL_PREFIX)),
+					options.namespaces ?? [],
+					options.inlineBudget ?? DEFAULT_CODEMODE_INLINE_BUDGET,
+				),
+			),
+		],
+	});
 }
 
-/** What a script gets for a nested call: success resolves with its value; every error rejects (design §4.5). */
-function outcomeOf(name: string, result: NestedToolExecutionResult): CodemodeOutcome {
-	const value = result.structuredOutput;
-	if (!result.isError) return { ok: true, value };
-	const message =
-		typeof value === "string" && value !== ""
-			? value
-			: Array.isArray(value)
-				? value.flatMap((item) => (isText(item) ? [item.text] : [])).join("\n")
-				: "";
+/**
+ * What a script gets for a nested call, as in the coding agent. A tool with a schema resolves with its value, also on
+ * an error result that carries one (`bash`'s `{ output, exitCode }` for a nonzero exit); a schema-less tool
+ * resolves with its text output, images left out, as its declaration says. Any other error rejects, with its text: a
+ * schema-less tool's output, else its error diagnostics.
+ */
+function outcomeOf(name: string, structured: boolean, result: NestedToolExecutionResult): CodemodeOutcome {
+	const value = structured ? result.structuredOutput : textOf(result.structuredOutput);
+	if (!result.isError || (structured && value !== undefined)) return { ok: true, value };
+	const message = structured ? "" : (value as string);
 	const diagnostics = result.diagnostics
 		.filter((diagnostic) => diagnostic.severity === "error")
 		.map((diagnostic) => diagnostic.message)
@@ -218,25 +282,15 @@ function outcomeOf(name: string, result: NestedToolExecutionResult): CodemodeOut
 	};
 }
 
-function isText(item: unknown): item is TextContent {
-	return typeof item === "object" && item !== null && (item as TextContent).type === "text";
+/** The text of a schema-less tool's collapsed output: a string, one image, or an array of text and image blocks. */
+function textOf(value: JsonValue | undefined): string {
+	if (typeof value === "string") return value;
+	if (!Array.isArray(value)) return "";
+	return value.flatMap((item) => (isText(item) ? [item.text] : [])).join("\n");
 }
 
-/** The tool result for a script's result. */
-function toolResult(result: CodemodeResult): ToolExecutionResult {
-	const output: (TextContent | ImageContent)[] = [];
-	for (const item of result.output) output.push(item.type === "image" ? item : { type: "text", text: item.text });
-	if (result.ok && result.value !== undefined) {
-		output.push({
-			type: "text",
-			text: typeof result.value === "string" ? result.value : JSON.stringify(result.value),
-		});
-	}
-	if (!result.ok) {
-		const { error } = result;
-		output.push({ type: "text", text: `Script error (${error.kind}): ${error.stack ?? error.message}` });
-	}
-	return { output, isError: !result.ok };
+function isText(item: unknown): item is TextContent {
+	return typeof item === "object" && item !== null && (item as TextContent).type === "text";
 }
 
 function errorResult(message: string): ToolExecutionResult {
@@ -284,7 +338,12 @@ class CodemodeCall {
 	/** Set once the call decided an outcome other than the script's own (divergence, mismatch) or failed. */
 	private ended: ToolExecutionResult | undefined;
 	private failure: unknown;
-	/** The script's tool calls for \`details\`, by VM call ID. */
+	/** `models.classify()`/`generateImages()` calls in flight, and those waiting for a slot. */
+	private modelCalls = 0;
+	private readonly modelWaiters: (() => void)[] = [];
+	/** Images `models.generateImages()` returned, to notice a script that never shows them. */
+	private generatedImages = 0;
+	/** The script's tool calls for `details`, by VM call ID. */
 	private readonly rows = new Map<number, CodemodeNestedCall>();
 	/** Resolves once the VM's fingerprint is checked or recorded; nothing is delivered or admitted before. */
 	private gate!: Promise<void>;
@@ -306,12 +365,33 @@ class CodemodeCall {
 		const tools: DeclaredTool[] = agent.callable.map((tool) => ({
 			name: tool.name,
 			jsName: toCodemodeIdentifier(tool.name),
-			description: tool.description,
+			description: sampleOf(tool),
+			...(tool.structuredOutputSchema === undefined ? {} : { structured: true as const }),
+			...(tool.name.startsWith(CODEMODE_INTERNAL_PREFIX) ? { hidden: true as const } : {}),
 		}));
-		const globals = (this.options.globals ?? []).map((global) => ({
-			name: global.name,
-			spread: global.spread === true,
-		}));
+		const callable = agent.callable.filter((tool) => !tool.name.startsWith(CODEMODE_INTERNAL_PREFIX));
+		const models = this.options.models === false ? [] : [...CATALOG_GLOBALS, ...Object.keys(MODEL_CALLS)];
+		const globals = [
+			...DISCOVERY_GLOBALS.map((name) => ({ name, spread: true })),
+			...models.map((name) => ({ name, spread: true })),
+			...(this.options.globals ?? []).map((global) => ({ name: global.name, spread: global.spread === true })),
+		];
+		const namespaces: Start["namespaces"] = [];
+		for (const tool of callable) {
+			const namespace = namespaceOf(tool.name, this.options.namespaces ?? []);
+			if (namespace === undefined) continue;
+			let entry = namespaces.find((candidate) => candidate.name === namespace.name);
+			if (entry === undefined) {
+				entry = {
+					name: namespace.name,
+					...(namespace.description === undefined ? {} : { description: namespace.description }),
+					...(namespace.instructions === undefined ? {} : { instructions: namespace.instructions }),
+					tools: [],
+				};
+				namespaces.push(entry);
+			}
+			entry.tools.push(tool.name);
+		}
 		const now = Date.now();
 		const seed = crypto.getRandomValues(new Uint32Array(1))[0]!;
 		type Found =
@@ -330,7 +410,9 @@ class CodemodeCall {
 					seed,
 					...(timeout === undefined ? {} : { deadline: now + timeout }),
 					tools,
+					namespaces,
 					globals,
+					maxOutputTokens: sourceOptions.maxOutputTokens ?? DEFAULT_MAX_OUTPUT_TOKENS,
 					store: copyJson(store.values as JsonValue) as Record<string, JsonValue>,
 				};
 			}
@@ -375,7 +457,7 @@ class CodemodeCall {
 			this.run = this.options.sandbox.start(code, {
 				startedAt: this.start.startedAt,
 				seed: this.start.seed,
-				tools: this.start.tools,
+				tools: this.start.tools.filter((tool) => tool.hidden !== true),
 				globals: this.start.globals,
 				store: this.start.store,
 				signal: this.controller.signal,
@@ -458,7 +540,23 @@ class CodemodeCall {
 
 	/** The script's own outcome, stored with its store writes in one transaction. */
 	private async complete(result: CodemodeResult): Promise<ToolExecutionResult> {
-		const tool = { ...toolResult(result), details: this.details() as unknown as JsonValue };
+		const details = this.details();
+		const formatted = await formatResult(result, {
+			generatedImages: this.generatedImages,
+			wallMs: Date.now() - this.start.startedAt,
+			maxOutputTokens: this.start.maxOutputTokens,
+			calls: details.calls,
+			limits: OUTPUT_LIMITS,
+			write: this.outputFiles(),
+		});
+		const tool: ToolExecutionResult = {
+			output: formatted.content,
+			isError: !result.ok,
+			details: {
+				...details,
+				...(formatted.fullOutputPath === undefined ? {} : { fullOutputPath: formatted.fullOutputPath }),
+			} as unknown as JsonValue,
+		};
 		const writes = result.ok ? result.storeWrites : undefined;
 		return this.api.commit(async (tx) => {
 			const run = await tx.doc(CodemodeRunDoc, this.api.taskId);
@@ -470,6 +568,39 @@ class CodemodeCall {
 				for (const [key, value] of Object.entries(writes.set)) store.values[key] = value as JsonValue;
 			}
 			return tool;
+		}, this.context);
+	}
+
+	/** Writes the result's files under fixed names into the run's output directory, so a rerun overwrites them. */
+	private outputFiles(): OutputFile {
+		const env = this.api.env;
+		let directory: Promise<string> | undefined;
+		return async (name, data) => {
+			if (env === undefined) return { error: "no execution environment" };
+			try {
+				directory ??= this.outputDir(env);
+				const path = `${await directory}/${name}`;
+				const written = await env.writeFile(path, data, this.context);
+				return written.ok ? { path } : { error: written.error.message };
+			} catch (error) {
+				return { error: errorMessage(error) };
+			}
+		};
+	}
+
+	/** The run's output directory: the recorded one, else a new temp directory, recorded before any file is written. */
+	private async outputDir(env: ExecutionEnv): Promise<string> {
+		const recorded = await this.api.commit(
+			async (tx) => (await tx.doc(CodemodeRunDoc, this.api.taskId)).outputDir,
+			this.context,
+		);
+		if (recorded !== undefined) return recorded;
+		const created = await env.createTempDir("pi-codemode-", this.context);
+		if (!created.ok) throw new Error(created.error.message);
+		return this.api.commit(async (tx) => {
+			const run = await tx.doc(CodemodeRunDoc, this.api.taskId);
+			run.outputDir ??= created.value;
+			return run.outputDir!;
 		}, this.context);
 	}
 
@@ -502,8 +633,9 @@ class CodemodeCall {
 		else if (!this.rerun) void this.release();
 	}
 
-	private onCall(call: CodemodeHostCall): void {
+	private onCall(made: CodemodeHostCall): void {
 		if (this.stopped) return;
+		const call = asToolCall(made);
 		if (call.target === "tool") this.started(call);
 		this.issued = Math.max(this.issued, call.id);
 		const index = this.replaying ? (this.replayIndex.get(call.id) ?? -1) : -1;
@@ -536,6 +668,7 @@ class CodemodeCall {
 					this.deliverReplayed();
 				},
 				(error: unknown) => {
+					if (this.stopped) return;
 					if (this.context.abortSignal?.aborted) this.fail(error);
 					// The key names another tool or other arguments.
 					else this.diverge(`call ${call.id} is ${describe(call)}: ${errorMessage(error)}`);
@@ -650,11 +783,10 @@ class CodemodeCall {
 	/** Run one live call and journal its result. */
 	private launch(call: CodemodeHostCall): void {
 		if (this.stopped) return;
-		const global = call.target === "global" ? this.options.globals?.find((g) => g.name === call.name) : undefined;
 		const running: Promise<{ outcome: CodemodeOutcome; global?: JournalEntry["global"] }> =
 			call.target === "tool"
 				? this.callTool(call).then((outcome) => ({ outcome }))
-				: this.callGlobal(call, global).then((outcome) => ({
+				: this.callGlobal(call).then((outcome) => ({
 						outcome,
 						global: {
 							name: call.name,
@@ -668,6 +800,8 @@ class CodemodeCall {
 				void this.pump();
 			},
 			(error: unknown) => {
+				// Stopped meanwhile: the outcome is decided, or a waiting model call gave up.
+				if (this.stopped) return;
 				if (this.context.abortSignal?.aborted) this.fail(error);
 				// A key an earlier attempt admitted with another tool or other arguments: this attempt took another path.
 				else this.diverge(`call ${call.id} is ${describe(call)}: ${errorMessage(error)}`);
@@ -678,9 +812,25 @@ class CodemodeCall {
 	private async callTool(call: CodemodeHostCall): Promise<CodemodeOutcome> {
 		// Passed as the script gave them; validation reports arguments that are not an object.
 		const args = (call.args ?? {}) as JsonObject;
-		const result = await this.api.executeTool(call.name, args, this.context, { key: `c${call.id}` });
-		const outcome = outcomeOf(call.name, result);
-		this.finishRow(call.id, outcome, result.durationMs);
+		const model = call.name.startsWith(CODEMODE_INTERNAL_PREFIX);
+		if (model) {
+			await this.modelSlot();
+			// The call may have stopped while this one waited: a finished script admits no new paid call.
+			if (this.stopped) {
+				this.releaseModelSlot();
+				throw new Error("The script has ended");
+			}
+		}
+		let result: NestedToolExecutionResult;
+		try {
+			result = await this.api.executeTool(call.name, args, this.context, { key: `c${call.id}` });
+		} finally {
+			if (model) this.releaseModelSlot();
+		}
+		if (call.name === GENERATE_IMAGES_TOOL) this.generatedImages += countImages(result.structuredOutput);
+		const structured = this.start.tools.find((tool) => tool.name === call.name)?.structured === true;
+		const outcome = outcomeOf(call.name, structured, result);
+		this.finishRow(call.id, outcome, result);
 		return outcome;
 	}
 
@@ -688,16 +838,22 @@ class CodemodeCall {
 	private started(call: CodemodeHostCall): void {
 		if (this.rows.has(call.id)) return;
 		const args = call.args === undefined ? "" : (JSON.stringify(call.args) ?? "");
-		this.rows.set(call.id, { id: call.id, name: call.name, args: cut(args, ARGS_PREVIEW_CHARS), status: "running" });
+		const name = call.name.startsWith(CODEMODE_INTERNAL_PREFIX)
+			? call.name.slice(CODEMODE_INTERNAL_PREFIX.length)
+			: call.name;
+		this.rows.set(call.id, { id: call.id, name, args: cut(args, ARGS_PREVIEW_CHARS), status: "running" });
 	}
 
 	/** A tool call ended: its row gets its status, duration, and error. */
-	private finishRow(id: number, outcome: CodemodeOutcome, durationMs: number | undefined): void {
+	/** The call ended: an error result is an error row, also when the script got its value (bash's nonzero exit). */
+	private finishRow(id: number, outcome: CodemodeOutcome, result: NestedToolExecutionResult): void {
 		const row = this.rows.get(id);
 		if (row === undefined) return;
-		row.status = outcome.ok ? "ok" : "error";
-		if (durationMs !== undefined) row.durationMs = durationMs;
-		if (!outcome.ok) row.error = cut(outcome.message, ERROR_PREVIEW_CHARS);
+		row.status = result.isError ? "error" : "ok";
+		if (result.durationMs !== undefined) row.durationMs = result.durationMs;
+		const errors = result.diagnostics.filter((diagnostic) => diagnostic.severity === "error");
+		const error = !outcome.ok ? outcome.message : errors.map((diagnostic) => diagnostic.message).join("\n");
+		if (result.isError && error !== "") row.error = cut(error, ERROR_PREVIEW_CHARS);
 	}
 
 	/** The rows in call order; calls still running when the script ended were cancelled. */
@@ -708,15 +864,89 @@ class CodemodeCall {
 		return { calls };
 	}
 
-	private async callGlobal(call: CodemodeHostCall, global: CodemodeGlobal | undefined): Promise<CodemodeOutcome> {
-		if (global === undefined) return { ok: false, message: `Unknown global ${call.name}` };
+	private async callGlobal(call: CodemodeHostCall): Promise<CodemodeOutcome> {
+		const discovery = (DISCOVERY_GLOBALS as readonly string[]).includes(call.name);
+		const catalog = (CATALOG_GLOBALS as readonly string[]).includes(call.name);
+		const global =
+			discovery || catalog ? undefined : this.options.globals?.find((candidate) => candidate.name === call.name);
+		if (!discovery && !catalog && global === undefined) return { ok: false, message: `Unknown global ${call.name}` };
 		try {
 			// `undefined` stays undefined: the journal omits the value, and a replay resolves with undefined again.
-			return { ok: true, value: await global.execute(call.args, this.api, this.context) };
+			const value = discovery
+				? this.discover(call)
+				: catalog
+					? await catalogCall(call.name, call.args, this.api.models, this.context)
+					: await global!.execute(call.args, this.api, this.context);
+			return { ok: true, value };
 		} catch (error) {
 			if (this.context.abortSignal?.aborted) throw error;
 			return { ok: false, message: errorMessage(error) };
 		}
+	}
+
+	private async modelSlot(): Promise<void> {
+		if (this.modelCalls >= MAX_CONCURRENT_MODEL_CALLS) {
+			await new Promise<void>((resolve) => this.modelWaiters.push(resolve));
+		}
+		this.modelCalls++;
+	}
+
+	private releaseModelSlot(): void {
+		this.modelCalls--;
+		this.modelWaiters.shift()?.();
+	}
+
+	/** `searchTools()`, `describeTool()`, `describeNamespace()`: answered from the start data. */
+	private discover(call: CodemodeHostCall): JsonValue | undefined {
+		const args = Array.isArray(call.args) ? call.args : [];
+		const { namespaces } = this.start;
+		const tools = this.start.tools.filter((tool) => tool.hidden !== true);
+		const namespaceOfTool = (name: string) => namespaces.find((namespace) => namespace.tools.includes(name));
+		const matchesNamespace = (namespace: Start["namespaces"][number], query: string) =>
+			namespace.name === query || toCodemodeIdentifier(namespace.name) === toCodemodeIdentifier(query);
+		if (call.name === "describeTool") {
+			const [name] = args;
+			if (typeof name !== "string") throw new Error("describeTool() expects a tool name");
+			return tools.find((tool) => tool.name === name || tool.jsName === name)?.description;
+		}
+		if (call.name === "describeNamespace") {
+			const [name] = args;
+			if (typeof name !== "string") throw new Error("describeNamespace() expects a namespace name");
+			const namespace = namespaces.find((candidate) => matchesNamespace(candidate, name));
+			if (namespace === undefined) return undefined;
+			return {
+				name: namespace.name,
+				...(namespace.description === undefined ? {} : { description: namespace.description }),
+				...(namespace.instructions === undefined ? {} : { instructions: namespace.instructions }),
+				tools: namespace.tools.map((tool) => toCodemodeIdentifier(tool)),
+			};
+		}
+		const [query, options] = args as [unknown, { limit?: unknown; namespace?: unknown } | undefined];
+		if (typeof query !== "string") throw new Error("searchTools() expects a query string");
+		const limit = options?.limit ?? DEFAULT_SEARCH_LIMIT;
+		if (typeof limit !== "number" || !Number.isInteger(limit) || limit <= 0) {
+			throw new Error("searchTools() limit must be a positive integer");
+		}
+		const namespace = options?.namespace;
+		if (namespace !== undefined && namespace !== null && typeof namespace !== "string") {
+			throw new Error("searchTools() namespace must be a string");
+		}
+		const documents = tools.flatMap((tool) => {
+			const own = namespaceOfTool(tool.name);
+			if (typeof namespace === "string" && (own === undefined || !matchesNamespace(own, namespace))) return [];
+			const text = [
+				tool.name,
+				tool.name.replaceAll("_", " "),
+				tool.description,
+				own?.name ?? "",
+				own?.description ?? "",
+			];
+			return [{ name: tool.name, text: text.join(" ") }];
+		});
+		return rankDocuments(query, documents, limit).map((name) => {
+			const tool = tools.find((candidate) => candidate.name === name)!;
+			return { name: tool.jsName, description: tool.description };
+		});
 	}
 
 	/**
@@ -764,6 +994,20 @@ class CodemodeCall {
 		this.committing = false;
 		void this.pump();
 	}
+}
+
+/** A script's call of `models.classify()` or `models.generateImages()` as the call of its internal tool. */
+function asToolCall(call: CodemodeHostCall): CodemodeHostCall {
+	const tool = call.target === "global" ? MODEL_CALLS[call.name] : undefined;
+	if (tool === undefined) return call;
+	const [model, context] = Array.isArray(call.args) ? call.args : [];
+	return { id: call.id, target: "tool", name: tool, args: { model: model ?? null, context: context ?? null } };
+}
+
+/** Image blocks in a `models.generateImages()` result. */
+function countImages(value: unknown): number {
+	const output = typeof value === "object" && value !== null ? (value as { output?: unknown }).output : undefined;
+	return Array.isArray(output) ? output.filter((item) => (item as { type?: unknown })?.type === "image").length : 0;
 }
 
 function describe(call: CodemodeHostCall): string {

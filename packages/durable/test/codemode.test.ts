@@ -1,6 +1,7 @@
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdtemp, readdir, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
+import type { Context } from "@earendil-works/chord";
 import { type AssistantMessage, fauxAssistantMessage, fauxText, fauxToolCall, Type } from "@earendil-works/pi-ai";
 import { type CodemodeRun, CodemodeSandbox } from "@earendil-works/pi-codemode";
 import {
@@ -20,6 +21,8 @@ import {
 	type CodemodeToolDetails,
 	createCodemodeTool,
 } from "../src/codemode/codemode.ts";
+import type { CodemodeNamespace } from "../src/codemode/describe.ts";
+import { NodeExecutionEnv } from "../src/env/node.ts";
 import { openNodeSqliteStorage } from "../src/storage/sqlite/node.ts";
 import { allEntries, type ChatSetup, chatSetup, openChat } from "./chat-support.ts";
 import { addHooks, addTool } from "./harness-support.ts";
@@ -60,7 +63,7 @@ async function sqlitePath(): Promise<string> {
  * - `hold` (replay-safe) waits for `holds.gate` while `holds.block` is set, then returns `held <id>`;
  * - `slow` returns `slow <id>` once `slows.release(id)` was called.
  */
-function codemodeChat(globals: CodemodeGlobal[] = []) {
+function codemodeChat(globals: CodemodeGlobal[] = [], namespaces: CodemodeNamespace[] = []) {
 	const setup = chatSetup();
 	const sandbox = new CodemodeSandbox({ memoryLimitBytes: 64 * 1024 * 1024 });
 	const vm: { starts: number; onStart?: (run: CodemodeRun) => void } = { starts: 0 };
@@ -71,7 +74,7 @@ function codemodeChat(globals: CodemodeGlobal[] = []) {
 		vm.onStart?.(run);
 		return run;
 	};
-	addTool(setup.registry, createCodemodeTool({ sandbox, globals }));
+	addTool(setup.registry, createCodemodeTool({ sandbox, globals, namespaces }));
 	const echo = new Map<string, number>();
 	addTool(
 		setup.registry,
@@ -149,9 +152,13 @@ async function resultText(setup: ChatSetup, root: Awaited<ReturnType<typeof open
 	const entry = (await allEntries(root)).find((candidate) => ToolResultEntry.is(candidate))!;
 	const message = entry.model![0]!;
 	return {
+		// Without the "Script completed" header and its wall time, which tests of it check themselves.
 		text:
 			message.role === "toolResult"
-				? message.content.map((item) => (item.type === "text" ? item.text : "")).join("\n")
+				? message.content
+						.map((item) => (item.type === "text" ? item.text : ""))
+						.join("")
+						.replace(/^Script (completed|failed)\nWall time [\d.]+ seconds\nOutput:\n/, "")
 				: "",
 		isError: message.role === "toolResult" && message.isError,
 	};
@@ -676,6 +683,80 @@ describe("durable code mode", () => {
 		await harness.close(context);
 	});
 
+	it("resolves a schema tool's error result that carries its value, and rejects one without with its text", async () => {
+		const chat = codemodeChat();
+		const Exit = Type.Object({ output: Type.String(), exitCode: Type.Number() });
+		addTool(
+			chat.setup.registry,
+			defineTool({
+				name: "run",
+				description: "run",
+				parameters: Type.Object({}),
+				structuredOutputSchema: Exit,
+				// Like bash on a nonzero exit: an error result with its value.
+				execute: async () => ({
+					output: [{ type: "text", text: "no matches" }],
+					structuredOutput: { output: "no matches", exitCode: 1 },
+					isError: true,
+				}),
+			}),
+		);
+		addTool(
+			chat.setup.registry,
+			defineTool({
+				name: "denied",
+				description: "denied",
+				parameters: Type.Object({}),
+				structuredOutputSchema: Exit,
+				execute: async () => ({ output: [{ type: "text", text: "permission denied" }], isError: true }),
+			}),
+		);
+		chat.holds.block = false;
+		chat.setup.faux.setResponses([
+			script(
+				`const r = await tools.run({});
+				let e; try { await tools.denied({}); } catch (error) { e = [error.message, error.structuredOutput ?? null]; }
+				return [r.exitCode, r.output, e];`,
+			),
+			DONE,
+		]);
+		const { harness, root } = await openChat(await openNodeSqliteStorage(await sqlitePath()), chat.setup);
+		await (await root.submit({ type: "input", content: "go" }, context)).wait(context);
+		expect(await resultText(chat.setup, root)).toEqual({
+			text: '[1,"no matches",["permission denied",null]]',
+			isError: false,
+		});
+		await harness.close(context);
+	});
+
+	it("resolves a schema-less tool with its text, as its declaration says, also when it returned images", async () => {
+		const chat = codemodeChat();
+		const PNG = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==";
+		addTool(
+			chat.setup.registry,
+			defineTool({
+				name: "picture",
+				description: "picture",
+				parameters: Type.Object({ caption: Type.Boolean() }),
+				execute: async (args) => ({
+					output: [
+						...(args.caption ? [{ type: "text" as const, text: "a cat" }] : []),
+						{ type: "image" as const, data: PNG, mimeType: "image/png" },
+					],
+				}),
+			}),
+		);
+		chat.holds.block = false;
+		chat.setup.faux.setResponses([
+			script(`return [await tools.picture({ caption: true }), await tools.picture({ caption: false })];`),
+			DONE,
+		]);
+		const { harness, root } = await openChat(await openNodeSqliteStorage(await sqlitePath()), chat.setup);
+		await (await root.submit({ type: "input", content: "go" }, context)).wait(context);
+		expect(await resultText(chat.setup, root)).toEqual({ text: '["a cat",""]', isError: false });
+		await harness.close(context);
+	});
+
 	it("delivers a result only after its journal commit", async () => {
 		const storage = new ControlledStorage();
 		const seen: string[] = [];
@@ -787,14 +868,14 @@ describe("durable code mode", () => {
 		const firstUser = (await allEntries(root)).find((entry) => entry.kind === "pi.user")!;
 		await (await root.submit({ type: "input", content: "second" }, context)).wait(context);
 		const results = (await allEntries(root)).filter((entry) => ToolResultEntry.is(entry));
-		const texts = results.map((entry) => (entry.model![0] as { content: { text: string }[] }).content[0]!.text);
+		const texts = results.map((entry) => (entry.model![0] as { content: { text: string }[] }).content[1]!.text);
 		expect(texts).toEqual(["1", "[1]"]);
 		// A fork at the first input is from before the first script stored anything.
 		chat.setup.faux.setResponses([script(`return [load("k") ?? null]`), DONE]);
 		const fork = await root.fork(firstUser.id, { ownership: { kind: "ownerless" } }, context);
 		await (await fork.submit({ type: "input", content: "fork" }, context)).wait(context);
 		const forkResult = (await allEntries(fork)).filter((entry) => ToolResultEntry.is(entry)).at(-1)!;
-		expect((forkResult.model![0] as { content: { text: string }[] }).content[0]!.text).toBe("[null]");
+		expect((forkResult.model![0] as { content: { text: string }[] }).content[1]!.text).toBe("[null]");
 		await harness.close(context);
 	});
 
@@ -828,5 +909,146 @@ describe("durable code mode", () => {
 		// The journal's creation and a few groups, not one commit per result (51).
 		expect(journalCommits).toBeLessThan(10);
 		await harness.close(context);
+	});
+});
+
+describe("durable code mode output and tool search", () => {
+	/** Run `code` once in a chat with a Node environment; the result's content and details. */
+	async function runScript(code: string, chat = codemodeChat()) {
+		chat.holds.block = false;
+		const cwd = await mkdtemp(join(tmpdir(), "pi-codemode-env-"));
+		directories.add(cwd);
+		chat.setup.faux.setResponses([script(code), DONE]);
+		const { harness, root } = await openChat(await openNodeSqliteStorage(await sqlitePath()), chat.setup, {
+			env: new NodeExecutionEnv({ cwd }),
+		});
+		await (await root.submit({ type: "input", content: "go" }, context)).wait(context);
+		const entry = (await allEntries(root)).find((candidate) => ToolResultEntry.is(candidate))!;
+		const message = entry.model![0] as {
+			content: { type: string; text?: string }[];
+			isError: boolean;
+			details?: CodemodeToolDetails;
+		};
+		await harness.close(context);
+		return { text: message.content.map((item) => item.text ?? `<${item.type}>`).join(""), message };
+	}
+
+	it("lays out text items, console lines, and the returned value under a header", async () => {
+		const { text } = await runScript(`text("one"); console.log("log", 1); text({ two: 2 }); return "three";`);
+		expect(text).toMatch(/^Script completed\nWall time [\d.]+ seconds\nOutput:\n/);
+		expect(text).toContain('==> text 1/3 <==\none\n==> text 2/3 <==\n{"two":2}\n==> text 3/3 <==\nthree');
+		expect(text).toContain("<console_output>\nlog 1\n</console_output>");
+	});
+
+	it("cuts text past the token budget to its start and end, with the full text in a file", async () => {
+		const { text, message } = await runScript(
+			`// @options: {"max_output_tokens": 20}
+			text("BEGIN" + "x".repeat(1000) + "END");`,
+		);
+		expect(text).toContain("Warning: truncated output");
+		expect(text).toContain("BEGIN");
+		expect(text).toContain("END");
+		const path = message.details?.fullOutputPath;
+		expect(text).toContain(`[Full output: ${path}`);
+		expect(await readFile(path!, "utf8")).toBe(`BEGIN${"x".repeat(1000)}END`);
+	});
+
+	it("keeps a result inside the tool's output limits whatever max_output_tokens says, spilling the rest", async () => {
+		// 6 MiB of text: over the Harness's 4 MiB limit, which would cut it without a spill file.
+		const big = await runScript(
+			`// @options: {"max_output_tokens": 2000000}
+			return "x".repeat(6 * 1024 * 1024);`,
+		);
+		expect(big.text).toContain("Warning: truncated output");
+		expect(big.text.length).toBeLessThanOrEqual(1024 * 1024 + 1000);
+		expect((await readFile(big.message.details!.fullOutputPath!, "utf8")).length).toBe(6 * 1024 * 1024);
+		// 200,000 short lines: within the byte limit, over the 100,000 lines one.
+		const long = await runScript(
+			`// @options: {"max_output_tokens": 2000000}
+			return Array.from({ length: 200000 }, () => "a").join("\\n");`,
+		);
+		expect(long.text).toContain("Warning: truncated output");
+		expect(long.text.split("\n").length).toBeLessThan(100_000);
+		expect(long.message.details?.fullOutputPath).toBeDefined();
+	});
+
+	it("writes the result's files to the same paths when it reruns after a crash", async () => {
+		const chat = codemodeChat();
+		chat.holds.block = false;
+		const cwd = await mkdtemp(join(tmpdir(), "pi-codemode-env-"));
+		directories.add(cwd);
+		const written = deferred<string>();
+		// The process dies after the full output was written and before the result was committed.
+		class CrashAfterWrite extends NodeExecutionEnv {
+			override async writeFile(path: string, content: string | Uint8Array, callContext: Context) {
+				const result = await super.writeFile(path, content, callContext);
+				written.resolve(path);
+				await aborted(callContext.abortSignal!);
+				return result;
+			}
+		}
+		const storage = await sqlitePath();
+		chat.setup.faux.setResponses([script(`// @options: {"max_output_tokens": 20}\nreturn "x".repeat(1000);`), DONE]);
+		let opened = await openChat(await openNodeSqliteStorage(storage), chat.setup, {
+			env: new CrashAfterWrite({ cwd }),
+		});
+		const id = (await opened.root.submit({ type: "input", content: "go" }, context)).id;
+		const first = await written.promise;
+		await opened.harness.close(context);
+		opened = await openChat(await openNodeSqliteStorage(storage), chat.setup, { env: new NodeExecutionEnv({ cwd }) });
+		opened.harness.resume();
+		expect((await (await opened.harness.submission(id, context))!.wait(context)).status).toBe("done");
+		const entry = (await allEntries(opened.root)).find((candidate) => ToolResultEntry.is(candidate))!;
+		const details = (entry.model![0] as { details?: CodemodeToolDetails }).details;
+		expect(details?.fullOutputPath).toBe(first);
+		directories.add(dirname(first));
+		expect(await readdir(dirname(first))).toEqual(["output.txt"]);
+		await opened.harness.close(context);
+	});
+
+	it("saves images to files and names them next to the image", async () => {
+		const png = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==";
+		const { text, message } = await runScript(`image("data:image/png;base64,${png}");`);
+		const saved = /\[Image saved to (\S+) \(image\/png, \d+ bytes\)\]/.exec(text);
+		expect(saved).not.toBeNull();
+		expect((await readFile(saved![1]!)).toString("base64")).toBe(png);
+		expect(message.content.some((item) => item.type === "image")).toBe(true);
+	});
+
+	it("reports a failed script with its error and the calls already made", async () => {
+		const { text, message } = await runScript(`await tools.echo({ text: "a" }); throw new Error("boom");`);
+		expect(message.isError).toBe(true);
+		expect(text).toMatch(/^Script failed\n/);
+		expect(text).toContain("Error: boom");
+		expect(text).toContain("Tool calls made before the failure (they are not undone): echo (ok)");
+	});
+
+	it("finds tools with searchTools(), describeTool(), and describeNamespace(), and lists them in ALL_TOOLS", async () => {
+		const chat = codemodeChat([], [{ name: "github", description: "GitHub MCP server", prefix: "mcp__github__" }]);
+		addTool(
+			chat.setup.registry,
+			tool("mcp__github__list_issues", async () => ({ output: [] })),
+		);
+		const { text } = await runScript(
+			`const found = await searchTools("issues");
+			const inNamespace = await searchTools("echo", { namespace: "github" });
+			return {
+				found: found.map((tool) => tool.name),
+				inNamespace,
+				described: (await describeTool("echo")).includes("echo(args:"),
+				missing: (await describeTool("nope")) ?? null,
+				namespace: await describeNamespace("github"),
+				all: ALL_TOOLS.map((tool) => tool.name).includes("mcp__github__list_issues"),
+			};`,
+			chat,
+		);
+		expect(JSON.parse(text.replace(/^Script completed\nWall time [\d.]+ seconds\nOutput:\n/, ""))).toEqual({
+			found: ["mcp__github__list_issues"],
+			inNamespace: [],
+			described: true,
+			missing: null,
+			namespace: { name: "github", description: "GitHub MCP server", tools: ["mcp__github__list_issues"] },
+			all: true,
+		});
 	});
 });

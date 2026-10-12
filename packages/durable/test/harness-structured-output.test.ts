@@ -208,8 +208,9 @@ describe("structured output", () => {
 			addTool(setup.registry, returning(name, result, schema ? { structuredOutputSchema: Count } : {}));
 			const received = await nested(setup, name);
 			expect(received.isError).toBe(true);
-			// The broken value is dropped; the error result carries the bounded output instead, here none.
-			expect(received.structuredOutput).toBe("");
+			// The broken value is dropped; a schema-less tool's error result still carries its output, here none.
+			if (schema) expect(received).not.toHaveProperty("structuredOutput");
+			else expect(received.structuredOutput).toBe("");
 			expect(codes(received)).toEqual(["invalid_structured_output"]);
 			expect(received.diagnostics[0]?.message).toContain(message);
 
@@ -236,7 +237,7 @@ describe("structured output", () => {
 		expect(received).not.toHaveProperty("structuredOutput");
 	});
 
-	it("gives callers the output of a schema tool's error result without structured output", async () => {
+	it("gives callers a schema tool's error text as a diagnostic, never as structured output", async () => {
 		const setup = chatSetup();
 		addTool(
 			setup.registry,
@@ -246,8 +247,26 @@ describe("structured output", () => {
 				{ structuredOutputSchema: Count },
 			),
 		);
-		// Its text reaches the caller: what a code mode script's rejection carries.
-		expect(await nested(setup, "fails")).toMatchObject({ isError: true, structuredOutput: "nope", diagnostics: [] });
+		// Its text reaches the caller as an error diagnostic: structuredOutput is only ever the tool's own value.
+		const received = await nested(setup, "fails");
+		expect(received).toMatchObject({
+			isError: true,
+			diagnostics: [{ severity: "error", code: "tool_error", message: "nope" }],
+		});
+		expect(received).not.toHaveProperty("structuredOutput");
+
+		// The model's call keeps the text in its output, without the extra diagnostic.
+		const modelSetup = chatSetup();
+		addTool(
+			modelSetup.registry,
+			returning(
+				"fails",
+				{ output: [{ type: "text", text: "nope" }], isError: true },
+				{ structuredOutputSchema: Count },
+			),
+		);
+		const stored = await direct(modelSetup, "fails");
+		expect(stored.content).toEqual([{ type: "text", text: "nope" }]);
 
 		// A thrown error's message is in its tool_error diagnostic, not in the output.
 		const thrown = chatSetup();
@@ -263,11 +282,32 @@ describe("structured output", () => {
 				},
 			}),
 		);
-		expect(await nested(thrown, "throws")).toMatchObject({
+		const thrownResult = await nested(thrown, "throws");
+		// One diagnostic: the thrown message, not a second one from its (empty) output.
+		expect(thrownResult).toMatchObject({
 			isError: true,
-			structuredOutput: "",
 			diagnostics: [{ code: "tool_error", message: "permission denied" }],
 		});
+		expect(thrownResult.diagnostics).toHaveLength(1);
+		expect(thrownResult).not.toHaveProperty("structuredOutput");
+
+		// An error result whose own diagnostics say what went wrong gets no second one from its output.
+		const explained = chatSetup();
+		addTool(
+			explained.registry,
+			returning(
+				"fails",
+				{
+					output: [{ type: "text", text: "partial log" }],
+					isError: true,
+					diagnostics: [{ severity: "error", code: "quota", message: "quota exceeded" }],
+				},
+				{ structuredOutputSchema: Count },
+			),
+		);
+		expect((await nested(explained, "fails")).diagnostics).toEqual([
+			{ severity: "error", code: "quota", message: "quota exceeded" },
+		]);
 
 		// An error result that has structured output keeps it.
 		const kept = chatSetup();

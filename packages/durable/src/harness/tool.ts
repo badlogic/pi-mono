@@ -528,12 +528,22 @@ async function finalResult(
 			runtime.report(new Error(broken));
 		}
 	}
-	// Without a schema, or for an error result without structured output, programs get the output itself, so they get
-	// the error's text; the model reads only `output`, so model-issued calls skip it.
-	const schemaValue =
-		tool.structuredOutputSchema !== undefined && !(final.isError === true && final.structuredOutput === undefined);
-	if (input.kind === "nested" && !schemaValue) {
+	// Programs get the tool's own value: without a schema, its output. The model reads only `output`, so model-issued
+	// calls skip both.
+	if (input.kind === "nested" && tool.structuredOutputSchema === undefined) {
 		final = { ...final, structuredOutput: outputValue(bounded.content) as JsonValue };
+	}
+	// A schema tool's error result without structured output has its text only in the output, which programs never
+	// get: it becomes an error diagnostic, as a thrown error's message does, unless one says what went wrong already.
+	if (
+		input.kind === "nested" &&
+		tool.structuredOutputSchema !== undefined &&
+		final.isError === true &&
+		final.structuredOutput === undefined &&
+		![...(final.diagnostics ?? []), ...harness].some((diagnostic) => diagnostic.severity === "error")
+	) {
+		const text = bounded.content.flatMap((item) => (item.type === "text" ? [item.text] : [])).join("\n");
+		if (text !== "") harness.push(toolDiagnostic("tool_error", text));
 	}
 	return { ...final, output: bounded.content, diagnostics: [...(final.diagnostics ?? []), ...harness] };
 }

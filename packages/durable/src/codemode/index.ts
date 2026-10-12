@@ -10,3 +10,4 @@ export {
 	createCodemodeExtension,
 	createCodemodeTool,
 } from "./codemode.ts";
+export { type CodemodeNamespace, DEFAULT_CODEMODE_INLINE_BUDGET } from "./describe.ts";

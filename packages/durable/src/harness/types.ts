@@ -177,10 +177,11 @@ export type NestedToolExecutionResult = {
 	/** The nested call's tool task. */
 	readonly taskId: TaskId;
 	/**
-	 * The value for programs. A tool with `structuredOutputSchema`: its validated `structuredOutput`. A tool without, and
-	 * an error result without `structuredOutput`: its bounded output, as a string for one text item, an `ImageContent`
-	 * for one image, `""` for none, and the content list otherwise. Absent on an error result the Harness wrote itself
-	 * (unavailable, invalid, blocked, interrupted, aborted); `diagnostics` say what went wrong.
+	 * The tool's value for programs. A tool with `structuredOutputSchema`: its validated `structuredOutput`, also on an
+	 * error result that has one; absent otherwise, and an error's text is then in an error diagnostic. A tool without:
+	 * its bounded output, success or error, as a string for one text item, an `ImageContent` for one image, `""` for
+	 * none, and the content list otherwise. Absent on an error result the Harness wrote itself (unavailable, invalid,
+	 * blocked, interrupted, aborted); `diagnostics` say what went wrong.
 	 */
 	readonly structuredOutput?: JsonValue;
 	readonly isError: boolean;
