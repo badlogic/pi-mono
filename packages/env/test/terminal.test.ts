@@ -87,14 +87,16 @@ describe.skipIf(process.platform === "win32")("openTerminal", () => {
 		await output.waitFor("READY");
 		expect(await terminal.foreground()).toBeUndefined();
 		terminal.write("sleep 100\n");
+		// The shell forks before it execs: wait until the foreground job is the command itself, not the forked shell.
+		const named = process.platform === "darwin" || process.platform === "linux";
 		let foreground = await terminal.foreground();
-		for (let tries = 0; !foreground && tries < 100; tries++) {
+		for (let tries = 0; (!foreground || (named && foreground.name !== "sleep")) && tries < 100; tries++) {
 			await new Promise((resolve) => setTimeout(resolve, 20));
 			foreground = await terminal.foreground();
 		}
 		expect(foreground?.pid).toBeGreaterThan(0);
 		expect(foreground?.pid).not.toBe(terminal.pid);
-		if (process.platform === "darwin" || process.platform === "linux") expect(foreground?.name).toBe("sleep");
+		if (named) expect(foreground?.name).toBe("sleep");
 		terminal.close();
 		await expect(terminal.exited).rejects.toMatchObject({ code: "aborted" });
 		await expect(terminal.foreground()).rejects.toMatchObject({ code: "EBADF" });
