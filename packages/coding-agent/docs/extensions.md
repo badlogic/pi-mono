@@ -116,6 +116,8 @@ Handlers are awaited in stream order, so slow handlers delay stream consumption.
 
 `turn_end` and `agent_before_settle` are actionable boundaries. Their handlers can chain proposed `custom`, `custom_message`, `context_edit`, or `compaction` entries and return `continue: true` for one next model request. Guard continuation conditions because an unconditional continuation can loop. Use the exported event declarations for the complete validation and ordering contract.
 
+To exclude detected degenerate assistant output from future requests and compaction without losing the raw transcript, return a `context_edit` from `turn_end` targeting `event.messageEntryId`. Replace only the affected text and preserve tool calls and their results. Unlike a request-local `context` transformation, the edit survives session resume and applies to compaction's retained messages and summary input. See [degenerate-output.ts](../examples/extensions/degenerate-output.ts) for an opt-in long whitespace/asterisk-tail heuristic. It leaves fenced code and short Markdown separators alone; it is unsuitable for tasks requiring long literal whitespace or asterisk output.
+
 <a id="cache_warming_decision"></a>
 
 `cache_warming_decision` can override an idle prompt-cache refresh with `{ action: "warm" }` or `{ action: "stop" }`. The last handler that returns an action wins.
