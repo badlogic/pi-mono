@@ -60,18 +60,34 @@ function formatItems(output: readonly CodemodeOutputItem[]): Item[] {
 	return items;
 }
 
-/** Join adjacent text items into one, each part starting on its own line. */
+/**
+ * Join adjacent text items into one, each part starting on its own line. The separator check looks at the last
+ * non-empty part, not the joined text: reading the end of a growing concatenation makes V8 copy it on every item, which
+ * is quadratic.
+ */
 function joinAdjacentText(items: readonly Item[]): Item[] {
 	const joined: Item[] = [];
+	let parts: string[] = [];
+	let lastPart = "";
+	const flush = () => {
+		if (parts.length > 0) joined.push({ type: "text", text: parts.join("") });
+		parts = [];
+		lastPart = "";
+	};
 	for (const item of items) {
-		const last = joined.at(-1);
-		if (item.type === "text" && last?.type === "text") {
-			const separator = last.text === "" || last.text.endsWith("\n") ? "" : "\n";
-			joined[joined.length - 1] = { type: "text", text: `${last.text}${separator}${item.text}` };
-		} else {
+		if (item.type !== "text") {
+			flush();
 			joined.push(item);
+			continue;
 		}
+		if (lastPart !== "" && !lastPart.endsWith("\n")) {
+			parts.push("\n");
+			lastPart = "\n";
+		}
+		parts.push(item.text);
+		if (item.text !== "") lastPart = item.text;
 	}
+	flush();
 	return joined;
 }
 

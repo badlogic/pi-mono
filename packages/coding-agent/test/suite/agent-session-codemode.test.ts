@@ -541,6 +541,18 @@ describe("codemode options and store", () => {
 		expect((small.details as unknown as CodemodeToolDetails).fullOutputPath).toBeUndefined();
 	});
 
+	// #10678: joining the text items was quadratic, about 10 s here for the item limit.
+	it("formats output at the item limit in linear time", async () => {
+		const harness = await setup();
+		const startedAt = performance.now();
+		const result = await run(harness, 'for (let i = 0; i < 100000; i++) text("");');
+		const elapsed = performance.now() - startedAt;
+		rmSync((result.details as unknown as CodemodeToolDetails).fullOutputPath ?? "", { force: true });
+		expect(result.isError).toBe(false);
+		expect(resultText(result)).toContain("==> text 100000/100000 <==");
+		expect(elapsed).toBeLessThan(5000);
+	});
+
 	it("resolves bash calls to structured results, also for non-zero exit codes", async () => {
 		const harness = await createHarness({
 			initialActiveToolNames: ["codemode", "bash"],
