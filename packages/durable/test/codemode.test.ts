@@ -1015,6 +1015,25 @@ describe("durable code mode output and tool search", () => {
 		expect(message.content.some((item) => item.type === "image")).toBe(true);
 	});
 
+	it("calls a deferred tool the model is not offered, and finds it in ALL_TOOLS", async () => {
+		const chat = codemodeChat();
+		addTool(
+			chat.setup.registry,
+			defineTool({
+				name: "later",
+				description: "A deferred tool",
+				parameters: Type.Object({}),
+				deferred: true,
+				execute: async () => ({ output: [{ type: "text", text: "later ran" }] }),
+			}),
+		);
+		const { text } = await runScript(
+			`return [await tools.later({}), ALL_TOOLS.some((tool) => tool.name === "later")];`,
+			chat,
+		);
+		expect(text).toContain('["later ran",true]');
+	});
+
 	it("reports a failed script with its error and the calls already made", async () => {
 		const { text, message } = await runScript(`await tools.echo({ text: "a" }); throw new Error("boom");`);
 		expect(message.isError).toBe(true);

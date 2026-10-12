@@ -58,6 +58,7 @@ import type {
 	ToolExecutionResult,
 	ToolRegistration,
 } from "../harness/types.ts";
+import { rankDocuments } from "../search.ts";
 import type { JsonObject } from "../types.ts";
 import {
 	type CodemodeNamespace,
@@ -77,7 +78,6 @@ import {
 	MODEL_CALLS,
 } from "./models.ts";
 import { DEFAULT_MAX_OUTPUT_TOKENS, formatResult, type OutputFile } from "./output.ts";
-import { rankDocuments } from "./search.ts";
 
 /**
  * Version of everything in this module that turns stored results into what a script sees: result mapping, globals,
@@ -252,7 +252,10 @@ export function createCodemodeExtension(options: CodemodeToolOptions): Extension
 		sections: [
 			section("codemode", (input) =>
 				codemodeSection(
-					input.agent.callable.filter((tool) => !tool.name.startsWith(CODEMODE_INTERNAL_PREFIX)),
+					// Deferred tools are found with `searchTools()`, as the coding agent leaves them out too.
+					input.agent.callable.filter(
+						(tool) => !tool.name.startsWith(CODEMODE_INTERNAL_PREFIX) && tool.deferred !== true,
+					),
 					options.namespaces ?? [],
 					options.inlineBudget ?? DEFAULT_CODEMODE_INLINE_BUDGET,
 				),

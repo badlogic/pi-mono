@@ -30,6 +30,12 @@
 			"import": "./dist/codemode/index.js",
 			"default": "./dist/codemode/index.js"
 		},
+		"./tool-search": {
+			"source": "./src/tool-search/index.ts",
+			"types": "./dist/tool-search/index.d.ts",
+			"import": "./dist/tool-search/index.js",
+			"default": "./dist/tool-search/index.js"
+		},
 		"./tools": {
 			"source": "./src/tools/index.ts",
 			"types": "./dist/tools/index.d.ts",

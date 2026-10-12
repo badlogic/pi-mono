@@ -82,23 +82,29 @@ export async function configure(tx: Tx, conversationId: ConversationId, change: 
 
 /**
  * `addTools` of a tool round, applied to `tools` and `modelTools`, so the next request offers the tools: an array gets
- * each name it lacks appended, `{ remove }` loses the names, and an unset filter already lets every tool through, so
- * nothing is written.
+ * each name it lacks appended, and `{ remove }` loses the names. An unset `tools` already enables every tool, so nothing
+ * is written for it. An unset or object `modelTools` also gets each name appended to its `add`, which loads deferred
+ * tools and has no effect for others. By name, without the registry: a tool that is not registered now, such as one of
+ * an MCP server that is reconnecting, is offered once it is again.
  */
 export async function addTools(tx: Tx, conversationId: ConversationId, added: readonly string[]): Promise<void> {
 	const state = await tx.doc(AgentDoc, conversationId);
-	for (const field of ["tools", "modelTools"] as const) {
-		const filter = state[field];
-		if (filter === undefined) continue;
-		if (Array.isArray(filter)) {
-			for (const name of added) if (!filter.includes(name)) filter.push(name);
-		} else {
-			const remove = (filter as { remove: string[] }).remove;
-			if (remove.some((name) => added.includes(name))) {
-				state[field] = { remove: remove.filter((name) => !added.includes(name)) };
-			}
-		}
+	const tools = state.tools;
+	if (Array.isArray(tools)) {
+		for (const name of added) if (!tools.includes(name)) tools.push(name);
+	} else if (tools?.remove.some((name) => added.includes(name))) {
+		state.tools = { remove: tools.remove.filter((name) => !added.includes(name)) };
 	}
+	const modelTools = state.modelTools;
+	if (Array.isArray(modelTools)) {
+		for (const name of added) if (!modelTools.includes(name)) modelTools.push(name);
+		return;
+	}
+	// Assigned whole; a document write of an equal value records no change.
+	const remove = (modelTools?.remove ?? []).filter((name) => !added.includes(name));
+	const add = [...(modelTools?.add ?? [])];
+	for (const name of added) if (!add.includes(name)) add.push(name);
+	state.modelTools = { ...(remove.length === 0 ? {} : { remove }), add };
 }
 
 function applyChange(state: Draft<AgentState>, change: AgentChange): void {
@@ -121,17 +127,23 @@ function applyChange(state: Draft<AgentState>, change: AgentChange): void {
 						...(extensions.remove === undefined ? {} : { remove: names(extensions.remove) }),
 					},
 	);
-	for (const field of ["tools", "modelTools"] as const) {
-		const filter = change[field];
-		set(
-			field,
-			filter === undefined || filter === null
-				? filter
-				: isList(filter)
-					? names(filter)
-					: { remove: names(filter.remove) },
-		);
-	}
+	const tools = change.tools;
+	set(
+		"tools",
+		tools === undefined || tools === null ? tools : isList(tools) ? names(tools) : { remove: names(tools.remove) },
+	);
+	const modelTools = change.modelTools;
+	set(
+		"modelTools",
+		modelTools === undefined || modelTools === null
+			? modelTools
+			: isList(modelTools)
+				? names(modelTools)
+				: {
+						...(modelTools.remove === undefined ? {} : { remove: names(modelTools.remove) }),
+						...(modelTools.add === undefined ? {} : { add: names(modelTools.add) }),
+					},
+	);
 	set("instructions", change.instructions);
 	set("cwd", change.cwd);
 }
@@ -208,7 +220,10 @@ export function resolveAgent<Tool extends ToolRegistration>(
 	const enabled = filterTools([...composed.values()], state?.tools);
 	const callableBy = (caller: "model" | "tools") => (tool: Tool) =>
 		tool.callers === undefined || tool.callers.includes(caller);
-	const tools = filterTools(enabled.filter(callableBy("model")), state?.modelTools);
+	const modelCallable = enabled.filter(callableBy("model"));
+	const tools = offeredTools(modelCallable, state?.modelTools);
+	const offered = new Set(tools);
+	const deferred = modelCallable.filter((tool) => tool.deferred === true && !offered.has(tool));
 	const callable = enabled.filter(callableBy("tools"));
 
 	const instructions = state?.instructions;
@@ -221,11 +236,26 @@ export function resolveAgent<Tool extends ToolRegistration>(
 		extensions,
 		tools,
 		callable,
+		deferred,
 		sections: agentSections,
 		...(instructions === undefined ? {} : { instructions }),
 		...(state?.cwd === undefined ? {} : { cwd: state.cwd }),
 	};
 	return agent;
+}
+
+/** The tools offered to the model, as `AgentState.modelTools` describes. */
+function offeredTools<Tool extends ToolRegistration>(tools: Tool[], filter: AgentState["modelTools"]): Tool[] {
+	if (Array.isArray(filter)) return filterTools(tools, filter);
+	const removed = new Set(filter?.remove ?? []);
+	const kept = tools.filter((tool) => tool.deferred !== true && !removed.has(tool.name));
+	// Loaded deferred tools follow in load order, so loading one appends to the declared tools.
+	const byName = new Map(tools.map((tool) => [tool.name, tool]));
+	const loaded = [...new Set(filter?.add ?? [])].flatMap((name) => {
+		const tool = byName.get(name);
+		return tool?.deferred === true && !removed.has(name) ? [tool] : [];
+	});
+	return [...kept, ...loaded];
 }
 
 /** `tools` through a stored filter: an array selects exactly its names, in its order; `{ remove }` drops names. */

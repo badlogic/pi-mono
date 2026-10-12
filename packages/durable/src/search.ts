@@ -1,6 +1,6 @@
 /**
- * BM25 tool search for code mode's `searchTools()`, a copy of the coding agent's tool search ranking: durable code mode
- * keeps its own copy of what it needs from the coding agent.
+ * BM25 tool search for code mode's `searchTools()` and the `tool_search` tool, a copy of the coding agent's tool search
+ * ranking: durable keeps its own copy of what it needs from the coding agent.
  */
 
 export type SearchDocument = { readonly name: string; readonly text: string };

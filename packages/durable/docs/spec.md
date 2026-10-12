@@ -440,8 +440,12 @@ type AgentState = {
   extensions?: string[] | { add?: string[]; remove?: string[] };
   /** Filters the selected extensions' tools: the enabled tools. An array enables exactly these, in order. */
   tools?: string[] | { remove: string[] };
-  /** Filters the enabled tools the model may call: the tools it is offered. An array offers exactly these, in order. */
-  modelTools?: string[] | { remove: string[] };
+  /**
+   * Filters the enabled tools the model may call: the tools it is offered. Unset: all but deferred ones. An array:
+   * exactly these, in order, deferred ones too. An object: all but deferred ones and those in `remove`, in registry
+   * order, followed by the deferred tools in `add` that are not in `remove`, in `add` order.
+   */
+  modelTools?: string[] | { remove?: string[]; add?: string[] };
   /** Rendered after every extension section, as the section `instructions`. */
   instructions?: string;
   /** Directory within the environment's file system, passed to `HarnessOptions.env`. */
@@ -460,7 +464,10 @@ type AgentChange = {
     | { readonly add?: readonly Extension[]; readonly remove?: readonly Extension[] }
     | null;
   readonly tools?: readonly ToolRegistration[] | { readonly remove: readonly ToolRegistration[] } | null;
-  readonly modelTools?: readonly ToolRegistration[] | { readonly remove: readonly ToolRegistration[] } | null;
+  readonly modelTools?:
+    | readonly ToolRegistration[]
+    | { readonly remove?: readonly ToolRegistration[]; readonly add?: readonly ToolRegistration[] }
+    | null;
   readonly instructions?: string | null;
   readonly cwd?: string | null;
 };
@@ -477,6 +484,8 @@ type Agent<Tool extends ToolRegistration = ToolRegistration> = {
   readonly tools: readonly Tool[];
   /** Nested calls resolve among these: enabled, and `callers` includes `tools`. */
   readonly callable: readonly Tool[];
+  /** Enabled deferred tools the model may call and is not offered yet, in registry order. */
+  readonly deferred: readonly Tool[];
   /** Extension sections, then `instructions` when set. */
   readonly sections: readonly PromptSection<Tool>[];
   readonly instructions?: string;
@@ -3016,6 +3025,19 @@ narrows which of its model-callable tools the model is offered, for example
 only the code mode tool, while the others stay callable by tools. Neither can
 widen what `tools` enables.
 
+A `deferred` tool is not offered to the model until it is loaded: `modelTools`
+must name it, in its array or its `add`. Other tools can call it any time. A
+tool loads deferred tools with `control.addTools`, which writes their names to
+`modelTools` (section 8.5); since `pi.agent` is rewindable and forks as of the
+fork's entry, loaded tools are per branch, and a baseline after a head marker
+declares them, built from the resolved tools. Loaded tools follow the other
+tools in load order, so a load appends declarations to the transcript and the
+cached prefix holds. `@earendil-works/pi-durable/tool-search` provides the
+coding agent's `tool_search` (`createToolSearchExtension()`): it ranks
+`Agent.deferred` with BM25 over the tools' names, descriptions, and parameter
+names and descriptions, and loads the matches. The `codemode` section does not
+list deferred tools; scripts find them with `searchTools()`.
+
 Tools reach files and processes only through `api.env`, never through an
 environment captured when the tool was built. The tool task builds it for each
 call with `HarnessOptions.env` from the conversation's ID and `cwd` (section
@@ -4104,9 +4126,12 @@ and then commits once:
 
 - It edits the conversation's stored `pi.agent` `tools` and `modelTools` for
   every `addTools` name: an array gets the name appended unless it holds it
-  already, and `{ remove }` loses the name. An unset filter already lets every
-  tool through, and nothing is written for it. The next preparation offers the
-  tool when it resolves and the model may call it.
+  already, and `{ remove }` loses the name. An unset `tools` already enables
+  every tool, and nothing is written for it. An unset or object `modelTools`
+  also gets the name appended to its `add`, which loads a deferred tool and has
+  no effect for others. Names are written without consulting the registry, so a
+  tool that is not registered now is offered once it is again. The next
+  preparation offers the tool when it resolves and the model may call it.
 - When every result of the round requests `terminate`, or any requests
   `handoff`, it appends the handoff's `pi.reset` entry, if any, settles the
   run's inputs `done` with the tool-calling answer, removes `run` and `tools`,

@@ -315,6 +315,11 @@ export type ToolRegistration<
 	 * model is never offered them.
 	 */
 	readonly callers?: readonly ("model" | "tools")[];
+	/**
+	 * Not offered to the model until loaded: the model gets the tool only when `modelTools` names it, in its array or its
+	 * `add`, which `control.addTools` (from a tool such as `tool_search`) writes. Other tools can call it any time.
+	 */
+	readonly deferred?: true;
 	readonly outputLimits?: {
 		readonly maxBytes?: number;
 		readonly maxLines?: number;
@@ -405,10 +410,15 @@ export type AgentState = {
 	/** Filters the selected extensions' tools: the enabled tools. An array enables exactly these, in order. */
 	tools?: string[] | { remove: string[] };
 	/**
-	 * Filters the enabled tools the model may call (`callers` includes `model`): the tools offered to it. An array offers
-	 * exactly these, in order. Never widens: other tools can still call the ones it leaves out.
+	 * Filters the enabled tools the model may call (`callers` includes `model`): the tools offered to it. Never widens:
+	 * other tools can still call the ones it leaves out.
+	 * - Unset: every such tool except deferred ones.
+	 * - An array: exactly these, in order, deferred ones too.
+	 * - An object: every such tool except deferred ones and those in `remove`, in registry order, followed by the
+	 *   deferred tools in `add` that are not in `remove`, in `add` order. Names of tools that are not deferred or not
+	 *   registered have no effect in `add`.
 	 */
-	modelTools?: string[] | { remove: string[] };
+	modelTools?: string[] | { remove?: string[]; add?: string[] };
 	/** Rendered after every extension section, as the section `instructions`. */
 	instructions?: string;
 	/** Directory within the environment's file system, passed to `HarnessOptions.env`. */
@@ -424,7 +434,11 @@ export type AgentChange = {
 		| { readonly add?: readonly Extension[]; readonly remove?: readonly Extension[] }
 		| null;
 	readonly tools?: readonly ToolRegistration[] | { readonly remove: readonly ToolRegistration[] } | null;
-	readonly modelTools?: readonly ToolRegistration[] | { readonly remove: readonly ToolRegistration[] } | null;
+	/** Replaces the stored filter as a whole; tools loaded with `control.addTools` are in its `add`. */
+	readonly modelTools?:
+		| readonly ToolRegistration[]
+		| { readonly remove?: readonly ToolRegistration[]; readonly add?: readonly ToolRegistration[] }
+		| null;
 	readonly instructions?: string | null;
 	readonly cwd?: string | null;
 };
@@ -438,6 +452,8 @@ export type Agent<Tool extends ToolRegistration = ToolRegistration> = {
 	readonly tools: readonly Tool[];
 	/** The tools nested calls (`executeTool()`) resolve among, in order: enabled and callable by tools. */
 	readonly callable: readonly Tool[];
+	/** Enabled deferred tools the model may call and is not offered yet, in registry order: what `tool_search` loads. */
+	readonly deferred: readonly Tool[];
 	/** Extension sections, then `instructions` when set. */
 	readonly sections: readonly PromptSection<Tool>[];
 	readonly instructions?: string;
