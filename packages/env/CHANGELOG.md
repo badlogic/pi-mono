@@ -2,6 +2,12 @@
 
 ## [Unreleased]
 
+### Added
+
+- The daemon's `listFiles` operation: a bounded, cancellable, gitignore-aware listing of a directory tree (files, directories and unfollowed symlinks); `hello` reports it in `features`, and older daemons answer `not_supported` without a request.
+- `RemoteExecutionEnv.listFiles` and `LocalExecutionEnv`, a local `ExecutionEnv` on a pi-env daemon connection with the same operations.
+- `nodePlatform(info)` maps the daemon's platform and architecture names to Node's.
+
 ## [1.1.0] - 2026-10-07
 
 ## [1.0.4] - 2026-10-05
