@@ -58,8 +58,9 @@ const BUDGETS = {
 	"packages/durable": {
 		".": {
 			// Tool argument validation reaches TypeBox; provider-session creation reaches pi-ai's lean UUID utility; the
-			// memory and SQLite storages share scan order and cursor handling.
-			maxFiles: 63,
+			// memory and SQLite storages share scan order and cursor handling. Values from Chord's root (copyJson,
+			// replicatedState) reach its host runtime through the root barrel.
+			maxFiles: 66,
 			forbid: [
 				"packages/ai/src/index.ts",
 				"packages/ai/src/utils/typebox-helpers.ts",

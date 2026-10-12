@@ -1,6 +1,6 @@
-import type { JsonValue } from "../types.ts";
+import type { JsonValue } from "../json.ts";
 
-export type { JsonValue } from "../types.ts";
+export type { JsonValue } from "../json.ts";
 
 const isObj = (value: unknown): value is object => value !== null && typeof value === "object";
 

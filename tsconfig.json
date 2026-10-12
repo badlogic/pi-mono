@@ -6,7 +6,6 @@
 		"moduleResolution": "NodeNext",
 		"paths": {
 			"@earendil-works/chord": ["./packages/chord/src/index.ts"],
-			"@earendil-works/chord/bundler": ["./packages/chord/src/bundler.ts"],
 			"@earendil-works/chord/context": ["./packages/chord/src/context/index.ts"],
 			"@earendil-works/chord/delta": ["./packages/chord/src/delta/index.ts"],
 			"@earendil-works/chord/node": ["./packages/chord/src/node.ts"],

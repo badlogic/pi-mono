@@ -1,0 +1,808 @@
+import { contractFromDescription, LOCAL_VARIANT } from "./contract.ts";
+import { type Encoder, encoder } from "./delta/index.ts";
+import { ChordError, invalid } from "./errors.ts";
+import type { HostImpl } from "./host.ts";
+import type { Link } from "./link.ts";
+import { type CtxImpl, HandleImpl, kindOf } from "./record.ts";
+import type { RemoteChannel, RemoteHandle, StateSink } from "./remote.ts";
+import { assertValid } from "./schema.ts";
+import type { Ctx, Principal, Readable, StateEvent } from "./types.ts";
+import { type Frame, fromWireError, isFrame, type RootRef, toWireError } from "./wire.ts";
+
+export interface LinkOptions {
+	/** Milliseconds between pings (default 15000). */
+	readonly pingInterval?: number;
+	/** Close the link when nothing arrived for this long (default 45000). Everything held through it is released. */
+	readonly pingTimeout?: number;
+}
+
+export interface AcceptOptions extends LinkOptions {
+	/** The principal of whatever connects, from the app's authenticator. Every request on the link acts as it. */
+	readonly principal: Principal;
+	/**
+	 * What the peer is, decided here and never by its `hello`: `client` (default; a browser: no roots, no epochs, not
+	 * a reload participant, not addressable) or `host` (a child host; needs `name`).
+	 */
+	readonly kind?: "host" | "client";
+	/** A child host's name: its hello must match, and it is reachable `at` this name. */
+	readonly name?: string;
+	/** On `invalidatePrincipal`: a new principal keeps the link, `undefined` closes it (default: close). */
+	readonly restamp?: (principal: Principal) => Principal | undefined;
+}
+
+export interface Peer {
+	readonly kind: "host" | "client";
+	/** Configured (downstream hosts) or announced by the trusted parent (upstream). */
+	readonly name: string | undefined;
+}
+
+/** A hold the peer made on this host: served locally or relayed to another link. */
+type Served =
+	| { readonly kind: "local"; readonly handle: HandleImpl; readonly principal: Principal; readonly feeds: Set<number> }
+	| { readonly kind: "relay"; readonly relay: RelayHold };
+
+type Pending = { readonly resolve: (value: unknown) => void; readonly reject: (error: unknown) => void };
+
+const unavailable = (message: string): ChordError => new ChordError("unavailable", message);
+
+// ─── relay ───────────────────────────────────────────────────────────────────
+
+/**
+ * A hold relayed from an origin link to a downstream link. It owns everything done through it: subscriptions and
+ * calls queued while the route resolves, and the downstream twins once forwarded. `close` undoes all of it exactly
+ * once (cancels calls downstream, drops subscriptions, releases the downstream hold, rejects waiters).
+ */
+export class RelayHold {
+	readonly origin: Connection;
+	readonly frame: Extract<Frame, { t: "hold" }>;
+	readonly principal: Principal;
+	readonly client: boolean;
+	/** The origin's authorization generation when the hold arrived; a revocation bumps it. */
+	readonly generation: number;
+	down: Connection | undefined;
+	downId = 0;
+	closed = false;
+	readonly calls = new Map<number, RelayCall>();
+	readonly subs = new Map<number, { readonly member: string; downId: number | undefined }>();
+	readonly #waiters = new Set<Pending>();
+
+	constructor(origin: Connection, frame: Extract<Frame, { t: "hold" }>, principal: Principal, client: boolean) {
+		this.origin = origin;
+		this.frame = frame;
+		this.principal = principal;
+		this.client = client;
+		this.generation = origin.generation;
+	}
+
+	get originId(): number {
+		return this.frame.id;
+	}
+
+	/** Still authorized as it was when it arrived. */
+	get current(): boolean {
+		return !this.closed && this.origin.open && this.origin.generation === this.generation;
+	}
+
+	/** The downstream connection once the route resolved; rejects if the relay closes first. */
+	ready(): Promise<Connection> {
+		if (this.closed) return Promise.reject(new ChordError("gone", "relayed hold closed"));
+		if (this.down !== undefined) return Promise.resolve(this.down);
+		return new Promise<Connection>((resolve, reject) => {
+			this.#waiters.add({ resolve: resolve as (value: unknown) => void, reject });
+		});
+	}
+
+	/** Forwards the hold (and what queued meanwhile) to `down`. */
+	open(down: Connection): void {
+		if (this.closed) return;
+		this.down = down;
+		this.downId = down.nextId();
+		down.relayedHolds.set(this.downId, this);
+		down.send({
+			...this.frame,
+			id: this.downId,
+			principal: this.principal,
+			...(this.client ? { client: true } : {}),
+		});
+		for (const [originSubId, entry] of this.subs)
+			if (entry.downId === undefined) this.#forwardSub(originSubId, entry);
+		for (const waiter of this.#waiters) waiter.resolve(down);
+		this.#waiters.clear();
+	}
+
+	subscribe(originSubId: number, member: string): void {
+		const entry = { member, downId: undefined as number | undefined };
+		this.subs.set(originSubId, entry);
+		this.origin.relaySubs.set(originSubId, this);
+		if (this.down !== undefined) this.#forwardSub(originSubId, entry);
+	}
+
+	#forwardSub(originSubId: number, entry: { readonly member: string; downId: number | undefined }): void {
+		const down = this.down!;
+		entry.downId = down.nextId();
+		down.relayedSubs.set(entry.downId, { relay: this, originSubId });
+		down.send({ t: "sub", id: entry.downId, hold: this.downId, member: entry.member });
+	}
+
+	unsubscribe(originSubId: number, forward = true): void {
+		const entry = this.subs.get(originSubId);
+		if (entry === undefined) return;
+		this.subs.delete(originSubId);
+		this.origin.relaySubs.delete(originSubId);
+		if (entry.downId !== undefined && this.down !== undefined) {
+			this.down.relayedSubs.delete(entry.downId);
+			if (forward) this.down.send({ t: "unsub", id: entry.downId });
+		}
+	}
+
+	/**
+	 * Closes the relay. `releaseDown`: the downstream hold is still there (origin released, disconnected, or was
+	 * revoked): cancel its calls and release it. `notify`: tell the origin the hold is gone.
+	 */
+	close(error: unknown, options: { readonly releaseDown: boolean; readonly notify: boolean }): void {
+		if (this.closed) return;
+		this.closed = true;
+		for (const call of [...this.calls.values()]) call.cancel(error, options.releaseDown);
+		for (const originSubId of [...this.subs.keys()]) this.unsubscribe(originSubId, options.releaseDown);
+		if (this.origin.served.get(this.originId)?.kind === "relay") this.origin.served.delete(this.originId);
+		if (this.down !== undefined) {
+			this.down.relayedHolds.delete(this.downId);
+			if (options.releaseDown) this.down.send({ t: "release", id: this.downId });
+		}
+		for (const waiter of this.#waiters) waiter.reject(error);
+		this.#waiters.clear();
+		if (options.notify) this.origin.send({ t: "gone", id: this.originId, error: toWireError(error) });
+	}
+}
+
+/** One relayed call: settles once, by result, cancellation or the relay closing; removes both mappings. */
+export class RelayCall {
+	readonly relay: RelayHold;
+	readonly originId: number;
+	readonly downId: number;
+	readonly #pending: Pending;
+	#settled = false;
+
+	constructor(relay: RelayHold, originId: number, downId: number, pending: Pending) {
+		this.relay = relay;
+		this.originId = originId;
+		this.downId = downId;
+		this.#pending = pending;
+		relay.calls.set(originId, this);
+		relay.down?.relayedCalls.set(downId, this);
+	}
+
+	finish(error: unknown, value?: unknown): void {
+		if (this.#settled) return;
+		this.#settled = true;
+		this.relay.calls.delete(this.originId);
+		this.relay.down?.relayedCalls.delete(this.downId);
+		if (error === undefined) this.#pending.resolve(value);
+		else this.#pending.reject(error);
+	}
+
+	/** Cancels downstream (when the downstream hold still exists) and settles with `error`. */
+	cancel(error: unknown, forward: boolean): void {
+		if (this.#settled) return;
+		if (forward) this.relay.down?.send({ t: "cancel", id: this.downId });
+		this.finish(error);
+	}
+}
+
+// ─── connection ──────────────────────────────────────────────────────────────
+
+/** One end of a link on a host: consumer of remote handles, provider for the peer's holds, and relay. */
+export class Connection implements RemoteChannel {
+	readonly host: HostImpl;
+	readonly link: Link;
+	/** `upstream`: the link to this host's parent. `downstream`: a link this host accepted. */
+	readonly role: "upstream" | "downstream";
+	readonly peer: Peer;
+	principal: Principal;
+	readonly restamp: ((principal: Principal) => Principal | undefined) | undefined;
+	/** Bumped when the stamped principal is revoked or re-stamped: relays from before are refused. */
+	generation = 0;
+	/** The epoch a downstream host peer runs (from its hello, then from commits). */
+	peerEpoch: number | undefined;
+	/** A downstream host peer is usable once it runs this host's current epoch (see `HostImpl.peerHello`). */
+	synced: boolean;
+	/** Epochs this child announced while behind this host (fenced): this host never ran them. */
+	readonly fencedEpochs = new Set<number>();
+	/** Roots of fenced epochs, by the epoch of this host they were admitted in. */
+	readonly #admitted = new Map<string, number>();
+	#parentName: string | undefined;
+	readonly #syncWaiters = new Set<Pending>();
+	#nextId = 1;
+	#lastSeen = Date.now();
+	#pinger: ReturnType<typeof setInterval> | undefined;
+	// consumer side: what this host asked of the peer
+	readonly remotes = new Map<number, RemoteHandle>();
+	readonly calls = new Map<number, Pending>();
+	readonly subs = new Map<number, (frame: StateSink) => void>();
+	// provider side: what the peer asked of this host
+	readonly served = new Map<number, Served>();
+	readonly incoming = new Map<number, AbortController>();
+	readonly feeds = new Map<number, () => void>();
+	/** Origin side of relays: the peer's sub ids that are relayed. */
+	readonly relaySubs = new Map<number, RelayHold>();
+	// downstream side of relays: ids this host used on this link
+	readonly relayedHolds = new Map<number, RelayHold>();
+	readonly relayedCalls = new Map<number, RelayCall>();
+	readonly relayedSubs = new Map<number, { readonly relay: RelayHold; readonly originSubId: number }>();
+	/** Reload votes awaited from this (child) peer. */
+	readonly votes = new Map<number, Pending>();
+
+	constructor(
+		host: HostImpl,
+		link: Link,
+		config: {
+			readonly role: "upstream" | "downstream";
+			readonly principal: Principal;
+			readonly peer: Peer;
+			readonly restamp?: (principal: Principal) => Principal | undefined;
+		} & LinkOptions,
+	) {
+		this.host = host;
+		this.link = link;
+		this.role = config.role;
+		this.peer = config.peer;
+		this.principal = config.principal;
+		this.restamp = config.restamp;
+		this.synced = !(this.role === "downstream" && this.peer.kind === "host");
+		link.onClose((reason) => this.#closed(reason));
+		link.receive((frame) => this.#receive(frame));
+		this.send({ t: "hello", name: host.name, kind: host.kind, epoch: host.current.id });
+		const interval = config.pingInterval ?? 15_000;
+		const timeout = config.pingTimeout ?? 45_000;
+		let n = 0;
+		this.#pinger = setInterval(() => {
+			if (Date.now() - this.#lastSeen > timeout) link.close("ping timeout");
+			else this.send({ t: "ping", n: ++n });
+		}, interval);
+		this.#pinger.unref?.();
+	}
+
+	get open(): boolean {
+		return !this.link.closed;
+	}
+
+	/** The peer's name: configured for downstream hosts, announced by the parent upstream. */
+	get name(): string | undefined {
+		return this.role === "upstream" ? this.#parentName : this.peer.name;
+	}
+
+	send(frame: Frame): void {
+		this.link.send(frame);
+	}
+
+	nextId(): number {
+		return this.#nextId++;
+	}
+
+	/** Resolves once the peer is usable (a host peer runs this host's epoch); rejects if the link closes first. */
+	whenSynced(): Promise<void> {
+		if (!this.open) return Promise.reject(unavailable(`link to ${this.name ?? "peer"} closed`));
+		if (this.synced) return Promise.resolve();
+		return new Promise<void>((resolve, reject) => this.#syncWaiters.add({ resolve: resolve as () => void, reject }));
+	}
+
+	markSynced(epoch: number): void {
+		this.peerEpoch = epoch;
+		this.synced = true;
+		for (const waiter of this.#syncWaiters) waiter.resolve(undefined);
+		this.#syncWaiters.clear();
+	}
+
+	/** Revokes the stamped principal: relays made under it close at once (also those still resolving a route). */
+	revoke(next: Principal | undefined): void {
+		this.generation++;
+		const error = new ChordError("gone", "principal invalidated");
+		for (const served of [...this.served.values()]) {
+			if (served.kind === "relay") served.relay.close(error, { releaseDown: true, notify: true });
+		}
+		if (next === undefined) this.link.close("principal invalidated");
+		else this.principal = next;
+	}
+
+	/** A protocol violation: the peer cannot be trusted with anything on this link any more. */
+	#violation(reason: string): void {
+		this.host.report(new ChordError("invalid", `link to ${this.name ?? "peer"}: ${reason}`, { reason: "protocol" }));
+		this.link.close(`protocol error: ${reason}`);
+	}
+
+	// ─── consumer side (RemoteChannel) ───
+
+	hold(handle: RemoteHandle): number {
+		const id = this.nextId();
+		this.remotes.set(id, handle);
+		handle.bound(this, id);
+		const principal = handle.principal;
+		this.send({
+			t: "hold",
+			id,
+			at: handle.at,
+			token: handle.contract.description,
+			input: handle.input,
+			...(principal === undefined ? {} : { principal }),
+			...(handle.owner === "client" ? { client: true } : {}),
+		});
+		return id;
+	}
+
+	release(id: number): void {
+		this.remotes.delete(id);
+		this.send({ t: "release", id });
+	}
+
+	call(hold: number, member: string, args: unknown, root: RootRef | undefined, signal: AbortSignal): Promise<unknown> {
+		const id = this.nextId();
+		return new Promise<unknown>((resolve, reject) => {
+			if (signal.aborted) {
+				reject(new ChordError("aborted", "call aborted"));
+				return;
+			}
+			const onAbort = (): void => {
+				this.calls.delete(id);
+				this.send({ t: "cancel", id });
+				reject(new ChordError("aborted", "call aborted", { cause: signal.reason }));
+			};
+			signal.addEventListener("abort", onAbort, { once: true });
+			const done = (): void => signal.removeEventListener("abort", onAbort);
+			this.calls.set(id, {
+				resolve: (value) => {
+					done();
+					resolve(value);
+				},
+				reject: (error) => {
+					done();
+					reject(error);
+				},
+			});
+			// Clients never carry roots or epochs: the server starts roots for them.
+			const carried = root !== undefined && this.host.kind === "host";
+			if (carried) this.host.rootSent(root.rootId, this);
+			this.send({ t: "call", id, hold, member, args, ...(carried ? { root } : {}) });
+		});
+	}
+
+	sub(hold: number, member: string, sink: (frame: StateSink) => void): number {
+		const id = this.nextId();
+		this.subs.set(id, sink);
+		this.send({ t: "sub", id, hold, member });
+		return id;
+	}
+
+	unsub(id: number): void {
+		if (this.subs.delete(id)) this.send({ t: "unsub", id });
+	}
+
+	// ─── receiving ───
+
+	#receive(frame: unknown): void {
+		this.#lastSeen = Date.now();
+		if (!isFrame(frame)) {
+			this.#violation("malformed frame");
+			return;
+		}
+		try {
+			this.#dispatch(frame);
+		} catch (error) {
+			this.host.report(error);
+		}
+	}
+
+	#dispatch(frame: Frame): void {
+		switch (frame.t) {
+			case "hello":
+				this.#onHello(frame);
+				return;
+			case "ping":
+				this.send({ t: "pong", n: frame.n });
+				return;
+			case "pong":
+			case "bye":
+				return;
+			case "hold":
+				this.#onHold(frame);
+				return;
+			case "release":
+				this.#dropServed(frame.id, true);
+				return;
+			case "call":
+				this.#onCall(frame);
+				return;
+			case "cancel":
+				this.incoming.get(frame.id)?.abort(new ChordError("aborted", "cancelled by caller"));
+				return;
+			case "sub":
+				this.#onSub(frame);
+				return;
+			case "unsub":
+				this.#onUnsub(frame.id);
+				return;
+			case "shape":
+			case "gone":
+				this.#onHoldReply(frame);
+				return;
+			case "result":
+				this.#onResult(frame);
+				return;
+			case "state":
+				this.#onState(frame);
+				return;
+			case "root_end":
+				// Honored only from the link the root came over (see HostImpl.foreignRootEnded).
+				this.#admitted.delete(frame.rootId);
+				this.host.foreignRootEnded(frame.rootId, this);
+				return;
+			case "invalidate":
+			case "prepare":
+			case "commit":
+			case "abort":
+			case "retire":
+				// Control frames only from the parent.
+				if (this.role !== "upstream") {
+					this.#violation(`${frame.t} from a child`);
+					return;
+				}
+				if (frame.t === "invalidate") {
+					this.host.invalidatePrincipal(frame.pattern).catch((error: unknown) => this.host.report(error));
+				} else if (frame.t === "retire") this.host.allowRetire(frame.epoch);
+				else this.host.onReloadFrame(this, frame);
+				return;
+			case "vote": {
+				if (this.role !== "downstream" || this.peer.kind !== "host") {
+					this.#violation("vote from a non-participant");
+					return;
+				}
+				const vote = this.votes.get(frame.reload);
+				this.votes.delete(frame.reload);
+				if (frame.error === undefined) vote?.resolve(frame.report);
+				else vote?.reject(fromWireError(frame.error));
+				return;
+			}
+		}
+	}
+
+	/**
+	 * The peer's hello must agree with what this side decided about it. A downstream host announces its epoch: the
+	 * host either finds it in step or fences and reconciles it (never renumbers).
+	 */
+	#onHello(frame: Extract<Frame, { t: "hello" }>): void {
+		if (this.role === "upstream") {
+			if (frame.kind !== "host") {
+				this.#violation("parent is not a host");
+				return;
+			}
+			this.#parentName ??= frame.name;
+			return;
+		}
+		if (frame.kind !== this.peer.kind || (this.peer.name !== undefined && frame.name !== this.peer.name)) {
+			this.#violation(
+				`hello ${frame.kind} ${frame.name} does not match the accepted ${this.peer.kind} ${this.peer.name ?? ""}`,
+			);
+			return;
+		}
+		if (this.peer.kind === "host") this.host.peerHello(this, frame.epoch);
+	}
+
+	/**
+	 * Principal stamping: a downstream link acts as the principal it was accepted with, whatever the frame says. Only
+	 * the parent may forward a principal (relayed requests); its own requests act as `{ host: parentName }`.
+	 */
+	#principalOf(frame: { readonly principal?: Principal }): Principal {
+		if (this.role === "downstream") return this.principal;
+		return frame.principal ?? { host: this.#parentName ?? "parent" };
+	}
+
+	#isClient(frame: { readonly client?: boolean }): boolean {
+		return this.role === "downstream" ? this.peer.kind === "client" : frame.client === true;
+	}
+
+	#onHold(frame: Extract<Frame, { t: "hold" }>): void {
+		if (this.served.has(frame.id)) {
+			this.#violation(`duplicate hold id ${frame.id}`);
+			return;
+		}
+		const principal = this.#principalOf(frame);
+		const client = this.#isClient(frame);
+		if (frame.at !== this.host.name) {
+			if (this.role === "upstream") {
+				this.send({ t: "gone", id: frame.id, error: toWireError(unavailable(`${this.host.name} does not relay`)) });
+				return;
+			}
+			const relay = new RelayHold(this, frame, principal, client);
+			this.served.set(frame.id, { kind: "relay", relay });
+			this.host.relay(relay).catch((error: unknown) => relay.close(error, { releaseDown: true, notify: true }));
+			return;
+		}
+		let handle: HandleImpl;
+		try {
+			const token = contractFromDescription(frame.token);
+			if (token.scope !== "remote") throw invalid("token", `${token.name} is local; only remote types cross links`);
+			const acquired = this.host.acquire(token, frame.input, { principal }, client ? "client" : "connection");
+			if (!(acquired instanceof HandleImpl)) throw unavailable("not a local handle");
+			handle = acquired;
+		} catch (error) {
+			this.send({ t: "gone", id: frame.id, error: toWireError(client ? clientError(error) : error) });
+			return;
+		}
+		const served: Served = { kind: "local", handle, principal, feeds: new Set() };
+		this.served.set(frame.id, served);
+		const shape = (): void => {
+			const current = handle.shape;
+			if (current === undefined || this.served.get(frame.id) !== served) return;
+			this.send({
+				t: "shape",
+				id: frame.id,
+				kind: current.kind,
+				members: current.members,
+				contract: current.contract,
+				epoch: current.epoch,
+			});
+		};
+		handle.onShape(shape);
+		handle.goneListeners.add((error) => {
+			if (this.served.get(frame.id) !== served) return;
+			this.#dropServed(frame.id, false);
+			this.send({ t: "gone", id: frame.id, error: toWireError(error) });
+		});
+		if (handle.status === "live") shape();
+	}
+
+	/** Forgets a served hold: unsubscribes its feeds and releases it (locally or downstream). */
+	#dropServed(id: number, release: boolean): void {
+		const served = this.served.get(id);
+		if (served === undefined) return;
+		this.served.delete(id);
+		if (served.kind === "relay") {
+			served.relay.close(new ChordError("released", "relayed hold released"), {
+				releaseDown: release,
+				notify: false,
+			});
+			return;
+		}
+		for (const feed of served.feeds) this.#onUnsub(feed);
+		if (release) served.handle.release();
+	}
+
+	#onCall(frame: Extract<Frame, { t: "call" }>): void {
+		if (this.incoming.has(frame.id)) {
+			this.#violation(`duplicate call id ${frame.id}`);
+			return;
+		}
+		const served = this.served.get(frame.hold);
+		if (served === undefined) {
+			this.send({ t: "result", id: frame.id, error: toWireError(new ChordError("gone", "unknown hold")) });
+			return;
+		}
+		const controller = new AbortController();
+		this.incoming.set(frame.id, controller);
+		// Roots are honored from hosts only; a request without one (or from a client) starts one here.
+		const root = this.peer.kind === "host" ? this.#admitRoot(frame.root) : undefined;
+		const principal = served.kind === "local" ? served.principal : served.relay.principal;
+		const options = { principal, signal: controller.signal };
+		const run =
+			served.kind === "local"
+				? (ctx: Ctx) => served.handle.record.call(served.handle, frame.member, frame.args, ctx as CtxImpl)
+				: (ctx: Ctx) =>
+						relayCall(
+							served.relay,
+							frame,
+							{ rootId: ctx.rootId, epoch: ctx.epoch },
+							controller.signal,
+							this.host,
+						);
+		const result =
+			root === undefined
+				? this.host.root(run, options)
+				: this.host.joinRoot(root.rootId, root.epoch, run, { ...options, from: this });
+		result
+			.then(
+				(value) => this.send({ t: "result", id: frame.id, value }),
+				(error: unknown) => this.send({ t: "result", id: frame.id, error: toWireError(error) }),
+			)
+			.finally(() => this.incoming.delete(frame.id));
+	}
+
+	/**
+	 * A child that connected behind this host runs roots of an epoch this host never had (it was fenced and is being,
+	 * or was, reconciled). Such a root is admitted in this host's current epoch at its first call here, and keeps that
+	 * epoch for its later calls (`superseded` once this host retired it). Other unknown epochs stay `superseded`.
+	 */
+	#admitRoot(root: RootRef | undefined): RootRef | undefined {
+		if (root === undefined || this.role !== "downstream" || !this.fencedEpochs.has(root.epoch)) return root;
+		if (this.host.hasEpoch(root.epoch)) return root;
+		let epoch = this.#admitted.get(root.rootId);
+		if (epoch === undefined) {
+			epoch = this.host.current.id;
+			this.#admitted.set(root.rootId, epoch);
+		}
+		return { rootId: root.rootId, epoch };
+	}
+
+	#onSub(frame: Extract<Frame, { t: "sub" }>): void {
+		if (this.feeds.has(frame.id) || this.relaySubs.has(frame.id)) {
+			this.#violation(`duplicate sub id ${frame.id}`);
+			return;
+		}
+		const served = this.served.get(frame.hold);
+		if (served === undefined) {
+			this.send({ t: "state", id: frame.id, error: toWireError(new ChordError("gone", "unknown hold")) });
+			return;
+		}
+		if (served.kind === "relay") {
+			served.relay.subscribe(frame.id, frame.member);
+			return;
+		}
+		const readable = served.handle.member(frame.member) as Readable<unknown> | undefined;
+		if (readable === undefined || typeof readable.events !== "function") {
+			this.send({
+				t: "state",
+				id: frame.id,
+				error: toWireError(new ChordError("not_in_variant", `${frame.member} is not state`)),
+			});
+			return;
+		}
+		let stream: Encoder = encoder();
+		const send = (event: StateEvent<unknown>): void => {
+			if (event.type === "ops") {
+				this.send({ t: "state", id: frame.id, ops: stream.encode(event.ops) });
+				return;
+			}
+			// A loading provider handle has nothing yet: the hydrated value follows as a reset.
+			if (event.value === undefined) return;
+			// Snapshots are validated against the effective schema once per (re)subscription; ops only in dev mode.
+			try {
+				validateSnapshot(served.handle, frame.member, event.value);
+			} catch (error) {
+				this.send({ t: "state", id: frame.id, error: toWireError(error) });
+				return;
+			}
+			stream = encoder();
+			this.send(
+				event.type === "snap"
+					? { t: "state", id: frame.id, snap: event.value }
+					: { t: "state", id: frame.id, reset: event.value },
+			);
+		};
+		const unsubscribe = readable.events(send);
+		this.feeds.set(frame.id, unsubscribe);
+		served.feeds.add(frame.id);
+	}
+
+	#onUnsub(id: number): void {
+		const unsubscribe = this.feeds.get(id);
+		if (unsubscribe !== undefined) {
+			this.feeds.delete(id);
+			unsubscribe();
+		}
+		this.relaySubs.get(id)?.unsubscribe(id);
+	}
+
+	#onHoldReply(frame: Extract<Frame, { t: "shape" | "gone" }>): void {
+		const relay = this.relayedHolds.get(frame.id);
+		if (relay !== undefined) {
+			if (frame.t === "gone") relay.close(fromWireError(frame.error), { releaseDown: false, notify: true });
+			else if (!relay.closed) relay.origin.send({ ...frame, id: relay.originId });
+			return;
+		}
+		const handle = this.remotes.get(frame.id);
+		if (handle === undefined) return;
+		if (frame.t === "gone") {
+			this.remotes.delete(frame.id);
+			handle.gone(fromWireError(frame.error));
+			return;
+		}
+		handle.shaped({ kind: frame.kind, members: frame.members, contract: frame.contract, epoch: frame.epoch });
+	}
+
+	#onResult(frame: Extract<Frame, { t: "result" }>): void {
+		const relayed = this.relayedCalls.get(frame.id);
+		if (relayed !== undefined) {
+			relayed.finish(frame.error === undefined ? undefined : fromWireError(frame.error), frame.value);
+			return;
+		}
+		const pending = this.calls.get(frame.id);
+		this.calls.delete(frame.id);
+		if (frame.error === undefined) pending?.resolve(frame.value);
+		else pending?.reject(fromWireError(frame.error));
+	}
+
+	#onState(frame: Extract<Frame, { t: "state" }>): void {
+		const relayed = this.relayedSubs.get(frame.id);
+		if (relayed !== undefined) {
+			relayed.relay.origin.send({ ...frame, id: relayed.originSubId });
+			return;
+		}
+		this.subs.get(frame.id)?.(frame);
+	}
+
+	// ─── lifetime ───
+
+	#closed(reason: string): void {
+		if (this.#pinger !== undefined) clearInterval(this.#pinger);
+		const error = unavailable(`link to ${this.name ?? "peer"} closed: ${reason}`);
+		// As origin: everything the peer held here, relayed or not, is released (downstream calls cancelled).
+		for (const id of [...this.served.keys()]) this.#dropServed(id, true);
+		for (const controller of this.incoming.values()) controller.abort(error);
+		this.incoming.clear();
+		for (const pending of this.calls.values()) pending.reject(error);
+		this.calls.clear();
+		this.subs.clear();
+		for (const vote of this.votes.values()) vote.reject(error);
+		this.votes.clear();
+		for (const waiter of this.#syncWaiters) waiter.reject(error);
+		this.#syncWaiters.clear();
+		// As downstream of relays: their origins lose the hold.
+		for (const relay of [...this.relayedHolds.values()]) relay.close(error, { releaseDown: false, notify: true });
+		this.relayedHolds.clear();
+		this.relayedCalls.clear();
+		this.relayedSubs.clear();
+		for (const handle of this.remotes.values()) {
+			// An upstream link may be replaced (reconnect); a downstream host that went away is gone.
+			if (this.role === "upstream") handle.detached();
+			else handle.gone(error);
+		}
+		this.remotes.clear();
+		this.host.connectionClosed(this);
+	}
+}
+
+/**
+ * A call through a relay: waits for the route, then forwards with the root it runs in. It settles exactly once; a
+ * cancel (or the origin going away) is forwarded downstream and removes both mappings.
+ */
+async function relayCall(
+	relay: RelayHold,
+	frame: Extract<Frame, { t: "call" }>,
+	root: RootRef,
+	signal: AbortSignal,
+	host: HostImpl,
+): Promise<unknown> {
+	const abortError = (): ChordError => new ChordError("aborted", "call cancelled", { cause: signal.reason });
+	if (signal.aborted) throw abortError();
+	let onAbort = (): void => {};
+	const aborted = new Promise<never>((_, reject) => {
+		onAbort = () => reject(abortError());
+		signal.addEventListener("abort", onAbort, { once: true });
+	});
+	aborted.catch(() => {});
+	try {
+		const down = await Promise.race([relay.ready(), aborted]);
+		if (relay.closed) throw new ChordError("gone", "relayed hold closed");
+		return await new Promise<unknown>((resolve, reject) => {
+			const call = new RelayCall(relay, frame.id, down.nextId(), { resolve, reject });
+			signal.addEventListener("abort", () => call.cancel(abortError(), true), { once: true });
+			host.rootSent(root.rootId, down);
+			down.send({ t: "call", id: call.downId, hold: relay.downId, member: frame.member, args: frame.args, root });
+		});
+	} finally {
+		signal.removeEventListener("abort", onAbort);
+	}
+}
+
+/**
+ * Validates a snapshot against the schema the consumer is promised: the provider's own schema for a direct binding,
+ * the consumer's contract for one through an `accepts` adapter (the adapter's view is what the consumer gets).
+ */
+function validateSnapshot(handle: HandleImpl, member: string, value: unknown): void {
+	if (value === undefined) return;
+	const installed = handle.record.currentInstalled();
+	if (installed === undefined) return;
+	const view = handle.currentView();
+	const kind = view === undefined ? kindOf(installed.behavior) : kindOf(view);
+	const description =
+		view !== undefined && view !== installed.behavior
+			? handle.contract.description.variants[kind ?? LOCAL_VARIANT]?.[member]
+			: installed.service.contract.description.variants[kindOf(installed.behavior) ?? LOCAL_VARIANT]?.[member];
+	if (description?.kind === "state") assertValid("state", `${handle.address}.${member}`, description.schema, value);
+}
+
+/** Clients (browsers) holding an outdated contract are told to reload their code. */
+function clientError(error: unknown): unknown {
+	if (error instanceof ChordError && error.code === "contract_mismatch") {
+		return new ChordError("upgrade_required", error.message, { cause: error });
+	}
+	return error;
+}
