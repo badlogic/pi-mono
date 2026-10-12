@@ -34,6 +34,8 @@ export interface EnvConformanceOptions {
 	readonly shell?: readonly string[];
 	/** Whether the shell's `ln -s` creates symbolic links; default true. */
 	readonly symlinks?: boolean;
+	/** Whether the environment implements the optional `listFiles`, which the suite then checks; default false. */
+	readonly listFiles?: boolean;
 }
 
 export interface EnvConformanceCase {

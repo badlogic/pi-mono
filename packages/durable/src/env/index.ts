@@ -167,6 +167,44 @@ export interface DirReader {
 	close(context: Context): Promise<void>;
 }
 
+/** What `FileSystem.listFiles` lists. */
+export interface ListFilesOptions {
+	/**
+	 * Include names starting with `.` (on Windows also files with the hidden attribute); default true. Entries named
+	 * `.git` are never listed.
+	 */
+	hidden?: boolean;
+	/**
+	 * Inside a git work tree, skip what git ignores: the `.gitignore` files of the directory, its subdirectories and its
+	 * parents, `.git/info/exclude`, and the global excludes file; default true. Unlike `git ls-files`, a tracked file that
+	 * matches an ignore rule is skipped too. Outside work trees, `.gitignore` files have no effect.
+	 */
+	gitignore?: boolean;
+	/** Names of entries to skip with everything below them, such as `node_modules`. */
+	exclude?: readonly string[];
+	/** Most entries to list; default 50 000. */
+	maxEntries?: number;
+	/** Most bytes of the listing: each entry's UTF-8 path plus two; default 4 MiB, at most 15.9 MiB. */
+	maxBytes?: number;
+	/** Time after which the listing stops; default 10 000 ms. */
+	timeoutMs?: number;
+}
+
+/** One entry of a `FileListing`. */
+export interface FileListEntry {
+	/** Relative to the listed directory, with `/` separators on every system. */
+	path: string;
+	/** A symbolic link is listed as such and not followed. */
+	kind: FileKind;
+}
+
+export interface FileListing {
+	/** Depth first, parents before their entries, siblings in byte order of their names. */
+	entries: FileListEntry[];
+	/** A bound in `ListFilesOptions` ended the listing early. */
+	truncated: boolean;
+}
+
 /** Portable filesystem capability. Operations return failures rather than throwing. */
 export interface FileSystem {
 	/**
@@ -204,6 +242,17 @@ export interface FileSystem {
 	renameFile(sourcePath: string, destinationPath: string, context: Context): Promise<Result<void, FileError>>;
 	fileInfo(path: string, context: Context): Promise<Result<FileInfo, FileError>>;
 	listDir(path: string, context: Context): Promise<Result<FileInfo[], FileError>>;
+	/**
+	 * Optional: the files, directories and symbolic links below a directory, at any depth, for indexes such as file
+	 * completion. Symbolic links are not followed; other kinds of files are not listed; entries that cannot be read are
+	 * skipped. See `ListFilesOptions` for hidden and ignored files and for the bounds. Fails with `not_supported` when
+	 * the environment cannot list right now (an older remote daemon), so callers fall back to their own walk.
+	 */
+	listFiles?(
+		path: string,
+		options: ListFilesOptions | undefined,
+		context: Context,
+	): Promise<Result<FileListing, FileError>>;
 	openDirReader(path: string, context: Context): Promise<Result<DirReader, FileError>>;
 	/**
 	 * Report changes to files and directories, for hosts that load resources from the environment. When the returned

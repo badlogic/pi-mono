@@ -29,7 +29,7 @@ export function registerEnvConformance(
 	runner: StorageConformanceRunner,
 	name: string,
 	withEnv: EnvConformanceProvider,
-	options: Pick<EnvConformanceOptions, "shell" | "symlinks"> = {},
+	options: Pick<EnvConformanceOptions, "shell" | "symlinks" | "listFiles"> = {},
 ): void {
 	const cases = createEnvConformance({ ...options, assertions: createExpectAssertions(runner.expect), withEnv });
 	runner.describe(name, () => {

@@ -3152,7 +3152,13 @@ the newline count, the byte range of a span of lines, and the decoded sizes of
 that span and its first line, so a caller can count and locate lines without
 moving the file. `openDirReader`
 pages a directory in file-system order, reading metadata only for the entries
-it returns and skipping entries removed meanwhile. All operations stop when
+it returns and skipping entries removed meanwhile. The optional `listFiles`
+lists a whole tree for indexes such as file completion: files, directories and
+symbolic links (not followed), relative with `/` separators, depth first in
+byte order of names, without `.git` and, inside git work trees, without what
+git ignores; `maxEntries`, `maxBytes` and `timeoutMs` end it early with
+`truncated`. An environment that cannot list right now fails with
+`not_supported`, and callers fall back to their own walk. All operations stop when
 their context is aborted, and only that call's work stops: a timeout or abort
 kills only that command's processes. `cleanup()` kills every command the
 environment still runs and belongs to its owner's shutdown, never to a single
