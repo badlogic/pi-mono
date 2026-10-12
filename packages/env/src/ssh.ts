@@ -358,6 +358,15 @@ export function packagedDaemon(remote: Pick<RemotePlatform, "platform" | "arch">
 	return join(packageRoot, "bin", name, remote.platform === "windows" ? "pi-env.exe" : "pi-env");
 }
 
+/** The daemon this package ships for the machine it runs on, e.g. for terminals of local sessions. */
+export function localDaemon(): string {
+	const platform = process.platform === "win32" ? "windows" : process.platform;
+	if (platform !== "linux" && platform !== "android" && platform !== "darwin" && platform !== "windows") {
+		throw new Error(`No pi-env daemon for ${process.platform}`);
+	}
+	return packagedDaemon({ platform, arch: normalizeArch(process.arch) });
+}
+
 function quotePosix(text: string): string {
 	return `'${text.replaceAll("'", "'\\''")}'`;
 }

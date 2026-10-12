@@ -84,7 +84,7 @@ describe("tool round", () => {
 		addTool(
 			setup.registry,
 			tool("echo", async (args) => ({
-				content: [{ type: "text", text: `echo ${args.text}` }],
+				output: [{ type: "text", text: `echo ${args.text}` }],
 			})),
 		);
 		const { harness, root, entries, status } = await run(setup, [calls(["echo", { text: "hi" }, "c1"]), DONE]);
@@ -119,7 +119,7 @@ describe("tool round", () => {
 			setup.registry,
 			tool("echo", async (_args, api) => {
 				seen.push(api.models);
-				return { content: [] };
+				return { output: [] };
 			}),
 		);
 		addHooks(setup.registry, ToolTask, {
@@ -139,7 +139,7 @@ describe("tool round", () => {
 		const setup = chatSetup();
 		addTool(
 			setup.registry,
-			tool("echo", async () => ({ content: [] })),
+			tool("echo", async () => ({ output: [] })),
 		);
 		const { harness, root, entries, status } = await run(setup, [
 			calls(["ghost", {}, "c1"], ["echo", {}, "c2"]),
@@ -166,7 +166,7 @@ describe("tool round", () => {
 			setup.registry,
 			tool("echo", async () => {
 				seen.push("ran");
-				return { content: [] };
+				return { output: [] };
 			}),
 		);
 		let root!: Conversation;
@@ -187,7 +187,7 @@ describe("tool round", () => {
 
 	it("removes unregistered active tools from the offer and adds them back after re-registration", async () => {
 		const setup = chatSetup();
-		const echo = tool("echo", async () => ({ content: [] }));
+		const echo = tool("echo", async () => ({ output: [] }));
 		const registration = addTool(setup.registry, echo);
 		const first = await run(setup, [DONE]);
 		registration.dispose();
@@ -219,14 +219,14 @@ describe("tool round", () => {
 				"first",
 				async () => {
 					second.dispose();
-					return { content: [] };
+					return { output: [] };
 				},
 				{ executionMode: "sequential" },
 			),
 		);
 		second = addTool(
 			setup.registry,
-			tool("second", async () => ({ content: [{ type: "text", text: "ran" }] })),
+			tool("second", async () => ({ output: [{ type: "text", text: "ran" }] })),
 		);
 		const { harness, entries, status } = await run(setup, [calls(["first", {}, "c1"], ["second", {}, "c2"]), DONE]);
 		expect(status).toBe("done");
@@ -246,7 +246,7 @@ describe("tool round", () => {
 				setup.settings.toolExecution = "parallel";
 				await new Promise((resolve) => setTimeout(resolve, 20));
 				events.push(`end ${name}`);
-				return { content: [] };
+				return { output: [] };
 			};
 		addTool(setup.registry, tool("a", slow("a")));
 		addTool(setup.registry, tool("b", slow("b")));
@@ -269,7 +269,7 @@ describe("tool round", () => {
 					events.push(`start ${name}`);
 					await new Promise((resolve) => setTimeout(resolve, 20));
 					events.push(`end ${name}`);
-					return { content: [] };
+					return { output: [] };
 				};
 			if (setup.registry.snapshot().extension("tool:a") === undefined) addTool(setup.registry, tool("a", slow("a")));
 			if (setup.registry.snapshot().extension("tool:b") === undefined) addTool(setup.registry, tool("b", slow("b")));
@@ -293,7 +293,7 @@ describe("tool round", () => {
 				async () => {
 					await new Promise((resolve) => setTimeout(resolve, 20));
 					events.push("a");
-					return { content: [] };
+					return { output: [] };
 				},
 				{ executionMode: "sequential" },
 			),
@@ -302,7 +302,7 @@ describe("tool round", () => {
 			perTool.registry,
 			tool("b", async () => {
 				events.push("b");
-				return { content: [] };
+				return { output: [] };
 			}),
 		);
 		const result = await run(perTool, [calls(["a", {}, "c1"], ["b", {}, "c2"]), DONE]);
@@ -399,7 +399,7 @@ describe("tool results", () => {
 			tool(
 				"big",
 				async () => ({
-					content: [{ type: "text", text: "a\nb\n" }, image, { type: "text", text: "c\nd\n" }],
+					output: [{ type: "text", text: "a\nb\n" }, image, { type: "text", text: "c\nd\n" }],
 				}),
 				{ outputLimits: { maxLines: 2, retain: "tail" } },
 			),
@@ -436,7 +436,7 @@ describe("tool results", () => {
 			setup.registry,
 			tool("slow", async () => {
 				await sleep(30);
-				return { content: [] };
+				return { output: [] };
 			}),
 		);
 		addTool(
@@ -473,7 +473,7 @@ describe("tool results", () => {
 			setup.registry,
 			tool("echo", async (args) => {
 				seen.push(args);
-				return { content: [] };
+				return { output: [] };
 			}),
 		);
 		addHooks(setup.registry, ToolTask, {
@@ -520,7 +520,7 @@ describe("tool results", () => {
 				"echo",
 				async (args) => {
 					seen.push(args);
-					return { content: [] };
+					return { output: [] };
 				},
 				{
 					prepareArguments: (args) => {
@@ -549,7 +549,7 @@ describe("tool results", () => {
 		const setup = chatSetup();
 		addTool(
 			setup.registry,
-			tool("echo", async () => ({ content: [] })),
+			tool("echo", async () => ({ output: [] })),
 		);
 		const asked: string[] = [];
 		addHooks(setup.registry, ToolTask, {
@@ -574,13 +574,18 @@ describe("tool results", () => {
 		const setup = chatSetup();
 		addTool(
 			setup.registry,
-			tool("echo", async () => ({ content: [{ type: "text", text: "raw" }] })),
+			tool("echo", async () => ({ output: [{ type: "text", text: "raw" }] })),
 		);
 		addHooks(setup.registry, ToolTask, {
-			afterTool: (_call, result) => ({ ...result, content: [{ type: "text", text: "first" }] }),
+			afterTool: (_call, result) => ({ ...result, output: [{ type: "text", text: "first" }] }),
 		});
 		addHooks(setup.registry, ToolTask, {
-			afterTool: (_call, result) => ({ ...result, details: { replaced: resultText(result as ToolResultMessage) } }),
+			afterTool: (_call, result) => ({
+				...result,
+				details: {
+					replaced: (result.output ?? []).map((item) => (item.type === "text" ? item.text : "")).join("|"),
+				},
+			}),
 		});
 		const observed: unknown[] = [];
 		addHooks(setup.registry, GenerationTask, {
@@ -598,7 +603,7 @@ describe("tool results", () => {
 	it("runs the hooks of the selected extensions; a task-owned child copies its owner's selection", async () => {
 		const setup = chatSetup();
 		const calledIn: number[] = [];
-		const Echo = defineExtension({ name: "echo", tools: [tool("echo", async () => ({ content: [] }))] });
+		const Echo = defineExtension({ name: "echo", tools: [tool("echo", async () => ({ output: [] }))] });
 		const Audit = defineExtension({
 			name: "audit",
 			hooks: [hook(ToolTask, { beforeTool: (_call, api) => void calledIn.push(api.conversationId) })],
@@ -640,13 +645,13 @@ describe("tool results", () => {
 
 	it("applies addTools and terminates only when every result of the round asks to", async () => {
 		const setup = chatSetup();
-		const stop = tool("stop", async () => ({ content: [], control: { terminate: true } }));
-		const grow = tool("grow", async () => ({ content: [], control: { addTools: ["extra", "stop"] } }));
+		const stop = tool("stop", async () => ({ output: [], control: { terminate: true } }));
+		const grow = tool("grow", async () => ({ output: [], control: { addTools: ["extra", "stop"] } }));
 		addTool(setup.registry, stop);
 		addTool(setup.registry, grow);
 		addTool(
 			setup.registry,
-			tool("extra", async () => ({ content: [] })),
+			tool("extra", async () => ({ output: [] })),
 		);
 		const first = await run(setup, [calls(["stop", {}, "c1"])], async (_harness, root) => {
 			await root.configure({ tools: [stop, grow] }, context);
@@ -780,7 +785,7 @@ describe("generation hooks", () => {
 		let asked = 0;
 		addTool(
 			setup.registry,
-			tool("echo", async () => ({ content: [] })),
+			tool("echo", async () => ({ output: [] })),
 		);
 		addHooks(setup.registry, ToolTask, {
 			beforeTool: async (_call, api) => {
@@ -829,7 +834,7 @@ describe("tool execution api", () => {
 			const id = await api.createTask(child, { n: 21 }, { ownership: { kind: "conversation" } }, context);
 			const done = await api.waitForTask(id, context);
 			seen.push(done.state.outcome);
-			return { content: [] };
+			return { output: [] };
 		});
 		addTool(setup.registry, probe);
 		setup.faux.setResponses([calls(["probe", {}, "c1"], ["probe", {}, "c2"]), DONE]);
@@ -855,7 +860,7 @@ describe("tool execution api", () => {
 		const setup = chatSetup();
 		addTool(
 			setup.registry,
-			tool("probe", async () => ({ content: [{ type: "text", text: "ran" }] })),
+			tool("probe", async () => ({ output: [{ type: "text", text: "ran" }] })),
 		);
 		const { harness, entries } = await run(setup, [calls(["probe", {}, "c1"]), DONE], undefined, {
 			env: () => {
@@ -889,7 +894,7 @@ describe("coding tools", () => {
 			expect(text.startsWith("line-1001\n")).toBe(true);
 			expect(ToolResultEntry.is(entry) && entry.data.diagnostics.map((diagnostic) => diagnostic.code)).toEqual([
 				"full_output",
-				"tool_error",
+				"exit_code",
 				"truncated",
 			]);
 			expect(text).toContain("line-3000\n|<harness>\n[info] Full output: ");
@@ -970,7 +975,7 @@ describe("tool progress and lifetime", () => {
 		);
 		addTool(
 			setup.registry,
-			tool("explicit", async () => ({ content: [{ type: "text", text: "c\u001bd" }] })),
+			tool("explicit", async () => ({ output: [{ type: "text", text: "c\u001bd" }] })),
 		);
 		const { harness, entries } = await run(setup, [calls(["noisy", {}, "c1"], ["explicit", {}, "c2"]), DONE]);
 		expect(slotOutput).toBe("ab\n");
@@ -984,9 +989,9 @@ describe("tool progress and lifetime", () => {
 		const setup = chatSetup();
 		addTool(
 			setup.registry,
-			tool("grow", async () => ({ content: [], control: { addTools: ["extra"], terminate: undefined } })),
+			tool("grow", async () => ({ output: [], control: { addTools: ["extra"], terminate: undefined } })),
 		);
-		const extra = tool("extra", async () => ({ content: [] }));
+		const extra = tool("extra", async () => ({ output: [] }));
 		addTool(setup.registry, extra);
 		const { harness, root, status } = await run(setup, [calls(["grow", {}, "c1"]), DONE], (_harness, conversation) =>
 			conversation.configure({ tools: { remove: [extra] } }, context),
@@ -1003,7 +1008,7 @@ describe("tool progress and lifetime", () => {
 			setup.registry,
 			tool("null", async (_args, api) => {
 				await api.details({ old: 1 }, context);
-				return { content: [], details: null };
+				return { output: [], details: null };
 			}),
 		);
 		const { harness, entries } = await run(setup, [calls(["null", {}, "c1"]), DONE]);
@@ -1023,7 +1028,7 @@ describe("tool progress and lifetime", () => {
 				await first;
 				void second;
 				void api.details({ n: 3 }, context).then(() => settled.push("third"));
-				return { content: [] };
+				return { output: [] };
 			}),
 		);
 		const { harness, entries } = await run(setup, [calls(["details", {}, "c1"]), DONE]);
@@ -1045,7 +1050,7 @@ describe("tool progress and lifetime", () => {
 		const v1 = tool("work", async () => {
 			release();
 			await finished;
-			return { content: [{ type: "text", text: "v1" }] };
+			return { output: [{ type: "text", text: "v1" }] };
 		});
 		addTool(setup.registry, v1);
 		setup.faux.setResponses([calls(["work", {}, "c1"]), DONE]);
@@ -1055,7 +1060,7 @@ describe("tool progress and lifetime", () => {
 		// The same extension name replaces the old one in place.
 		addTool(
 			setup.registry,
-			tool("work", async () => ({ content: [{ type: "text", text: "v2" }] })),
+			tool("work", async () => ({ output: [{ type: "text", text: "v2" }] })),
 		);
 		finish();
 		await submission.wait(context);
@@ -1080,7 +1085,7 @@ describe("tool progress and lifetime", () => {
 			tool("work", async () => {
 				running.resolve();
 				await reloaded.promise;
-				return { content: [] };
+				return { output: [] };
 			}),
 		);
 		setup.faux.setResponses([calls(["work", {}, "c1"]), DONE]);
@@ -1119,7 +1124,7 @@ describe("tool progress and lifetime", () => {
 				wait.catch(() => {});
 				const watch = await api.watchDoc(LiveDoc, api.conversationId, context);
 				watchClosed = watch!.closed;
-				return { content: [] };
+				return { output: [] };
 			}),
 		);
 		const { harness } = await run(setup, [calls(["detach", {}, "c1"]), DONE]);

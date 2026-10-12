@@ -215,7 +215,7 @@ function loadNodeZlib(): typeof NodeZlib | null {
 // Returns the zstd-compressed body bytes, or null when compression is
 // unavailable (browser/Vite builds). Callers fall back to sending the
 // uncompressed JSON when this returns null.
-function compressRequestBodyZstd(bodyJson: string): Uint8Array | null {
+function compressRequestBodyZstd(bodyJson: string): Uint8Array<ArrayBuffer> | null {
 	const zlib = loadNodeZlib();
 	if (!zlib || typeof zlib.zstdCompressSync !== "function") {
 		return null;
@@ -224,7 +224,8 @@ function compressRequestBodyZstd(bodyJson: string): Uint8Array | null {
 		const compressed = zlib.zstdCompressSync(bodyJson, {
 			params: { [zlib.constants.ZSTD_c_compressionLevel]: REQUEST_COMPRESSION_ZSTD_LEVEL },
 		});
-		return new Uint8Array(compressed.buffer, compressed.byteOffset, compressed.byteLength);
+		// A copy owns a plain ArrayBuffer, which fetch accepts as a body under every lib.
+		return new Uint8Array(compressed);
 	} catch {
 		return null;
 	}
@@ -380,7 +381,7 @@ export const stream: StreamFunction<"openai-codex-responses", OpenAICodexRespons
 			if (compressedBody) {
 				sseHeaders.set("content-encoding", "zstd");
 			}
-			const sseBody: Uint8Array | string = compressedBody ?? bodyJson;
+			const sseBody: Uint8Array<ArrayBuffer> | string = compressedBody ?? bodyJson;
 
 			// Fetch with retry logic for rate limits and transient errors
 			let response: Response | undefined;

@@ -416,6 +416,7 @@ export class Transaction implements Tx {
 					...(owner === undefined ? {} : { owner: owner.id }),
 					background: options.background ?? false,
 					abortRequested: false,
+					...(options.abandonOnRestart === true ? { abandonOnRestart: true } : {}),
 					state: { status: "pending", checkpoint },
 				},
 				TABLE_JSON_COPY_OPTIONS,

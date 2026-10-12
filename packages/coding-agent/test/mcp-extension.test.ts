@@ -3,6 +3,7 @@ import { createServer } from "node:http";
 import type { AddressInfo } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { renderToolOutputType } from "@earendil-works/pi-codemode/declarations";
 import {
 	type JsonRpcMessage,
 	LATEST_PROTOCOL_VERSION,
@@ -27,7 +28,7 @@ import {
 	McpServerConnection,
 	McpServerLog,
 } from "../src/extensions/mcp/runtime.ts";
-import { convertMcpResult, createMcpToolName } from "../src/extensions/mcp/tools.ts";
+import { convertMcpResult, createMcpResultSchema, createMcpToolName } from "../src/extensions/mcp/tools.ts";
 
 // Config values are resolved at connect time, so the literal reference must survive loading.
 // biome-ignore lint/suspicious/noTemplateCurlyInString: literal config value reference
@@ -276,6 +277,35 @@ describe("MCP tools", () => {
 		const taken = createMcpToolName("s", "a_b");
 		const second = createMcpToolName("s", "a-b", (name) => name === taken);
 		expect(second).toMatch(/^mcp__s__a_b_[0-9a-f]{8}$/);
+	});
+
+	it("declares the CallToolResult scripts receive, keeping references in the server's output schema", () => {
+		const content =
+			'content: Array<{ data?: string; mimeType?: string; text?: string; type: "text" | "image" | "audio" | "resource_link" | "resource"; [key: string]: unknown; }>; isError?: boolean;';
+		expect(renderToolOutputType(createMcpResultSchema(undefined) as never)).toBe(
+			`{ ${content} structuredContent?: { [key: string]: unknown; }; [key: string]: unknown; }`,
+		);
+
+		const hit = { type: "object", properties: { id: { type: "string" } }, required: ["id"] };
+		const schema = createMcpResultSchema({
+			type: "object",
+			properties: {
+				hits: { type: "array", items: { $ref: "#/$defs/Hit~1v1" } },
+				again: { $ref: "#/properties/hits" },
+				children: { type: "array", items: { $ref: "#" } },
+				// A property named like a keyword whose value is data.
+				default: { $ref: "#/definitions/Hit" },
+				remote: { $ref: "https://example.com/schema.json" },
+			},
+			required: ["hits"],
+			$defs: { "Hit/v1": { ...hit, default: { $ref: "#/stays" } } },
+			definitions: { Hit: hit },
+		}) as unknown as { properties: { structuredContent: { $defs: Record<string, { default: unknown }> } } };
+		// Data that looks like a reference is kept as is.
+		expect(schema.properties.structuredContent.$defs["Hit/v1"].default).toEqual({ $ref: "#/stays" });
+		expect(renderToolOutputType(schema as never)).toBe(
+			`{ ${content} structuredContent?: { again?: Array<{ id: string; }>; children?: Array<{ again?: Array<{ id: string; }>; children?: Array<unknown>; default?: { id: string; }; hits: Array<{ id: string; }>; remote?: unknown; }>; default?: { id: string; }; hits: Array<{ id: string; }>; remote?: unknown; }; [key: string]: unknown; }`,
+		);
 	});
 
 	it("converts results, passing the CallToolResult to scripts and flagging errors", async () => {

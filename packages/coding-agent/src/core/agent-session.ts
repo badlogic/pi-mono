@@ -1504,6 +1504,7 @@ export class AgentSession {
 			exposure: this._getToolExposure(definition.name),
 			...(definition.namespace ? { namespace: definition.namespace } : {}),
 			...(definition.annotations ? { annotations: { ...definition.annotations } } : {}),
+			...(definition.reachesTools ? { reachesTools: definition.reachesTools } : {}),
 			sourceInfo,
 		}));
 	}

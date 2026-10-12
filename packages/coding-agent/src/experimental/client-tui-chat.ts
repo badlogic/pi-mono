@@ -183,6 +183,10 @@ export class ExperimentalChatView {
 			if (message?.role === "user") this.#addText(userText(message.content));
 		} else if (entry.kind === "pi.reset") {
 			this.#addText(theme.fg("muted", "[new context]"));
+		} else if (!entry.kind.startsWith("pi.") && message?.role === "user" && entry.model?.length === 1) {
+			// An input placed as an application entry.
+			this.transcript.addChild(new Spacer(1));
+			this.transcript.addChild(new UserMessageComponent(userText(message.content)));
 		}
 	}
 

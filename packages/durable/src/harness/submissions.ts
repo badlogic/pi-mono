@@ -1,5 +1,4 @@
 import { type Context, copyJson, type JsonRepresentation } from "@earendil-works/chord";
-import { UserEntry } from "../entries.ts";
 import { ConversationBusy } from "../errors.ts";
 import type { SessionImpl } from "../session/session.ts";
 import type {
@@ -12,9 +11,20 @@ import type {
 	Tx,
 } from "../types.ts";
 import { startRun } from "./generation.ts";
-import { applyBoundary, InboxDoc, isStale, prepareBoundary, type QueueModes, removeInboxItem } from "./inbox.ts";
+import {
+	appendInput,
+	applyBoundary,
+	hasQueuedReset,
+	InboxDoc,
+	isDisplayOnly,
+	isStale,
+	pickInputEntry,
+	prepareBoundary,
+	type QueueModes,
+	removeInboxItem,
+} from "./inbox.ts";
 import { LiveDoc } from "./live.ts";
-import type { SettledSubmissionRecord, Submission, SubmissionDraft, UserInput } from "./types.ts";
+import type { InputEntry, SettledSubmissionRecord, Submission, SubmissionDraft, UserInput } from "./types.ts";
 import { closedError, Waiters } from "./util.ts";
 
 type AbortResult = "aborted" | "already_placed" | "settled";
@@ -43,10 +53,10 @@ export class Submissions {
 		this.#now = now;
 		this.#queueModes = queueModes;
 		this.#resume = resume;
-		session.subscribeCommits((publication) => this.#observe(publication));
+		session.observeCommits((publication) => this.#observe(publication));
 		session.subscribeClose(() => {
 			this.#closed = true;
-			this.#waiters.rejectAll(closedError());
+			this.#waiters.rejectAll(closedError(this.#session));
 		});
 	}
 
@@ -80,7 +90,7 @@ export class Submissions {
 			if (record === undefined) throw new Error(`Submission ${id} does not exist`);
 			if (isSettled(record)) return { promise: Promise.resolve(record) };
 			// Close rejects registered waiters synchronously and may begin during the read.
-			if (this.#closed) throw closedError();
+			if (this.#closed) throw closedError(this.#session);
 			return { promise: this.#waiters.add(id, context) };
 		});
 		return found.promise;
@@ -138,12 +148,25 @@ function isSettled(record: SubmissionRecord): record is SettledSubmissionRecord 
 	return record.status === "done" || record.status === "unanswered";
 }
 
+/** Reject an input entry an untyped caller got wrong: its kind must be a non-empty string outside the `pi.` prefix. */
+function checkInputEntry(entry: InputEntry): void {
+	const { kind } = entry;
+	if (typeof kind !== "string" || kind.length === 0 || kind.startsWith("pi.")) {
+		throw new TypeError(
+			`An input entry's kind must be a non-empty string not starting with "pi.", got ${String(kind)}`,
+		);
+	}
+}
+
 /**
  * Admit a submission inside a commit (spec §6); `Conversation.submit()` and conversation-owned compactions share it. A
- * known request ID returns its existing submission without writing. A busy conversation queues it in `pi.inbox`, or
- * rejects `whenBusy: "reject"` input with `ConversationBusy`. An idle conversation with queued items queues it behind
- * them and runs a final boundary. Otherwise idle input places a user entry and starts a run, and an idle write appends
- * its entry and settles `done`, or `stale` when its head reaches before the active range.
+ * known request ID returns its existing submission without writing. A display-only write (only `kind` and `data`) is
+ * appended and settled `done` at once, busy or not, as it changes nothing the model sees; only behind a queued reset it
+ * queues, so it lands after the reset instead of before it in the context the reset ends. A busy conversation queues anything else in
+ * `pi.inbox`, or rejects `whenBusy: "reject"` input with `ConversationBusy`. An idle conversation with queued items
+ * queues it behind them and runs a final boundary. Otherwise idle input places its entry (`pi.user`, or the input's
+ * own) and starts a run, and an idle write appends its entry and settles `done`, or `stale` when its head reaches
+ * before the active range.
  */
 export async function admitSubmission(
 	tx: Tx,
@@ -152,6 +175,7 @@ export async function admitSubmission(
 	now: number,
 	queueModes: QueueModes,
 ): Promise<SubmissionId> {
+	if (draft.type === "input" && draft.entry !== undefined) checkInputEntry(draft.entry);
 	if (draft.requestId !== undefined) {
 		const existing = await tx.submissionByRequest(conversationId, draft.requestId);
 		if (existing !== undefined) {
@@ -161,10 +185,19 @@ export async function admitSubmission(
 			return existing.id;
 		}
 	}
+	const requestId = draft.requestId === undefined ? {} : { requestId: draft.requestId };
+	if (
+		draft.type === "write" &&
+		isDisplayOnly(draft.entry) &&
+		!hasQueuedReset((await tx.doc(InboxDoc, conversationId)).items)
+	) {
+		const entry = await tx.appendEntry(conversationId, draft.entry);
+		const write = { conversationId, ...requestId, type: "write", status: "done", entry: entry.id } as const;
+		return (await tx.createSubmission(write)).id;
+	}
 	const live = await tx.doc(LiveDoc, conversationId);
 	const busy = live.run !== undefined;
 	if (busy && draft.type === "input" && draft.whenBusy === "reject") throw new ConversationBusy(conversationId);
-	const requestId = draft.requestId === undefined ? {} : { requestId: draft.requestId };
 	// A boundary reads the table, so it is prepared before the first table write; a busy one needs none.
 	const boundary = busy ? undefined : await prepareBoundary(tx, conversationId, queueModes);
 	if (boundary === undefined || boundary.inbox.items.length > 0) {
@@ -182,7 +215,9 @@ export async function admitSubmission(
 		if (draft.type === "write") items.push({ id, mode: "write", entry: value as JsonObject });
 		else {
 			const mode = draft.whenBusy === "steer" ? "steer" : "followUp";
-			items.push({ id, mode, content: value as JsonRepresentation<UserInput> });
+			const content = value as JsonRepresentation<UserInput>;
+			const entry = draft.entry === undefined ? {} : { entry: pickInputEntry(draft.entry) };
+			items.push({ id, mode, content, ...entry });
 		}
 		if (boundary === undefined) return id;
 		const { users } = await applyBoundary(tx, boundary, "final", now);
@@ -198,8 +233,7 @@ export async function admitSubmission(
 		const write = { conversationId, ...requestId, type: "write", status: "done", entry: entry.id } as const;
 		return (await tx.createSubmission(write)).id;
 	}
-	const message = { role: "user", content: draft.content, timestamp: now } as const;
-	const entry = await tx.appendEntry(UserEntry, conversationId, { model: [message] });
+	const entry = await appendInput(tx, conversationId, draft.content, draft.entry, now);
 	const input = { conversationId, ...requestId, type: "input", status: "placed", entry: entry.id } as const;
 	const { id } = await tx.createSubmission(input);
 	await startRun(tx, conversationId, live, [id]);

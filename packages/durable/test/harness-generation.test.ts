@@ -494,6 +494,7 @@ describe("generation", () => {
 			steeringMode: "one-at-a-time",
 			followUpMode: "one-at-a-time",
 			contextRetentionMs: 600_000,
+			documentRetentionMs: expect.any(Number),
 		});
 		expect(resolveSettings({ retry: { enabled: false }, compaction: { backgroundTokens: 0 } })).toMatchObject({
 			retry: { enabled: false, maxRetries: 3, baseDelayMs: 2000 },

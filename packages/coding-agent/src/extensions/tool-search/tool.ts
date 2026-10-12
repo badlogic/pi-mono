@@ -165,11 +165,6 @@ export const toolSearchSchema = Type.Object({
 
 export type ToolSearchInput = Static<typeof toolSearchSchema>;
 
-/** Whether the tool is this `tool_search`, not another extension's tool of the same name. */
-export function isToolSearchTool(tool: Pick<ToolInfo, "name" | "parameters">): boolean {
-	return tool.name === TOOL_SEARCH_TOOL_NAME && tool.parameters === toolSearchSchema;
-}
-
 export interface ToolSearchResultTool {
 	name: string;
 	description: string;
@@ -230,6 +225,8 @@ export function createToolSearchToolDefinition(
 		parameters: toolSearchSchema,
 		// Searching is not something scripts need; it changes what the model sees.
 		exposure: "model-only",
+		// A query can match any tool that is not declared yet.
+		reachesTools: () => "all",
 		async execute(_toolCallId, { query, limit }) {
 			if (query.trim() === "") throw new Error("query must not be empty");
 			const max = limit ?? DEFAULT_TOOL_SEARCH_LIMIT;

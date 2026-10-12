@@ -102,7 +102,7 @@ describe("Harness open", () => {
 		expect(await storageOpen(storage)).toBe(false);
 	});
 
-	it("reports a failing close and still rethrows the open error", async () => {
+	it("rethrows the open error and reports it once, though closing then fails too", async () => {
 		class FailingClose extends ControlledStorage {
 			override async close(closeContext: Context): Promise<void> {
 				await super.close(closeContext);
@@ -119,7 +119,8 @@ describe("Harness open", () => {
 			context,
 		);
 		await expect(opening).rejects.toThrow("disk full");
-		expect(reports).toEqual([new Error("close failed")]);
+		// The storage failure that failed open is the cause; the close that fails after it adds no report.
+		expect(reports).toEqual([new Error("disk full")]);
 	});
 });
 
@@ -167,7 +168,7 @@ describe("Harness close", () => {
 					parameters: Type.Object({}),
 					execute: async () => {
 						if (where === "tool") await stubborn();
-						return { content: [] };
+						return { output: [] };
 					},
 				}),
 			);

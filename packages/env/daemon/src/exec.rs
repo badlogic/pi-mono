@@ -57,7 +57,7 @@ impl Control {
         }
     }
 
-    fn attach(&self, sender: Sender<Message>) {
+    pub fn attach(&self, sender: Sender<Message>) {
         *self.sender.lock().unwrap() = Some(sender);
     }
 }

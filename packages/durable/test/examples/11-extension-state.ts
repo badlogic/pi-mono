@@ -42,7 +42,7 @@ const Todo = defineExtension({
 				await api.commit(async (tx) => {
 					(await tx.doc(Todos, api.conversationId)).items.push(args.item);
 				}, callContext);
-				return { content: [{ type: "text", text: `added ${args.item}` }] };
+				return { output: [{ type: "text", text: `added ${args.item}` }] };
 			},
 		}),
 	],

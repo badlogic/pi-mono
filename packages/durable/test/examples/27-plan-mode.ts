@@ -43,7 +43,7 @@ const submitPlan = defineTool({
 		await api.commit(async (tx) => {
 			(await tx.doc(PlanDoc, api.conversationId)).steps = args.steps;
 		}, callContext);
-		return { content: [{ type: "text", text: "Plan submitted." }], control: { terminate: true } };
+		return { output: [{ type: "text", text: "Plan submitted." }], control: { terminate: true } };
 	},
 });
 
