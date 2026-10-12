@@ -44,7 +44,7 @@ export interface McpResourceServer {
 }
 
 /** MCP App user interfaces, which only hosts that render them can use. */
-export function isMcpAppResource(item: { uri?: string; uriTemplate?: string; mimeType?: string }): boolean {
+function isMcpAppResource(item: { uri?: string; uriTemplate?: string; mimeType?: string }): boolean {
 	const uri = item.uri ?? item.uriTemplate ?? "";
 	return uri.startsWith("ui://") || /;\s*profile\s*=\s*"?mcp-app"?/i.test(item.mimeType ?? "");
 }

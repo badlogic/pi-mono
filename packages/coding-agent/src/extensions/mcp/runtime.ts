@@ -39,7 +39,7 @@ import {
 	type McpOAuthCredentialStore,
 	type McpOAuthSettings,
 } from "./oauth.ts";
-import { isMcpAppResource, type McpResourceServer } from "./resources.ts";
+import type { McpResourceServer } from "./resources.ts";
 import type { McpToolCaller } from "./tools.ts";
 
 export { McpServerLog } from "./log.ts";
@@ -135,23 +135,6 @@ function listTemplates(client: McpClient, options: McpRequestOptions = {}): Prom
 	return withoutTemplates(() => client.listResourceTemplates(options), []);
 }
 
-/**
- * Resources and templates at connect time, for the counts in `/mcp` and `pi mcp list`. A server
- * whose lists fail still connects: the resource tools list and read its resources on demand.
- */
-async function fetchResources(
-	client: McpClient,
-): Promise<{ resources: Resource[]; resourceTemplates: ResourceTemplate[] }> {
-	const [resources, resourceTemplates] = await Promise.all([
-		client.listResources().catch(() => []),
-		listTemplates(client).catch(() => []),
-	]);
-	return {
-		resources: resources.filter((resource) => !isMcpAppResource(resource)),
-		resourceTemplates: resourceTemplates.filter((template) => !isMcpAppResource(template)),
-	};
-}
-
 /** One configured server. Reconnects lazily when a call finds the connection gone. */
 export class McpServerConnection implements McpToolCaller, McpResourceServer {
 	readonly entry: McpServerEntry;
@@ -159,12 +142,10 @@ export class McpServerConnection implements McpToolCaller, McpResourceServer {
 	error: string | undefined;
 	tools: McpTool[] = [];
 	/**
-	 * Whether the server offers resources. The lists below are what it listed at the last connect or
-	 * change, without MCP App resources.
+	 * Whether the server offers resources, which the resource tools list and read on demand. They are
+	 * not listed at connect: listing every resource can take long (a large drive, say).
 	 */
 	hasResources = false;
-	resources: Resource[] = [];
-	resourceTemplates: ResourceTemplate[] = [];
 	/** Server instructions from `initialize`, describing its tools as a group. */
 	instructions: string | undefined;
 	/** Last OAuth challenge from the server; sign-in uses its resource metadata URL and scope. */
@@ -399,24 +380,15 @@ export class McpServerConnection implements McpToolCaller, McpResourceServer {
 			client.onNotification("notifications/tools/list_changed", () => {
 				void this.refreshTools(client);
 			});
-			client.onNotification("notifications/resources/list_changed", () => {
-				void this.refreshResources(client);
-			});
 			const stdio = transport instanceof StdioTransport ? transport : undefined;
 			client.onClose(() => this.handleClientClose(client, stdio));
 			// Servers without the tools capability (prompts or resources only) do not answer tools/list.
-			const hasResources = client.serverCapabilities?.resources !== undefined;
-			const [tools, resources] = await Promise.all([
-				client.serverCapabilities?.tools ? client.listTools() : [],
-				hasResources ? fetchResources(client) : { resources: [], resourceTemplates: [] },
-			]);
+			const tools = client.serverCapabilities?.tools ? await client.listTools() : [];
 			if (this.closed) throw new Error("shut down while connecting");
 			if (client.connectionState !== "connected") throw new Error("connection closed during setup");
 			this.client = client;
 			this.tools = tools;
-			this.hasResources = hasResources;
-			this.resources = resources.resources;
-			this.resourceTemplates = resources.resourceTemplates;
+			this.hasResources = client.serverCapabilities?.resources !== undefined;
 			this.instructions = client.instructions?.trim() || undefined;
 			this.state = "connected";
 			this.error = undefined;
@@ -464,15 +436,6 @@ export class McpServerConnection implements McpToolCaller, McpResourceServer {
 		} catch (error) {
 			this.error = `Failed to refresh tools: ${errorMessage(error)}`;
 		}
-		this.changed();
-	}
-
-	private async refreshResources(client: McpClient): Promise<void> {
-		const { resources, resourceTemplates } = await fetchResources(client);
-		if (this.client !== client || this.closed) return;
-		this.resources = resources;
-		this.resourceTemplates = resourceTemplates;
-		this.onTools(this);
 		this.changed();
 	}
 

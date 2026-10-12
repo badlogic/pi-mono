@@ -435,7 +435,9 @@ describe("MCP connections", () => {
 	const servers: InMemoryTransport[] = [];
 
 	/** In-memory server that answers initialize, tools/list, and tools/call with "ok". */
-	function createTransport(options: { expireFirstCall?: boolean; methods?: string[]; noTools?: boolean } = {}) {
+	function createTransport(
+		options: { expireFirstCall?: boolean; methods?: string[]; noTools?: boolean; resources?: boolean } = {},
+	) {
 		const pair = createInMemoryTransportPair();
 		servers.push(pair.server);
 		pair.server.onMessage((message) => {
@@ -448,7 +450,10 @@ describe("MCP connections", () => {
 							id: message.id,
 							result: {
 								protocolVersion: LATEST_PROTOCOL_VERSION,
-								capabilities: options.noTools ? { prompts: {} } : { tools: {} },
+								capabilities: {
+									...(options.noTools ? { prompts: {} } : { tools: {} }),
+									...(options.resources ? { resources: {} } : {}),
+								},
 								serverInfo: { name: "fake", version: "1.0.0" },
 							},
 						}
@@ -772,6 +777,19 @@ for await (const line of createInterface({ input: process.stdin })) {
 		);
 		expect(await connection.callTool("echo", {}, {})).toEqual({ content: [{ type: "text", text: "ok" }] });
 		expect(() => connection.oauthSettings()).toThrow("oauth.clientSecret");
+		await connection.close();
+	});
+
+	// #10526: listing every resource can take long (a large drive), so connecting must not wait for it.
+	it("connects to servers with resources without listing them", async () => {
+		const methods: string[] = [];
+		const { connection } = connect({ name: "fake", config: { command: "unused" }, source: "test" }, [
+			() => createTransport({ resources: true, methods }),
+		]);
+		await connection.getClient();
+		expect(connection.state).toBe("connected");
+		expect(connection.hasResources).toBe(true);
+		expect(methods).toEqual(["initialize", "tools/list"]);
 		await connection.close();
 	});
 });

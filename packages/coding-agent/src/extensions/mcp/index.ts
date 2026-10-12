@@ -241,10 +241,8 @@ function describeState(server: McpServer, withError = true): string {
 		case "failed":
 			return withError ? `failed: ${firstLine(connection.error ?? "unknown error")}` : "failed";
 		case "connected": {
-			const { tools, resources } = connection;
-			const count = resources.length;
-			const resourceCount = count > 0 ? ` · ${count} resource${count === 1 ? "" : "s"}` : "";
-			return `connected · ${tools.length} tool${tools.length === 1 ? "" : "s"}${resourceCount}`;
+			const { tools, hasResources } = connection;
+			return `connected · ${tools.length} tool${tools.length === 1 ? "" : "s"}${hasResources ? " · resources" : ""}`;
 		}
 		case "connecting":
 			return "connecting…";
