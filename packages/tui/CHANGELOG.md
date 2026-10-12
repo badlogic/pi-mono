@@ -17,6 +17,7 @@
 ### Fixed
 
 - Fixed overlay compositing dropping `CURSOR_MARKER` when an overlay ends directly left of the cursor, which lost the hardware cursor position
+- Fixed focused fullscreen overlays blocking mouse-wheel scrolling of the transcript. Wheel events that no component handles now scroll the transcript instead of reaching the focused overlay's `handleInput` as raw input; overlays that scroll with the wheel must implement `handleMouse` ([#10769](https://github.com/earendil-works/pi/issues/10769))
 - Fixed fragmented terminal color replies leaking hex values into the prompt and triggering the external editor via their BEL terminator (related reports: [#10256](https://github.com/earendil-works/pi/issues/10256), [#10657](https://github.com/earendil-works/pi/issues/10657))
 
 ## [1.1.0] - 2026-10-07
