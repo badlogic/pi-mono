@@ -13,7 +13,7 @@ function exampleTool(name: string, description: string) {
 		name,
 		description,
 		parameters: Type.Object({ path: Type.String() }),
-		execute: async (args) => ({ content: [{ type: "text", text: `${name} ${args.path}` }] }),
+		execute: async (args) => ({ output: [{ type: "text", text: `${name} ${args.path}` }] }),
 	});
 }
 

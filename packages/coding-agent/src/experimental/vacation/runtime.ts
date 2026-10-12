@@ -103,13 +103,19 @@ async function firstInput(harness: Harness, id: ConversationId): Promise<{ title
 	let cursor: Cursor | undefined;
 	do {
 		const page = await conversation.entries({}, 256, cursor, context);
-		first = page.items.findLast((entry) => entry.kind === "pi.user") ?? first;
+		first = page.items.findLast(isInput) ?? first;
 		cursor = page.next;
 	} while (cursor !== undefined);
 	return titleOf(first);
 }
 
 /** The text of a user entry, as a one-line title. */
+/** A placed input: `pi.user`, or an application entry whose model is one user message. */
+function isInput(entry: EntryRecord): boolean {
+	if (entry.kind === "pi.user") return true;
+	return !entry.kind.startsWith("pi.") && entry.model?.length === 1 && entry.model[0]!.role === "user";
+}
+
 function titleOf(entry: EntryRecord | undefined): { title?: string } {
 	const message = entry?.model?.[0];
 	if (message?.role !== "user") return {};
@@ -203,7 +209,7 @@ export async function openDurable(options: OpenDurableOptions = {}): Promise<Ope
 			for (const change of publication.changes) {
 				if (change.type === "conversation") {
 					conversations = [...conversations, { id: change.value.id, label: label(change.value.id) }];
-				} else if (change.type === "entry" && change.value.kind === "pi.user") {
+				} else if (change.type === "entry" && isInput(change.value)) {
 					const id = change.value.conversationId;
 					conversations = conversations.map((summary) =>
 						summary.id === id && summary.title === undefined ? { ...summary, ...titleOf(change.value) } : summary,

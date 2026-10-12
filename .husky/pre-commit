@@ -16,6 +16,24 @@ if [ $? -ne 0 ]; then
   exit 1
 fi
 
+# Pi Mobile has its own check (own biome.json, TypeScript 5.9; apps/ is outside the root Biome and tsc configs).
+# apps/ exists only in pi-private.
+if [ -d apps/mobile ]; then
+  for file in $STAGED_FILES; do
+    case "$file" in
+      apps/mobile/*|packages/*|package.json|package-lock.json|tsconfig.json|tsconfig.base.json)
+        echo "Checking apps/mobile..."
+        npm --prefix apps/mobile run check
+        if [ $? -ne 0 ]; then
+          echo "❌ apps/mobile checks failed."
+          exit 1
+        fi
+        break
+        ;;
+    esac
+  done
+fi
+
 RUN_BROWSER_SMOKE=0
 for file in $STAGED_FILES; do
   case "$file" in

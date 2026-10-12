@@ -449,11 +449,11 @@ describe("Harness lifecycle", () => {
 		expect(again).not.toBe(root);
 		expect(again.id).toBe(root.id);
 		await harness.close(context);
-		await expect(harness.root(context)).rejects.toThrow("Harness is closed");
+		await expect(harness.root(context)).rejects.toThrow("is closed");
 		await expect(harness.createConversation({ ownership: { kind: "ownerless" } }, context)).rejects.toThrow(
-			"Harness is closed",
+			"is closed",
 		);
-		await expect(harness.conversation(root.id, context)).rejects.toThrow("Harness is closed");
+		await expect(harness.conversation(root.id, context)).rejects.toThrow("is closed");
 	});
 
 	it("forwards generic Session document APIs", async () => {

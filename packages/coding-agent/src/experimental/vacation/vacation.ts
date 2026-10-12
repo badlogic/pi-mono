@@ -122,7 +122,7 @@ const research = defineTool({
 					"You are a research subagent for a vacation planner. Search weather, museums, and trains in parallel, in one step, then report the findings in a few short bullet points.",
 			});
 		}, context);
-		return { content: [{ type: "text", text: "Research started in the background." }] };
+		return { output: [{ type: "text", text: "Research started in the background." }] };
 	},
 });
 

@@ -26,7 +26,6 @@ import {
 	type NextTaskState,
 	type Registry,
 	type Storage,
-	StorageRejected,
 	type TaskId,
 	type TaskOptions,
 	type TaskRuntime,
@@ -39,7 +38,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import { openNodeSqliteStorage } from "../src/storage/sqlite/node.ts";
 import { allEntries, chatSetup, openChat, waitFor } from "./chat-support.ts";
 import { addHooks, addTask, addTool } from "./harness-support.ts";
-import { context } from "./session-support.ts";
+import { ControlledStorage, context } from "./session-support.ts";
 import { aborted, type Deferred, deferred, openTasks, settled } from "./task-support.ts";
 
 // ─── A scriptable task ──────────────────────────────────────────────────────
@@ -1019,7 +1018,7 @@ describe("tool rounds", () => {
 				name: "noop",
 				description: "Does nothing",
 				parameters: Type.Object({}),
-				execute: async () => ({ content: [] }),
+				execute: async () => ({ output: [] }),
 			}),
 		);
 		setup.faux.setResponses([toolCalls(["noop", "c1"], ["noop", "c2"]), fauxAssistantMessage([fauxText("done")])]);
@@ -1097,7 +1096,7 @@ describe("tool rounds", () => {
 				name: "noop",
 				description: "Does nothing",
 				parameters: Type.Object({}),
-				execute: async () => ({ content: [] }),
+				execute: async () => ({ output: [] }),
 			}),
 		);
 		// An extension's hook starts work owned by the generation, which holds it while the next turn runs.
@@ -1128,7 +1127,7 @@ describe("tool rounds", () => {
 		await harness.close(context);
 	});
 
-	it("keeps run control with a faulted generation until its owned work drains, and retries a rejected final commit", async () => {
+	it("keeps run control with a faulted generation until its owned work drains, and fails the Harness on a failed final commit", async () => {
 		const base = chatSetup();
 		const models = new Proxy(base.models, {
 			get(target, property) {
@@ -1153,7 +1152,8 @@ describe("tool rounds", () => {
 			},
 		});
 		let reject: TaskId | undefined;
-		class Rejecting extends MemoryStorage {
+		const failure = new Error("disk gone");
+		class Failing extends ControlledStorage {
 			override async commit(
 				writes: Parameters<MemoryStorage["commit"]>[0],
 				ctx: Parameters<MemoryStorage["commit"]>[1],
@@ -1163,12 +1163,13 @@ describe("tool rounds", () => {
 				);
 				if (finalizes) {
 					reject = undefined;
-					throw new StorageRejected("rejected once");
+					throw failure;
 				}
 				return super.commit(writes, ctx);
 			}
 		}
-		const { harness, root } = await openChat(new Rejecting(), setup);
+		const storage = new Failing();
+		const { harness, root } = await openChat(storage, setup);
 		opened = harness;
 		const submission = await root.submit({ type: "input", content: "hi" }, context);
 		await waitFor(async () => {
@@ -1183,17 +1184,18 @@ describe("tool rounds", () => {
 		await waitFor(() => log.includes("abort:hooked"));
 		reject = generation;
 		open("abort.hooked");
-		// The final commit, with the run's cleanup, is rejected once: nothing of the cleanup lands.
-		await waitFor(() => setup.reports.some((error) => error instanceof StorageRejected));
-		expect((await harness.snapshot(LiveDoc, root.id, context))!.run?.taskId).toBe(generation);
-		expect((await allEntries(root)).map((entry) => entry.kind)).toEqual(["pi.user"]);
-		expect(await settled(submission.wait(context))).toBe(false);
-		// The next commit retries it; the partial becomes one aborted entry.
-		await root.commit((tx) => tx.appendEntry(root.id, { kind: "note" }), context);
-		expect(await submission.wait(context)).toMatchObject({ status: "unanswered", reason: "faulted" });
-		expect(await harness.snapshot(LiveDoc, root.id, context)).toEqual({});
-		expect((await allEntries(root)).map((entry) => entry.kind)).toEqual(["pi.user", "note", "pi.assistant"]);
+		// The final commit, with the run's cleanup, fails: nothing of the cleanup lands, and the Harness fails.
+		expect(await harness.closed).toEqual({ reason: "failed", error: failure });
+		await expect(submission.wait(context)).rejects.toMatchObject({ name: "SessionFailed", cause: failure });
 		await harness.close(context);
+		// Reopening finalizes the run; the partial becomes one aborted entry.
+		const reopened = await openChat(storage.reopen(), setup);
+		opened = reopened.harness;
+		const again = (await reopened.harness.submission(submission.id, context))!;
+		expect(await again.wait(context)).toMatchObject({ status: "unanswered", reason: "faulted" });
+		expect(await reopened.harness.snapshot(LiveDoc, reopened.root.id, context)).toEqual({});
+		expect((await allEntries(reopened.root)).map((entry) => entry.kind)).toEqual(["pi.user", "pi.assistant"]);
+		await reopened.harness.close(context);
 	});
 });
 
@@ -1425,9 +1427,10 @@ describe("conversation abort and boundaries", () => {
 		await harness.close(context);
 	});
 
-	it("retries a finalization the Storage rejected with the next commit", async () => {
+	it("fails the Harness on a failed finalization, which reopening applies", async () => {
 		let reject: TaskId | undefined;
-		class Rejecting extends MemoryStorage {
+		const failure = new Error("disk gone");
+		class Failing extends ControlledStorage {
 			override async commit(
 				writes: Parameters<MemoryStorage["commit"]>[0],
 				ctx: Parameters<MemoryStorage["commit"]>[1],
@@ -1437,23 +1440,24 @@ describe("conversation abort and boundaries", () => {
 				);
 				if (finalizes) {
 					reject = undefined;
-					throw new StorageRejected("rejected once");
+					throw failure;
 				}
 				return super.commit(writes, ctx);
 			}
 		}
-		const { harness, root, reports } = await openNodes(new Rejecting());
-		const child = spawnAndFinish("parent", "child");
+		const storage = new Failing();
+		const { harness, root, reports } = await openNodes(storage);
+		spawnAndFinish("parent", "child");
 		const parent = await start(root, "parent");
 		await until(async () => (await state(harness, parent)).status === "completing");
 		reject = parent;
 		open("child");
-		await harness.waitForTask(child.id!, context);
-		await until(() => reports.some((error) => error instanceof StorageRejected));
-		expect((await state(harness, parent)).status).toBe("completing");
-		await root.commit((tx) => tx.appendEntry(root.id, { kind: "note" }), context);
-		expect(await outcomeOf(harness, parent)).toBe("completed");
+		expect(await harness.closed).toEqual({ reason: "failed", error: failure });
+		expect(reports).toEqual([failure]);
 		await harness.close(context);
+		const reopened = await openNodes(storage.reopen());
+		expect(await outcomeOf(reopened.harness, parent)).toBe("completed");
+		await reopened.harness.close(context);
 	});
 });
 
@@ -1605,7 +1609,7 @@ describe("tool rounds and events", () => {
 				name: "noop",
 				description: "Does nothing",
 				parameters: Type.Object({}),
-				execute: async () => ({ content: [] }),
+				execute: async () => ({ output: [] }),
 			}),
 		);
 		let opened: Harness | undefined;
@@ -1647,7 +1651,7 @@ describe("tool rounds and events", () => {
 						const child = await tx.createConversation({ ownership: { kind: "task", taskId: api.taskId } });
 						await tx.createTask(Node, { name: "sub" }, { ...OWN_CONVERSATION, conversationId: child.id });
 					}, callContext);
-					return { content: [{ type: "text", text: "started" }] };
+					return { output: [{ type: "text", text: "started" }] };
 				},
 			}),
 		);
@@ -1687,7 +1691,7 @@ describe("tool rounds and events", () => {
 				parameters: Type.Object({}),
 				execute: async (_args, api, callContext) => {
 					await api.commit((tx) => tx.createTask(Node, { name: "held" }, owned(api.taskId)), callContext);
-					return { content: [], details: { fn: (() => 1) as unknown as JsonValue } };
+					return { output: [], details: { fn: (() => 1) as unknown as JsonValue } };
 				},
 			}),
 		);

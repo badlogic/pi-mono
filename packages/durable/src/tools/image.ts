@@ -72,6 +72,52 @@ function isAnimatedPng(buffer: Uint8Array): boolean {
 	return false;
 }
 
+/**
+ * The width and height an image of `mimeType` declares in its header, without decoding it: PNG's IHDR, GIF's screen,
+ * WebP's VP8, VP8L, or VP8X chunk, JPEG's first SOF segment. `undefined` when the header cannot be read.
+ */
+export function imageDimensions(
+	bytes: Uint8Array,
+	mimeType: string,
+): { readonly width: number; readonly height: number } | undefined {
+	switch (mimeType) {
+		case "image/png":
+			return bytes.length < 24 ? undefined : { width: readUint32BE(bytes, 16), height: readUint32BE(bytes, 20) };
+		case "image/gif":
+			return bytes.length < 10 ? undefined : { width: readUint16LE(bytes, 6), height: readUint16LE(bytes, 8) };
+		case "image/webp":
+			if (bytes.length < 30) return undefined;
+			if (startsWithAscii(bytes, 12, "VP8 "))
+				return { width: readUint16LE(bytes, 26) & 0x3fff, height: readUint16LE(bytes, 28) & 0x3fff };
+			if (startsWithAscii(bytes, 12, "VP8L")) {
+				const bits = readUint32LE(bytes, 21);
+				return { width: (bits & 0x3fff) + 1, height: ((bits >>> 14) & 0x3fff) + 1 };
+			}
+			if (startsWithAscii(bytes, 12, "VP8X")) {
+				const uint24 = (offset: number): number => readUint16LE(bytes, offset) + ((bytes[offset + 2] ?? 0) << 16);
+				return { width: uint24(24) + 1, height: uint24(27) + 1 };
+			}
+			return undefined;
+		case "image/jpeg":
+			for (let offset = 2; offset + 9 <= bytes.length; ) {
+				if (bytes[offset] !== 0xff) return undefined;
+				const marker = bytes[offset + 1]!;
+				if (marker === 0xff) {
+					offset++;
+					continue;
+				}
+				// SOF0 to SOF15, except DHT (C4), JPG (C8), and DAC (CC), which share the range.
+				if (marker >= 0xc0 && marker <= 0xcf && marker !== 0xc4 && marker !== 0xc8 && marker !== 0xcc) {
+					return { width: readUint16BE(bytes, offset + 7), height: readUint16BE(bytes, offset + 5) };
+				}
+				offset += 2 + readUint16BE(bytes, offset + 2);
+			}
+			return undefined;
+		default:
+			return undefined;
+	}
+}
+
 function isBmp(buffer: Uint8Array): boolean {
 	if (buffer.length < 26) return false;
 	const declaredFileSize = readUint32LE(buffer, 2);
@@ -98,6 +144,10 @@ function isBmp(buffer: Uint8Array): boolean {
 
 function readUint16LE(buffer: Uint8Array, offset: number): number {
 	return (buffer[offset] ?? 0) + ((buffer[offset + 1] ?? 0) << 8);
+}
+
+function readUint16BE(buffer: Uint8Array, offset: number): number {
+	return ((buffer[offset] ?? 0) << 8) + (buffer[offset + 1] ?? 0);
 }
 
 function readUint32BE(buffer: Uint8Array, offset: number): number {

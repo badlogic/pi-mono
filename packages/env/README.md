@@ -33,6 +33,11 @@ checking against the application's own known-hosts file under a fixed alias, no 
 connections or configured commands, and without forwarding the local locale. On Windows, detection and deployment go
 through PowerShell, and the daemon starts through the server's default shell (cmd.exe or PowerShell).
 
+`openTerminal(connection, options)` runs a program, by default the user's login shell, in a pseudo-terminal of the
+daemon: raw output, input, resizing and its exit code, for interactive terminals. `localDaemon()` is the daemon for this
+machine, for terminals without SSH (`new Connection({ command: [localDaemon()] })`). Terminals are not supported on
+Windows yet.
+
 Supported remote systems: Linux, macOS, Android (Termux) and Windows, on x86-64 and arm64. On Windows, string commands
 run through Git Bash as `NodeExecutionEnv` runs them there; argv commands run directly.
 

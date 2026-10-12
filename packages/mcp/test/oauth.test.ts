@@ -491,23 +491,30 @@ describe("MCP OAuth", () => {
 	it("exchanges a code only when its iss parameter names the authorization server", async () => {
 		const codes: string[] = [];
 		const origin = await listen(async (request, response) => {
+			if (request.method !== "POST") {
+				response.statusCode = 404;
+				response.end();
+				return;
+			}
 			codes.push(new URLSearchParams(await readBody(request)).get("code") ?? "");
 			response.setHeader("content-type", "application/json");
 			response.end(JSON.stringify({ access_token: "token", token_type: "Bearer" }));
 		});
-		const exchange = (code: string, iss: string | undefined, issParameterSupported: boolean) => {
+		const exchange = (code: string, iss: string | undefined, issParameterSupported: boolean, metadata = true) => {
 			const provider = new TestOAuthProvider("http://127.0.0.1/callback");
 			provider.client = { client_id: "client" };
 			provider.verifier = "verifier";
 			provider.discovery = {
 				authorizationServerUrl: origin,
-				authorizationServerMetadata: {
-					issuer: origin,
-					authorization_endpoint: `${origin}/authorize`,
-					token_endpoint: `${origin}/token`,
-					response_types_supported: ["code"],
-					authorization_response_iss_parameter_supported: issParameterSupported,
-				},
+				authorizationServerMetadata: metadata
+					? {
+							issuer: origin,
+							authorization_endpoint: `${origin}/authorize`,
+							token_endpoint: `${origin}/token`,
+							response_types_supported: ["code"],
+							authorization_response_iss_parameter_supported: issParameterSupported,
+						}
+					: undefined,
 			};
 			return authorizeMcp(provider, { serverUrl: `${origin}/mcp`, authorizationCode: code, iss });
 		};
@@ -518,7 +525,12 @@ describe("MCP OAuth", () => {
 		expect(await exchange("matching", origin, true)).toBe("AUTHORIZED");
 		// Servers that do not promise the parameter may omit it.
 		expect(await exchange("omitted", undefined, false)).toBe("AUTHORIZED");
-		expect(codes).toEqual(["matching", "omitted"]);
+		// Without metadata there is no issuer to compare with, so a server cannot skip the check by hiding it.
+		await expect(exchange("unverifiable", "https://attacker.example", false, false)).rejects.toBeInstanceOf(
+			OAuthIssuerMismatchError,
+		);
+		expect(await exchange("no-metadata", undefined, false, false)).toBe("AUTHORIZED");
+		expect(codes).toEqual(["matching", "omitted", "no-metadata"]);
 	});
 
 	// #10565
