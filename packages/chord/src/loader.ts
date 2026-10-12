@@ -45,11 +45,15 @@ export const nodeLoader: FacetLoader = async (modules) => {
 	hook();
 	const version = String(++generation);
 	const facets: Facet[] = [];
-	for (const module of modules) {
+	const urls = modules.map((module) => {
 		const url = toUrl(module);
 		url.search = "";
+		return url;
+	});
+	// Every root first: a facet importing another facet's directory gets this load's copy, whatever the order.
+	for (const url of urls) roots.add(new URL(".", url).href);
+	for (const url of urls) {
 		const name = url.href;
-		roots.add(new URL(".", url).href);
 		url.searchParams.set(PARAM, version);
 		// Owner-approved exception to the no-dynamic-import rule; see TODO(loader) above.
 		const loaded = (await import(url.href)) as { default?: FacetDefinition };
