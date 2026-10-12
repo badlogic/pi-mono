@@ -6,12 +6,7 @@
  * description never does.
  */
 import type { CodemodeJsonSchema } from "@earendil-works/pi-codemode";
-import {
-	MCP_TYPESCRIPT_PREAMBLE,
-	mcpStructuredContentSchema,
-	renderToolSample,
-	toCodemodeIdentifier,
-} from "@earendil-works/pi-codemode/declarations";
+import { renderToolSample, toCodemodeIdentifier } from "@earendil-works/pi-codemode/declarations";
 import type { ToolRegistration } from "../harness/types.ts";
 import { MODELS_DESCRIPTION } from "./models.ts";
 
@@ -118,7 +113,7 @@ function selectCatalog(groups: readonly CatalogGroup[], budget: number): Set<str
 
 /**
  * The `codemode` section: the tools scripts can call, grouped by namespace, with their declarations as far as the
- * budget allows, and the shared MCP types when a listed tool needs them. `undefined` without callable tools.
+ * budget allows. `undefined` without callable tools.
  */
 export function codemodeSection(
 	tools: readonly ToolRegistration[],
@@ -140,14 +135,6 @@ export function codemodeSection(
 	);
 	const shown = selectCatalog(ordered, budget);
 
-	const sections: string[] = [];
-	if (
-		tools.some(
-			(tool) => shown.has(tool.name) && mcpStructuredContentSchema(declarationOf(tool).outputSchema) !== undefined,
-		)
-	) {
-		sections.push(`Shared MCP Types:\n\`\`\`ts\n${MCP_TYPESCRIPT_PREAMBLE}\n\`\`\``);
-	}
 	const toolSections = ["Tools scripts can call (`await tools.<name>(args)`):"];
 	for (const { namespace, entries } of ordered) {
 		if (entries.length === 0) continue;
@@ -166,6 +153,5 @@ export function codemodeSection(
 		}
 		for (const entry of visible) toolSections.push(entry.section);
 	}
-	sections.push(toolSections.join("\n\n"));
-	return sections.join("\n\n");
+	return toolSections.join("\n\n");
 }
