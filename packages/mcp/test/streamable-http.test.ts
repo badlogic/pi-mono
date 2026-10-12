@@ -342,6 +342,66 @@ describe("StreamableHttpTransport", () => {
 		await client.close();
 	});
 
+	// #10598: a request cancelled or timed out while waiting for a shared refresh must not be retried.
+	it("does not retry requests that were cancelled while authorization was recovering", async () => {
+		let token = "old";
+		const executed: unknown[] = [];
+		const { url } = await startServer(async (request, response, requests) => {
+			if (request.method !== "POST") return protocolHandler(request, response, requests);
+			const message = JSON.parse(await readBody(request)) as Record<string, unknown>;
+			if (message.method === "tools/call" && request.headers.authorization === "Bearer old") {
+				response.writeHead(401, { "www-authenticate": "Bearer" }).end();
+				return;
+			}
+			if (message.method === "tools/call") executed.push((message.params as { name: string }).name);
+			return protocolHandler(request, response, requests, message);
+		});
+		let releaseRefresh = () => {};
+		const refreshGate = new Promise<void>((resolve) => {
+			releaseRefresh = resolve;
+		});
+		let refresh: Promise<void> | undefined;
+		let refreshes = 0;
+		let waiting = 0;
+		let allWaiting = () => {};
+		const waitingGate = new Promise<void>((resolve) => {
+			allWaiting = resolve;
+		});
+		const client = new McpClient({ name: "http-test", version: "1.0.0" });
+		await client.connect(
+			new StreamableHttpTransport({
+				url,
+				openGetStream: false,
+				authProvider: {
+					token: async () => token,
+					onUnauthorized: async () => {
+						if (!refresh) {
+							refreshes++;
+							refresh = refreshGate.then(() => {
+								token = "new";
+							});
+						}
+						if (++waiting === 3) allWaiting();
+						await refresh;
+					},
+				},
+			}),
+		);
+		const controller = new AbortController();
+		const aborted = client.callTool("aborted", {}, { signal: controller.signal });
+		const timedOut = client.callTool("timed-out", {}, { timeoutMs: 200 });
+		const kept = client.callTool("kept");
+		await waitingGate;
+		controller.abort();
+		await expect(aborted).rejects.toMatchObject({ name: "AbortError" });
+		await expect(timedOut).rejects.toMatchObject({ name: "McpTimeoutError" });
+		releaseRefresh();
+		expect(await kept).toEqual({ content: [{ type: "text", text: "hello" }] });
+		expect(executed).toEqual(["kept"]);
+		expect(refreshes).toBe(1);
+		await client.close();
+	});
+
 	// #10565: the auth provider may refresh over the network, which closing must not wait for.
 	it("closes the session with the last request's token, without asking the auth provider", async () => {
 		const { url, requests } = await startServer(protocolHandler);
