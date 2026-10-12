@@ -29,6 +29,7 @@
 - Fixed runs started by `pi.sendMessage(..., { triggerTurn: true })` removing system prompt sections added in `before_agent_start` after their first tool call, which changed the prompt mid-run and broke the provider prompt cache twice per run ([#10267](https://github.com/earendil-works/pi/issues/10267))
 - Fixed codemode blocking the process for seconds to minutes after scripts with many `text()` calls; joining the output items was quadratic ([#10678](https://github.com/earendil-works/pi/issues/10678))
 - Fixed `pi mcp login --help` and the CLI docs describing `--timeout` as only the wait for the browser; it limits the whole sign-in ([#10636](https://github.com/earendil-works/pi/issues/10636))
+- Fixed `~` not being expanded in `!pattern`, `+path`, and `-path` entries of the `extensions`, `skills`, `prompts`, and `themes` settings, so entries like `!~/skills/pdf` matched nothing ([#10765](https://github.com/earendil-works/pi/issues/10765))
 
 ### Removed
 
