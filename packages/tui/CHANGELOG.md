@@ -19,6 +19,8 @@
 - Fixed overlay compositing dropping `CURSOR_MARKER` when an overlay ends directly left of the cursor, which lost the hardware cursor position
 - Fixed focused fullscreen overlays blocking mouse-wheel scrolling of the transcript. Wheel events that no component handles now scroll the transcript instead of reaching the focused overlay's `handleInput` as raw input; overlays that scroll with the wheel must implement `handleMouse` ([#10769](https://github.com/earendil-works/pi/issues/10769))
 - Fixed fragmented terminal color replies leaking hex values into the prompt and triggering the external editor via their BEL terminator (related reports: [#10256](https://github.com/earendil-works/pi/issues/10256), [#10657](https://github.com/earendil-works/pi/issues/10657))
+- Fixed inline images not rendering in Herdr since 1.1.0; Herdr now uses the Kitty graphics protocol ([#10774](https://github.com/earendil-works/pi/pull/10774) by [@ogulcancelik](https://github.com/ogulcancelik))
+- Fixed key bindings that name a shifted symbol, such as `+` or `ctrl++`, not matching when the Kitty keyboard protocol or modifyOtherKeys reports the key as Shift plus the unshifted key. `parseKey()` now returns the produced symbol (`+` instead of `shift+=`); the physical `shift+=` spelling still matches, and key ids such as `ctrl++` are parsed correctly ([#9880](https://github.com/earendil-works/pi/pull/9880) by [@christianklotz](https://github.com/christianklotz))
 
 ## [1.1.0] - 2026-10-07
 
