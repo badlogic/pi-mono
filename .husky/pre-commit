@@ -16,16 +16,16 @@ if [ $? -ne 0 ]; then
   exit 1
 fi
 
-# Pi Mobile has its own check (own biome.json, TypeScript 5.9; apps/ is outside the root Biome and tsc configs).
+# p2 has its own check (own biome.json, TypeScript 5.9; apps/ is outside the root Biome and tsc configs).
 # apps/ exists only in pi-private.
-if [ -d apps/mobile ]; then
+if [ -d apps/p2 ]; then
   for file in $STAGED_FILES; do
     case "$file" in
-      apps/mobile/*|packages/*|package.json|package-lock.json|tsconfig.json|tsconfig.base.json)
-        echo "Checking apps/mobile..."
-        npm --prefix apps/mobile run check
+      apps/p2/*|packages/*|package.json|package-lock.json|tsconfig.json|tsconfig.base.json)
+        echo "Checking apps/p2..."
+        npm --prefix apps/p2 run check
         if [ $? -ne 0 ]; then
-          echo "❌ apps/mobile checks failed."
+          echo "❌ apps/p2 checks failed."
           exit 1
         fi
         break
