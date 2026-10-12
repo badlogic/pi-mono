@@ -62,33 +62,12 @@ await host.root(async (ctx) => {
 
 - [Tutorial](docs/tutorial.md): a shared todo list, built up section by section. Every example runs as `test/tutorial.test.ts`.
 - [Usage guide](docs/guide.md): API reference for contracts, objects, state, roots, lifetime, plugins, hot reload, hosts, and links.
-- [Specification](docs/spec.md): compatibility, lifetime, and reload semantics.
-- [Implementation notes](docs/notes.md) and [requests](docs/requests.md): decisions, review findings, and resolved requests.
+- [Specification](docs/spec.md): compatibility, lifetime, and reload semantics, plus known limitations and implementation decisions.
 - [Delta guide](src/delta/README.md): ownership, lifecycle, operation, and replica contracts of `@earendil-works/chord/delta`.
 
-## Replicated state
-
-`replicatedState` is a standalone observable immutable JSON value, independent of hosts. Durable uses it for document, view, and task-graph states.
-
-```ts
-import { replicatedState } from "@earendil-works/chord";
-import { BACKGROUND_CONTEXT } from "@earendil-works/chord/context";
-
-const status = replicatedState({ output: "", count: 0 }); // takes ownership of the initial value
-status.subscribe((value, context, delivery) => console.log(delivery.kind, delivery.sequence, value.count));
-status.change(BACKGROUND_CONTEXT, (draft) => {
-	draft.output += "done\n";
-	draft.count += 1;
-});
-```
-
-`replicatedState(source, { onError })` instead attaches a publication-only state to an authoritative revision source (`ReplicatedStateSource`): it captures a snapshot, then publishes every committed frame in cursor order.
-
-A successful `change()` publishes exactly one atomic revision. If its callback throws, the value and sequence stay unchanged. Draft handles become unusable when the callback returns. Values placed through drafts are copied; `replicatedState(initial)` and `replace(context, value)` take ownership of alias-free strict-JSON roots without copying them, so callers must not mutate them afterwards. Published values are not frozen.
-
-Each subscription serializes its callbacks: hydration settles before updates start. At most 100 deliveries wait behind a running callback; on overflow only the newest pending value is kept, so update sequences may skip. Listener failures go to `onError` (attached states) or are thrown in a microtask (mutable states), and never stop other subscriptions. Unsubscribing discards pending work without aborting the running callback.
-
 ## Tracking JSON deltas
+
+Import the standalone transactional tracker from `@earendil-works/chord/delta`:
 
 ```ts
 import { applyImmutable, track } from "@earendil-works/chord/delta";
@@ -103,4 +82,66 @@ tracker.adopt(prepared);
 const replica = applyImmutable(prepared.base, prepared.ops);
 ```
 
-`tracker.value` is always the latest adopted immutable revision. Preparation does not change authority; adoption validates the preparation and swaps the root pointer. Assigned containers are copied by value and unchanged subtrees may be shared between revisions.
+`tracker.value` is always the latest adopted immutable revision. Preparation does
+not change authority; adoption validates the preparation and swaps the root pointer.
+Assigned containers are copied by value and unchanged subtrees may be shared between
+revisions.
+
+The tracker uses trusted immutable ownership rather than defensive copying or
+freezing. `track(initial)`, `prepareReplace(value)`, `replicatedState(initial)`, and
+`replace(context, value)` take ownership of alias-free strict-JSON roots without
+walking them. Callers must not mutate transferred or published data. Values placed
+through drafts are already copied, so that walk also rejects non-strict JSON before
+the draft changes. Published values are not frozen. In-process consumers may share
+their containers with the provider; mutating a consumed value violates the contract
+and can corrupt authority. Clone or serialize at any mutable trust boundary.
+
+Replicated state provides the same model through a callback. `replicatedState` is a
+standalone observable value, independent of hosts; Durable uses it for document,
+view, and task-graph states:
+
+```ts
+import { replicatedState } from "@earendil-works/chord";
+
+const initial = { output: "", count: 0 };
+const status = replicatedState(initial); // transfers ownership of initial
+status.change(context, (draft) => {
+	draft.output += "done\n";
+	draft.count += 1;
+});
+```
+
+A successful `change()` publishes exactly one atomic revision. If its callback
+throws, the original value and sequence remain unchanged. Draft handles become
+unusable when the callback returns. The tracker emits string append and
+front-truncate operations, array splices and permutations, sets, and deletes; large
+edit sets may fold into a complete replacement.
+
+`replicatedState(source, { onError })` instead attaches a publication-only state to
+an authoritative revision source (`ReplicatedStateSource`): it captures a snapshot,
+then publishes every committed frame in cursor order.
+
+### Public state subscriptions
+
+`state.subscribe(async (value, context, delivery) => { ... })` serializes callbacks
+independently for each subscription. Hydration starts immediately when a value is
+available, and its returned promise must settle before updates start. Synchronous
+callbacks still run synchronously. Read the captured `value` inside an asynchronous
+callback: `state.value` may already refer to a later revision.
+
+Each subscription retains at most 100 pending complete-value deliveries, excluding
+the running callback. On overflow, only the newest pending value, context, and
+delivery metadata are retained; a not-yet-started initial hydration is preserved.
+Thus public delivery sequences may skip. This is a frame-count policy, not a byte
+limit.
+
+The returned unsubscribe function immediately discards pending work and prevents
+new callbacks. It neither aborts nor waits for the running callback. Synchronous
+throws and promise rejections are observed, reported, and do not stop other
+subscriptions or subsequent callbacks. Attached sources use their `onError`
+handler; mutable states (and attached sources without a handler) report failures
+by throwing in a microtask. Unsubscribing does not hide a later rejection from the
+running callback.
+
+Cells of Chord objects and their remote readables have their own subscription
+model; see [State](docs/guide.md#state) in the usage guide.

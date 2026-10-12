@@ -1,4 +1,4 @@
-// Tests for the requests in docs/requests.md (#1-#7).
+// Regression tests for resolved application requests (#1-#10), numbered as in their test names.
 import assert from "node:assert/strict";
 import { Type } from "typebox";
 import { describe, it } from "vitest";
@@ -40,7 +40,7 @@ function latch() {
 
 const View = Type.Object({ text: Type.String() });
 
-describe("p2 requests", () => {
+describe("application requests", () => {
 	it("#1 a held object's state member can be returned as this object's state member", async () => {
 		const Conv = remote("t.conv", {
 			version: 1,

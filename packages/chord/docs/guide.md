@@ -1,6 +1,6 @@
 # Chord usage guide
 
-> **Status:** describes the design in [spec.md](spec.md) (v7). The implementation in `src` is in progress; names may still change.
+> Describes the runtime in `src`. The [specification](spec.md) defines its semantics and lists known limitations.
 
 Chord builds applications out of **objects** that live in several processes (a server, workers, browser tabs) and can be **hot reloaded** while they run.
 

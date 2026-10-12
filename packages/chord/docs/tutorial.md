@@ -905,6 +905,5 @@ database, network service, or provider API.
 
 Next read [the usage guide](guide.md) for the API reference and
 [the specification](spec.md) for compatibility, lifetime, and reload
-rules. Implementation details and current limitations are in
-[notes.md](notes.md). If a reference disagrees with
+rules, including its known limitations. If a reference disagrees with
 `src`, the current implementation wins.

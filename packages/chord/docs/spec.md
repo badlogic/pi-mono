@@ -1,6 +1,6 @@
-# Chord specification (v7)
+# Chord specification
 
-Status: implemented in `packages/chord`; this document was its design target. Synthesized from the round-6 reviews and the hot-reload designs of Sol, Astra, Opus and the DeepSeek-harness agent. Supersedes the `chord-guide` artifact v1 and design v6 where they disagree.
+This document specifies the runtime in `src`. Where it and the code disagree, the disagreement is a bug. [Known limitations and decisions](#12-known-limitations-and-decisions) lists what the runtime does not do yet and the choices the sections below leave open.
 
 Hard constraints:
 - Chord's runtime depends only on its own `delta` module (tracker, applyImmutable, encoder/decoder, diff) and Node/browser built-ins plus `typebox` for schemas. No other Pi packages.
@@ -180,7 +180,7 @@ Inside the factory, placeholders must not be used (`resource.value` throws `not_
 
 Explicit trigger (`reload_plugins` tool, button, API). Serialized; no nesting.
 
-1. Build/type-check gate (p2 tooling): dependency-closed set; refuse breaking remote contract changes without a contract version bump.
+1. Build/type-check gate (application tooling, outside Chord): dependency-closed set; refuse breaking remote contract changes without a contract version bump.
 2. Load: on every affected host, import new facet modules (cache-busted).
 3. Prepare: for each live record of each affected type, run the new factory in recording mode: existing cells readable, writes throw; listeners/tasks/registrations recorded, not started; holds recorded; non-exclusive resources whose key is new or `rev`/`deps` changed are opened as candidate-owned (closed on abort). Validate keys, variants, registry collisions. New records activated during prepare use the current epoch (old code). Any failure: abort, discard candidates. Vote.
 4. Gate (only records whose state version was bumped or which replace an exclusive resource, plus records depending on those resources):
@@ -188,7 +188,7 @@ Explicit trigger (`reload_plugins` tool, button, API). Serialized; no nesting.
    - Wait for grandfathered activations to finish, deadline (default 5 s). Missed deadline: abort the reload, reopen, nothing changed (report blocking roots).
    - Exclusive resources: close old, open new; on failure reopen old and abort.
    - Run `migrate` into private copies; validate.
-5. Commit (server persists the decision, commits itself, then sends commit to children; FIFO links guarantee no host receives a new-epoch root before committing): each host in one synchronous step installs migrated cell values and state versions, installs behaviors as epoch E', swaps registry tables, restarts tasks with new code, rebinds listeners, pushes shape/reset to subscribers, opens gates. E' current, E previous.
+5. Commit (server commits itself, then sends commit to children; the decision is not persisted, see section 12; FIFO links guarantee no host receives a new-epoch root before committing): each host in one synchronous step installs migrated cell values and state versions, installs behaviors as epoch E', swaps registry tables, restarts tasks with new code, rebinds listeners, pushes shape/reset to subscribers, opens gates. E' current, E previous.
    The coordinator's result carries `children`: each participating child's prepared report (its vote).
 6. Retire: when no roots of `previous` remain (or on the next reload, which first waits for retirement with a deadline), drop its behaviors and release declarations only it declared.
 
@@ -205,7 +205,7 @@ host.registry(Routes).get("GET /download", ctx);            // table of ctx.epoc
 host.registry(Routes).subscribe((table, epoch) => ...);     // bridges for imperative consumers (Durable)
 ```
 
-Per-epoch immutable tables; order = first registration order, kept on replace. Durable bridge: implements Durable's `RegistryReader` from the table (snapshot per epoch) so phases pin a complete snapshot.
+Per-epoch immutable tables; order = first registration order, kept on replace. An application can implement Durable's `RegistryReader` from the table (snapshot per epoch) so phases pin a complete snapshot; Chord does not ship that bridge.
 
 ## 9. Hosts and links
 
@@ -214,12 +214,48 @@ Per-epoch immutable tables; order = first registration order, kept on replace. D
 - Principal stamping: the accepting side stamps the principal of what connects (from its authenticator); forwarded principals accepted only from the parent link; payload principal fields ignored.
 - A child that connects behind its parent's epoch is fenced (nothing routed to it) and reconciled by a reload of its modules to the parent's epoch. Calls its roots of the old epoch make upstream are admitted in the parent's current epoch (the parent never ran that epoch), not rejected `superseded`.
 - Relay: server forwards frames for `at` hosts to the resolved child link, mapping holds per origin connection; authorizes before resolving/spawning and re-checks after.
-- Wire frames (JSON): `hello`, `get`/`hold`/`release`, `shape`, `call`/`result`/`cancel`, `state` (`snap`/`ops`/`reset` with per-subscription delta encoder), `gone`, `ping`/`pong`, reload control (`prepare`/`vote`/`commit`/`abort`).
+- Wire frames (JSON): `hello`/`bye`, `hold`/`release` (a hold returns `shape` or `gone`; there is no separate `get`), `shape`, `call`/`result`/`cancel`, `sub`/`unsub` and `state` (`snap`/`ops`/`reset` with a per-subscription delta encoder), `gone`, `root_end`, `retire`, `invalidate`, `ping`/`pong`, reload control (`prepare`/`vote`/`commit`/`abort`).
 
 ## 10. Host manager (library)
 
 `createHostManager({ driver, keepAlive })`: fork driver (entry, init, lock, env), serialized start/stop/replace, exit-before-replace, process-tree kill after grace, control channel (ready/fatal/shutdown), liveness callback (booting, activeCalls, viewers with heartbeats, durable tasks, idleFor).
 
-## 11. Tests required (minimum)
+## 11. Test coverage
 
-Lifetime/holds/linger/forced disposal/gone; activation coalescing and abandonment; principals and variants; remote calls over memory links incl. relay and principal forgery attempts; state snap/ops/reset over a link with reconnect; registries per epoch; reload: compatible (no wait, pinned roots), prepare isolation (writes throw, failing factory leaves everything unchanged), state bump with migrate and gate, `upgrade_conflict` for late old roots, deadline abort, exclusive resource replacement, cross-host commit ordering, two-version retirement and `superseded`.
+The tests cover at least: lifetime/holds/linger/forced disposal/gone; activation coalescing and abandonment; principals and variants; remote calls over memory links incl. relay and principal forgery attempts; state snap/ops/reset over a link with reconnect; registries per epoch; reload: compatible (no wait, pinned roots), prepare isolation (writes throw, failing factory leaves everything unchanged), state bump with migrate and gate, `upgrade_conflict` for late old roots, deadline abort, exclusive resource replacement, cross-host commit ordering, two-version retirement and `superseded`.
+
+## 12. Known limitations and decisions
+
+### Still open
+
+- **Retirement across hosts.** A child retires an epoch only after its parent retired it (`retire` frame) and its own roots of that epoch ended; the server decides from its own roots. A root started on a worker that calls up to a server which has already retired the epoch both had still gets `superseded` (retryable).
+- **The commit decision is not persisted** (section 7, step 5). A server crash between its own commit and a child's commit leaves that child on the old epoch until it reconnects and is reconciled.
+- **One level of reload participants.** Only the coordinator's direct child hosts take part; a child does not forward `prepare` to its own children.
+- **Reconciliation needs the child's module list.** It is remembered from cluster reloads (`host.remoteModules`), so a server restart forgets it, and a child behind a restarted server then reloads no modules: it gets the epoch id with its own code. The reconciliation vote deadline is fixed at 30 s; a failed reconciliation closes the link, so the host manager restarts the worker.
+- **Links do not resume.** The provider releases everything held through a closed link at once, so re-held records are new ones. Keeping holds for a reconnect window would need session ids on links. Calls in flight when a link drops reject `unavailable`; whether they ran is unknown.
+- **Refused clients cannot tell.** The WebSocket adapter closes unauthenticated sockets; the client sees a dropped upstream and its calls wait for a reconnect until their ctx is aborted.
+- **The publication queue is process-wide and synchronous.** A slow observer delays every later notification in the process, including those of other hosts in the same process.
+- **No automatic restart.** A terminal host failure is picked up by the host manager's `keepAlive` or `fatal` path, not inside Chord.
+- **The Node loader leaks.** Every reload imports fresh module copies that are never evicted, and it does not isolate plugins (`TODO(loader)`).
+- **Stale socket locks.** On Unix systems other than Linux, two processes that probe the same stale socket file at the same moment could both take the lock. Managers serialize starts per lock name.
+- **Listener `select` identity.** A listener's subscription is kept across factory runs when its origin and `select` are unchanged; `select` counts as unchanged when identical or with the same source text, so a `select` whose behavior depends on captured values that change between runs is not detected.
+- **Shutdown and dead links.** `host.close()` disposes records in waves (holders before what they hold) and closes links last. A `close` that awaits a remote call over a link that is already down waits for a reconnect; bound such calls.
+
+### Decisions
+
+- **Errors.** The guide's codes; a `reason` field carries the detail, for example `invalid/args`, `invalid/cycle`, `invalid/duplicate`, `invalid/read_only`, `invalid/not_eager`, `invalid/registry_conflict`, or `unavailable/unknown_type`. A `ChordError` thrown by a factory or a dependency keeps its code through every dependent; other errors become `unavailable`, with the original as `cause`.
+- **Reload errors.** There is no `reload_aborted` code. A failed reload throws the cause's code and reason with the message `reload aborted: …` (the cause is attached). Reasons of its own are `aborted/gate_deadline` (with the blocking roots in `details`), `aborted/deadline`, `aborted/vote_deadline` and `unavailable/reload_running`. Across hosts, the message names the host that failed. A child cannot reload on its own (`unavailable/not_coordinator`).
+- **New records during prepare.** A reload pre-allocates the next epoch ("pending"). Types the same reload adds are served from it; their records install behavior only for the pending epoch and are force-disposed if the reload aborts.
+- **Gate admission.** From the gate until commit or abort, creating a new record of a changed type fails with `upgrade_conflict` (retryable, reason `gate`); nothing is paused, so nothing can deadlock. Gated records get `minEpoch = E'`: calls and writes carrying an older epoch are rejected `upgrade_conflict` permanently, and a gated record drops its previous-epoch behavior at commit. Only records whose state version or exclusive resources change are gated.
+- **Tasks and listeners during the gate.** Tasks of gated records are aborted at the admission cut and restart with new code at commit, or with the old code on abort. Listener events for gated records are queued and replayed through the new listener at commit, or the old one at abort.
+- **Grandfathered roots** are the roots that called into the record and are still running at the cut. Every host remembers on which links a root's calls went out and sends `root_end` on them when the root ends, so leases outlive calls across hosts.
+- **Removed types and missed retirement.** Records of removed types are force-disposed at commit. When a retirement deadline is missed, retirement is forced, so those roots get `superseded` on their next call.
+- **Two-version rule.** A record of a changed type created after a commit has only new code; a previous-epoch root calling it gets `superseded`.
+- **Validation.** Remote calls are validated at handle dispatch, in-host too: a direct binding against the provider's schema, a binding through an adapter against the consumer's. A provider validates each snapshot and reset of a remote state member once per (re)subscription, against the consumer's contract through an `accepts` adapter and the provider's otherwise; ops are validated only in dev mode. At reload, the new provider's description must cover the old provider's when the version is unchanged, in addition to the check against live consumers and facets' `uses`.
+- **Contracts.** Local contracts list their members, so a loading handle knows whether a member is a method, state or opaque. Canonical identity omits input fields equal to their default; with TypeBox, use `Type.Optional(Type.X({ default }))` to let callers omit them. Provider variants must cover consumer variants; members the consumer's contract does not list are hidden. Schema change detection compares canonical JSON, so reordering `anyOf` branches counts as a change. Fingerprints use a non-cryptographic 64-bit hash: synchronous and browser-safe; contracts are trusted.
+- **Principals.** A root ctx at ingress acts as its principal (`host.root(fn, { principal })`); contexts inside objects act as `host`. The acceptor decides a link's kind and name (`accept(link, { principal, kind, name })`); only configured host links are addressable, carry roots and may vote, and control frames are accepted only from the parent. Clients never carry roots or epochs. Relaying needs a matching `route`; `authorize(principal, hostName)` runs before `resolve` and again after, and revoking or re-stamping a principal closes its relays at once. `invalidatePrincipal(match)` re-stamps or closes matching links and propagates pattern matches to child hosts.
+- **Cells and readables.** A value returned from `change` replaces the value and is always validated; `replace` transfers ownership without copying; by default (`{ diff }` overrides) it publishes a diff when the new value reuses a container of the old one at the same key, else `r`. `subscribe(fn)` delivers values, starting with the current one; `events(fn)` delivers `snap`, then `ops`, or `reset`. Handle state members are stable readables, `undefined` while loading or outside the variant, and reset when their source moves. Remote state members hydrate only while subscribed and forget their value when the last listener leaves.
+- **Holds and calls.** A hold's identity is its address; a second `self.get` of the same address in one run returns the same handle. A handle call without ctx, or with a task ctx, starts a fresh root in the current epoch; a ctx whose call or root already settled is refused (`aborted/expired`), one from another host `invalid/foreign_ctx`. Calling a handle inside a factory throws `not_ready`.
+- **Resources and disposal.** New and replaced exclusive resources open at the gate, and so do non-exclusive resources of the same record that depend on them. A new record for an address that is still being disposed waits for that disposal. A resource open that completes after its signal aborted closes its value at once.
+- **Links and the host manager.** Every received frame is validated against its schema; malformed frames, duplicate ids and control frames from the wrong side close the link. Each connection pings every `pingInterval` and closes after `pingTimeout` without a frame. The child holds a kernel lock (an abstract socket on Linux and Android, a named pipe on Windows, a probed socket file elsewhere), acquired by `childControl().lock()` before storage opens. The manager kills the child's process group on every exit path and derives `booting` and `idleFor` from the child's liveness reports. WebSocket support is structural, so Chord does not depend on `ws`.
+- **The state API stays.** Objects keep named cells and derivations; giving each object exactly one state value was rejected. Do not reopen this without a new, concrete problem.

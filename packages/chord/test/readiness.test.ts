@@ -18,7 +18,7 @@ const unexpectedError = (error: unknown) => assert.fail(String(error));
 const Eager = local("ready.eager", { version: 1, input: Type.Object({}) });
 const Lazy = local("ready.lazy", { version: 1, input: Type.Object({}) });
 
-// Request #11 (docs/requests.md): startup must not report ready while an eager object has failed.
+// Startup must not report ready while an eager object has failed.
 describe("host: eager readiness", () => {
 	for (const operation of ["install", "load"] as const) {
 		it(`${operation} awaits resource activation and registration, leaving lazy objects lazy`, async () => {
