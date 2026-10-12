@@ -2458,6 +2458,7 @@ async function loadModelsDevData(): Promise<Model<any>[]> {
 			requiresReasoningContentOnAssistantMessages: true,
 			thinkingFormat: "deepseek",
 		};
+		const XIAOMI_THINKING_LEVEL_MAP = { minimal: "low" } as const;
 		const xiaomiVariants = [
 			{ source: "xiaomi", provider: "xiaomi", baseUrl: "https://api.xiaomimimo.com/v1" },
 			{
@@ -2494,6 +2495,7 @@ async function loadModelsDevData(): Promise<Model<any>[]> {
 					baseUrl,
 					compat: xiaomiCompat,
 					reasoning: m.reasoning === true,
+					...(m.reasoning === true ? { thinkingLevelMap: XIAOMI_THINKING_LEVEL_MAP } : {}),
 					input: m.modalities?.input?.includes("image") ? ["text", "image"] : ["text"],
 					cost: getModelsDevCost(m.cost),
 					contextWindow: m.limit?.context || 4096,
