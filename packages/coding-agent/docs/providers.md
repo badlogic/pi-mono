@@ -245,3 +245,19 @@ gcloud auth application-default login
 ```
 
 To use a service-account key file instead, set `GOOGLE_APPLICATION_CREDENTIALS` along with the project and location.
+
+### NVIDIA NIM
+
+Authenticate with `/login nvidia` or set an API key in the environment:
+
+```bash
+export NVIDIA_API_KEY=...
+```
+
+Run `/model` and select `nvidia/nemotron-3.5-super-vl-120b-a12b` to use Nemotron 3.5 Super VL. It supports text and image input, reasoning, and tool calls.
+
+To select it when starting Pi:
+
+```bash
+pi --provider nvidia --model nvidia/nemotron-3.5-super-vl-120b-a12b
+```
