@@ -334,6 +334,28 @@ describe("TuiAltScreen", () => {
 		tui.stop();
 	});
 
+	it("ignores motion events that still carry the wheel bit", async () => {
+		const terminal = new VirtualTerminal(20, 4);
+		const tui = new TuiAltScreen(terminal);
+		const text = new Text(Array.from({ length: 12 }, (_, index) => `line ${index + 1}`).join("\n"), 0, 0);
+		tui.addChild(text);
+		tui.start();
+		await terminal.waitForRender();
+		assert.strictEqual(tui.viewportTop, 8);
+
+		// A real wheel step: 64 = wheel up, no motion bit.
+		terminal.sendInput("\x1b[<64;1;1M");
+		await terminal.waitForRender();
+		assert.strictEqual(tui.viewportTop, 7);
+
+		// rxvt-unicode keeps reporting the last pressed button on later pointer motion,
+		// so a motion event arrives as 96 = 64 wheel + 32 motion. It must not scroll.
+		terminal.sendInput("\x1b[<96;2;1M");
+		await terminal.waitForRender();
+		assert.strictEqual(tui.viewportTop, 7);
+		tui.stop();
+	});
+
 	it("does not vertically redispatch misses through horizontal layout containers", async () => {
 		const terminal = new VirtualTerminal(20, 2);
 		const tui = new TuiAltScreen(terminal);

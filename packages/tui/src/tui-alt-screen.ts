@@ -961,11 +961,19 @@ export class TuiAltScreen extends TuiBase implements ViewportTUI {
 		this.handleSelectionMouseEvent(raw);
 	}
 
+	/**
+	 * Bit 6 (value 64) indicates a mouse wheel event.
+	 * Bit 5 (value 32) indicates a motion event.
+	 * Some terminals (rxvt-unicode) update the modifier and button bits only on a button
+	 * press event, so motion will be reported with the last seen button and modifier states.
+	 * As such, we must ignore wheel events during motion (32) events.
+	 */
 	private parseWheelEvent(data: string): WheelEvent | undefined {
 		const sgr = /^\x1b\[<(\d+);(\d+);(\d+)[Mm]$/.exec(data);
 		if (sgr) {
 			const button = Number.parseInt(sgr[1], 10);
 			if ((button & 64) === 0) return undefined;
+			if ((button & 32) !== 0) return undefined;
 			const direction = button & 3;
 			if (direction !== 0 && direction !== 1) return undefined;
 			return {
@@ -978,6 +986,7 @@ export class TuiAltScreen extends TuiBase implements ViewportTUI {
 		if (data.length === 6 && data.startsWith("\x1b[M")) {
 			const button = data.charCodeAt(3) - 32;
 			if ((button & 64) === 0) return undefined;
+			if ((button & 32) !== 0) return undefined;
 			const direction = button & 3;
 			if (direction !== 0 && direction !== 1) return undefined;
 			return {
