@@ -23,7 +23,7 @@
 		"prepublishOnly": "npm run build"
 	},
 	"dependencies": {
-		"@earendil-works/pi-ai": "^1.2.0",
+		"@earendil-works/pi-ai": "1.2.0",
 		"typebox": "1.3.27"
 	},
 	"keywords": [

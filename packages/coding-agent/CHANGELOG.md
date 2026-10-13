@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- Pinned internal Pi dependencies to exact release versions to prevent fresh installs from mixing incompatible packages ([#10865](https://github.com/earendil-works/pi/issues/10865))
+
 ## [1.2.0] - 2026-10-12
 
 ### New Features
