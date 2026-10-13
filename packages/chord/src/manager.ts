@@ -161,13 +161,14 @@ const LOCK_ENV = "CHORD2_LOCK";
 export function forkDriver(options: ForkDriverOptions): Driver {
 	return {
 		spawn() {
+			// A lock this process inherited (e.g. as a child host itself) is not the child's: it gets only its own.
+			const env: NodeJS.ProcessEnv = { ...process.env };
+			delete env[LOCK_ENV];
+			Object.assign(env, options.env);
+			if (options.lock !== undefined) env[LOCK_ENV] = options.lock;
 			// Detached: the child leads a process group, so the whole tree can be killed.
 			const child: ChildProcess = fork(options.entry, [...(options.args ?? [])], {
-				env: {
-					...process.env,
-					...options.env,
-					...(options.lock === undefined ? {} : { [LOCK_ENV]: options.lock }),
-				},
+				env,
 				execArgv: [...(options.execArgv ?? [])],
 				detached: true,
 				stdio: ["ignore", options.onOutput ? "pipe" : "inherit", options.onOutput ? "pipe" : "inherit", "ipc"],
