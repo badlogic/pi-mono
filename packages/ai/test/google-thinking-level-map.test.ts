@@ -160,6 +160,25 @@ describe("Google thinking level maps", () => {
 		expect(payload.config?.thinkingConfig).toEqual({ includeThoughts: true, thinkingLevel: "MEDIUM" });
 	});
 
+	// Regression test for https://github.com/earendil-works/pi/issues/10890
+	it.each(googleAdapters)("uses thinking levels instead of budgets for Gemini 4 on $name", async ({ capture }) => {
+		const thinkingLevelMap = {
+			off: null,
+			minimal: null,
+			low: "low",
+			medium: "medium",
+			high: "high",
+			xhigh: null,
+			max: null,
+		};
+
+		const omitted = await capture("gemini-4-argon", thinkingLevelMap);
+		const high = await capture("gemini-4-argon", thinkingLevelMap, "high");
+
+		expect(omitted.config?.thinkingConfig).toEqual({ thinkingLevel: "LOW" });
+		expect(high.config?.thinkingConfig).toEqual({ includeThoughts: true, thinkingLevel: "HIGH" });
+	});
+
 	it.each(googleAdapters)("disables Gemini 2.5 thinking when reasoning is omitted on $name", async ({ capture }) => {
 		const payload = await capture("gemini-2.5-flash", {});
 
