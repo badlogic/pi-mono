@@ -50,7 +50,17 @@ export {
 	type RootOptions,
 } from "./host.ts";
 export { type CopyJsonOptions, copyJson, isJsonValue, type JsonRepresentation, type JsonValue } from "./json.ts";
-export { type IpcChannel, ipcLink, type Link, memoryLinkPair, type WebSocketLike, webSocketLink } from "./link.ts";
+export {
+	type IpcChannel,
+	inflateMessage,
+	ipcLink,
+	type Link,
+	memoryLinkPair,
+	PACK_THRESHOLD,
+	type WebSocketLike,
+	type WebSocketLinkOptions,
+	webSocketLink,
+} from "./link.ts";
 export type { Factory, Self, ServeOptions } from "./record.ts";
 export { defineRegistry, type Registry, type RegistryTable, type RegistryView } from "./registry.ts";
 export type { ReloadOptions, ReloadReport } from "./reload.ts";

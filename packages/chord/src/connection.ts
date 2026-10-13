@@ -2,7 +2,7 @@ import { contractFromDescription, LOCAL_VARIANT } from "./contract.ts";
 import { type Encoder, encoder } from "./delta/index.ts";
 import { ChordError, invalid } from "./errors.ts";
 import type { HostImpl } from "./host.ts";
-import type { Link } from "./link.ts";
+import { type Link, Packed, unpack } from "./link.ts";
 import { type CtxImpl, HandleImpl, kindOf } from "./record.ts";
 import type { RemoteChannel, RemoteHandle, StateSink } from "./remote.ts";
 import { assertValid } from "./schema.ts";
@@ -586,7 +586,7 @@ export class Connection implements RemoteChannel {
 		const options = { principal, signal: controller.signal };
 		const run =
 			served.kind === "local"
-				? (ctx: Ctx) => served.handle.record.call(served.handle, frame.member, frame.args, ctx as CtxImpl)
+				? (ctx: Ctx) => served.handle.record.call(served.handle, frame.member, unpack(frame.args), ctx as CtxImpl)
 				: (ctx: Ctx) =>
 						relayCall(
 							served.relay,
@@ -707,8 +707,18 @@ export class Connection implements RemoteChannel {
 		}
 		const pending = this.calls.get(frame.id);
 		this.calls.delete(frame.id);
-		if (frame.error === undefined) pending?.resolve(frame.value);
-		else pending?.reject(fromWireError(frame.error));
+		if (frame.error !== undefined) {
+			pending?.reject(fromWireError(frame.error));
+			return;
+		}
+		let value: unknown;
+		try {
+			value = unpack(frame.value);
+		} catch (error) {
+			pending?.reject(error);
+			return;
+		}
+		pending?.resolve(value);
 	}
 
 	#onState(frame: Extract<Frame, { t: "state" }>): void {
@@ -717,7 +727,22 @@ export class Connection implements RemoteChannel {
 			relayed.relay.origin.send({ ...frame, id: relayed.originSubId });
 			return;
 		}
-		this.subs.get(frame.id)?.(frame);
+		const sink = this.subs.get(frame.id);
+		if (sink === undefined) return;
+		if (!(frame.snap instanceof Packed) && !(frame.reset instanceof Packed)) {
+			sink(frame);
+			return;
+		}
+		let unpacked: StateSink;
+		try {
+			unpacked =
+				frame.snap !== undefined
+					? { ...frame, snap: unpack(frame.snap) }
+					: { ...frame, reset: unpack(frame.reset) };
+		} catch (error) {
+			unpacked = { error: toWireError(error) };
+		}
+		sink(unpacked);
 	}
 
 	// ─── lifetime ───

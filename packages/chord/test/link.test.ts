@@ -15,6 +15,7 @@ import {
 	resource,
 	type StateEvent,
 } from "../src/index.ts";
+import { Packed, unpack } from "../src/link.ts";
 
 const tick = () => new Promise<void>((resolve) => setImmediate(resolve));
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -362,5 +363,72 @@ describe("links: relay, stamping, lifetime", () => {
 		// The old hold was released with the link, so the worker made a fresh record; the reset carries its value.
 		assert.deepEqual(counter.count.value, { n: 1 });
 		assert.ok(events.filter((type) => type === "reset").length >= 2);
+	});
+});
+
+const Big = remote("t.big", {
+	version: 1,
+	input: Type.Object({}),
+	variants: {
+		main: {
+			state: { notes: Type.Array(Type.String()) },
+			methods: { echo: method(Type.Array(Type.String()), Type.Array(Type.String())) },
+		},
+	},
+});
+
+/** About 160,000 characters of JSON: above PACK_THRESHOLD. */
+const large = (tag: string) => Array.from({ length: 40 }, (_, i) => `${tag}${i}:${"x".repeat(4000)}`);
+
+describe("links: packed payloads", () => {
+	it("large args, results and snapshots cross a relay deflated and arrive intact", async () => {
+		const server = createHost({ name: "server", onError: () => {} });
+		server.route("session:", {
+			authorize: () => true,
+			resolve: async (name) => {
+				const [down, up] = memoryLinkPair();
+				const worker = createHost({ name, upstream: up, onError: () => {} });
+				worker.serve(Big, (_input, _principal, self) => {
+					const state = self.state({ notes: cell(Type.Array(Type.String()), large("a")) });
+					return { kind: "main", notes: state.notes, echo: (notes: string[]) => notes };
+				});
+				return down;
+			},
+		});
+		const [down, up] = memoryLinkPair();
+		server.accept(down, { principal: { owner: true } });
+		const browser = createHost({ name: "browser", kind: "client", upstream: up, onError: () => {} });
+		const big = browser.get(Big, {}, { at: "session:S1" });
+		assert.deepEqual(await big.echo(large("c")), large("c"));
+		big.notes.subscribe(() => {});
+		for (let i = 0; i < 100 && big.notes.value === undefined; i++) await sleep(5);
+		assert.deepEqual(big.notes.value, large("a"));
+	});
+
+	it("only payloads above the threshold are packed; the receiver unpacks them", async () => {
+		const [a, b] = memoryLinkPair();
+		const frames: Frame[] = [];
+		b.receive((frame) => frames.push(frame));
+		a.send({ t: "result", id: 1, value: large("v") });
+		a.send({ t: "result", id: 2, value: ["small"] });
+		a.send({ t: "state", id: 3, snap: large("s") });
+		for (let i = 0; i < 50 && frames.length < 3; i++) await tick();
+		const [packed, small, snap] = frames;
+		assert(packed?.t === "result" && packed.value instanceof Packed);
+		assert.deepEqual(unpack(packed.value), large("v"));
+		assert(small?.t === "result");
+		assert.deepEqual(small.value, ["small"]);
+		assert(snap?.t === "state" && snap.snap instanceof Packed);
+		assert.deepEqual(unpack(snap.snap), large("s"));
+
+		// A relay forwards the packed bytes as they are.
+		const [c, d] = memoryLinkPair();
+		const forwarded: Frame[] = [];
+		d.receive((frame) => forwarded.push(frame));
+		c.send({ ...packed, id: 9 });
+		for (let i = 0; i < 50 && forwarded.length < 1; i++) await tick();
+		const relayed = forwarded[0];
+		assert(relayed?.t === "result" && relayed.value instanceof Packed);
+		assert.deepEqual(relayed.value.bytes, packed.value.bytes);
 	});
 });

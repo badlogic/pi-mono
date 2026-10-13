@@ -21,8 +21,9 @@ export function acceptWebSockets<Request>(
 	options: WebSocketAcceptOptions<Request>,
 ): void {
 	server.on("connection", (socket, request) => {
-		// Wrap at once so frames sent while authenticating are queued, not lost.
-		const link = webSocketLink(socket);
+		// Wrap at once so frames sent while authenticating are queued, not lost. Large payloads go out deflated; clients
+		// may not send packed frames (a small message could inflate to anything).
+		const link = webSocketLink(socket, { compress: true, acceptPacked: false });
 		Promise.resolve(options.principal(request)).then(
 			(principal) => {
 				if (principal === undefined) link.close("unauthorized");

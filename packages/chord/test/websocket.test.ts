@@ -7,6 +7,7 @@ import {
 	acceptWebSockets,
 	cell,
 	createHost,
+	inflateMessage,
 	isChordError,
 	method,
 	remote,
@@ -94,6 +95,55 @@ describe("WebSocket links", () => {
 				(error) => isChordError(error, "aborted"),
 			);
 			await refused.close();
+		} finally {
+			await new Promise<void>((resolve) => wss.close(() => resolve()));
+		}
+	});
+});
+
+describe("WebSocket links: packed payloads", () => {
+	it("large snapshots and results reach the client as binary messages; clients may not send them", async () => {
+		const notes = Array.from({ length: 40 }, (_, i) => `${i}:${"x".repeat(4000)}`);
+		const server = createHost({ name: "server", onError: () => {} });
+		server.serve(Board, (_input, _principal, self) => {
+			const state = self.state({ notes: cell(Type.Array(Type.String()), notes) });
+			return { kind: "main", notes: state.notes, add: () => null, who: () => notes };
+		});
+		const wss = new WebSocketServer({ port: 0, host: "127.0.0.1" });
+		await new Promise<void>((resolve) => wss.once("listening", () => resolve()));
+		acceptWebSockets(wss as never, server, { principal: () => ({ guest: "web" }) });
+		const url = `ws://127.0.0.1:${(wss.address() as { port: number }).port}/`;
+		try {
+			const binary: Uint8Array[] = [];
+			const socket = new WebSocket(url);
+			socket.addEventListener("message", (event) => {
+				if (typeof event.data !== "string") binary.push(new Uint8Array(event.data as ArrayBuffer));
+			});
+			const browser = createHost({
+				name: "browser",
+				kind: "client",
+				upstream: webSocketLink(socket as unknown as WebSocketLike),
+				onError: () => {},
+			});
+			const board = browser.get(Board, {}, { at: "server" });
+			assert.deepEqual(await board.who(null), notes);
+			board.notes.subscribe(() => {});
+			for (let i = 0; i < 100 && board.notes.value === undefined; i++) await new Promise((r) => setTimeout(r, 5));
+			assert.deepEqual(board.notes.value, notes);
+			assert(binary.length >= 2, "the result and the snapshot came as binary messages");
+			// A text-only transport (the TUI launcher) turns a packed message back into its text frame.
+			const frames = binary.map((message) => JSON.parse(inflateMessage(message)) as Record<string, unknown>);
+			assert(frames.some((frame) => frame.t === "result" && JSON.stringify(frame.value) === JSON.stringify(notes)));
+			assert(frames.some((frame) => frame.t === "state" && JSON.stringify(frame.snap) === JSON.stringify(notes)));
+			await browser.close();
+
+			// A client's binary message is a protocol error: the server closes the socket.
+			const raw = new WebSocket(url);
+			raw.binaryType = "arraybuffer";
+			await new Promise<void>((resolve) => raw.addEventListener("open", () => resolve()));
+			const closed = new Promise<void>((resolve) => raw.addEventListener("close", () => resolve()));
+			raw.send(new Uint8Array([0, 0, 0, 2, 123, 125]));
+			await closed;
 		} finally {
 			await new Promise<void>((resolve) => wss.close(() => resolve()));
 		}
