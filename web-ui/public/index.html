@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Pi · Durable workspace</title><link rel="stylesheet" href="/style.css"><script type="module" src="/app.js"></script></head>
+<body>
+<div class="app">
+  <header class="topbar"><div class="brand"><span class="mark">π</span><div><strong>Pi workspace</strong><span class="eyebrow">DURABLE SESSION</span></div></div><div class="connection"><span id="connection-dot" class="dot"></span><span id="connection">Connecting…</span></div><button id="help" class="quiet" title="Keyboard shortcuts">? <span>Help</span></button></header>
+  <div class="workspace">
+    <aside class="sidebar" aria-label="Session navigation">
+      <section class="session-meta"><span class="eyebrow">WORKING DIRECTORY</span><strong id="cwd">Opening harness…</strong><span id="session-id" class="muted mono">SQLite · persistent history</span></section>
+      <section class="conversation-section"><div class="section-title"><h2>Conversations</h2><span id="conversation-count" class="count">0</span></div><nav id="conversations" aria-label="Conversations"></nav></section>
+      <section class="task-section"><div class="section-title"><h2>Live tasks</h2><button id="toggle-tasks" class="quiet" data-control>Hide</button></div><div id="tasks" class="task-list"><p class="muted">No active tasks.</p></div></section>
+      <div class="sidebar-foot"><span class="dot saved"></span> Committed to local storage</div>
+    </aside>
+    <main>
+      <header class="conversation-bar"><div><span class="eyebrow">CONVERSATION</span><h1 id="conversation-title">Main</h1></div><div class="toolbar"><button id="model" data-control title="Choose model">Select model <span>⌄</span></button><button id="thinking" data-control title="Cycle reasoning effort (Alt+T)">Thinking: off</button><button id="compact" data-control title="Compact older context">Compact</button></div></header>
+      <div id="alerts" role="status" aria-live="polite"></div>
+      <section id="transcript" class="transcript" tabindex="0" aria-label="Conversation transcript"><div class="welcome"><span class="welcome-mark">π</span><h2>A place to think.<br>A harness to act.</h2><p>Ask a question, explore your code, or start a task.<br>Your conversation and progress persist across restarts.</p><div class="suggestions"><button data-suggestion="Explain the architecture of this project." data-control>Explore this project <span>↗</span></button><button data-suggestion="Inspect the current changes and suggest what to verify. Do not modify files." data-control>Review my changes <span>↗</span></button></div></div></section>
+      <div class="transcript-actions"><button id="expand" class="quiet">Expand tool details <kbd>Alt O</kbd></button><button id="latest" class="quiet" hidden>Jump to latest ↓</button></div>
+      <section id="queue" class="queue" aria-label="Queued messages" hidden></section>
+      <form id="composer" class="composer"><label class="sr-only" for="prompt">Message the selected conversation</label><textarea id="prompt" placeholder="What would you like to work on?" rows="3" maxlength="200000" disabled></textarea><div class="composer-bottom"><div class="compose-hint"><kbd>Enter</kbd> send <span>·</span> <kbd>Shift Enter</kbd> new line</div><div class="compose-buttons"><button type="button" id="abort" class="danger" data-control>Stop <kbd>Esc</kbd></button><button type="button" id="follow-up" data-control title="Queue after current work (Alt+Enter)">Follow-up</button><button type="submit" id="send" class="primary" data-control>Send <span>↑</span></button></div></div></form>
+      <footer class="statusbar"><span id="status">Opening durable session…</span><span id="usage">0 tokens · $0.000</span></footer>
+    </main>
+  </div>
+</div>
+<dialog id="model-dialog"><form method="dialog" class="dialog-head"><h2>Choose a model</h2><button aria-label="Close">×</button></form><label for="model-search" class="muted">Search available models and providers</label><input id="model-search" type="search" placeholder="Filter models…" autocomplete="off"><div id="models" class="model-list"></div></dialog>
+<dialog id="compact-dialog"><form id="compact-form"><div class="dialog-head"><h2>Compact context</h2><button type="button" data-close="compact-dialog" aria-label="Close">×</button></div><p class="muted">Summarize older messages while keeping recent context. Your durable history remains stored.</p><label for="compact-instructions">Instructions <span class="muted">(optional)</span></label><textarea id="compact-instructions" rows="4" placeholder="Keep the implementation decisions and remaining tasks."></textarea><button class="primary" type="submit">Compact conversation</button></form></dialog>
+<dialog id="help-dialog"><form method="dialog" class="dialog-head"><h2>At your fingertips</h2><button aria-label="Close">×</button></form><dl class="shortcuts"><dt>Send / steer active work</dt><dd>Enter</dd><dt>New line</dt><dd>Shift+Enter</dd><dt>Queue a follow-up</dt><dd>Alt+Enter</dd><dt>Abort shown conversation</dt><dd>Esc</dd><dt>Choose model</dt><dd>Alt+M</dd><dt>Cycle thinking</dt><dd>Alt+T</dd><dt>Expand tool details</dt><dd>Alt+O</dd></dl><p>Commands: <code>/model</code>, <code>/agents</code>, <code>/tasks</code>, <code>/compact [instructions]</code>, <code>/help</code>.</p><p class="muted">Closing this tab leaves the harness running. Stop it with Ctrl+C in the terminal; restart with <code>--continue</code> to resume. Other tabs share the selected conversation.</p></dialog>
+<dialog id="activity-dialog"><form method="dialog" class="dialog-head"><h2>Live tasks</h2><button aria-label="Close">×</button></form><div id="activity-content"></div></dialog>
+</body></html>

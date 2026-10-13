@@ -1,3 +1,29 @@
+# Web Pi
+
+This fork includes a browser interface for Pi’s **durable harness**, with streaming conversations, tools, subagents, live tasks, model selection, compaction and session recovery. The layout fits the browser window; very small windows enable vertical page scrolling.
+
+## Run the web interface
+
+Use Node.js 22.19 or newer. From this repository’s root:
+
+```sh
+npm ci --ignore-scripts
+npm run hydrate:model-data
+npm run web:start
+```
+
+The start command opens your default browser and uses this repository’s own durable runtime. No sibling checkout, external workspace files or UI build step is required. Configure provider credentials with Pi’s `/login` or supported environment variables.
+
+Choose a project and resume its latest durable session:
+
+```sh
+npm run web:start -- --cwd /path/to/project --continue
+```
+
+See [web-ui/README.md](web-ui/README.md) for all controls, setup, storage and verification commands. The original Pi documentation follows below.
+
+---
+
 <p align="center">
   <a href="https://pi.dev">
     <img alt="pi logo" src="https://pi.dev/logo-auto.svg" width="128">

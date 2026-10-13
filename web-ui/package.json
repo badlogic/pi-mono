@@ -1,0 +1,7 @@
+{
+  "name": "pi-durable-web",
+  "private": true,
+  "type": "module",
+  "scripts": {"start": "node start.mjs", "test": "node --test test/*.test.mjs"},
+  "engines": {"node": ">=22.19.0"}
+}

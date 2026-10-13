@@ -12,6 +12,11 @@
 		"packages/coding-agent/examples/extensions/gondolin"
 	],
 	"scripts": {
+		"web:start": "node web-ui/start.mjs",
+		"web:test": "node --test web-ui/test/*.test.mjs",
+		"web:test:adapter": "node --import ./packages/coding-agent/src/experimental/source-resolver.ts --test web-ui/test/adapter.mjs",
+		"web:test:durable": "node web-ui/test/durable-smoke.mjs",
+		"web:test:browser": "node web-ui/test/browser.mjs",
 		"clean": "npm run clean --workspaces",
 		"build": "cd packages/chord && npm run build && cd ../tui && npm run build && cd ../telemetry && npm run build && cd ../codemode && npm run build && cd ../mcp && npm run build && cd ../ai && npm run build && cd ../durable && npm run build && cd ../env && npm run build && cd ../agent && npm run build && cd ../coding-agent && npm run build",
 		"build:offline": "cd packages/chord && npm run build && cd ../tui && npm run build && cd ../telemetry && npm run build && cd ../codemode && npm run build && cd ../mcp && npm run build && cd ../ai && npm run build:offline && cd ../durable && npm run build && cd ../env && npm run build && cd ../agent && npm run build && cd ../coding-agent && npm run build",
