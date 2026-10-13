@@ -191,7 +191,13 @@ describe("agent events", () => {
 		await submission.wait(context);
 		await drained();
 		const tool = events().filter((event) => event.type.startsWith("tool_execution"));
-		expect(tool[0]).toEqual({ type: "tool_execution_start", toolCallId: "c1", toolName: "print", args: { n: 1 } });
+		expect(tool[0]).toEqual({
+			type: "tool_execution_start",
+			toolCallId: "c1",
+			toolName: "print",
+			taskId: expect.any(Number),
+			args: { n: 1 },
+		});
 		const end = tool.at(-1)!;
 		expect(end).toMatchObject({ type: "tool_execution_end", toolCallId: "c1", entry: { kind: "pi.tool-result" } });
 		// As in the coding agent, the tool ends directly before its result message.

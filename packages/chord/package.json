@@ -1,7 +1,7 @@
 {
 	"name": "@earendil-works/chord",
-	"version": "1.1.0",
-	"description": "Application composition runtime for services, replicated state, RPC, and plugins",
+	"version": "1.2.0",
+	"description": "Typed host runtime for plugins, contracts, replicated state, and RPC over JSON links",
 	"type": "module",
 	"main": "./dist/index.js",
 	"types": "./dist/index.d.ts",
@@ -21,11 +21,6 @@
 			"types": "./dist/delta/index.d.ts",
 			"import": "./dist/delta/index.js"
 		},
-		"./bundler": {
-			"source": "./src/bundler.ts",
-			"types": "./dist/bundler.d.ts",
-			"import": "./dist/bundler.js"
-		},
 		"./node": {
 			"source": "./src/node.ts",
 			"types": "./dist/node.d.ts",
@@ -36,7 +31,9 @@
 	"sideEffects": false,
 	"files": [
 		"dist",
+		"docs",
 		"README.md",
+		"CHANGELOG.md",
 		"src/delta/README.md"
 	],
 	"scripts": {
@@ -49,7 +46,7 @@
 		"application",
 		"plugins",
 		"rpc",
-		"services",
+		"contracts",
 		"state"
 	],
 	"author": "Earendil Works",
@@ -63,10 +60,12 @@
 		"node": ">=22.19.0"
 	},
 	"dependencies": {
-		"esbuild": "0.28.2"
+		"typebox": "1.3.27"
 	},
 	"devDependencies": {
+		"@types/ws": "8.18.2",
 		"shx": "0.3.4",
-		"vitest": "4.1.11"
+		"vitest": "4.1.11",
+		"ws": "8.21.0"
 	}
 }

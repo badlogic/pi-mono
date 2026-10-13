@@ -51,6 +51,12 @@ export type ModelRef = {
 
 export type UserInput = UserMessage["content"];
 
+/**
+ * The entry an input is placed as, instead of `pi.user`: an application kind, and data the transcript shows, such as its
+ * author. Its model message is still the input's user message.
+ */
+export type InputEntry = { readonly kind: string; readonly data?: JsonValue };
+
 /** Host submission: user input that may start a run, or a passive entry write. */
 export type SubmissionDraft = {
 	readonly requestId?: string;
@@ -59,7 +65,8 @@ export type SubmissionDraft = {
 			readonly type: "input";
 			readonly content: UserInput;
 			readonly whenBusy?: "steer" | "followUp" | "reject";
-			readonly entry?: never;
+			/** Place the input as this entry; default `pi.user` without data. The kind must not start with `pi.`. */
+			readonly entry?: InputEntry;
 	  }
 	| {
 			readonly type: "write";
@@ -140,9 +147,18 @@ export type ToolDiagnostic = {
 	readonly code?: string;
 };
 
+/**
+ * What a tool returns, on three channels: `output` for the model, `structuredOutput` for programs that call the tool
+ * (`executeTool()` callers, code mode scripts), and `details` for UIs.
+ */
 export type ToolExecutionResult<TDetails extends JsonValue = JsonValue> = {
-	/** Omitted: the retained `output()` text becomes the content. */
-	readonly content?: ToolResultMessage["content"];
+	/** For the model. Omitted: the retained `output()` text. */
+	readonly output?: ToolResultMessage["content"];
+	/**
+	 * For programs. Required unless `isError` when the tool declares `structuredOutputSchema`, and validated against it;
+	 * not allowed without one, where programs get the output itself (`NestedToolExecutionResult.structuredOutput`).
+	 */
+	readonly structuredOutput?: JsonValue;
 	readonly isError?: boolean;
 	/** Omitted: the last `details()` value becomes the details. */
 	readonly details?: TDetails;
@@ -151,6 +167,29 @@ export type ToolExecutionResult<TDetails extends JsonValue = JsonValue> = {
 	/** Spend of the execution itself, such as a model call; stored on the result and in `pi.usage.tools`. */
 	readonly usage?: Usage;
 	readonly control?: ToolControl;
+};
+
+/**
+ * Result of a nested call, as `executeTool()` returns it. Programs read `structuredOutput`; the output for the model
+ * is not kept, and `control` does not apply.
+ */
+export type NestedToolExecutionResult = {
+	/** The nested call's tool task. */
+	readonly taskId: TaskId;
+	/**
+	 * The tool's value for programs. A tool with `structuredOutputSchema`: its validated `structuredOutput`, also on an
+	 * error result that has one; absent otherwise, and an error's text is then in an error diagnostic. A tool without:
+	 * its bounded output, success or error, as a string for one text item, an `ImageContent` for one image, `""` for
+	 * none, and the content list otherwise. Absent on an error result the Harness wrote itself (unavailable, invalid,
+	 * blocked, interrupted, aborted); `diagnostics` say what went wrong.
+	 */
+	readonly structuredOutput?: JsonValue;
+	readonly isError: boolean;
+	readonly details?: JsonValue;
+	readonly diagnostics: readonly ToolDiagnostic[];
+	readonly usage?: Usage;
+	/** Execution time of the attempt that produced the result; absent when it never executed. */
+	readonly durationMs?: number;
 };
 
 /** Whether the tools of one round run at once or one after another in call order. */
@@ -176,7 +215,7 @@ export interface ToolExecutionApi<TDetails extends JsonValue = JsonValue> extend
 	/** Built by `HarnessOptions.env` for this call; `undefined` without an environment. */
 	readonly env: ExecutionEnv | undefined;
 	/**
-	 * Append running output; it becomes the result content when the result omits `content`. `skipped` counts output
+	 * Append running output; it becomes the result's `output` when the result omits it. `skipped` counts output
 	 * omitted before the chunk, as reported by an environment given `outputWindow` (`ShellOutputInfo.skipped`).
 	 */
 	output(chunk: string | Uint8Array, skipped?: ShellOutputSkip): void;
@@ -186,6 +225,11 @@ export interface ToolExecutionApi<TDetails extends JsonValue = JsonValue> extend
 	 * transforms text must also replace this with `undefined`, so skipped text cannot bypass its transform.
 	 */
 	readonly outputWindow: ShellOutputWindow | undefined;
+	/**
+	 * The output retained so far, as the model will see it when the result omits `output`, and whether earlier output was
+	 * dropped; for a tool that also returns that text in its `structuredOutput`.
+	 */
+	retainedOutput(): { readonly text: string; readonly truncated: boolean };
 	/** Record a model-visible remark about this call. */
 	diagnostic(diagnostic: ToolDiagnostic): void;
 	/** Replace running details; the last value becomes the result details when the result omits `details`. */
@@ -193,6 +237,10 @@ export interface ToolExecutionApi<TDetails extends JsonValue = JsonValue> extend
 	commit<T>(change: (tx: Tx) => T | Promise<T>, context: Context): Promise<T>;
 	memo<T extends JsonValue>(name: string, context: Context): Promise<T | undefined>;
 	memo<T extends JsonValue>(name: string, candidate: T, context: Context): Promise<T>;
+	/**
+	 * Create a task in one commit. A child task of a tool that is not replay-safe defaults to `abandonOnRestart`: the
+	 * tool never resumes after a restart, so nothing awaits the child then.
+	 */
 	createTask<I, S extends { phase: string }, R, H extends object>(
 		task: Task<I, S, R, H>,
 		input: I,
@@ -203,6 +251,39 @@ export interface ToolExecutionApi<TDetails extends JsonValue = JsonValue> extend
 	waitForTask<R>(id: TaskId<R>, context: Context): Promise<SettledTask<R>>;
 	/** Invocation-bound handle of an existing conversation, such as one this tool created in `commit()`. */
 	conversation(id: ConversationId, context: Context): Promise<ConversationHandle | undefined>;
+	/**
+	 * Run tool `name` as a nested call of this one and wait for its result. The nested call is its own `pi.tool` task,
+	 * owned by this call: it resolves the tool among the conversation's tools, validates, runs the `ToolTask` hooks (which
+	 * see `call.parent`), applies output limits and the tool's replay policy, and reports progress in `pi.live.nestedTools`.
+	 * Its result returns here instead of entering the transcript. A call that is blocked, invalid, throws, is interrupted,
+	 * or is aborted returns an `isError` result.
+	 *
+	 * The nested call's key names it within this call; its call ID is `<callId>/<key>`. By default the key is the call's
+	 * position among this invocation's nested calls, `1`, `2`, ... An explicit `key` must be non-empty, without `/`, not
+	 * `__proto__`, and not a positive integer, so it never collides with a default one. A rerun of a replay-safe tool
+	 * that makes a call with a used key, by calling in the same order or by passing the same `key`, gets that nested call
+	 * back, finished or still running, instead of starting another. A nested call a crash interrupted before its result
+	 * committed follows its own replay policy, so this is not exactly-once execution. Reusing a key with another tool or
+	 * other arguments throws. A tool that is not replay-safe never reruns: after a restart, its unfinished nested calls
+	 * are abandoned (`TaskOptions.abandonOnRestart`) before they run again.
+	 *
+	 * `progress: false` commits no running output, details, or diagnostics to the nested call's slot, only its status;
+	 * the result still carries its details and diagnostics, and a schema-less tool's output as `structuredOutput`. An
+	 * interrupted or aborted call's result is built from its slot, so it then has none of them. Either way, programs never
+	 * get the partial output of an interrupted or aborted call.
+	 *
+	 * Nested calls run as soon as they are made, whatever their `executionMode`; the caller decides what runs at once by
+	 * what it awaits. Cancelling `context` stops only the wait; the nested call runs on. When this call settles, nested
+	 * calls it left running are aborted first. A nested result's `usage` is already counted under its tool; a result
+	 * that passes it on counts it again. Rejects, instead of returning a result, once `execute()` has returned, when this
+	 * call is aborted, or when the Harness closes.
+	 */
+	executeTool(
+		name: string,
+		args: JsonObject,
+		context: Context,
+		options?: { readonly key?: string; readonly progress?: boolean },
+	): Promise<NestedToolExecutionResult>;
 }
 
 /**
@@ -223,6 +304,22 @@ export type ToolRegistration<
 	 * still validated against `parameters`.
 	 */
 	prepareArguments?(args: unknown): Static<TParameters>;
+	/**
+	 * Schema of `structuredOutput`, which programs that call the tool receive. Omitted: they receive the result's bounded
+	 * output, success or error, as `NestedToolExecutionResult.structuredOutput` describes.
+	 */
+	readonly structuredOutputSchema?: TSchema;
+	/**
+	 * Who may call the tool: the model, other tools through `executeTool()`, or both (default). A code mode tool is
+	 * `["model"]`, so scripts cannot start scripts; tools behind code mode, such as MCP tools, can be `["tools"]`, so the
+	 * model is never offered them.
+	 */
+	readonly callers?: readonly ("model" | "tools")[];
+	/**
+	 * Not offered to the model until loaded: the model gets the tool only when `modelTools` names it, in its array or its
+	 * `add`, which `control.addTools` (from a tool such as `tool_search`) writes. Other tools can call it any time.
+	 */
+	readonly deferred?: true;
 	readonly outputLimits?: {
 		readonly maxBytes?: number;
 		readonly maxLines?: number;
@@ -310,8 +407,18 @@ export type AgentState = {
 	thinkingLevel?: ModelThinkingLevel;
 	/** An array selects exactly these extensions, in order. An object edits the host default selection. */
 	extensions?: string[] | { add?: string[]; remove?: string[] };
-	/** Filters the selected extensions' tools. An array offers exactly these, in order. */
+	/** Filters the selected extensions' tools: the enabled tools. An array enables exactly these, in order. */
 	tools?: string[] | { remove: string[] };
+	/**
+	 * Filters the enabled tools the model may call (`callers` includes `model`): the tools offered to it. Never widens:
+	 * other tools can still call the ones it leaves out.
+	 * - Unset: every such tool except deferred ones.
+	 * - An array: exactly these, in order, deferred ones too.
+	 * - An object: every such tool except deferred ones and those in `remove`, in registry order, followed by the
+	 *   deferred tools in `add` that are not in `remove`, in `add` order. Names of tools that are not deferred or not
+	 *   registered have no effect in `add`.
+	 */
+	modelTools?: string[] | { remove?: string[]; add?: string[] };
 	/** Rendered after every extension section, as the section `instructions`. */
 	instructions?: string;
 	/** Directory within the environment's file system, passed to `HarnessOptions.env`. */
@@ -327,6 +434,11 @@ export type AgentChange = {
 		| { readonly add?: readonly Extension[]; readonly remove?: readonly Extension[] }
 		| null;
 	readonly tools?: readonly ToolRegistration[] | { readonly remove: readonly ToolRegistration[] } | null;
+	/** Replaces the stored filter as a whole; tools loaded with `control.addTools` are in its `add`. */
+	readonly modelTools?:
+		| readonly ToolRegistration[]
+		| { readonly remove?: readonly ToolRegistration[]; readonly add?: readonly ToolRegistration[] }
+		| null;
 	readonly instructions?: string | null;
 	readonly cwd?: string | null;
 };
@@ -336,8 +448,12 @@ export type Agent<Tool extends ToolRegistration = ToolRegistration> = {
 	readonly model?: ModelRef;
 	readonly thinkingLevel: ModelThinkingLevel;
 	readonly extensions: readonly Extension<Tool>[];
-	/** The tools a request offers, in order. */
+	/** The tools a request offers, in order: enabled, callable by the model, and selected by `modelTools`. */
 	readonly tools: readonly Tool[];
+	/** The tools nested calls (`executeTool()`) resolve among, in order: enabled and callable by tools. */
+	readonly callable: readonly Tool[];
+	/** Enabled deferred tools the model may call and is not offered yet, in registry order: what `tool_search` loads. */
+	readonly deferred: readonly Tool[];
 	/** Extension sections, then `instructions` when set. */
 	readonly sections: readonly PromptSection<Tool>[];
 	readonly instructions?: string;
@@ -426,6 +542,12 @@ export type HarnessSettings = {
 	 * Busy conversations always keep it; `0` drops it once the conversation is idle.
 	 */
 	readonly contextRetentionMs?: number;
+	/**
+	 * How long a loaded document that no watch or document state observes stays in memory after its last read or write;
+	 * the next access loads it from Storage. Observed documents always stay. Default ten minutes; `0` drops one right
+	 * after use; `Infinity` keeps them. Anything else that is not a number of milliseconds means the default.
+	 */
+	readonly documentRetentionMs?: number;
 };
 
 /** Resolved settings: every field over its built-in default, object fields merged. */
@@ -440,6 +562,7 @@ export type Settings = {
 	readonly steeringMode: QueueMode;
 	readonly followUpMode: QueueMode;
 	readonly contextRetentionMs: number;
+	readonly documentRetentionMs: number;
 };
 
 /** What `HarnessOptions.env` builds an environment for. */
@@ -464,7 +587,10 @@ export type HarnessOptions<Tool extends ToolRegistration = ToolRegistration> = {
 	 */
 	readonly conversationCreated?: (tx: Tx, conversation: ConversationRecord) => void | Promise<void>;
 	readonly now?: () => number;
-	/** Receives extension failures that do not fail the calling operation. Must not throw. */
+	/**
+	 * Receives failures that do not fail the calling operation, such as a throwing hook or listener, and the error that
+	 * fails the Session, once. Its own throw or rejection is dropped.
+	 */
 	readonly onReport?: (error: unknown) => void;
 };
 
@@ -520,8 +646,10 @@ export interface Conversation {
 	configure(change: AgentChange, context: Context): Promise<void>;
 
 	/**
-	 * Durably admit user input or a passive entry write. A busy conversation, or one with queued items, queues it in
-	 * `pi.inbox`; `whenBusy: "reject"` rejects with `ConversationBusy` instead and writes nothing.
+	 * Durably admit user input or a passive entry write. A busy conversation, or one with queued items, queues input and
+	 * writes that affect model context in `pi.inbox`; `whenBusy: "reject"` rejects input with `ConversationBusy` instead
+	 * and writes nothing. A write of only `kind` and `data` (no `model`, `head`, or `edits`) is appended at once,
+	 * even mid-run, as it changes nothing the model sees.
 	 */
 	submit(submission: SubmissionDraft, context: Context): Promise<Submission>;
 	/**
@@ -641,17 +769,22 @@ export interface GenerationHooks {
 	afterTools(assistant: EntryId, results: readonly EntryId[], api: HookApi, context: Context): void | Promise<void>;
 }
 
-/** Hooks of the built-in tool task. */
+/** A call as tool hooks see it; `parent` is set for a nested call, one a running tool made through `executeTool()`. */
+export type ToolHookCall = ToolCall & {
+	readonly parent?: { readonly taskId: TaskId; readonly callId: string };
+};
+
+/** Hooks of the built-in tool task, for model-issued and nested calls. */
 export interface ToolHooks {
 	/** Before intent; the first `block` wins, otherwise `arguments` replace the call's arguments. A throw blocks. */
 	beforeTool(
-		call: ToolCall,
+		call: ToolHookCall,
 		api: HookApi,
 		context: Context,
 	): HookResult<{ readonly arguments?: JsonObject; readonly block?: string }>;
-	/** After execution, before the result entry; replaces the result. */
+	/** After execution, before the result is committed; replaces the result. */
 	afterTool(
-		call: ToolCall,
+		call: ToolHookCall,
 		result: ToolExecutionResult,
 		api: HookApi,
 		context: Context,

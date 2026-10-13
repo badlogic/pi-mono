@@ -70,7 +70,7 @@ const Subagent: Extension = defineExtension({
 					throw new Error(`Subagent failed: ${settled.status}`);
 				}
 				const text = await answerText(api, settled.answer, callContext);
-				return { content: [{ type: "text", text }], details: { conversationId: child } };
+				return { output: [{ type: "text", text }], details: { conversationId: child } };
 			},
 		}),
 	],

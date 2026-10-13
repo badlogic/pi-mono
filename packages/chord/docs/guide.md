@@ -1,0 +1,751 @@
+# Chord usage guide
+
+> Describes the runtime in `src`. The [specification](spec.md) defines its semantics and lists known limitations.
+
+Chord builds applications out of **objects** that live in several processes (a server, workers, browser tabs) and can be **hot reloaded** while they run.
+
+- An **object** is state plus code at an address. It is created on demand and lives while someone holds it.
+- Everyone gets a **handle**, never the object. Handles work the same locally and across processes, and survive reloads.
+- Every object knows its **principal**: an owner and a guest get different objects, with different methods.
+- **State** is observable JSON. Remote viewers get a snapshot followed by deltas.
+- **Hot reload** swaps code while it runs. Work in flight finishes on the code it started with, state is kept, and incompatible changes migrate at a safe point.
+
+## Contents
+
+- [Quick start](#quick-start)
+- [Contracts](#contracts)
+- [Serving objects](#serving-objects)
+- [Declarations](#declarations)
+- [Activation](#activation)
+- [Principals and variants](#principals-and-variants)
+- [Handles](#handles)
+- [State](#state)
+- [Calls, ctx and roots](#calls-ctx-and-roots)
+- [Lifetime](#lifetime)
+- [Registries](#registries)
+- [Plugins](#plugins)
+- [Hot reload](#hot-reload)
+- [Hosts and links](#hosts-and-links)
+- [Durable](#durable)
+- [Errors](#errors)
+- [Rules of thumb](#rules-of-thumb)
+
+## Quick start
+
+```ts
+import { Type } from "typebox";
+import { cell, createHost, method, remote } from "@earendil-works/chord";
+
+// contract.ts: shared by provider and consumers
+export const Counter = remote("demo.counter", {
+	version: 1,
+	input: Type.Object({ name: Type.String() }),
+	variants: {
+		default: {
+			state: { count: Type.Number() },
+			methods: { increment: method(Type.Object({ by: Type.Number() }), Type.Null()) },
+		},
+	},
+});
+
+const host = createHost({ name: "server", principalKey: (p) => p.kind });
+
+host.serve(Counter, ({ name }, _principal, self) => {
+	const state = self.state({ count: cell(Type.Number(), 0) });
+	return {
+		kind: "default",
+		count: state.count,
+		increment: async ({ by }, ctx) => {
+			state.count.change(ctx, (n) => n + by);
+			return null;
+		},
+	};
+});
+
+await host.root(async (ctx) => {
+	const clicks = ctx.get(Counter, { name: "clicks" });  // a handle; held until this root ends
+	clicks.count.subscribe((n) => console.log("count", n));
+	await clicks.increment({ by: 2 }, ctx);  // logs 0, then 2
+});
+```
+
+## Contracts
+
+A contract is a runtime value: a name, a version number, and a description of the members. Shipped bundles have no TypeScript, so everything the runtime checks must be in the contract. TypeScript types are inferred from it.
+
+### Remote types
+
+Remote types can be reached from other hosts. Everything that crosses the wire has a schema, and the provider validates it.
+
+```ts
+export const Chat = remote("pi.chat", {
+	version: 1,
+	input: Type.Object({ session: Type.String(), conversation: Type.Number() }),
+	variants: {
+		viewer: {
+			state: { view: ConversationViewSchema },
+		},
+		participant: {
+			state: { view: ConversationViewSchema },
+			methods: {
+				send: method(SendInputSchema, Type.Object({ submissionId: Type.Number() })),
+				stop: method(Type.Null(), Type.Null()),
+			},
+		},
+	},
+});
+```
+
+### Local types
+
+Local types are reachable only inside their host. Their members may be anything: functions, callbacks, native objects. Non-JSON members get opaque or function descriptors.
+
+```ts
+export const Index = local("pi.index", {
+	version: 1,
+	input: Type.Object({ session: Type.String() }),
+	members: {
+		search: method(Type.Object({ query: Type.String() }), Type.Array(HitSchema)),
+		onChange: method(Type.Function([ChangeSchema], Type.Void()), UnsubscribeSchema),
+		harness: opaque("pi.durable-harness@1"),
+	},
+});
+```
+
+### Inputs identify objects
+
+`{ session: "S1", conversation: 1 }` always means the same object. Inputs are normalized (defaults applied, unknown fields removed), validated, and serialized canonically. Fields equal to their default are left out, so adding a new optional field with a default doesn't change existing addresses. Changing a default, or how inputs are normalized, needs a new type name.
+
+### Versions and compatibility
+
+Every bundle carries its own copy of each contract it was built against. When a consumer binds to a provider, the two copies are compared:
+
+> A consumer built against version M binds to a provider at version N if **N = M and the provider's description covers the consumer's**. Otherwise the provider must offer an adapter in `accepts[M]`, or binding fails with `contract_mismatch`.
+
+"Covers" means the provider still offers everything the consumer was built against:
+- every member exists with the same kind;
+- methods accept everything the consumer can send (new arguments must be optional) and return at least what it expects (extra result fields are fine);
+- state values fit the consumer's schema;
+- opaque members have the same name and version.
+
+| Change | Version | Result |
+| --- | --- | --- |
+| Add a method, an optional argument, a result field, a state field | keep | binds |
+| Remove or rename a member; make an argument required; change a type | **bump** | old consumers need `accepts`, or must be reloaded too |
+| Same shape, different meaning (`query` is now a regular expression) | **bump** | as above; undetectable, so it's on you |
+| Forgot to bump on a breaking shape change | keep | refused: "consumer needs member `search`" |
+
+```ts
+// version 2 changed what `search` means; old consumers keep working through an adapter
+host.serve(Index, indexFactory, {
+	accepts: {
+		1: (current) => ({ search: ({ query }, ctx) => current.search({ query: escapeRegExp(query) }, ctx) }),
+	},
+});
+```
+
+## Serving objects
+
+```ts
+host.serve(Type, (input, principal, self) => behavior, options);
+```
+
+- The **factory** runs synchronously. It declares what the object needs and returns its behavior: methods and state members, plus `kind` for remote types. Returning a promise throws.
+- There is one **record** per `(type, input, principal)`. It holds the object's state, resources and holds, and survives reloads. Only the behavior is replaced.
+- **Options:**
+  - `state: { version, migrate }`: the state version and its migrations (see [Hot reload](#hot-reload));
+  - `accepts`: adapters for consumers built against older contract versions;
+  - `linger`: how long to keep the object after the last hold is released;
+  - `eager`: activate when the plugin loads, and keep it for the host's lifetime.
+
+## Declarations
+
+A reload runs the factory again over the same record. Declarations are matched by **property name**, so the new code's `status` cell is the old code's `status` cell, with its value.
+
+```ts
+host.serve(StatusStore, ({ session }, _host, self) => {
+	const state = self.state({
+		status: cell(StatusSchema, { running: false, tasks: 0 }),
+		errors: cell(Type.Array(Type.String()), []),
+	});
+	const catalog = self.get(Catalog, {});
+	const res = self.resources({
+		db: resource({
+			rev: 1,
+			open: async ({ signal }) => openSqlite(statusPath(session), { signal }),
+			close: async (db) => db.close(),
+		}),
+	});
+	self.listen({
+		catalogChanges: listener(catalog.rows, (rows, ctx) => state.errors.replace(ctx, checkRows(rows))),
+	});
+	self.tasks({
+		flush: async (ctx) => {
+			while (!ctx.signal.aborted) {
+				await sleep(10_000, ctx.signal);
+				await res.db.value.run("INSERT INTO history VALUES (?)", [JSON.stringify(state.status.value)]);
+			}
+		},
+	});
+	const derived = self.derive({
+		summary: derivation([state.status, state.errors], (s, e) => ({ ...s, failing: e.length > 0 })),
+	});
+	return { summary: derived.summary, report: reportMethod(state) };
+});
+```
+
+| Declaration | What it is | On reload |
+| --- | --- | --- |
+| `self.state({ name: cell(schema, initial) })` | an observable JSON cell; the schema is required | same cell and value; migrated when the state version is bumped |
+| `self.get(Type, input, { at? })` | a hold on another object; its identity is the address | kept if declared again, otherwise released |
+| `self.resources({ name: resource({ rev, deps?, exclusive?, open, close }) })` | a connection, watch, socket, port | kept; reopened only if `rev` or `deps` change |
+| `self.listen({ name: listener(source, fn) })` or `listener(source, select, fn)` | reacts to a state or resource event | the same subscription, with the new `fn`, as long as the source (resource) and `select` are unchanged |
+| `self.tasks({ name: async (ctx) => ... })` | long-running background work | the old run is aborted through `ctx.signal`, and the new code starts |
+| `self.derive({ name: derivation(sources, fn) })` | live projection of state; `fn` is synchronous | kept; `fn` replaced |
+| `self.register(Registry, { key: value })` | an entry in a registry | replaced at commit |
+| `self.expose(res.name)` | a member backed by a resource (local types) | follows the resource |
+
+A listener keeps its subscription across reloads when it is declared on the same resource (or source) with the same `select`: the same function, or one with the same source text. `select` is not called again, so a source that accepts a single subscriber (a Durable watch) survives reloads, and `select` may wrap the value in a new adapter object. A `select` whose result depends on captured values that change between reloads is not noticed; give such a listener a new name.
+
+A name you no longer declare is released, closed or stopped, after the old code has finished what it was doing.
+
+**State that must survive a reload lives in cells,** never in closure variables. A closure variable lasts as long as one version of the code.
+
+```ts
+// wrong: reset on every reload
+host.serve(Visits, (_, _p, self) => {
+	let visits = 0;
+	return { hit: async (_, ctx) => ++visits };
+});
+
+// right
+host.serve(Visits, (_, _p, self) => {
+	const state = self.state({ visits: cell(Type.Number(), 0) });
+	return {
+		hit: async (_, ctx) => {
+			state.visits.change(ctx, (n) => n + 1);
+			return state.visits.value;
+		},
+	};
+});
+```
+
+## Activation
+
+The factory is synchronous, but activation isn't. `self.get` and `self.resources` only *declare*; the slow work happens afterwards:
+
+```text
+get(Index, { session: "S1" })
+ 1. run the factory               → declarations
+ 2. open declared resources        → e.g. connect to SQLite
+ 3. wait for declared holds        → dependencies activate first
+ 4. live                           → handles become "live"
+```
+
+```ts
+host.serve(Index, ({ session }, _host, self) => {
+	const res = self.resources({
+		db: resource({ rev: 1, open: () => openSqlite(indexPath(session)), close: (db) => db.close() }),
+	});
+	return {
+		search: async ({ query }, ctx) => res.db.value.all("SELECT entryId, text FROM fts WHERE fts MATCH ?", [query]),
+	};
+});
+
+host.serve(Chat, ({ session, conversation }, principal, self) => {
+	const index = self.get(Index, { session });  // a placeholder until Index is live
+	return {
+		kind: "participant",
+		find: async ({ query }, ctx) => index.search({ query }, ctx),  // only ever runs once Chat (and Index) are live
+		// ...
+	};
+});
+```
+
+**Rules:**
+- Inside the factory, never use what you declared: `res.db.value` throws `not_ready`, and calling a handle throws. Use them in methods, listeners and tasks.
+- **Concurrent `get`s** of one address share one activation, so the database opens once.
+- **Failure propagates:** if `openSqlite` throws, `Index` fails, `Chat` fails with that cause, and every waiting `get` rejects. The next `get` tries again.
+- **Abandoned activations:** if everyone releases before activation finishes, the result is disposed.
+
+### Startup readiness and parent admission
+
+`await host.load(facets)` and `await host.install(facet)` wait for the eager objects they install to become live:
+resources are open, declared holds are live, and registrations are published. All facets in a load are installed
+before activation is awaited, so an eager consumer can use a provider in a later facet. Ordinary lazy objects stay
+lazy unless an eager object holds them. Factory, dependency and resource errors reject startup with the handle's
+activation error; eager failures also reach `onError`. Installation is not rolled back on failure: close the host
+when abandoning startup. `install` registers synchronously, so setup/registration errors still throw synchronously.
+
+`await host.ready()` waits for the eager holds present when called, including direct `host.serve(..., { eager })`
+and previously deferred loads. It is an activation barrier, not a continuous health check, a wait for tasks to
+finish, or a remote-state hydration barrier. Later installations require another readiness wait.
+
+A worker may need to open its local Harness and announce control readiness **before** the parent accepts its link.
+An eager reporter waiting for the server's SessionStatus cannot become live before that acceptance. Awaiting the
+whole load before announcing control readiness would deadlock. Defer the whole eager barrier explicitly:
+
+```ts
+// Connect the upstream link first; its outgoing holds can queue until the parent accepts it.
+await worker.load(workerFacets, { awaitEager: false });  // also supported by install
+const harness = worker.get(Harness, {});
+await harness.ready;                                  // local bootstrap only; no upstream dependency
+announceControlReady();                               // parent can now accept the worker link
+await worker.ready();                                 // full eager readiness, including upstream holds
+harness.release();
+```
+
+`awaitEager: false` still starts and host-holds every eager object; it skips waiting, not activation. There is no
+automatic classification of upstream dependencies. Choose a local bootstrap handle with no upstream dependency,
+connect before loading upstream consumers, and let the parent admit the link before the full barrier. Control
+readiness means admission is possible, not that every eager object is live. Keep worker bootstrap counted as busy
+until the full barrier settles, and report a later failure through the worker's fatal/startup-error path.
+
+To hand out a native object a resource opens (a local type's `opaque` member), expose the resource. Handles read its value once the object is live, and `undefined` before:
+
+```ts
+host.serve(Harness, (_, _host, self) => {
+	const res = self.resources({ durable: resource({ rev: 1, open: () => DurableHarness.open(storage), close: (h) => h.close() }) });
+	return { harness: self.expose(res.durable) };  // contract member: harness: opaque<DurableHarness>("pi.durable-harness@1")
+});
+
+const harness = ctx.get(Harness, {});
+await harness.ready;
+harness.harness.resume();  // the DurableHarness itself
+```
+
+## Principals and variants
+
+The application defines its principals and how they're keyed:
+
+```ts
+type Principal =
+	| { kind: "owner"; via: "device" | "tunnel" | "relay" }
+	| { kind: "guest"; id: string; name: string; session: string; mode: "view" | "full"; revision: number }
+	| { kind: "worker"; session: string; generation: number };
+
+const host = createHost({
+	name: "server",
+	principalKey: (p: Principal) =>
+		p.kind === "owner" ? `owner@${p.via}` :
+		p.kind === "guest" ? `guest:${p.id}:r${p.revision}` :
+		`worker:${p.session}:${p.generation}`,
+});
+```
+
+- There is one record per principal key: two tabs of the owner share an object, and a guest gets its own.
+- Code inside a host acts as the built-in `host` principal, so internal objects are shared.
+- A link stamps the principal of whatever connects to it. Callers can never supply their own.
+
+**A remote factory picks a variant:**
+
+```ts
+host.serve(Chat, ({ session, conversation }, principal, self) => {
+	if (!canView(principal, session)) throw forbidden();
+	const c = self.get(Conversation, { session, conversation });  // as host: one shared instance
+	if (!canSend(principal)) return { kind: "viewer", view: c.view };
+	const author = authorOf(principal);
+	return {
+		kind: "participant",
+		view: c.view,
+		send: async (input, ctx) => c.submit(input, author, ctx),
+		stop: async (_, ctx) => {
+			await c.stop(author, ctx);
+			return null;
+		},
+	};
+});
+```
+
+```ts
+const chat = ctx.get(Chat, { session: "S1", conversation: 1 }, { at: "session:S1" });
+await chat.ready;
+if (chat.kind === "participant") showComposer(chat.send);
+else showReadOnly();
+```
+
+**What a variant doesn't do:**
+- **It isn't complete authorization.** Methods still check their arguments: that a submission belongs to this conversation, or a session ID to this principal.
+- **It doesn't cover flags that change while you hold the object.** Those are state, for example `you: { canDraw: boolean }`.
+- **Revocation** is `host.invalidatePrincipal(match)`. It force-disposes matching records, here and over links, and their handles become `gone`. A new `get` runs the factory with the new grants.
+
+Local types have no variants. Their only callers are inside the host, acting as `host`. If a local object needs to know who's acting, pass that explicitly, like `author` above.
+
+## Handles
+
+```ts
+const chat = ctx.get(Chat, input, { at: "session:S1" });
+chat.status;  // "loading" | "live" | "released" | "gone"
+await chat.ready;  // live, or rejects with the activation error
+chat.kind;  // the current variant
+chat.shape;  // { kind, members, contract }
+const send = chat.send;  // a stable function: always dispatches to the current code
+chat.view.value;  // undefined until hydrated (remote: while someone subscribes)
+chat.view.subscribe((v) => render(v));
+chat.onStatus((status, error) => { if (status === "gone") reconnect(error); });
+chat.release();
+```
+
+- **Calls on a `loading` handle wait** until it's live, respecting `ctx` cancellation and a deadline.
+- A member missing from the current variant rejects with `not_in_variant`.
+- After `release()`, every member rejects with `released`.
+- **`gone`** means the object was forced away while held: revocation, archive, its host dying. Call `get` again, or show "unavailable". `onStatus` reports every status change (`live`, `loading` while a link reconnects, `released`, `gone` with the error), so a UI needn't poll.
+- **A remote state member is hydrated only while subscribed.** When its last subscriber leaves, its `value` goes back to `undefined`, so a later subscriber never sees a stale value: it gets `undefined`, then the current snapshot.
+- **Return values are values.** Anything long-lived you want to share is an object you reach with `get`.
+
+## State
+
+```ts
+const state = self.state({ todos: cell(Type.Array(TodoSchema), []) });
+
+state.todos.change(ctx, (draft) => {
+	draft.push({ id: "t1", text: "Write docs", done: false });
+});
+state.todos.change(ctx, (draft) => {
+	draft[0].done = true;
+});
+state.todos.replace(ctx, []);
+
+state.todos.value;  // immutable
+state.todos.subscribe((value) => render(value));
+
+// mirroring an external immutable store: subscribers get a diff, not the whole value
+state.view.replace(ctx, conversation.view);                    // diffs when the new value reuses old containers
+state.view.replace(ctx, rebuilt, { diff: true });              // always diff
+```
+
+- A `change` is atomic: one revision, or nothing if the callback throws.
+- `change` only touches the paths you mutate, so fields your code doesn't know about survive. Use `replace` only where your code owns the whole value.
+- Values are immutable. Never mutate what you read or receive.
+- Remote subscribers get a snapshot, then deltas. After a reconnect or a reload they get a `reset` snapshot, and nothing is replayed.
+- `replace` sends a structural diff when the new value shares containers with the old one (a new revision of the same state), and a single replacement otherwise. `{ diff: true | false }` forces either. The value is the same either way.
+- A behavior may expose another object's state member as its own: `return { kind: "viewer", view: conversation.view }`. It reads `undefined` only while that object is loading, which never happens once this object is live.
+
+```ts
+const derived = self.derive({
+	visible: derivation([catalog.rows], (rows) => rows.filter((r) => visibleTo(principal, r))),
+	openCount: derivation([state.todos], (t) => t.filter((x) => !x.done).length),
+});
+```
+
+`derivation` functions are synchronous.
+
+## Calls, ctx and roots
+
+Every method gets `(args, ctx)`. Pass `ctx` on to everything you call:
+
+```ts
+send: async (input, ctx) => {
+	ctx.signal.throwIfAborted();
+	const uploads = ctx.get(Uploads, {});  // a hold owned by this call; released when it settles
+	const files = await uploads.resolve({ ids: input.uploads }, ctx);
+	return c.submit({ ...input, files }, author, ctx);
+},
+```
+
+A **root** is a short tree of calls, started at ingress:
+- by a link, for a request that arrives without one;
+- by `host.root(fn)`, for timers and scripts;
+- by each event delivered to a `listener`;
+- by each Chord call made from a `task` or a Durable phase.
+
+A root runs on the code that was current when it started (its **epoch**), across hosts, until it ends. Keep roots short. Long-running work is a `task`, and long waits are state.
+
+```ts
+// wrong: holds a root (and its version of the code) open for minutes
+approve: async (_, ctx) => waitForHuman(ctx),
+
+// right: record the request as state; the answer is a separate call
+request: async (req, ctx) => {
+	state.pending.change(ctx, (d) => {
+		d.push(req);
+	});
+	return null;
+},
+answer: async ({ id, value }, ctx) => {
+	state.pending.change(ctx, (d) => {
+		settle(d, id, value);
+	});
+	return null;
+},
+```
+
+## Lifetime
+
+An object lives while it's **held**, and every hold has an owner:
+
+| Owner | Acquired with | Released when |
+| --- | --- | --- |
+| another object | `self.get` | that object is disposed, or no longer declares it |
+| a call | `ctx.get` | the call settles |
+| a connection | a remote host's `get` | release, disconnect, revocation |
+| the host | `eager: true` | host shutdown |
+| UI | `useObject` | unmount |
+
+- **Disposal** runs after the last hold, plus `linger`. Tasks are aborted, listeners removed, resources closed in reverse order (every close runs, and errors are collected), then the object's own holds are released, which can dispose further objects.
+- **A resource's `close` may still use the objects its record holds.** That holds for host shutdown and revocation too: `host.close()` and `invalidatePrincipal` dispose holders before what they hold, and close links last. Bound remote calls in `close` with a signal: a call over a link that is already down waits for a reconnect.
+- **Forced disposal** (revocation, archive) makes handles `gone` at once and aborts in-flight calls.
+- **Holds must not form cycles.** Inside one host this is checked at `get`.
+
+```ts
+host.serve(Conversation, conversationFactory, { linger: 30_000 });  // switching back quickly doesn't reopen its watch
+```
+
+## Registries
+
+```ts
+export const Routes = defineRegistry<RouteHandler>("http.routes", { conflict: "error" });
+
+// contribute (only from eager objects)
+host.serve(Downloads, (_, _host, self) => {
+	const blobs = self.get(Blobs, {});
+	self.register(Routes, {
+		"GET /download": async (request, who, ctx) => {
+			const file = await blobs.find({ id: request.query.id }, ctx);
+			if (!canView(who, file.session)) return forbidden();
+			return stream(file, ctx);
+		},
+	});
+	return {};
+}, { eager: true });
+
+// consume: a request sees the table of its own epoch
+server.on("request", (req, res) =>
+	host.root(async (ctx) => {
+		const route = host.registry(Routes).get(`${req.method} ${pathOf(req)}`, ctx);
+		return route ? route(req, principalOf(req), ctx) : notFound(res);
+	}),
+);
+```
+
+- Each epoch has one complete table. A reload never leaves a moment where an entry is missing.
+- A request that started before a reload keeps using the old table.
+- Order is first-registration order and survives replacement.
+- `conflict: "error"` makes a duplicate key fail the registration (or the reload).
+
+## Plugins
+
+A plugin is a feature with one **facet** per host kind:
+
+```text
+plugins/chat/
+  contract.ts    Chat, Conversation, Drafts
+  server.ts      facet for the server
+  worker.ts      facet for session workers
+  web.tsx        facet for browsers
+```
+
+```ts
+// plugins/chat/worker.ts
+import { defineFacet } from "@earendil-works/chord";
+import { Chat, Conversation } from "./contract.ts";
+
+export default defineFacet((host) => {
+	host.serve(Conversation, conversationFactory, { linger: 30_000 });
+	host.serve(Chat, chatFactory);
+});
+```
+
+```ts
+// a host loads the plugins' facets for its kind
+await host.load([
+	new URL("../plugins/chat/worker.ts", import.meta.url),
+	new URL("../plugins/status/worker.ts", import.meta.url),
+]);
+```
+
+Built-in plugins are trusted code from this repository and load directly from source.
+
+The facet's `setup` argument is its host, scoped to what a plugin needs: `serve`, `name`, `root(fn)` and `registry(R)`. Code that is not a Chord method, listener or task (Durable tools and hooks, callbacks of native libraries) keeps it to start roots and read registries, instead of reaching for a process-global host:
+
+```ts
+export default defineFacet((host) => {
+	host.serve(Sessions, sessionsFactory);
+	tools.register("rename_session", (args) =>
+		host.root((ctx) => ctx.get(Sessions, {}, { at: "server" }).rename(args, ctx)),
+	);
+});
+```
+
+## Hot reload
+
+```ts
+await host.reload([new URL("../plugins/chat/worker.ts", import.meta.url)]);  // or reload every changed plugin
+```
+
+### What happens
+
+1. **Load** the new modules.
+2. **Prepare:** run the new factories over the existing records, without side effects. Cell writes throw, listeners and tasks don't start, registrations are collected, and changed resources are opened next to the old ones. Contracts are checked against every live consumer. Any failure leaves everything as it was.
+3. **Gate:** only if a state version was bumped or an exclusive resource changes.
+4. **Commit:** in one synchronous step, install the new code, swap registry tables, restart tasks, rebind listeners, and send `reset` and shape updates to subscribers.
+5. **Retire:** old code keeps running the roots it started. Once they end, it's dropped, along with whatever it alone declared.
+
+### Compatible changes: no waiting
+
+Bug fixes, new methods, new cells, new resources and registration changes all switch immediately. A root that started on the old code finishes on it, and new roots get the new code.
+
+### Changing what state looks like or means: bump the state version
+
+```ts
+// v1: { running, tasks } where tasks counted phases
+// v2: tasks counts tasks, and usage is new
+host.serve(StatusStore, ({ session }, _host, self) => {
+	const state = self.state({ status: cell(StatusV2, { running: false, tasks: 0, usage: emptyUsage() }) });
+	return {
+		status: state.status,
+		report: async (s, ctx) => {
+			state.status.replace(ctx, s);
+			return null;
+		},
+	};
+}, {
+	state: {
+		version: 2,
+		migrate: {
+			status: (old, from) => (from < 2 ? { running: old.running, tasks: 0, usage: emptyUsage() } : old),
+		},
+	},
+});
+```
+
+At the gate, for each live `StatusStore`:
+1. **Roots already inside finish.** Their re-entrant calls are let in.
+2. **Old roots that haven't touched it yet get `upgrade_conflict`** instead of old code over migrated state. They retry as a new root.
+3. **`migrate` runs** on a private copy, and the result is validated against the new schema.
+4. **Commit.** New roots use the new code and the migrated state.
+
+If the roots inside don't finish within the deadline (5 s), the reload is **aborted** and nothing changes. The error names the blocking roots.
+
+The runtime compares each cell's schema between old and new code:
+- unchanged: compatible;
+- changed with a bump: migrate;
+- changed **without** a bump: the reload is refused.
+
+A change of meaning with an identical schema needs a bump too. Nothing can detect that one for you.
+
+### Resources
+
+```ts
+const res = self.resources({
+	db: resource({ rev: 2, open: () => openSqlite(path, { wal: true }), close: (db) => db.close() }),  // rev 1 → 2: reopen
+	port: resource({ rev: 1, exclusive: true, open: () => listen(8787), close: (s) => s.close() }),
+});
+```
+
+- A reload doesn't touch a resource unless its `rev` or `deps` change.
+- A changed resource opens next to the old one during prepare.
+- An `exclusive` resource can't exist twice, so it's swapped at the gate: close the old one, open the new one, and reopen the old one if that fails.
+
+### Contract changes
+
+| Change | What happens |
+| --- | --- |
+| Additive, same version | reloads; consumers keep working |
+| Breaking, version bumped, with `accepts[old]` | reloads; old consumers go through the adapter |
+| Breaking, without an adapter | refused, unless the consumers reload in the same batch |
+| Breaking, version not bumped | refused: "consumer needs member …" |
+
+The host's own **eager bootstrap hold** is a lifecycle pin, not an old-version consumer. When a reload replaces
+its provider, that hold adopts the new contract at commit; it does not require an `accepts` adapter for itself.
+The record, cells and unchanged resources stay alive without reactivation. A refused reload keeps the original
+hold and contract. Other holds (`self.get`, `ctx.get`, `host.get`, peers) still obey the compatibility rules above;
+state-version bumps and migrations are still required when stored state changes.
+
+### Several plugins at once
+
+Reload them together: `host.reload([a, b])`. Prepare sees all new code at once, so a changed contract and its updated consumer check against each other.
+
+On the server, `host.reload(serverFacets, { remote: { "session:": workerFacets } })` reloads every connected worker too. Its report covers the server; `report.children["session:S1"]` says what each worker changed, prepared and gated.
+
+## Hosts and links
+
+```ts
+// server
+const server = createHost({ name: "server", principalKey });
+server.accept(webSocketLink(wss, { principal: (req) => authenticate(req) }));  // stamps owner or guest from cookies
+server.route("session:", {
+	authorize: (principal, host) => canReach(principal, host),  // before resolving or spawning
+	resolve: (host) => workers.ensure(host),  // a link to the worker, spawned if needed
+});
+
+// worker
+const worker = createHost({ name: `session:${id}`, principalKey, upstream: ipcLink(process) });
+
+// anywhere
+const chat = ctx.get(Chat, input, { at: "session:S1" });  // browser → server → worker
+const sessions = self.get(Sessions, {}, { at: "server" });  // worker → server, acting as worker{S1}
+```
+
+- **The server relays** between its children: worker to worker, and browser to worker.
+- **Disconnects:** when a browser disconnects, exactly the holds it had in workers are released.
+- **Principals across links:**
+  - a forwarded principal is accepted only from the parent link;
+  - calls an object makes itself act as its host;
+  - links ping, and a dead link releases everything held through it.
+- **Slow peers:** a peer acknowledges what it processed. While a window (`window`, default 256 KiB) of frames is unacknowledged, state waits and is coalesced per subscription; calls and results are never held back. So under load a result can arrive before the state change it caused: wait for the state you need instead of assuming it is there when the call returns.
+- **Reloads across hosts:** the server coordinates prepare and commit for every host.
+- **Workers that start behind** (spawned after a reload) are caught up to the server's epoch before anything is routed to them. Calls their roots make to the server meanwhile run in the server's current epoch instead of failing `superseded`.
+- **Browsers** don't take part in commits. They learn about new code through shape and `reset` messages, and an incompatible contract makes their calls fail with `upgrade_required`.
+
+## Durable
+
+A worker's host provides the Durable Harness as an eager local object. A Durable phase isn't a root: it's pinned to its registry snapshot by Durable itself. Each Chord call a hook or tool makes starts a fresh short root.
+
+```ts
+host.serve(Harness, (_, _host, self) => {
+	const res = self.resources({
+		durable: resource({
+			rev: 1,
+			open: () => DurableHarness.open(storage, { models, registry: durableRegistry(host, Extensions) }),  // a reader over the epoch tables
+			close: (h) => h.close(),
+		}),
+	});
+	return { conversation: (id: number) => res.durable.value.conversation(id) };
+}, { eager: true });
+
+// a plugin contributes a Durable extension like any registration
+host.serve(Guard, (_, _host, self) => {
+	self.register(Extensions, {
+		guard: defineExtension({
+			name: "guard",
+			hooks: [hook(ToolTask, { beforeTool: (call) => (isDangerous(call) ? { block: "Needs approval" } : undefined) })],
+		}),
+	});
+	return {};
+}, { eager: true });
+```
+
+A reload changing the guard: Durable phases already running keep the old snapshot, the next phase uses the new one, and there's never a phase without a guard.
+
+## Errors
+
+| Code | Meaning |
+| --- | --- |
+| `forbidden` | The factory or a method refused this principal |
+| `invalid` | Input, arguments or a result failed validation |
+| `not_ready` | A declared resource or handle was used inside a factory |
+| `not_in_variant` | The member doesn't exist in the variant you hold |
+| `released` | The handle was released |
+| `gone` | The object was forced away while held. Call `get` again. |
+| `contract_mismatch` | The provider's contract doesn't cover the consumer's, and no adapter exists |
+| `upgrade_conflict` | An old root reached an object migrated meanwhile. Retry as a new root. |
+| `superseded` | The root's epoch is no longer available on this host. Retry. |
+| `upgrade_required` | A browser's contract is outdated. Reload its web facets. |
+| `unavailable` | The target host can't be reached or started |
+| `aborted` | The call's `ctx` was cancelled |
+
+## Rules of thumb
+
+| Do | Not |
+| --- | --- |
+| Keep reloadable state in cells | Closure variables (lost on reload) |
+| Bump the state version, with `migrate`, when a cell's shape or meaning changes | Changing a schema without a bump (refused) or a meaning without a bump (silent) |
+| Bump the contract version on breaking changes; add `accepts` for old consumers | Renaming or removing members at the same version (refused) |
+| Do slow setup in a resource's `open` | Awaiting inside the factory (it's synchronous) |
+| Do side effects in resources, listeners, tasks and registrations | Effects in the factory body (they run during prepare) |
+| Use `ctx.get` inside methods | `self.get` inside methods (a new hold per call) |
+| Keep roots short; long waits are state | Awaiting a human inside a method |
+| Check arguments in methods | Treating the variant as all of authorization |
+| Pass `ctx` everywhere | Starting background work with the caller's `ctx` (use a task) |
+| Treat state values as immutable | Mutating what you read |

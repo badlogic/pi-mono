@@ -1,5 +1,6 @@
 import type { Context, JsonValue } from "@earendil-works/chord";
 import type { FileError, FileSystem } from "../../env/index.ts";
+import { StorageRequestError } from "../../errors.ts";
 import { idFromNumber, seqFromNumber } from "../../ids.ts";
 import type {
 	ConversationId,
@@ -322,7 +323,7 @@ export class JsonlStorage implements Storage {
 	async entry(idOrConversationId: EntryId | ConversationId, idOrContext: EntryId | Context, context?: Context) {
 		if (context === undefined)
 			return this.store.entry(idFromNumber<EntryId>(idOrConversationId), idOrContext as Context);
-		if (typeof idOrContext !== "number") throw new TypeError("Storage.entry() requires an entry ID");
+		if (typeof idOrContext !== "number") throw new StorageRequestError("Storage.entry() requires an entry ID");
 		return this.store.entry(
 			idFromNumber<ConversationId>(idOrConversationId),
 			idFromNumber<EntryId>(idOrContext),

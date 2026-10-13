@@ -4,7 +4,6 @@ import {
 	defineDocFamily,
 	defineTask,
 	type EntryId,
-	StorageRejected,
 	type StorageWrite,
 	type TaskId,
 } from "@earendil-works/pi-durable";
@@ -550,7 +549,7 @@ describe("Session conversation document forks", () => {
 		expect(await session.snapshot(Copied, parentId, context)).toEqual({ value: "copied" });
 	});
 
-	it("rolls back a guaranteed Storage rejection without poisoning the Session", async () => {
+	it("fails the Session on a rejected fork commit, which leaves no effect", async () => {
 		const Doc = defineDoc<{ value: string }>({
 			kind: "fork.storage-rejected",
 			version: 1,
@@ -567,15 +566,19 @@ describe("Session conversation document forks", () => {
 			await tx.doc(Doc, parentId);
 		}, context);
 		let rejectedChildId!: ConversationId;
-		storage.failNextCommit(new StorageRejected("copy rejected"));
+		const rejection = new Error("copy rejected");
+		storage.failNextCommit(rejection);
 		await expect(
 			session.commit(async (tx) => {
 				rejectedChildId = (await tx.forkConversation(parentId, forkAt, { ownership: { kind: "ownerless" } })).id;
 			}, context),
-		).rejects.toThrow("copy rejected");
-		expect(await storage.conversation(rejectedChildId, context)).toBeUndefined();
-		const next = await session.commit((tx) => tx.createConversation({ ownership: { kind: "ownerless" } }), context);
-		expect(await storage.conversation(next.id, context)).toEqual(next);
+		).rejects.toBe(rejection);
+		await expect(
+			session.commit((tx) => tx.createConversation({ ownership: { kind: "ownerless" } }), context),
+		).rejects.toMatchObject({ name: "SessionFailed", cause: rejection });
+		// The failed Session closed its Storage; reopened, it holds nothing of the batch.
+		expect(await session.closed).toEqual({ reason: "failed", error: rejection });
+		expect(await storage.reopen().conversation(rejectedChildId, context)).toBeUndefined();
 	});
 
 	it("retires a copied document and can recreate the address in the fork transaction", async () => {

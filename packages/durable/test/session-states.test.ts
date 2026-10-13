@@ -1,6 +1,5 @@
 import { defineDoc, defineDocFamily } from "@earendil-works/pi-durable";
 import { describe, expect, it } from "vitest";
-import { getReplicatedStateInternals } from "../../chord/src/services/state-internals.ts";
 import { context, createConversation, documentChanges, flush, openTestSession } from "./session-support.ts";
 
 type State = { value: number; retained: { label: string } };
@@ -81,20 +80,15 @@ describe("Session document states", () => {
 		second.dispose();
 	});
 
-	it("shares exact committed value and operation references with Chord", async () => {
+	it("shares exact committed value references with Chord", async () => {
 		const { session, publications } = await createState();
 		const state = (await session.documentState(StateDoc, context))!;
-		let receivedOps: unknown;
-		getReplicatedStateInternals(state)!.subscribe((ops) => {
-			receivedOps = ops;
-		});
 		await session.commit(async (tx) => {
 			(await tx.doc(StateDoc)).value = 4;
 		}, context);
 		await flush();
 		const published = documentChanges(publications.at(-1)!)[0]!;
 		expect(state.value).toBe(published.value);
-		expect(receivedOps).toBe(published.ops);
 		expect(state.value?.retained).toBe((await session.snapshot(StateDoc, context))!.retained);
 		state.dispose();
 	});
@@ -116,17 +110,12 @@ describe("Session document states", () => {
 	it("publishes null retirement and never follows a replacement incarnation", async () => {
 		const { session } = await createState();
 		const oldState = (await session.documentState(StateDoc, context))!;
-		let retirementOps: unknown;
-		getReplicatedStateInternals(oldState)!.subscribe((ops) => {
-			retirementOps = ops;
-		});
 		await session.commit(async (tx) => {
 			await tx.retireDoc(StateDoc);
 			(await tx.doc(StateDoc)).value = 10;
 		}, context);
 		await flush();
 		expect(oldState.value).toBeNull();
-		expect(retirementOps).toEqual([["r", null]]);
 
 		const replacement = (await session.documentState(StateDoc, context))!;
 		expect(replacement.value?.value).toBe(10);

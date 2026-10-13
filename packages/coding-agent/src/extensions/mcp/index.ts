@@ -40,8 +40,8 @@ import type {
 import { mcpNamespace } from "../../core/mcp-servers.ts";
 import type { ModelRegistry } from "../../core/model-registry.ts";
 import { openBrowser } from "../../utils/open-browser.ts";
-import { CODEMODE_TOOL_NAME, isCodemodeTool } from "../codemode/tool.ts";
-import { isToolSearchTool, TOOL_SEARCH_TOOL_NAME } from "../tool-search/tool.ts";
+import { CODEMODE_TOOL_NAME } from "../codemode/tool.ts";
+import { TOOL_SEARCH_TOOL_NAME } from "../tool-search/tool.ts";
 import {
 	getMcpToolExposure,
 	type LoadedMcpConfig,
@@ -221,12 +221,13 @@ export function renderServersSection(servers: readonly McpServerListing[]): stri
 }
 
 /**
- * Whether a codemode script needs the server: it names the server's namespace, or searches,
- * enumerates, or describes tools or namespaces, which may name the server in other forms.
+ * Whether a call that reaches `reach` (see `ToolDefinition.reachesTools`) needs the server: it
+ * reaches every tool, or one of its words contains the server's namespace.
  */
-function scriptNeedsServer(code: string, server: string): boolean {
-	if (/\b(searchTools|describeNamespace|describeTool|ALL_TOOLS)\b/.test(code)) return true;
-	return code.includes(mcpNamespace(server));
+function reachesServer(reach: "all" | readonly string[], server: string): boolean {
+	if (reach === "all") return true;
+	const namespace = mcpNamespace(server);
+	return reach.some((word) => word.includes(namespace));
 }
 
 /** Short state for lists and the startup report. `withError` appends the first line of a failure. */
@@ -240,10 +241,8 @@ function describeState(server: McpServer, withError = true): string {
 		case "failed":
 			return withError ? `failed: ${firstLine(connection.error ?? "unknown error")}` : "failed";
 		case "connected": {
-			const { tools, resources } = connection;
-			const count = resources.length;
-			const resourceCount = count > 0 ? ` · ${count} resource${count === 1 ? "" : "s"}` : "";
-			return `connected · ${tools.length} tool${tools.length === 1 ? "" : "s"}${resourceCount}`;
+			const { tools, hasResources } = connection;
+			return `connected · ${tools.length} tool${tools.length === 1 ? "" : "s"}${hasResources ? " · resources" : ""}`;
 		}
 		case "connecting":
 			return "connecting…";
@@ -391,6 +390,8 @@ export function createMcpExtension(options: McpExtensionOptions = {}): Extension
 			const description = entry.config.description?.trim();
 			const namespace = {
 				name: mcpNamespace(server),
+				// `describeNamespace("docs")` finds `mcp__docs`.
+				aliases: [server],
 				...(description ? { description } : {}),
 				...(connection.instructions ? { instructions: connection.instructions } : {}),
 			};
@@ -507,10 +508,12 @@ export function createMcpExtension(options: McpExtensionOptions = {}): Extension
 			const needsCodemode = exposures.has("codemode");
 			const needsToolSearch = exposures.has("deferred");
 			if (!needsCodemode && !needsToolSearch) return;
-			// Other extensions' tools of the same names cannot reach MCP tools, so never activate them.
+			// Only a tool of these names that declares `reachesTools` can reach MCP tools; another
+			// extension's tool of the same name without it is never activated.
 			const tools = pi.getAllTools();
-			const hasCodemode = tools.some(isCodemodeTool);
-			const hasToolSearch = tools.some(isToolSearchTool);
+			const hasReachingTool = (name: string) => tools.some((tool) => tool.name === name && tool.reachesTools);
+			const hasCodemode = hasReachingTool(CODEMODE_TOOL_NAME);
+			const hasToolSearch = hasReachingTool(TOOL_SEARCH_TOOL_NAME);
 			const active = pi.getActiveTools();
 			const activate: string[] = [];
 			if (needsCodemode && hasCodemode && autoEnableCodemode && !active.includes(CODEMODE_TOOL_NAME)) {
@@ -1180,10 +1183,11 @@ export function createMcpExtension(options: McpExtensionOptions = {}): Extension
 			else delete sections[MCP_SERVERS_SECTION];
 		});
 
-		// A codemode script waits for the servers it names, or for every server when it searches or
-		// enumerates tools, so their tools are registered before the script runs. tool_search and the
-		// resource tools reach every server, so they wait for all of them. Direct MCP calls wait only
-		// for their own server, including a reconnect still closing its old transport.
+		// A tool that reaches other tools (`reachesTools`) waits for the servers it may reach, so their
+		// tools are registered before it runs: a codemode script for the servers it names, or for every
+		// server when it searches or enumerates tools, and tool_search for every server. The resource
+		// tools reach every server, so they wait for all of them. Direct MCP calls wait only for their
+		// own server, including a reconnect still closing its old transport.
 		pi.on("tool_call", async (event, ctx) => {
 			const tool = pi.getAllTools().find((candidate) => candidate.name === event.toolName);
 			if (!tool) return;
@@ -1192,11 +1196,10 @@ export function createMcpExtension(options: McpExtensionOptions = {}): Extension
 			const readyServers = servers.filter((server) => isEnabled(server) && server.ready);
 			if (readyServers.length === 0) return;
 			let waiting: McpServer[] = [];
-			if (isCodemodeTool(tool)) {
-				const { code } = event.input as { code?: unknown };
-				const source = typeof code === "string" ? code : "";
-				waiting = readyServers.filter((server) => scriptNeedsServer(source, server.entry.name));
-			} else if (isToolSearchTool(tool) || RESOURCE_TOOL_NAMES.has(tool.name)) {
+			const reach = tool.reachesTools?.(event.input);
+			if (reach !== undefined) {
+				waiting = readyServers.filter((server) => reachesServer(reach, server.entry.name));
+			} else if (RESOURCE_TOOL_NAMES.has(tool.name)) {
 				waiting = readyServers;
 			} else {
 				const owner = toolOwners.get(event.toolName)?.split("\0", 1)[0];

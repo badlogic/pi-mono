@@ -1862,6 +1862,26 @@ describe("TuiAltScreen", () => {
 		tui.stop();
 	});
 
+	// #10769
+	it("scrolls the transcript on wheel input a focused overlay does not handle", async () => {
+		const terminal = new VirtualTerminal(20, 6);
+		const tui = new TuiAltScreen(terminal);
+		tui.addChild(new Text(Array.from({ length: 12 }, (_, index) => `line ${index + 1}`).join("\n"), 0, 0));
+		const overlay = new InputOverlay();
+		tui.start();
+		await terminal.waitForRender();
+		const topBefore = tui.viewportTop;
+		tui.showOverlay(overlay, { anchor: "top-left", width: 10 });
+		await terminal.waitForRender();
+		assert.strictEqual(overlay.focused, true);
+
+		terminal.sendInput("\x1b[<64;3;1M");
+		await terminal.waitForRender();
+		assert.ok(tui.viewportTop < topBefore);
+		assert.deepStrictEqual(overlay.inputs, []);
+		tui.stop();
+	});
+
 	it("focuses and captures drag gestures for mouse-aware components", async () => {
 		const terminal = new VirtualTerminal(20, 2);
 		const tui = new TuiAltScreen(terminal);
@@ -2001,7 +2021,7 @@ describe("TuiAltScreen", () => {
 		}
 	});
 
-	it("gives wheel and viewport keys to a focused overlay", async () => {
+	it("gives viewport keys to a focused overlay", async () => {
 		const terminal = new VirtualTerminal(20, 6);
 		const tui = new TuiAltScreen(terminal);
 		tui.addChild(new Text(Array.from({ length: 12 }, (_, index) => `line ${index + 1}`).join("\n"), 0, 0));
@@ -2013,8 +2033,7 @@ describe("TuiAltScreen", () => {
 		await terminal.waitForRender();
 		assert.strictEqual(overlay.focused, true);
 
-		const wheel = "\x1b[<64;10;3M";
-		const keys = ["\x1b[5~", "\x1b[6~", "\x1bOH", "\x1bOF", wheel];
+		const keys = ["\x1b[5~", "\x1b[6~", "\x1bOH", "\x1bOF"];
 		for (const key of keys) terminal.sendInput(key);
 		await terminal.waitForRender();
 

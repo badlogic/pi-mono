@@ -2,6 +2,17 @@
 
 ## [Unreleased]
 
+## [1.2.0] - 2026-10-12
+
+### Breaking Changes
+
+- Changed `CallToolResult.structuredContent` from `Record<string, unknown>` to `unknown`: `callTool()` now accepts any JSON value as structured content, including arrays and `null`, as MCP 2026-07-28 allows, instead of failing with "Invalid MCP tools/call structured content" ([#10416](https://github.com/earendil-works/pi/issues/10416))
+
+### Fixed
+
+- Fixed `authorizeMcp()` exchanging an authorization code whose `iss` parameter could not be checked because no authorization server metadata was discovered. It now throws `OAuthIssuerMismatchError`, whose `expected` is `undefined` in that case (RFC 9207). Reported by [@AizenvoltPrime](https://github.com/AizenvoltPrime)
+- Fixed `StreamableHttpTransport` retrying a request after an authorization refresh even though the caller had already cancelled it or it had timed out, so the server still executed it. `McpTransport.send()` now takes an optional `signal`, which `McpClient` aborts once a request settles ([#10598](https://github.com/earendil-works/pi/issues/10598))
+
 ## [1.1.0] - 2026-10-07
 
 ### Added

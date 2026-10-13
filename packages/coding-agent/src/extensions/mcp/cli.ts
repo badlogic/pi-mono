@@ -70,7 +70,7 @@ Options for add:
 
 Other options:
   --json                  Print the list as JSON
-  --timeout <seconds>     How long login waits for the browser (default: 300)`;
+  --timeout <seconds>     Time limit for the whole sign-in (default: 300)`;
 
 const HELP_HINT = chalk.dim(`Use "${APP_NAME} mcp --help" for usage.`);
 
@@ -101,8 +101,8 @@ interface ServerReport {
 	tools: string[];
 	/** Tools whose exposure differs from the server's, from `toolExposure`. */
 	toolExposure?: Record<string, string>;
-	resources?: number;
-	resourceTemplates?: number;
+	/** Whether the server offers resources. They are not listed: listing every one can take long. */
+	resources?: true;
 	error?: string;
 }
 
@@ -466,10 +466,7 @@ async function list(
 				return exposure === report.exposure ? [] : [[tool.name, exposure] as const];
 			});
 			if (overrides.length > 0) report.toolExposure = Object.fromEntries(overrides);
-			if (connection.hasResources) {
-				report.resources = connection.resources.length;
-				report.resourceTemplates = connection.resourceTemplates.length;
-			}
+			if (connection.hasResources) report.resources = true;
 			if (connection.state !== "connected" && connection.error) report.error = connection.error;
 			await connection.close();
 			return report;
@@ -508,9 +505,7 @@ async function list(
 			});
 			log(`  tools: ${tools.join(", ")}`);
 		}
-		if (report.resources !== undefined) {
-			log(`  resources: ${report.resources}, URI templates: ${report.resourceTemplates ?? 0}`);
-		}
+		if (report.resources) log("  offers resources");
 		if (report.error) log(`  ${report.error.split("\n").join("\n  ")}`);
 	}
 	for (const configError of loaded.errors) log(`config error: ${configError}`);

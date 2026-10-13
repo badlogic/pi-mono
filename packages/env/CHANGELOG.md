@@ -2,6 +2,16 @@
 
 ## [Unreleased]
 
+## [1.2.0] - 2026-10-12
+
+### Added
+
+- The daemon's `listFiles` operation: a bounded, cancellable, gitignore-aware listing of a directory tree (files, directories and unfollowed symlinks); `hello` reports it in `features`, and older daemons answer `not_supported` without a request.
+- `RemoteExecutionEnv.listFiles` and `LocalExecutionEnv`, a local `ExecutionEnv` on a pi-env daemon connection with the same operations.
+- `nodePlatform(info)` maps the daemon's platform and architecture names to Node's.
+- Pseudo-terminals for interactive programs: the daemon's `pty`, `ptyWrite`, and `ptyResize` operations stream raw terminal output as events, write input in arrival order, send `SIGWINCH` on resize, and kill the process group on cancel or a lost connection. `openTerminal()` returns a `RemoteTerminal`, and `localDaemon()` starts the daemon for this machine. Unix only; Windows answers `ENOTSUP`.
+- `RemoteTerminal.foreground()` (daemon `ptyForeground`) reports the process group in front of a terminal when it is not the program's own, such as a job its shell runs, with the leader's name on macOS and Linux (`TerminalForeground`).
+
 ## [1.1.0] - 2026-10-07
 
 ## [1.0.4] - 2026-10-05

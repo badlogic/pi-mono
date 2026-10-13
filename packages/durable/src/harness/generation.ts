@@ -21,6 +21,7 @@ import type {
 	NextTaskState,
 	SubmissionId,
 	TaskId,
+	TaskOutcome,
 	TaskRuntime,
 	Tx,
 	TypedEntry,
@@ -56,6 +57,8 @@ export type GenerationCheckpoint =
 			compacted?: TaskId<CompactionResult>;
 			/** Error text of the overflow that started `compacted`; checked once when `prepare` resumes. */
 			overflow?: string;
+			/** Set when the blocking threshold started `compacted`; its outcome is checked once when `prepare` resumes. */
+			threshold?: true;
 	  }
 	| {
 			phase: "request";
@@ -119,8 +122,9 @@ export const GenerationTask = defineTask<GenerationInput, GenerationCheckpoint, 
 	phases: {
 		/**
 		 * Render the system prompt and tool loadout and append the positional `pi.system` entries they need, then move to
-		 * `request`. The agent and settings resolved here are fixed for this request. Only the Harness writes to a busy
-		 * conversation, so the transcript read here is still the tail at the commit.
+		 * `request`. The agent and settings resolved here are fixed for this request. Only the Harness writes model
+		 * context to a busy conversation, so the context read here is still current at the commit; display-only entries
+		 * may land meanwhile.
 		 */
 		prepare: async (task, runtime, context) => {
 			const { conversationId } = runtime;
@@ -129,11 +133,19 @@ export const GenerationTask = defineTask<GenerationInput, GenerationCheckpoint, 
 			const { model, thinkingLevel } = agent;
 			const resolved = model === undefined ? undefined : runtime.models.getModel(model.provider, model.modelId);
 			if (model === undefined || resolved === undefined) return failNoModel(runtime, model, context);
-			const { attempt, compacted, overflow } = task.state.checkpoint;
+			const { attempt, compacted, overflow, threshold: blocked } = task.state.checkpoint;
 			if (compacted !== undefined && overflow !== undefined) {
 				const [outcome] = await runtime.outcomes([compacted], context);
 				if (outcome?.status !== "completed" || outcome.result.entryId === undefined) {
 					return failModelError(runtime, overflow, context);
+				}
+			}
+			// A threshold compaction that found nothing to compact or was declined leaves a request that may still fit. One
+			// that failed left a context it judged too large: sending it would at best leave no room for the answer.
+			if (compacted !== undefined && blocked === true) {
+				const [outcome] = await runtime.outcomes([compacted], context);
+				if (outcome !== undefined && outcome.status !== "completed") {
+					return failModelError(runtime, compactionFailure(outcome), context);
 				}
 			}
 			const view = await runtime.context(conversationId, context);
@@ -157,7 +169,7 @@ export const GenerationTask = defineTask<GenerationInput, GenerationCheckpoint, 
 				// Compact first and prepare again; the transcript is unchanged until the compaction appends.
 				await runtime.commit(async (tx): Promise<Next> => {
 					const child = await createCompaction(tx, conversationId, { reason: "threshold" }, runtime.taskId);
-					const checkpoint = { phase: "prepare", attempt, compacted: child } as const;
+					const checkpoint = { phase: "prepare", attempt, compacted: child, threshold: true } as const;
 					return { status: "waiting", checkpoint, on: [child], policy: "allSettled" };
 				}, context);
 				return;
@@ -273,7 +285,7 @@ export const GenerationTask = defineTask<GenerationInput, GenerationCheckpoint, 
 			await convertPartial(tx, live, conversationId);
 			for (const call of unstarted) {
 				const result = harnessError("aborted", `Tool ${call.name} was aborted`);
-				await appendToolResult(tx, conversationId, call, result, runtime.now());
+				await appendToolResult(tx, conversationId, call, result, { timestamp: runtime.now() });
 			}
 			endRun(tx, live, runtime.taskId, { status: "unanswered", reason: "aborted" });
 			return { status: "terminal", outcome: { status: "aborted" } };
@@ -295,7 +307,11 @@ async function readCalls(
 
 /** A tool task for call `callId`, owned by the generation. */
 function createToolTask(tx: Tx, runtime: Runtime, assistant: EntryId, callId: string): Promise<TaskId<ToolTaskResult>> {
-	return tx.createTask(ToolTask, { assistant, callId }, { ownership: { kind: "task", taskId: runtime.taskId } });
+	return tx.createTask(
+		ToolTask,
+		{ kind: "model", assistant, callId },
+		{ ownership: { kind: "task", taskId: runtime.taskId } },
+	);
 }
 
 /**
@@ -320,6 +336,19 @@ function thresholdCompaction(
 		tokens > blocking ? "blocking" : policy.backgroundTokens > 0 && tokens > background ? "background" : undefined;
 	if (over === undefined || selectCut(view, policy.keepRecentTokens) === undefined) return undefined;
 	return over;
+}
+
+/** Error text for a generation whose blocking compaction ended without completing. */
+function compactionFailure(outcome: Exclude<TaskOutcome<CompactionResult>, { status: "completed" }>): string {
+	switch (outcome.status) {
+		case "failed":
+		case "faulted":
+			return `Compaction failed: ${outcome.error.message}`;
+		case "orphaned":
+			return `Compaction failed: ${outcome.reason}`;
+		case "aborted":
+			return "Compaction was aborted";
+	}
 }
 
 /** Settle the run's inputs `unanswered` with `model_error` and fail with `text`. */
@@ -570,7 +599,7 @@ async function startToolRound(
 		for (const call of calls) {
 			if (!offered.has(call.name)) {
 				const unavailable = harnessError("tool_unavailable", `Tool ${call.name} is not available`);
-				const result = await appendToolResult(tx, conversationId, call, unavailable, runtime.now());
+				const result = await appendToolResult(tx, conversationId, call, unavailable, { timestamp: runtime.now() });
 				slots.push({ callId: call.id, name: call.name, status: "done", entry: result.id });
 				continue;
 			}
@@ -605,7 +634,11 @@ async function finishToolRound(
 	const outcomes = await runtime.outcomes(tools, context);
 	tools.forEach((id, index) => {
 		const outcome = outcomes[index]!;
-		controls.set(id, outcome.status === "completed" ? outcome.result.control : undefined);
+		// Version 1 results have no kind; every result a generation's round reads is a model-issued call's.
+		controls.set(
+			id,
+			outcome.status === "completed" && outcome.result.kind !== "nested" ? outcome.result.control : undefined,
+		);
 	});
 	const slots = (await runtime.snapshot(LiveDoc, conversationId, context))?.tools ?? [];
 	const results = slots.flatMap((slot) => (slot.entry === undefined ? [] : [slot.entry]));
@@ -639,6 +672,7 @@ async function finishToolRound(
 				if (users.length > 0) await startRun(tx, conversationId, live, users);
 			} else {
 				delete live.tools;
+				delete live.nestedTools;
 				if (live.run?.taskId === runtime.taskId) live.run.inputs.push(...users);
 				handOver(live, runtime.taskId, await createGeneration(tx, conversationId));
 			}

@@ -18,15 +18,8 @@ function referenceRead(bytes: Uint8Array, path: string, offset: number | undefin
 	const mimeType = detectSupportedImageMimeType(bytes);
 	if (mimeType) {
 		return {
-			content: [],
-			isError: true,
-			diagnostics: [
-				{
-					severity: "error",
-					code: "unsupported_image",
-					message: `${path} is an image (${mimeType}); reading images is not supported`,
-				},
-			],
+			output: [{ type: "image", data: Buffer.from(bytes).toString("base64"), mimeType }],
+			diagnostics: [{ severity: "info", code: "image", message: `Read image file [${mimeType}].` }],
 		};
 	}
 	const textContent = new TextDecoder().decode(bytes);
@@ -79,7 +72,7 @@ function referenceRead(bytes: Uint8Array, path: string, offset: number | undefin
 		});
 	}
 	return {
-		content: outputText === "" ? [] : [{ type: "text", text: outputText }],
+		output: outputText === "" ? [] : [{ type: "text", text: outputText }],
 		...(details === undefined ? {} : { details }),
 		diagnostics,
 	};
@@ -136,6 +129,7 @@ function apiFor(env: NodeExecutionEnv): ToolExecutionApi {
 		outputWindow: undefined,
 		diagnostic: () => {},
 		details: async () => {},
+		agent: async () => ({}),
 	} as unknown as ToolExecutionApi;
 }
 

@@ -2,7 +2,7 @@ import type { AttachedReplicatedState, Context, JsonValue } from "@earendil-work
 import { withAbortSignal, withoutAbortSignal } from "@earendil-works/chord/context";
 import { ResetEntry } from "../entries.ts";
 import type { ExecutionEnv } from "../env/index.ts";
-import { SessionImpl } from "../session/session.ts";
+import { contained, SessionImpl } from "../session/session.ts";
 import type { Transaction } from "../session/transaction.ts";
 import type {
 	ConversationId,
@@ -79,6 +79,9 @@ type ConversationHost<Tool extends ToolRegistration> = {
 	readonly now: () => number;
 	create(target: CreateTarget, options: CreateOptions, context: Context): Promise<Conversation>;
 };
+
+/** Key of the Harness's internal index-size getter, for tests. */
+export const SCHEDULER_INDEX_SIZES = Symbol.for("pi-durable.schedulerIndexSizes");
 
 class ConversationImpl<Tool extends ToolRegistration> implements Conversation {
 	readonly id: ConversationId;
@@ -164,21 +167,22 @@ class ConversationImpl<Tool extends ToolRegistration> implements Conversation {
 
 /** Session kernel extended with conversation handles and a registry. */
 class HarnessImpl<Tool extends ToolRegistration> extends SessionImpl implements HarnessType {
-	readonly #storage: Storage;
 	readonly #options: HarnessOptions<Tool>;
 	readonly #report: (error: unknown) => void;
 	readonly #host: ConversationHost<Tool>;
 	readonly #tasks: TaskScheduler;
 	readonly #submissions: Submissions;
 	readonly #taskGraph: TaskGraphView;
-	#closed = false;
 
-	constructor(storage: Storage, options: HarnessOptions<Tool>, context: Context) {
-		super(storage, options.now);
-		this.#storage = storage;
+	constructor(rawStorage: Storage, options: HarnessOptions<Tool>, context: Context) {
+		const report = safeReport(options.onReport);
+		const now = safeNow(options.now, report);
+		// Read at each use, as all settings are, but only this field: it is read on every commit.
+		super(rawStorage, now, () => options.settings?.documentRetentionMs);
+		// Every component reads and writes through the Session's failure guard: `rawStorage` serves only `super()`.
+		const storage = this.storage;
 		this.#options = options;
-		this.#report = options.onReport ?? (() => {});
-		const now = options.now ?? Date.now;
+		this.#report = report;
 		const settings = () => resolveSettings(options.settings);
 		this.#tasks = new TaskScheduler({
 			session: this,
@@ -236,21 +240,26 @@ class HarnessImpl<Tool extends ToolRegistration> extends SessionImpl implements 
 	}
 
 	resume(): void {
-		this.#assertOpen();
+		this.assertUsable();
 		this.#tasks.resume();
 	}
 
 	getTask<R>(id: TaskId<R>, context: Context): Promise<TaskRecord<JsonValue, JsonValue, R> | undefined> {
-		return this.readOnLine(() => this.#storage.task(id, context)) as Promise<
+		return this.readOnLine(() => this.storage.task(id, context)) as Promise<
 			TaskRecord<JsonValue, JsonValue, R> | undefined
 		>;
+	}
+
+	/** Internal, for tests: sizes of the scheduler's ownership indexes. */
+	get [SCHEDULER_INDEX_SIZES](): TaskScheduler["indexSizes"] {
+		return this.#tasks.indexSizes;
 	}
 
 	inspect(context: Context): Promise<HarnessInspection> {
 		return this.readOnLine(async () => {
 			const { scheduling, tasks } = await this.#tasks.inspect(this.#options.registry.snapshot());
 			const scan = (status: "queued" | "placed") =>
-				scanAll((cursor) => this.#storage.scanSubmissions({ status }, SCAN_PAGE_SIZE, cursor, context));
+				scanAll((cursor) => this.storage.scanSubmissions({ status }, SCAN_PAGE_SIZE, cursor, context));
 			const submissions = [...(await scan("queued")), ...(await scan("placed"))].sort((a, b) => a.id - b.id);
 			return { scheduling, tasks, submissions };
 		});
@@ -285,7 +294,7 @@ class HarnessImpl<Tool extends ToolRegistration> extends SessionImpl implements 
 	/** Sum every conversation's committed `pi.usage`. Each document is read at its own point; totals only grow. */
 	async usage(context: Context): Promise<UsageState> {
 		const conversations = await this.readOnLine(() =>
-			scanAll((cursor) => this.#storage.scanConversations({}, SCAN_PAGE_SIZE, cursor, context)),
+			scanAll((cursor) => this.storage.scanConversations({}, SCAN_PAGE_SIZE, cursor, context)),
 		);
 		const total = UsageDoc.definition.initial();
 		for (const { id } of conversations) {
@@ -311,8 +320,8 @@ class HarnessImpl<Tool extends ToolRegistration> extends SessionImpl implements 
 	}
 
 	async conversation(id: ConversationId, context: Context): Promise<Conversation | undefined> {
-		this.#assertOpen();
-		const record = await this.readOnLine(() => this.#storage.conversation(id, context));
+		this.assertUsable();
+		const record = await this.readOnLine(() => this.storage.conversation(id, context));
 		return record === undefined ? undefined : new ConversationImpl(record.id, this.#host);
 	}
 
@@ -320,18 +329,17 @@ class HarnessImpl<Tool extends ToolRegistration> extends SessionImpl implements 
 		return this.#create({ kind: "independent", ownership: options.ownership }, options, context);
 	}
 
-	override close(context: Context): Promise<void> {
-		this.#closed = true;
-		return super.close(context);
+	override report(error: unknown): void {
+		this.#report(error);
 	}
 
-	/** Join task invocations after admission is sealed and before Storage closes; writes no task outcome. */
+	/** Signal and join task invocations after the close listeners and before Storage closes; writes no task outcome. */
 	protected override beforeClose(): Promise<void> {
 		return this.#tasks.join();
 	}
 
 	async #create(target: CreateTarget, options: CreateOptions, context: Context): Promise<Conversation> {
-		this.#assertOpen();
+		this.assertUsable();
 		const id = await this.commitWith(async (tx) => {
 			if (target.kind === "root" && (await tx.conversation(ROOT_CONVERSATION_ID)) !== undefined) {
 				return ROOT_CONVERSATION_ID;
@@ -362,10 +370,36 @@ class HarnessImpl<Tool extends ToolRegistration> extends SessionImpl implements 
 		await createAgent(tx, record);
 		await this.#options.conversationCreated?.(tx, record);
 	}
+}
 
-	#assertOpen(): void {
-		if (this.#closed) throw new Error("Harness is closed");
-	}
+/** `onReport` that cannot fail: it is the last place an error goes, so its own throw or rejection is dropped. */
+function safeReport(onReport: ((error: unknown) => void) | undefined): (error: unknown) => void {
+	return (error) =>
+		contained(
+			() => onReport?.(error),
+			() => {},
+		);
+}
+
+/**
+ * The host clock, falling back to `Date.now` when it throws: a broken clock must not stop commits. The first throw is
+ * reported; the clock is read in every task change, so later ones are not.
+ */
+export function safeNow(now: (() => number) | undefined, report: (error: unknown) => void): () => number {
+	if (now === undefined) return Date.now;
+	let reported = false;
+	return () => {
+		try {
+			return now();
+		} catch (error) {
+			// Set first: a report handler that reads the clock again must not report again.
+			if (!reported) {
+				reported = true;
+				report(error);
+			}
+			return Date.now();
+		}
+	};
 }
 
 /**
@@ -427,9 +461,8 @@ export const Harness = {
 			await harness.openTasks(context);
 		} catch (error) {
 			// The caller's context may be what failed open: close without it, and rethrow the open error.
-			await harness
-				.close(withoutAbortSignal(context))
-				.catch((closeError: unknown) => options.onReport?.(closeError));
+			// A failing Storage close fails the Session, which reports it.
+			await harness.close(withoutAbortSignal(context)).catch(() => {});
 			throw error;
 		}
 		return harness;

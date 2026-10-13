@@ -54,6 +54,9 @@ const MAX_CONCURRENT_MODEL_CALLS = 4;
  * `InternalError: out of memory` inside the script.
  */
 const CODEMODE_MEMORY_LIMIT_BYTES = 256 * 1024 * 1024;
+// Shared across calls and sessions. Allow one replacement while a cancelled worker is still exiting.
+const MAX_CONCURRENT_CODEMODE_WORKERS = 2;
+let activeCodemodeWorkers = 0;
 const MODEL_TYPES: ReadonlySet<string> = new Set<ModelType>(["chat", "image", "classifier"]);
 
 function truncateText(text: string, maxChars: number): string {
@@ -99,9 +102,8 @@ function withArticle(word: string): string {
 	return `${/^[aeiou]/.test(word) ? "an" : "a"} ${word}`;
 }
 
-function isRecord(value: unknown): value is Record<string, unknown> {
-	return typeof value === "object" && value !== null && !Array.isArray(value);
-}
+/** A JSON value from a script, read field by field: values that are not objects have no fields. */
+type ScriptValue = { readonly [key: string]: unknown } | null | undefined;
 
 /** A script value in an error message: `undefined`, `a string`, `an array`, or its keys (`{ prompt }`). */
 function describeValue(value: unknown): string {
@@ -124,46 +126,57 @@ function checkClassifierContext(context: unknown): ClassifierContext {
 		new Error(
 			`models.classify() ${problem}. Expected context: ${CLASSIFIER_CONTEXT_SHAPE}. See "Classify" in ${CODEMODE_DOCS_PATH}.`,
 		);
-	if (!isRecord(context)) throw fail(`expects a context object as its second argument, got ${describeValue(context)}`);
-	if (!isRecord(context.state)) throw fail(`context.state must be an object, got ${describeValue(context.state)}`);
-	const { images } = context;
+	if (typeof context !== "object" || context === null || Array.isArray(context)) {
+		throw fail(`expects a context object as its second argument, got ${describeValue(context)}`);
+	}
+	const { state, images, questions } = context as Record<string, unknown>;
+	if (typeof state !== "object" || state === null || Array.isArray(state)) {
+		throw fail(`context.state must be an object, got ${describeValue(state)}`);
+	}
 	if (images !== undefined) {
 		if (!Array.isArray(images)) throw fail(`context.images must be an array, got ${describeValue(images)}`);
-		images.forEach((image: unknown, index) => {
-			if (
-				!isRecord(image) ||
-				image.type !== "image" ||
-				typeof image.data !== "string" ||
-				typeof image.mimeType !== "string"
-			) {
+		images.forEach((image: ScriptValue, index) => {
+			if (image?.type !== "image" || typeof image.data !== "string" || typeof image.mimeType !== "string") {
 				throw fail(`context.images[${index}] must be an image block, got ${describeValue(image)}`);
 			}
 		});
 	}
-	const { questions } = context;
-	if (!isRecord(questions) || Object.keys(questions).length === 0) {
+	if (
+		typeof questions !== "object" ||
+		questions === null ||
+		Array.isArray(questions) ||
+		Object.keys(questions).length === 0
+	) {
 		throw fail(`context.questions must map question IDs to questions, got ${describeValue(questions)}`);
 	}
 	const isStrings = (values: unknown[]) => values.length > 0 && values.every((value) => typeof value === "string");
 	for (const [id, question] of Object.entries(questions)) {
 		const at = `context.questions.${id}`;
-		if (!isRecord(question)) throw fail(`${at} must be a question object, got ${describeValue(question)}`);
-		if (typeof question.instructions !== "string") throw fail(`${at}.instructions must be a string`);
-		const { criteria } = question;
-		if (question.type === "choice") {
-			if (!isRecord(criteria) || !isStrings(Object.values(criteria))) {
+		if (typeof question !== "object" || question === null || Array.isArray(question)) {
+			throw fail(`${at} must be a question object, got ${describeValue(question)}`);
+		}
+		const { type, instructions, criteria } = question as Record<string, unknown>;
+		if (typeof instructions !== "string") throw fail(`${at}.instructions must be a string`);
+		if (type === "choice") {
+			if (
+				typeof criteria !== "object" ||
+				criteria === null ||
+				Array.isArray(criteria) ||
+				!isStrings(Object.values(criteria))
+			) {
 				throw fail(`${at} is a "choice" question, so criteria must map each label to its meaning`);
 			}
-		} else if (question.type === "score") {
+		} else if (type === "score") {
 			if (!Array.isArray(criteria) || !isStrings(criteria)) {
 				throw fail(`${at} is a "score" question, so criteria must list the levels as strings, lowest first`);
 			}
-		} else if (question.type === "bool") {
-			if (!isRecord(criteria) || typeof criteria.true !== "string" || typeof criteria.false !== "string") {
+		} else if (type === "bool") {
+			const labels = criteria as ScriptValue;
+			if (typeof labels?.true !== "string" || typeof labels.false !== "string") {
 				throw fail(`${at} is a "bool" question, so criteria must be { true: string, false: string }`);
 			}
 		} else {
-			throw fail(`${at}.type must be "choice", "score", or "bool", got ${JSON.stringify(question.type)}`);
+			throw fail(`${at}.type must be "choice", "score", or "bool", got ${JSON.stringify(type)}`);
 		}
 	}
 	return context as unknown as ClassifierContext;
@@ -175,21 +188,16 @@ function checkImagesContext(context: unknown): ImagesContext {
 		new Error(
 			`models.generateImages() ${problem}. Expected context: { input: [{ type: "text", text: <prompt> }, ...optional { type: "image", data: <base64>, mimeType } references] }. See "Generate images" in ${CODEMODE_DOCS_PATH}.`,
 		);
-	if (!isRecord(context)) throw fail(`expects a context object as its second argument, got ${describeValue(context)}`);
-	const { input } = context;
+	if (typeof context !== "object" || context === null || Array.isArray(context)) {
+		throw fail(`expects a context object as its second argument, got ${describeValue(context)}`);
+	}
+	const { input } = context as Record<string, unknown>;
 	if (!Array.isArray(input) || input.length === 0) {
 		throw fail(`context.input must be a non-empty array of blocks, got ${describeValue(input)}`);
 	}
-	input.forEach((block: unknown, index) => {
-		if (isRecord(block) && block.type === "text" && typeof block.text === "string") return;
-		if (
-			isRecord(block) &&
-			block.type === "image" &&
-			typeof block.data === "string" &&
-			typeof block.mimeType === "string"
-		) {
-			return;
-		}
+	input.forEach((block: ScriptValue, index) => {
+		if (block?.type === "text" && typeof block.text === "string") return;
+		if (block?.type === "image" && typeof block.data === "string" && typeof block.mimeType === "string") return;
 		throw fail(`context.input[${index}] must be a text or image block, got ${describeValue(block)}`);
 	});
 	return context as unknown as ImagesContext;
@@ -280,18 +288,34 @@ function formatOutput(output: readonly CodemodeOutputItem[]): (TextContent | Ima
 	return items;
 }
 
-/** Join adjacent text items into one, each part starting on its own line. */
+/**
+ * Join adjacent text items into one, each part starting on its own line. The separator check looks
+ * at the last non-empty part, not the joined text: reading the end of a growing concatenation makes
+ * V8 copy it on every item, which is quadratic (#10678).
+ */
 function joinAdjacentText(items: (TextContent | ImageContent)[]): (TextContent | ImageContent)[] {
 	const joined: (TextContent | ImageContent)[] = [];
+	let parts: string[] = [];
+	let lastPart = "";
+	const flush = () => {
+		if (parts.length > 0) joined.push({ type: "text", text: parts.join("") });
+		parts = [];
+		lastPart = "";
+	};
 	for (const item of items) {
-		const last = joined.at(-1);
-		if (item.type === "text" && last?.type === "text") {
-			const separator = last.text === "" || last.text.endsWith("\n") ? "" : "\n";
-			joined[joined.length - 1] = { type: "text", text: `${last.text}${separator}${item.text}` };
-		} else {
+		if (item.type !== "text") {
+			flush();
 			joined.push(item);
+			continue;
 		}
+		if (lastPart !== "" && !lastPart.endsWith("\n")) {
+			parts.push("\n");
+			lastPart = "\n";
+		}
+		parts.push(item.text);
+		if (item.text !== "") lastPart = item.text;
 	}
+	flush();
 	return joined;
 }
 
@@ -437,6 +461,8 @@ export async function executeCodemode(
 
 	const snapshot = (): CodemodeToolDetails => ({ calls: calls.map((call) => ({ ...call })) });
 	const publish = () => onUpdate?.({ content: [], details: snapshot() });
+	// Show the script as running before its first nested call, so the row's timer starts.
+	publish();
 
 	const callable = ctx ? getCodemodeCallableTools(ctx.tools) : [];
 	// ALL_TOOLS entries carry the declaration.
@@ -485,6 +511,17 @@ export async function executeCodemode(
 		memoryLimitBytes: CODEMODE_MEMORY_LIMIT_BYTES,
 		wasm: loadQuickJSWasm(getQuickJSWasmPath()),
 		workerUrl: getCodemodeWorkerSpecifier(),
+		acquireWorker: () => {
+			if (activeCodemodeWorkers >= MAX_CONCURRENT_CODEMODE_WORKERS) {
+				throw new Error(
+					`Codemode worker limit reached (${MAX_CONCURRENT_CODEMODE_WORKERS} workers are still running or shutting down). Retry after they exit.`,
+				);
+			}
+			activeCodemodeWorkers++;
+			return () => {
+				activeCodemodeWorkers--;
+			};
+		},
 	});
 
 	let result: CodemodeResult;
@@ -537,14 +574,14 @@ export async function executeCodemode(
 }
 
 /**
- * Whether `query` names the namespace: its name, its script identifier (`mcp__dev-radius` is
- * `mcp__dev_radius`), or the part after its last `__` in either form (`dev-radius`, `dev_radius`).
+ * Whether `query` names the namespace: its name or one of its aliases, as written or as the same
+ * script identifier (`dev-radius` and `dev_radius` are both `dev_radius`).
  */
-function isNamespaceName(namespace: string, query: string): boolean {
-	const id = toCodemodeIdentifier(namespace);
+function isNamespaceName(namespace: ToolNamespace, query: string): boolean {
 	const queryId = toCodemodeIdentifier(query);
-	const suffix = (name: string) => (name.includes("__") ? name.slice(name.lastIndexOf("__") + 2) : undefined);
-	return namespace === query || id === queryId || suffix(namespace) === query || suffix(id) === queryId;
+	return [namespace.name, ...(namespace.aliases ?? [])].some(
+		(name) => name === query || toCodemodeIdentifier(name) === queryId,
+	);
 }
 
 /**
@@ -575,7 +612,7 @@ function createDiscoveryGlobals(
 				}
 				const documents = tools.flatMap((tool) => {
 					const toolNamespace = options.getToolNamespace?.(tool.name);
-					if (namespace && (!toolNamespace || !isNamespaceName(toolNamespace.name, namespace))) return [];
+					if (namespace && (!toolNamespace || !isNamespaceName(toolNamespace, namespace))) return [];
 					return [createToolSearchDocument(tool, toolNamespace)];
 				});
 				return ranker.rank(query, documents, limit).map((match) => entry(match.name));
@@ -603,7 +640,7 @@ function createDiscoveryGlobals(
 				const names: string[] = [];
 				for (const tool of tools) {
 					const toolNamespace = options.getToolNamespace?.(tool.name);
-					if (!toolNamespace || !isNamespaceName(toolNamespace.name, name)) continue;
+					if (!toolNamespace || !isNamespaceName(toolNamespace, name)) continue;
 					namespace ??= toolNamespace;
 					names.push(toCodemodeIdentifier(tool.name));
 				}
@@ -647,7 +684,8 @@ function createModelGlobals(
 		run: (resolved: ModelTypeMap[TType], context: TContext) => Promise<TResult>,
 	): Promise<TResult> => {
 		const listHint = `List the ${type} models you can use with models.getAvailableOfType("${type}").`;
-		if (!isRecord(model) || typeof model.provider !== "string" || typeof model.id !== "string") {
+		const given = model as ScriptValue;
+		if (typeof given?.provider !== "string" || typeof given.id !== "string") {
 			// undefined arrives as null: spread arguments cross the sandbox as a JSON array.
 			const undefinedHint =
 				model === undefined || model === null
@@ -657,7 +695,8 @@ function createModelGlobals(
 				`${name}() expects ${withArticle(type)} model as its first argument, got ${describeValue(model)}.${undefinedHint} ${listHint}`,
 			);
 		}
-		const { provider, id } = model;
+		const provider = given.provider;
+		const id = given.id;
 		const ref = `${provider}/${id}`;
 		const resolved = models.getModelOfType(type, provider, id);
 		if (!resolved) {

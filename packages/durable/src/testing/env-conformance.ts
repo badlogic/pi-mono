@@ -4,6 +4,7 @@ import {
 	type ExecutionEnv,
 	type FileInfo,
 	getOrThrow,
+	type ListFilesOptions,
 	type Result,
 	type ShellOutputInfo,
 	type WatchChange,
@@ -44,6 +45,21 @@ async function readAll(
 	} finally {
 		await reader.close(context);
 	}
+}
+
+/** A listing as `<kind letter> <path>` lines (`f`, `d`, `l`), with its truncation. */
+async function listed(
+	env: ExecutionEnv,
+	path: string,
+	options?: ListFilesOptions,
+): Promise<{ entries: string[]; truncated: boolean }> {
+	if (env.listFiles === undefined) throw new Error("The environment does not implement listFiles");
+	const listing = getOrThrow(await env.listFiles(path, options, context));
+	const letter = { file: "f", directory: "d", symlink: "l" } as const;
+	return {
+		entries: listing.entries.map((entry) => `${letter[entry.kind]} ${entry.path}`),
+		truncated: listing.truncated,
+	};
 }
 
 /** Whether a change reports `path`: an overflow, or a reported path at or above it. */
@@ -464,6 +480,112 @@ export function createEnvConformance(options: EnvConformanceOptions): readonly E
 			assert.strictEqual(errorCode(await running), "aborted");
 		}),
 	];
+
+	if (options.listFiles) {
+		const writeAll = async (env: ExecutionEnv, files: readonly string[]) => {
+			for (const file of files) getOrThrow(await env.writeFile(file, "", context));
+		};
+		cases.push(
+			createCase("listFiles lists files and directories depth first in name order", async (env) => {
+				await writeAll(env, ["b.txt", "a/z.txt", "a/b/c.txt", ".hidden/x", "A.txt"]);
+				getOrThrow(await env.createDir("empty", undefined, context));
+				assert.deepEqual(await listed(env, "."), {
+					entries: [
+						"d .hidden",
+						"f .hidden/x",
+						"f A.txt",
+						"d a",
+						"d a/b",
+						"f a/b/c.txt",
+						"f a/z.txt",
+						"f b.txt",
+						"d empty",
+					],
+					truncated: false,
+				});
+				assert.deepEqual((await listed(env, ".", { hidden: false })).entries, [
+					"f A.txt",
+					"d a",
+					"d a/b",
+					"f a/b/c.txt",
+					"f a/z.txt",
+					"f b.txt",
+					"d empty",
+				]);
+				const expected = { entries: ["d b", "f b/c.txt", "f z.txt"], truncated: false };
+				assert.deepEqual(await listed(env, "a"), expected);
+				assert.deepEqual(await listed(env, getOrThrow(await env.absolutePath("a", context))), expected);
+				assert.deepEqual(await listed(env, "empty"), { entries: [], truncated: false });
+			}),
+
+			createCase("listFiles skips what git ignores in work trees, .git, and excluded names", async (env) => {
+				await writeAll(env, ["keep.txt", "out/x.js", "sub/keep.txt", "sub/drop.log", "node_modules/m/i.js"]);
+				getOrThrow(await env.writeFile(".gitignore", "out/\n*.log\n", context));
+				getOrThrow(await env.writeFile("sub/.gitignore", "!keep.txt\n", context));
+				// Not a work tree yet: `.gitignore` files have no effect.
+				assert.ok((await listed(env, ".")).entries.includes("f out/x.js"));
+				getOrThrow(await env.writeFile(".git/HEAD", "ref: refs/heads/main\n", context));
+				getOrThrow(await env.writeFile(".git/info/exclude", "keep.txt\n", context));
+				assert.deepEqual((await listed(env, ".", { exclude: ["node_modules"] })).entries, [
+					"f .gitignore",
+					"d sub",
+					"f sub/.gitignore",
+					"f sub/keep.txt",
+				]);
+				// A directory inside the work tree applies its parents' rules.
+				assert.deepEqual((await listed(env, "sub")).entries, ["f .gitignore", "f keep.txt"]);
+				const all = (await listed(env, ".", { gitignore: false })).entries;
+				assert.ok(
+					all.includes("f out/x.js") && all.includes("f node_modules/m/i.js") && all.includes("f keep.txt"),
+				);
+				assert.ok(!all.some((entry) => entry.includes(".git/") || entry === "d .git"));
+			}),
+
+			createCase("listFiles stops at its bounds and reports truncated", async (env) => {
+				await writeAll(env, ["a", "b", "c"]);
+				assert.deepEqual(await listed(env, ".", { maxEntries: 2 }), { entries: ["f a", "f b"], truncated: true });
+				assert.deepEqual(await listed(env, ".", { maxEntries: 3 }), {
+					entries: ["f a", "f b", "f c"],
+					truncated: false,
+				});
+				// Each entry counts its path plus two bytes.
+				assert.deepEqual(await listed(env, ".", { maxBytes: 6 }), { entries: ["f a", "f b"], truncated: true });
+				assert.deepEqual(await listed(env, ".", { maxEntries: 0 }), { entries: [], truncated: true });
+				assert.strictEqual(errorCode(await env.listFiles!(".", { maxEntries: -1 }, context)), "invalid");
+				assert.strictEqual(errorCode(await env.listFiles!(".", { timeoutMs: 1.5 }, context)), "invalid");
+			}),
+
+			createCase("listFiles fails on missing directories, files, and aborts", async (env) => {
+				getOrThrow(await env.writeFile("file.txt", "", context));
+				assert.strictEqual(errorCode(await env.listFiles!("missing", undefined, context)), "not_found");
+				assert.strictEqual(errorCode(await env.listFiles!("file.txt", undefined, context)), "not_directory");
+				assert.strictEqual(errorCode(await env.listFiles!(".", undefined, abortedContext())), "aborted");
+			}),
+		);
+	}
+
+	if (symlinks && options.listFiles) {
+		cases.push(
+			createCase("listFiles lists symbolic links without following them", async (env) => {
+				getOrThrow(await env.writeFile("dir/inner.txt", "", context));
+				const linked = await env.exec(
+					[...shell, "ln -s dir link && ln -s missing dangling && ln -s .. dir/loop"],
+					undefined,
+					context,
+				);
+				assert.strictEqual(getOrThrow(linked).exitCode, 0);
+				assert.deepEqual((await listed(env, ".")).entries, [
+					"l dangling",
+					"d dir",
+					"f dir/inner.txt",
+					"l dir/loop",
+					"l link",
+				]);
+				// The listed directory itself may be a link.
+				assert.deepEqual((await listed(env, "link")).entries, ["f inner.txt", "l loop"]);
+			}),
+		);
+	}
 
 	if (symlinks) {
 		cases.push(

@@ -48,6 +48,19 @@ export interface RemoteInfo {
 	/** Windows: per-drive working directories (`C:` → `C:\\work`) of the `=C:` variables. */
 	driveCwds: Record<string, string>;
 	pid: number;
+	/** Operations added to protocol 1 that this daemon supports, such as `listFiles`; absent from older daemons. */
+	features?: string[];
+}
+
+/**
+ * Node's names for the daemon's system and architecture, which `hello` reports in Rust's spelling: `windows` is
+ * `win32`, `macos` is `darwin`, `x86_64` is `x64`, `aarch64` is `arm64`, so they compare with `process.platform` and
+ * `process.arch`. Other names are kept.
+ */
+export function nodePlatform(info: Pick<RemoteInfo, "os" | "arch">): { platform: string; arch: string } {
+	const platforms: Record<string, string> = { windows: "win32", macos: "darwin" };
+	const archs: Record<string, string> = { x86_64: "x64", aarch64: "arm64", x86: "ia32" };
+	return { platform: platforms[info.os] ?? info.os, arch: archs[info.arch] ?? info.arch };
 }
 
 export interface ConnectionOptions {

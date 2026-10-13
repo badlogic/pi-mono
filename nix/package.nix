@@ -62,7 +62,6 @@ let
       }
 
       mkdir -p "$out"
-      pack_package packages/chord chord
       pack_package packages/telemetry telemetry
       pack_package packages/ai ai
       pack_package packages/tui tui
@@ -80,7 +79,6 @@ let
     # The install lock points internal packages at registry releases. Replace
     # them with the packages built from this checkout.
     packageSourceOverrides = {
-      "node_modules/@earendil-works/chord" = workspacePackages + "/chord.tgz";
       "node_modules/@earendil-works/pi-agent-core" = workspacePackages + "/agent.tgz";
       "node_modules/@earendil-works/pi-ai" = workspacePackages + "/ai.tgz";
       "node_modules/@earendil-works/pi-codemode" = workspacePackages + "/codemode.tgz";
@@ -143,8 +141,6 @@ stdenv.mkDerivation {
   installCheckPhase = ''
     runHook preInstallCheck
     test "$("$out/bin/pi" --version)" = "${packageJson.version}"
-    ${nodejs}/bin/node -e \
-      "require('$out/lib/pi/node_modules/esbuild').transformSync('const value: number = 1', { loader: 'ts' })"
     # Load host-platform TUI helpers directly so missing native dependencies
     # fail the build rather than silently disabling clipboard support.
     ${nodejs}/bin/node -e \

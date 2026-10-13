@@ -26,7 +26,7 @@ import {
 import { context } from "./session-support.ts";
 
 export function tool(name: string, description = `${name} tool`): ToolRegistration {
-	return defineTool({ name, description, parameters: Type.Object({}), execute: async () => ({ content: [] }) });
+	return defineTool({ name, description, parameters: Type.Object({}), execute: async () => ({ output: [] }) });
 }
 
 /** Open a Harness with a fresh registry holding the named tools. */

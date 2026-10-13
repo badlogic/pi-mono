@@ -46,13 +46,13 @@ const first = defineTool({
 	name: "probe_first",
 	description: "Unused probe tool.",
 	parameters: Parameters,
-	execute: async () => ({ content: [] }),
+	execute: async () => ({ output: [] }),
 });
 const second = defineTool({
 	name: "probe_second",
 	description: "Unused probe tool added on the second turn.",
 	parameters: Parameters,
-	execute: async () => ({ content: [] }),
+	execute: async () => ({ output: [] }),
 });
 
 /** Puts the leading system message back after the user messages before it: the request order before the fix. */

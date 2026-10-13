@@ -28,7 +28,7 @@ function loadVersioned(version: string) {
 				execute: async () => {
 					started();
 					await gate;
-					return { content: [{ type: "text", text: version }] };
+					return { output: [{ type: "text", text: version }] };
 				},
 			}),
 		],

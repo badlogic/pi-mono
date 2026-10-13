@@ -5,7 +5,7 @@ import { BACKGROUND_CONTEXT } from "@earendil-works/chord/context";
 import { getOrThrow } from "@earendil-works/pi-durable/env";
 import { registerEnvConformance } from "@earendil-works/pi-durable/testing";
 import { afterAll, describe, expect, it } from "vitest";
-import type { Connection } from "../src/connection.ts";
+import { type Connection, nodePlatform } from "../src/connection.ts";
 import { RemoteExecutionEnv } from "../src/remote-env.ts";
 import {
 	acceptHostKey,
@@ -65,7 +65,7 @@ describe.skipIf(host === undefined)("SSH to this machine's server", () => {
 	it("reaches the remote system through its default shell", async () => {
 		const { connection, remote } = await connect();
 		const info = await connection.info();
-		expect(info.os).toBe(windows ? "windows" : process.platform === "darwin" ? "macos" : process.platform);
+		expect(nodePlatform(info).platform).toBe(process.platform);
 		if (windows) expect(remote.shell).toBe(process.env.PI_ENV_SSH_SHELL ?? "cmd");
 	}, 120_000);
 });
@@ -87,6 +87,6 @@ if (host !== undefined) {
 				await home.remove(cwd, { recursive: true, force: true }, BACKGROUND_CONTEXT);
 			}
 		},
-		windows ? { shell: [gitBash, "-c"], symlinks: false } : {},
+		windows ? { shell: [gitBash, "-c"], symlinks: false, listFiles: true } : { listFiles: true },
 	);
 }

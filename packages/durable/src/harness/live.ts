@@ -1,21 +1,16 @@
 import type { Draft, JsonRepresentation, JsonValue } from "@earendil-works/chord";
-import type { AssistantMessage } from "@earendil-works/pi-ai";
+import type { AssistantMessage, Usage } from "@earendil-works/pi-ai";
 import { defineDoc } from "../documents.ts";
 import type { Transaction } from "../session/transaction.ts";
-import type { EntryId, SubmissionId, SubmissionSettlement, TaskId, TaskRecord, Tx } from "../types.ts";
+import type { EntryId, JsonObject, SubmissionId, SubmissionSettlement, TaskId, TaskRecord, Tx } from "../types.ts";
 import { convertPartial } from "./generation.ts";
 import type { SchedulerOutcome } from "./scheduler.ts";
 import type { CompactionReason, CompactionResult, ToolDiagnostic } from "./types.ts";
 
-/** Presentation of one tool call of the current round. */
-export type ToolSlot = {
+/** What a running tool call publishes, shared by model-issued and nested calls. */
+type SlotProgress = {
 	callId: string;
 	name: string;
-	/**
-	 * Absent for a call not started yet (sequential round) and for a call its request did not offer, which starts `done`
-	 * with the `entry` generation wrote.
-	 */
-	taskId?: TaskId;
 	status: "pending" | "running" | "done";
 	/** Retained running output and what the bounds dropped. */
 	output?: string;
@@ -25,8 +20,43 @@ export type ToolSlot = {
 	details?: JsonValue;
 	/** Diagnostics recorded through `api.diagnostic()`. */
 	diagnostics?: ToolDiagnostic[];
+};
+
+/** Presentation of one tool call of the current round. */
+export type ToolSlot = SlotProgress & {
+	/**
+	 * Absent for a call not started yet (sequential round) and for a call its request did not offer, which starts `done`
+	 * with the `entry` generation wrote.
+	 */
+	taskId?: TaskId;
 	/** Result entry once done; absent when the tool task faulted or was orphaned. */
 	entry?: EntryId;
+};
+
+/**
+ * Presentation of one nested call: a call a running tool made through `executeTool()`. `callId` is
+ * `<parentCallId>/<key>`, the call's ID in tool events and unique because keys contain no `/`. The Harness relates
+ * slots by task ID: `taskId` is the call's tool task, `parentTaskId` the calling one, model-issued or nested.
+ */
+export type NestedToolSlot = SlotProgress & {
+	parentCallId: string;
+	parentTaskId: TaskId;
+	taskId: TaskId;
+	/**
+	 * What the call was made with, replaced by the arguments it runs with, after repair, `beforeTool`, and coercion,
+	 * once it starts executing. A model-issued call's arguments are in its assistant entry instead.
+	 */
+	arguments: JsonObject;
+	/** Once done: how the call ended, for a status line. The result itself is in the caller's `NestedCallDoc`. */
+	summary?: NestedToolSummary;
+};
+
+/** How a nested call ended: an error flag, its execution time, its spend, and up to 500 characters of error text. */
+export type NestedToolSummary = {
+	isError: boolean;
+	durationMs?: number;
+	usage?: JsonRepresentation<Usage>;
+	error?: string;
 };
 
 /** Presentation of one live compaction task (spec §8.7). */
@@ -38,6 +68,14 @@ export type CompactionStatus = {
 	attempt: number;
 	/** Durable backoff before the next summarization attempt. */
 	retry?: { at: number; error: string };
+};
+
+/** The newest compaction that failed since a compaction last produced a summary (spec §8.7). */
+export type CompactionFailure = {
+	taskId: TaskId<CompactionResult>;
+	reason: CompactionReason;
+	/** The failed or faulted outcome's error message, or why the scheduler orphaned the task. */
+	error: string;
 };
 
 /** Built-in live conversation state: run control and presentation of the current generation and tool round. */
@@ -56,8 +94,18 @@ export type LiveState = {
 	};
 	/** The current tool round in call order, from the tool-calling answer until the generation's `tools` phase ends it. */
 	tools?: ToolSlot[];
+	/**
+	 * Nested calls of running tool calls, in creation order, so a parent precedes its children and task IDs ascend. A
+	 * call's nested slots are removed when the call settles.
+	 */
+	nestedTools?: NestedToolSlot[];
 	/** Live compaction tasks in task ID order; absent when none. */
 	compactions?: CompactionStatus[];
+	/**
+	 * The newest compaction failure, so a client can show it after the task ended. A compaction that produces a summary
+	 * removes it; one that is aborted or finds nothing to compact leaves it.
+	 */
+	compactionFailure?: CompactionFailure;
 };
 
 export const LiveDoc = defineDoc<LiveState>({
@@ -70,9 +118,12 @@ export const LiveDoc = defineDoc<LiveState>({
 	// REMINDER: a complete base whenever nothing runs (spec §8.2): no generation and no running tool slot. That holds
 	// while idle, in the commit handing a generation over to its tool round, and between tools, so the delta chain
 	// spans at most one generation or the overlapping execution of one round's tools. A slot holds output only while
-	// running, so every base is small. Do not add a delta-count bound; the tool output benchmark checks this rule.
+	// running, so every base is small; a nested call's result lives in its caller's task documents, never here. Do not
+	// add a delta-count bound; the tool output benchmark checks this rule.
 	checkpointWhen: (value) =>
-		value.generation === undefined && !(value.tools ?? []).some((slot) => slot.status === "running"),
+		value.generation === undefined &&
+		!(value.tools ?? []).some((slot) => slot.status === "running") &&
+		!(value.nestedTools ?? []).some((slot) => slot.status === "running"),
 });
 
 /** Built-in task kinds that can own `pi.live.run`. */
@@ -81,8 +132,8 @@ const TOOL_TASK_KIND = "pi.tool";
 const COMPACTION_TASK_KIND = "pi.compaction";
 
 /**
- * End the run owned by `taskId`: settle each of its inputs and remove `run`. Always removes `generation` and `tools`,
- * whose presentation belongs to the ending run.
+ * End the run owned by `taskId`: settle each of its inputs and remove `run`. Always removes `generation`, `tools`, and
+ * `nestedTools`, whose presentation belongs to the ending run.
  */
 export function endRun(tx: Tx, live: Draft<LiveState>, taskId: TaskId, settlement: SubmissionSettlement): void {
 	if (live.run?.taskId === taskId) {
@@ -91,6 +142,7 @@ export function endRun(tx: Tx, live: Draft<LiveState>, taskId: TaskId, settlemen
 	}
 	delete live.generation;
 	delete live.tools;
+	delete live.nestedTools;
 }
 
 /** Add the status of a compaction task created in this commit; statuses stay in task ID order. */
@@ -113,20 +165,58 @@ export function removeCompactionStatus(live: Draft<LiveState>, taskId: TaskId): 
 	if (statuses.length === 0) delete live.compactions;
 }
 
-/** The slot of tool task `taskId` in the current round, if the round still lists it. */
-export function toolSlot(live: Draft<LiveState>, taskId: TaskId): Draft<ToolSlot> | undefined {
-	return live.tools?.find((slot) => slot.taskId === taskId);
+/** Remove the status of compaction task `taskId` and record that it failed with `error`. */
+export function failCompactionStatus(live: Draft<LiveState>, taskId: TaskId, error: string): void {
+	const status = compactionStatus(live, taskId);
+	if (status !== undefined) live.compactionFailure = { taskId: status.taskId, reason: status.reason, error };
+	removeCompactionStatus(live, taskId);
 }
 
-/** Mark a slot done: the result entry, if any, now carries its running output, details, and diagnostics. */
-export function finishSlot(slot: Draft<ToolSlot>, entry: EntryId | undefined): void {
+/**
+ * The slot of tool task `taskId`, model-issued or nested, if `pi.live` still lists it. Nested slots are found by binary
+ * search: a tool may make thousands of nested calls, each of which looks up its slot in several commits, and every
+ * element a search reads costs a node in the draft's change tracker. Their task IDs ascend: each slot is appended in
+ * the commit that creates its task, task IDs ascend in commit order, and removal keeps the order.
+ */
+export function toolSlot(live: Draft<LiveState>, taskId: TaskId): Draft<ToolSlot | NestedToolSlot> | undefined {
+	const slot = live.tools?.find((each) => each.taskId === taskId);
+	if (slot !== undefined || live.nestedTools === undefined) return slot;
+	const nested = live.nestedTools;
+	let low = 0;
+	let high = nested.length - 1;
+	while (low <= high) {
+		const middle = (low + high) >>> 1;
+		const candidate = nested[middle]!;
+		if (candidate.taskId === taskId) return candidate;
+		if (candidate.taskId < taskId) low = middle + 1;
+		else high = middle - 1;
+	}
+	return undefined;
+}
+
+/**
+ * Mark a slot done and clear its running output; the caller sets a model-issued call's result `entry`, or a nested
+ * call's `summary`. Neither is set when the task faulted or was orphaned.
+ */
+export function finishSlot(slot: Draft<ToolSlot | NestedToolSlot>): void {
 	slot.status = "done";
-	if (entry !== undefined) slot.entry = entry;
 	clearProgress(slot);
 }
 
+/** Remove the nested slots below tool task `taskId`, transitively; the list holds parents before their children. */
+export function removeNestedSlots(live: Draft<LiveState>, taskId: TaskId): void {
+	const nested = live.nestedTools;
+	if (nested === undefined) return;
+	const removed = new Set<TaskId>([taskId]);
+	for (const slot of nested) if (removed.has(slot.parentTaskId)) removed.add(slot.taskId);
+	for (let index = nested.length - 1; index >= 0; index--) {
+		if (removed.has(nested[index]!.parentTaskId)) nested.splice(index, 1);
+	}
+	if (nested.length === 0) delete live.nestedTools;
+}
+
 /** Remove what a tool published while running; its result entry or a rerun replaces it. */
-export function clearProgress(slot: Draft<ToolSlot>): void {
+export function clearProgress(slot: Draft<SlotProgress>): void {
 	delete slot.output;
 	delete slot.droppedBytes;
 	delete slot.droppedLines;
@@ -137,7 +227,7 @@ export function clearProgress(slot: Draft<ToolSlot>): void {
 /**
  * Harness cleanup for a terminal outcome the scheduler writes itself (`faulted` or `orphaned`). A run task ends its
  * run; a tool task's slot is marked done without an entry, and context derivation synthesizes the missing result; a
- * compaction task's status is removed.
+ * compaction task's status is removed and its failure recorded.
  * Ignores other kinds so it never creates `pi.live` elsewhere. The scheduler calls this without knowing task kinds;
  * the Harness passes it in (spec §5.4).
  * REMINDER: a committed generation partial becomes an aborted assistant entry here, exactly as in the generation abort
@@ -152,12 +242,15 @@ export async function settleSchedulerOutcome(
 	outcome: SchedulerOutcome,
 ): Promise<void> {
 	if (record.kind === TOOL_TASK_KIND) {
-		const slot = toolSlot(await tx.doc(LiveDoc, record.conversationId), record.id);
-		if (slot !== undefined) finishSlot(slot, undefined);
+		const live = await tx.doc(LiveDoc, record.conversationId);
+		const slot = toolSlot(live, record.id);
+		if (slot !== undefined) finishSlot(slot);
+		removeNestedSlots(live, record.id);
 		return;
 	}
 	if (record.kind === COMPACTION_TASK_KIND) {
-		removeCompactionStatus(await tx.doc(LiveDoc, record.conversationId), record.id);
+		const error = outcome.status === "faulted" ? outcome.error.message : outcome.reason;
+		failCompactionStatus(await tx.doc(LiveDoc, record.conversationId), record.id, error);
 		return;
 	}
 	if (!RUN_TASK_KINDS.has(record.kind)) return;

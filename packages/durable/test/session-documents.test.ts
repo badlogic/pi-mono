@@ -437,7 +437,7 @@ describe("Session document transactions", () => {
 		expect((await session.snapshot(CounterDoc, context))!.count).toBe(3);
 	});
 
-	it("poisons the Session after an uncertain Storage failure and publishes nothing", async () => {
+	it("fails the Session after a Storage failure and publishes nothing", async () => {
 		const { session, storage, publications, conversationId } = await setupLive();
 		await flush();
 		const before = (await session.snapshot(LiveDoc, conversationId, context))!;
@@ -451,8 +451,8 @@ describe("Session document transactions", () => {
 		await flush();
 		expect(publications.length).toBe(published);
 		expect(before.message).toBeUndefined();
-		await expect(session.snapshot(LiveDoc, conversationId, context)).rejects.toThrow("poisoned");
-		await expect(session.commit(() => undefined, context)).rejects.toThrow("poisoned");
+		await expect(session.snapshot(LiveDoc, conversationId, context)).rejects.toMatchObject({ name: "SessionFailed" });
+		await expect(session.commit(() => undefined, context)).rejects.toMatchObject({ name: "SessionFailed" });
 		await session.close(context);
 	});
 

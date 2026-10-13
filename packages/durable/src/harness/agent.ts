@@ -1,5 +1,6 @@
 import { copyJson, type Draft } from "@earendil-works/chord";
 import { defineDoc } from "../documents.ts";
+import { documentRetention } from "../session/session.ts";
 import type { ConversationId, ConversationRecord, Tx } from "../types.ts";
 import type {
 	Agent,
@@ -69,6 +70,7 @@ export function resolveSettings(settings: HarnessSettings | undefined): Settings
 		steeringMode: settings?.steeringMode ?? "one-at-a-time",
 		followUpMode: settings?.followUpMode ?? "one-at-a-time",
 		contextRetentionMs: settings?.contextRetentionMs ?? DEFAULT_CONTEXT_RETENTION_MS,
+		documentRetentionMs: documentRetention(settings?.documentRetentionMs),
 	};
 }
 
@@ -79,21 +81,30 @@ export async function configure(tx: Tx, conversationId: ConversationId, change: 
 }
 
 /**
- * `addTools` of a tool round: an array gets each name it lacks appended, `{ remove }` loses the names, and unset tools
- * already offer every tool, so nothing is written.
+ * `addTools` of a tool round, applied to `tools` and `modelTools`, so the next request offers the tools: an array gets
+ * each name it lacks appended, and `{ remove }` loses the names. An unset `tools` already enables every tool, so nothing
+ * is written for it. An unset or object `modelTools` also gets each name appended to its `add`, which loads deferred
+ * tools and has no effect for others. By name, without the registry: a tool that is not registered now, such as one of
+ * an MCP server that is reconnecting, is offered once it is again.
  */
 export async function addTools(tx: Tx, conversationId: ConversationId, added: readonly string[]): Promise<void> {
 	const state = await tx.doc(AgentDoc, conversationId);
 	const tools = state.tools;
-	if (tools === undefined) return;
 	if (Array.isArray(tools)) {
 		for (const name of added) if (!tools.includes(name)) tools.push(name);
-	} else {
-		const remove = (tools as { remove: string[] }).remove;
-		if (remove.some((name) => added.includes(name))) {
-			state.tools = { remove: remove.filter((name) => !added.includes(name)) };
-		}
+	} else if (tools?.remove.some((name) => added.includes(name))) {
+		state.tools = { remove: tools.remove.filter((name) => !added.includes(name)) };
 	}
+	const modelTools = state.modelTools;
+	if (Array.isArray(modelTools)) {
+		for (const name of added) if (!modelTools.includes(name)) modelTools.push(name);
+		return;
+	}
+	// Assigned whole; a document write of an equal value records no change.
+	const remove = (modelTools?.remove ?? []).filter((name) => !added.includes(name));
+	const add = [...(modelTools?.add ?? [])];
+	for (const name of added) if (!add.includes(name)) add.push(name);
+	state.modelTools = { ...(remove.length === 0 ? {} : { remove }), add };
 }
 
 function applyChange(state: Draft<AgentState>, change: AgentChange): void {
@@ -120,6 +131,18 @@ function applyChange(state: Draft<AgentState>, change: AgentChange): void {
 	set(
 		"tools",
 		tools === undefined || tools === null ? tools : isList(tools) ? names(tools) : { remove: names(tools.remove) },
+	);
+	const modelTools = change.modelTools;
+	set(
+		"modelTools",
+		modelTools === undefined || modelTools === null
+			? modelTools
+			: isList(modelTools)
+				? names(modelTools)
+				: {
+						...(modelTools.remove === undefined ? {} : { remove: names(modelTools.remove) }),
+						...(modelTools.add === undefined ? {} : { add: names(modelTools.add) }),
+					},
 	);
 	set("instructions", change.instructions);
 	set("cwd", change.cwd);
@@ -194,19 +217,14 @@ export function resolveAgent<Tool extends ToolRegistration>(
 		}
 	}
 
-	const filter = state?.tools;
-	let tools: Tool[];
-	if (filter === undefined) tools = [...composed.values()];
-	else if (Array.isArray(filter)) {
-		tools = [];
-		for (const name of new Set(filter)) {
-			const tool = composed.get(name);
-			if (tool !== undefined) tools.push(tool);
-		}
-	} else {
-		const removed = new Set((filter as { remove: string[] }).remove);
-		tools = [...composed.values()].filter((tool) => !removed.has(tool.name));
-	}
+	const enabled = filterTools([...composed.values()], state?.tools);
+	const callableBy = (caller: "model" | "tools") => (tool: Tool) =>
+		tool.callers === undefined || tool.callers.includes(caller);
+	const modelCallable = enabled.filter(callableBy("model"));
+	const tools = offeredTools(modelCallable, state?.modelTools);
+	const offered = new Set(tools);
+	const deferred = modelCallable.filter((tool) => tool.deferred === true && !offered.has(tool));
+	const callable = enabled.filter(callableBy("tools"));
 
 	const instructions = state?.instructions;
 	const agentSections = [...sections.values()];
@@ -217,11 +235,41 @@ export function resolveAgent<Tool extends ToolRegistration>(
 		thinkingLevel: state?.thinkingLevel ?? "off",
 		extensions,
 		tools,
+		callable,
+		deferred,
 		sections: agentSections,
 		...(instructions === undefined ? {} : { instructions }),
 		...(state?.cwd === undefined ? {} : { cwd: state.cwd }),
 	};
 	return agent;
+}
+
+/** The tools offered to the model, as `AgentState.modelTools` describes. */
+function offeredTools<Tool extends ToolRegistration>(tools: Tool[], filter: AgentState["modelTools"]): Tool[] {
+	if (Array.isArray(filter)) return filterTools(tools, filter);
+	const removed = new Set(filter?.remove ?? []);
+	const kept = tools.filter((tool) => tool.deferred !== true && !removed.has(tool.name));
+	// Loaded deferred tools follow in load order, so loading one appends to the declared tools.
+	const byName = new Map(tools.map((tool) => [tool.name, tool]));
+	const loaded = [...new Set(filter?.add ?? [])].flatMap((name) => {
+		const tool = byName.get(name);
+		return tool?.deferred === true && !removed.has(name) ? [tool] : [];
+	});
+	return [...kept, ...loaded];
+}
+
+/** `tools` through a stored filter: an array selects exactly its names, in its order; `{ remove }` drops names. */
+function filterTools<Tool extends ToolRegistration>(tools: Tool[], filter: AgentState["tools"]): Tool[] {
+	if (filter === undefined) return tools;
+	if (Array.isArray(filter)) {
+		const byName = new Map(tools.map((tool) => [tool.name, tool]));
+		return [...new Set(filter)].flatMap((name) => {
+			const tool = byName.get(name);
+			return tool === undefined ? [] : [tool];
+		});
+	}
+	const removed = new Set((filter as { remove: string[] }).remove);
+	return tools.filter((tool) => !removed.has(tool.name));
 }
 
 /** Selected installed extensions: the stored array, or the default selection edited by `{ add, remove }`. */

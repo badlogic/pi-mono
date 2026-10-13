@@ -4,6 +4,7 @@ import { join } from "node:path";
 import { registerEnvConformance } from "@earendil-works/pi-durable/testing";
 import { afterAll, describe, expect, it } from "vitest";
 import { Connection } from "../src/connection.ts";
+import { LocalExecutionEnv } from "../src/list-files.ts";
 import { RemoteExecutionEnv } from "../src/remote-env.ts";
 import { daemon } from "./daemon.ts";
 
@@ -26,5 +27,19 @@ registerEnvConformance(
 		}
 	},
 	// Git Bash's `ln -s` copies instead of linking unless native symlinks are enabled.
-	windows ? { shell: [gitBash, "-c"], symlinks: false } : {},
+	windows ? { shell: [gitBash, "-c"], symlinks: false, listFiles: true } : { listFiles: true },
+);
+
+registerEnvConformance(
+	{ describe, expect, it },
+	"LocalExecutionEnv",
+	async (use) => {
+		const cwd = mkdtempSync(join(tmpdir(), "pi-env-local-conformance-"));
+		try {
+			await use(new LocalExecutionEnv({ connection, cwd, watch: { pollIntervalMs: 100 } }));
+		} finally {
+			rmSync(cwd, { recursive: true, force: true, maxRetries: 50, retryDelay: 100 });
+		}
+	},
+	windows ? { shell: [gitBash, "-c"], symlinks: false, listFiles: true } : { listFiles: true },
 );

@@ -1,6 +1,6 @@
-import type { JsonValue } from "../types.ts";
+import type { JsonValue } from "../json.ts";
 
-export type { JsonValue } from "../types.ts";
+export type { JsonValue } from "../json.ts";
 
 const isObj = (value: unknown): value is object => value !== null && typeof value === "object";
 
@@ -426,11 +426,50 @@ export function applyImmutableBatches<T>(target: T | undefined, batches: Iterabl
 				root = op[1];
 				continue;
 			}
+			if (op[0] === "p") {
+				const appended = appendCopy(root, op, owned);
+				if (appended !== undefined) {
+					root = appended;
+					continue;
+				}
+			}
 			root = copyContainers(root, op[0] === "p" || op[0] === "m" ? op[1] : op[1].slice(0, -1), owned);
 			root = applyOps(root, [op]);
 		}
 	}
 	return root as unknown as T;
+}
+
+/**
+ * An append to an array not yet copied in this replay, built as one copy with the items (`concat`) instead of a copy that
+ * the insert then grows, which copies it again. `undefined` for any other splice and for any path that is not a plain
+ * walk over own properties, which takes the general path and so fails with its errors.
+ */
+function appendCopy(root: JsonValue, op: Extract<Op, { 0: "p" }>, owned: WeakSet<object>): JsonValue | undefined {
+	const [, path, index, deleteCount, items] = op;
+	if (deleteCount !== 0) return undefined;
+	let target: JsonValue = root;
+	for (const segment of path) {
+		const valid =
+			typeof segment === "string"
+				? !RESERVED_SEGMENTS.has(segment) && isObj(target) && !Array.isArray(target)
+				: Number.isInteger(segment) && segment >= 0 && Array.isArray(target);
+		if (!valid || !Object.hasOwn(target as object, segment)) return undefined;
+		target = (target as Record<Seg, JsonValue>)[segment]!;
+	}
+	if (!Array.isArray(target) || owned.has(target) || index !== target.length) return undefined;
+	const appended = target.concat(items);
+	owned.add(appended);
+	if (path.length === 0) return appended;
+	const parentPath = path.slice(0, -1);
+	const copiedRoot = copyContainers(root, parentPath, owned);
+	Object.defineProperty(resolve(copiedRoot, parentPath), path[path.length - 1]!, {
+		value: appended,
+		writable: true,
+		enumerable: true,
+		configurable: true,
+	});
+	return copiedRoot;
 }
 
 function copyContainers(root: JsonValue, path: Path, owned: WeakSet<object>): JsonValue {
@@ -504,6 +543,10 @@ function resolve(root: JsonValue, path: Path): JsonValue {
 //
 // Path interning and arity omission live between the tracker and a boundary;
 // `Op` and `apply` know nothing about them.
+//
+// Consecutive batches of one encoder may be concatenated into one batch (links
+// coalesce waiting state this way): only path ids span batches, and every batch
+// starts with an explicit path.
 //
 // ONE PAIR PER INDEPENDENT STATE STREAM. Every decoder must observe exactly the
 // batches encoded by its matching encoder, beginning with that state's base.
@@ -616,7 +659,8 @@ export function encoder(): Encoder {
 }
 
 export interface Decoder {
-	decode(wire: readonly WireOp[]): Op[];
+	/** Ops as received: each is validated (`assertValidWireOp`) before use. */
+	decode(wire: readonly unknown[]): Op[];
 }
 
 export function decoder(): Decoder {

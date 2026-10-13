@@ -6,7 +6,9 @@ mod errors;
 mod exec;
 mod frame;
 mod fs;
+mod list;
 mod output;
+mod pty;
 mod scan;
 mod sys;
 mod watch;
@@ -28,6 +30,8 @@ use std::thread;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 const PROTOCOL: u64 = 1;
+/// Operations added after protocol 1's first release; clients check `hello.features` before using them.
+const FEATURES: &[&str] = &["listFiles"];
 /// The npm package version this daemon ships with (build.rs).
 const VERSION: &str = env!("PI_ENV_VERSION");
 const PING_INTERVAL: Duration = Duration::from_secs(5);
@@ -74,6 +78,7 @@ struct Server {
     next_handle: AtomicU64,
     controls: Mutex<HashMap<u32, Arc<Control>>>,
     groups: exec::Groups,
+    terminals: pty::Terminals,
 }
 
 fn now_ms() -> u64 {
@@ -151,6 +156,7 @@ impl Server {
                 "cwd": sys::cwd(),
                 "driveCwds": sys::drive_cwds(),
                 "pid": std::process::id(),
+                "features": FEATURES,
             }))),
             "lstat" => plain(fs::lstat(field(json, "path")?)),
             "realpath" => plain(fs::realpath(field(json, "path")?)),
@@ -237,6 +243,7 @@ impl Server {
                 plain(Ok(json!({ "handle": handle })))
             }
             "readdir" => plain(self.read_dir(json)),
+            "listFiles" => list::run(json, &|| control.aborted.load(Ordering::SeqCst)),
             "close" => {
                 self.handles
                     .lock()
@@ -253,6 +260,14 @@ impl Server {
                 &self.groups,
             )),
             "watch" => plain(watch::run(id, json, &self.output, control)),
+            "pty" => plain(pty::run(
+                id,
+                pty::PtyRequest::from_json(json)?,
+                &self.output,
+                control,
+                &self.groups,
+                &self.terminals,
+            )),
             _ => Err(Failure::new("EINVAL", format!("unknown operation {op}"))),
         }
     }
@@ -345,7 +360,7 @@ fn start_workers() -> Sender<Job> {
 }
 
 fn respond(server: &Server, id: u32, request: Frame, control: Arc<Control>) {
-    let is_exec = request.json["op"].as_str() == Some("exec");
+    let is_exec = matches!(request.json["op"].as_str(), Some("exec" | "pty"));
     let reply = match server.dispatch(id, &request.json, request.payload, &control) {
         Ok((json, payload)) => Frame::with_payload(RESULT, id, json, payload),
         Err(failure) => Frame::new(ERROR, id, failure.to_json()),
@@ -390,13 +405,32 @@ fn serve_frames(server: &Arc<Server>, input: &mut impl Read) -> io::Result<()> {
     let jobs = start_workers();
     while let Some(request) = frame::read_frame(input)? {
         match request.kind {
+            REQUEST
+                if matches!(
+                    request.json["op"].as_str(),
+                    Some("ptyWrite" | "ptyResize" | "ptyForeground")
+                ) =>
+            {
+                // Answered here, in arrival order: through the worker pool, two writes could swap.
+                let reply = match request.json["op"].as_str() {
+                    Some("ptyWrite") => {
+                        pty::write(&server.terminals, &request.json, request.payload)
+                    }
+                    Some("ptyResize") => pty::resize(&server.terminals, &request.json),
+                    _ => pty::foreground(&server.terminals, &request.json),
+                };
+                server.output.control(match reply {
+                    Ok(json) => Frame::new(RESULT, request.id, json),
+                    Err(failure) => Frame::new(ERROR, request.id, failure.to_json()),
+                });
+            }
             REQUEST => {
                 let id = request.id;
                 // Registered before the request runs, so a cancel right behind it is not lost.
                 let control = Arc::new(Control::default());
                 server.controls.lock().unwrap().insert(id, control.clone());
                 // Commands and watchers last; they get their own threads (watchers recurse through trees).
-                if matches!(request.json["op"].as_str(), Some("exec" | "watch")) {
+                if matches!(request.json["op"].as_str(), Some("exec" | "watch" | "pty")) {
                     let worker = server.clone();
                     let spawned = thread::Builder::new()
                         .stack_size(16 * 1024 * 1024)
@@ -455,6 +489,7 @@ fn serve(token: &str) -> io::Result<()> {
         next_handle: AtomicU64::new(1),
         controls: Mutex::new(HashMap::new()),
         groups: Arc::new(Mutex::new(Default::default())),
+        terminals: Arc::new(Mutex::new(HashMap::new())),
     });
     let last_seen = Arc::new(AtomicU64::new(now_ms()));
     {

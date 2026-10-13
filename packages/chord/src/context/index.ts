@@ -1,4 +1,16 @@
-import type { Context, ContextKey } from "../types.ts";
+/** Typed identity for one value carried by a {@link Context}. */
+export interface ContextKey<T> {
+	readonly token: symbol;
+	/** Type-only marker that prevents keys with different value types from being interchangeable. */
+	readonly valueType?: (value: T) => T;
+}
+
+/** Immutable invocation-scoped values passed explicitly through operations. */
+export interface Context {
+	readonly abortSignal: AbortSignal | undefined;
+	value<T>(key: ContextKey<T>): T | undefined;
+	toString(): string;
+}
 
 const ABORT_SIGNAL_CONTEXT_KEY: ContextKey<AbortSignal | undefined> = Object.freeze({
 	token: Symbol("chord.abortSignal"),
