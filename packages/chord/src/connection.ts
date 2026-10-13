@@ -14,7 +14,24 @@ export interface LinkOptions {
 	readonly pingInterval?: number;
 	/** Close the link when nothing arrived for this long (default 45000). Everything held through it is released. */
 	readonly pingTimeout?: number;
+	/**
+	 * Unacknowledged frame bytes (JSON text length) beyond which state frames wait for the peer (default 256 KiB). Only
+	 * applies when both ends acknowledge frames and the link reports sizes; `Infinity` never holds state back.
+	 */
+	readonly window?: number;
 }
+
+const DEFAULT_WINDOW = 256 * 1024;
+/** A waiting subscription keeps at most this many windows of ops; beyond, its current value replaces them. */
+const PENDING_WINDOWS = 4;
+
+type StateFrame = Extract<Frame, { t: "state" }>;
+
+/**
+ * What waits for one subscription: a snapshot, reset or error (`base`), then encoded ops to apply after it, in order.
+ * Ops stay as they arrived (the receiving decoder validates them).
+ */
+type PendingState = { base: StateFrame | undefined; ops: (readonly unknown[])[]; size: number };
 
 export interface AcceptOptions extends LinkOptions {
 	/** The principal of whatever connects, from the app's authenticator. Every request on the link acts as it. */
@@ -28,6 +45,11 @@ export interface AcceptOptions extends LinkOptions {
 	readonly name?: string;
 	/** On `invalidatePrincipal`: a new principal keeps the link, `undefined` closes it (default: close). */
 	readonly restamp?: (principal: Principal) => Principal | undefined;
+	/**
+	 * Calls the peer may have in progress on this link (default: no limit). Further ones never run: they are answered
+	 * at once with `unavailable` (reason `too_many_calls`), and the link stays open.
+	 */
+	readonly maxCalls?: number;
 }
 
 export interface Peer {
@@ -124,11 +146,25 @@ export class RelayHold {
 		down.send({ t: "sub", id: entry.downId, hold: this.downId, member: entry.member });
 	}
 
+	/**
+	 * The origin could not keep up and dropped what waited for this subscription: subscribe downstream anew, so the
+	 * provider's snapshot (a reset for the origin's consumer) replaces the ops that were lost.
+	 */
+	resync(originSubId: number): void {
+		const entry = this.subs.get(originSubId);
+		this.origin.dropState(originSubId);
+		if (entry?.downId === undefined || this.down === undefined) return;
+		this.down.relayedSubs.delete(entry.downId);
+		this.down.send({ t: "unsub", id: entry.downId });
+		this.#forwardSub(originSubId, entry);
+	}
+
 	unsubscribe(originSubId: number, forward = true): void {
 		const entry = this.subs.get(originSubId);
 		if (entry === undefined) return;
 		this.subs.delete(originSubId);
 		this.origin.relaySubs.delete(originSubId);
+		this.origin.dropState(originSubId);
 		if (entry.downId !== undefined && this.down !== undefined) {
 			this.down.relayedSubs.delete(entry.downId);
 			if (forward) this.down.send({ t: "unsub", id: entry.downId });
@@ -191,7 +227,33 @@ export class RelayCall {
 
 // ─── connection ──────────────────────────────────────────────────────────────
 
-/** One end of a link on a host: consumer of remote handles, provider for the peer's holds, and relay. */
+/**
+ * One end of a link on a host: consumer of remote handles, provider for the peer's holds, and relay.
+ *
+ * Flow control
+ * ------------
+ *
+ * Problem: state is pushed as fast as it changes, but a peer may read slowly (a phone behind a relay), and a relay may
+ * hide that: Cloudflare forwards to browsers without backpressure. Everything sent then queues in front of the next
+ * call result. Example: a browser opens three long transcripts (500 KiB of snapshots each) over a 5 Mbit/s path; a
+ * result sent next waits 2.4 s, and the snapshot of a transcript the user already left is still sent in full.
+ *
+ * Solution: the peer acknowledges what it processed (`ack`, a cumulative frame count), and the sender counts the sizes
+ * of the frames not yet acknowledged. While they exceed the window, *state* frames wait here, one slot per
+ * subscription: ops are appended to the slot (encoded batches of one stream may be concatenated, see `encoder`), and
+ * a snapshot, reset or error replaces it. Unsubscribing drops the slot. A slot whose ops outgrow `PENDING_WINDOWS`
+ * windows is replaced by the current value (a reset), or, on a relay, by a fresh downstream subscription (`resync`),
+ * so memory stays bounded however long the peer stalls. Acknowledgements send the slots in the order they were
+ * created, as long as the window allows.
+ *
+ * Everything else (results, shapes, gone, reload control, pings) is sent at once: it is bounded by the requests the
+ * peer makes, and it must not wait behind state. Hence the one ordering exception of a link: while state waits, a
+ * result can arrive before state changes made before it. Frames of one subscription stay in order.
+ *
+ * The window bounds what is unacknowledged when a frame is sent, so one frame (a large snapshot) may exceed it. Both
+ * hellos must announce `acks`; with an older peer nothing is acknowledged and nothing waits. Links that do not report
+ * sizes (IPC) never fill the window.
+ */
 export class Connection implements RemoteChannel {
 	readonly host: HostImpl;
 	readonly link: Link;
@@ -215,6 +277,19 @@ export class Connection implements RemoteChannel {
 	#nextId = 1;
 	#lastSeen = Date.now();
 	#pinger: ReturnType<typeof setInterval> | undefined;
+	readonly #maxCalls: number;
+	// flow control (see the class comment)
+	readonly #window: number;
+	/** Whether the peer acknowledges frames; until its hello is here, frames are counted in case it does. */
+	#peerAcks: boolean | undefined;
+	#sent = 0;
+	#acked = 0;
+	/** Sizes of the frames sent after the last acknowledged one. */
+	#unacked: number[] = [];
+	#unackedBytes = 0;
+	readonly #pending = new Map<number, PendingState>();
+	#received = 0;
+	#ackTimer: ReturnType<typeof setTimeout> | undefined;
 	// consumer side: what this host asked of the peer
 	readonly remotes = new Map<number, RemoteHandle>();
 	readonly calls = new Map<number, Pending>();
@@ -240,6 +315,7 @@ export class Connection implements RemoteChannel {
 			readonly principal: Principal;
 			readonly peer: Peer;
 			readonly restamp?: (principal: Principal) => Principal | undefined;
+			readonly maxCalls?: number;
 		} & LinkOptions,
 	) {
 		this.host = host;
@@ -249,9 +325,11 @@ export class Connection implements RemoteChannel {
 		this.principal = config.principal;
 		this.restamp = config.restamp;
 		this.synced = !(this.role === "downstream" && this.peer.kind === "host");
+		this.#window = config.window ?? DEFAULT_WINDOW;
+		this.#maxCalls = config.maxCalls ?? Number.POSITIVE_INFINITY;
 		link.onClose((reason) => this.#closed(reason));
 		link.receive((frame) => this.#receive(frame));
-		this.send({ t: "hello", name: host.name, kind: host.kind, epoch: host.current.id });
+		this.send({ t: "hello", name: host.name, kind: host.kind, epoch: host.current.id, acks: true });
 		const interval = config.pingInterval ?? 15_000;
 		const timeout = config.pingTimeout ?? 45_000;
 		// A link that was already closed closed this connection above; it needs no keepalive.
@@ -274,7 +352,69 @@ export class Connection implements RemoteChannel {
 	}
 
 	send(frame: Frame): void {
-		this.link.send(frame);
+		const size = this.link.send(frame) ?? 0;
+		if (this.#peerAcks === false) return;
+		this.#sent++;
+		this.#unacked.push(size);
+		this.#unackedBytes += size;
+	}
+
+	/** Sends a state frame, or keeps it waiting (see the class comment). False: the slot is full, send a reset. */
+	sendState(frame: StateFrame): boolean {
+		let slot = this.#pending.get(frame.id);
+		if (slot === undefined && !this.#full) {
+			this.send(frame);
+			return true;
+		}
+		if (slot === undefined) {
+			slot = { base: undefined, ops: [], size: 0 };
+			this.#pending.set(frame.id, slot);
+		}
+		if (frame.ops === undefined) {
+			slot.base = frame;
+			slot.ops = [];
+			slot.size = 0;
+			return true;
+		}
+		const size = JSON.stringify(frame.ops).length;
+		if (slot.size + size > this.#window * PENDING_WINDOWS) return false;
+		for (const op of frame.ops) slot.ops.push(op);
+		slot.size += size;
+		return true;
+	}
+
+	/** Forgets what waits for a subscription that ended. */
+	dropState(id: number): void {
+		this.#pending.delete(id);
+	}
+
+	get #full(): boolean {
+		return this.#peerAcks === true && this.#unackedBytes >= this.#window;
+	}
+
+	#onAck(n: number): void {
+		if (this.#peerAcks !== true || n < this.#acked || n > this.#sent) {
+			this.#violation(`ack ${n} outside ${this.#acked}..${this.#sent}`);
+			return;
+		}
+		for (const size of this.#unacked.splice(0, n - this.#acked)) this.#unackedBytes -= size;
+		this.#acked = n;
+		for (const [id, slot] of this.#pending) {
+			if (this.#full) return;
+			this.#pending.delete(id);
+			if (slot.base !== undefined) this.send(slot.base);
+			if (slot.ops.length > 0) this.send({ t: "state", id, ops: slot.ops });
+		}
+	}
+
+	/** Acknowledges once the frames that arrived together are processed: one ack per burst, not per frame. */
+	#scheduleAck(): void {
+		if (this.#peerAcks !== true || this.#ackTimer !== undefined || !this.open) return;
+		this.#ackTimer = setTimeout(() => {
+			this.#ackTimer = undefined;
+			this.link.send({ t: "ack", n: this.#received });
+		}, 0);
+		this.#ackTimer.unref?.();
 	}
 
 	nextId(): number {
@@ -386,11 +526,17 @@ export class Connection implements RemoteChannel {
 			this.#violation("malformed frame");
 			return;
 		}
+		if (frame.t === "ack") {
+			this.#onAck(frame.n);
+			return;
+		}
+		this.#received++;
 		try {
 			this.#dispatch(frame);
 		} catch (error) {
 			this.host.report(error);
 		}
+		this.#scheduleAck();
 	}
 
 	#dispatch(frame: Frame): void {
@@ -403,6 +549,7 @@ export class Connection implements RemoteChannel {
 				return;
 			case "pong":
 			case "bye":
+			case "ack":
 				return;
 			case "hold":
 				this.#onHold(frame);
@@ -471,6 +618,13 @@ export class Connection implements RemoteChannel {
 	 * host either finds it in step or fences and reconciles it (never renumbers).
 	 */
 	#onHello(frame: Extract<Frame, { t: "hello" }>): void {
+		if (this.#peerAcks === undefined) {
+			this.#peerAcks = frame.acks === true;
+			if (!this.#peerAcks) {
+				this.#unacked = [];
+				this.#unackedBytes = 0;
+			}
+		}
 		if (this.role === "upstream") {
 			if (frame.kind !== "host") {
 				this.#violation("parent is not a host");
@@ -573,6 +727,15 @@ export class Connection implements RemoteChannel {
 			this.#violation(`duplicate call id ${frame.id}`);
 			return;
 		}
+		if (this.incoming.size >= this.#maxCalls) {
+			const error = new ChordError(
+				"unavailable",
+				`Too many calls in progress on this connection (${this.#maxCalls}); wait for earlier ones to finish`,
+				{ reason: "too_many_calls" },
+			);
+			this.send({ t: "result", id: frame.id, error: toWireError(error) });
+			return;
+		}
 		const served = this.served.get(frame.hold);
 		if (served === undefined) {
 			this.send({ t: "result", id: frame.id, error: toWireError(new ChordError("gone", "unknown hold")) });
@@ -649,8 +812,9 @@ export class Connection implements RemoteChannel {
 		let stream: Encoder = encoder();
 		const send = (event: StateEvent<unknown>): void => {
 			if (event.type === "ops") {
-				this.send({ t: "state", id: frame.id, ops: stream.encode(event.ops) });
-				return;
+				if (this.sendState({ t: "state", id: frame.id, ops: stream.encode(event.ops) })) return;
+				// Too many ops wait for a slow peer: the current value replaces them.
+				event = { type: "reset", value: event.value };
 			}
 			// A loading provider handle has nothing yet: the hydrated value follows as a reset.
 			if (event.value === undefined) return;
@@ -658,11 +822,11 @@ export class Connection implements RemoteChannel {
 			try {
 				validateSnapshot(served.handle, frame.member, event.value);
 			} catch (error) {
-				this.send({ t: "state", id: frame.id, error: toWireError(error) });
+				this.sendState({ t: "state", id: frame.id, error: toWireError(error) });
 				return;
 			}
 			stream = encoder();
-			this.send(
+			this.sendState(
 				event.type === "snap"
 					? { t: "state", id: frame.id, snap: event.value }
 					: { t: "state", id: frame.id, reset: event.value },
@@ -674,6 +838,7 @@ export class Connection implements RemoteChannel {
 	}
 
 	#onUnsub(id: number): void {
+		this.dropState(id);
 		const unsubscribe = this.feeds.get(id);
 		if (unsubscribe !== undefined) {
 			this.feeds.delete(id);
@@ -724,7 +889,9 @@ export class Connection implements RemoteChannel {
 	#onState(frame: Extract<Frame, { t: "state" }>): void {
 		const relayed = this.relayedSubs.get(frame.id);
 		if (relayed !== undefined) {
-			relayed.relay.origin.send({ ...frame, id: relayed.originSubId });
+			if (!relayed.relay.origin.sendState({ ...frame, id: relayed.originSubId })) {
+				relayed.relay.resync(relayed.originSubId);
+			}
 			return;
 		}
 		const sink = this.subs.get(frame.id);
@@ -749,6 +916,8 @@ export class Connection implements RemoteChannel {
 
 	#closed(reason: string): void {
 		if (this.#pinger !== undefined) clearInterval(this.#pinger);
+		if (this.#ackTimer !== undefined) clearTimeout(this.#ackTimer);
+		this.#pending.clear();
 		const error = unavailable(`link to ${this.name ?? "peer"} closed: ${reason}`);
 		// As origin: everything the peer held here, relayed or not, is released (downstream calls cancelled).
 		for (const id of [...this.served.keys()]) this.#dropServed(id, true);

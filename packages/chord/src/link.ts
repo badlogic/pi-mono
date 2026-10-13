@@ -4,7 +4,12 @@ import type { Frame } from "./wire.ts";
 /** An ordered (FIFO), bidirectional frame channel between two hosts. */
 export interface Link {
 	readonly closed: boolean;
-	send(frame: Frame): void;
+	/**
+	 * Returns the size of the encoded frame as sent (JSON text length, or bytes of a packed message) when the transport
+	 * knows it. The connection's flow control counts these sizes; frames without one count as zero, so a link that never
+	 * reports sizes is not windowed.
+	 */
+	send(frame: Frame): number | undefined;
 	/** Sets the single receiver. Frames arriving earlier are queued. */
 	receive(handler: (frame: Frame) => void): void;
 	onClose(handler: (reason: string) => void): void;
@@ -25,12 +30,12 @@ abstract class BaseLink implements Link {
 		return this.#closed;
 	}
 
-	protected abstract transmit(frame: Frame): void;
+	protected abstract transmit(frame: Frame): number | undefined;
 	protected abstract shutdown(): void;
 
-	send(frame: Frame): void {
-		if (this.#closed) return;
-		this.transmit(frame);
+	send(frame: Frame): number | undefined {
+		if (this.#closed) return undefined;
+		return this.transmit(frame);
 	}
 
 	receive(handler: (frame: Frame) => void): void {
@@ -246,8 +251,8 @@ export class MemoryLink extends BaseLink {
 		if (this.peer) this.peer.#severed = true;
 	}
 
-	protected transmit(frame: Frame): void {
-		if (this.#severed) return;
+	protected transmit(frame: Frame): number | undefined {
+		if (this.#severed) return undefined;
 		// A JSON round trip detaches the frame (and rejects what JSON would mangle silently, e.g. bigint).
 		const data = JSON.stringify(packObject(frame, true));
 		const peer = this.peer;
@@ -255,6 +260,7 @@ export class MemoryLink extends BaseLink {
 		this.#pending = this.#pending.then(() => {
 			if (!this.#severed && peer !== undefined) peer.deliver(parseFrame(data));
 		});
+		return data.length;
 	}
 
 	protected shutdown(): void {
@@ -286,7 +292,8 @@ export interface IpcChannel {
 
 /**
  * Chord frames on an IPC channel are wrapped as `{ chord2: frame }`; other messages (control) pass by. Both ends are
- * Node processes of one application, so large payloads are packed both ways.
+ * Node processes of one application, so large payloads are packed both ways. Node serializes the messages itself, so
+ * the link reports no sizes and is not windowed: both ends are local processes.
  */
 export class IpcLink extends BaseLink {
 	readonly #channel: IpcChannel;
@@ -308,8 +315,9 @@ export class IpcLink extends BaseLink {
 		channel.on("disconnect", this.#onDisconnect);
 	}
 
-	protected transmit(frame: Frame): void {
+	protected transmit(frame: Frame): undefined {
 		if (this.#channel.connected) this.#channel.send({ chord2: packObject(frame, true) });
+		return undefined;
 	}
 
 	protected shutdown(): void {
@@ -380,10 +388,11 @@ export class WebSocketLink extends BaseLink {
 		socket.addEventListener("close", () => this.ended("socket closed"));
 	}
 
-	protected transmit(frame: Frame): void {
+	protected transmit(frame: Frame): number {
 		const data = packMessage(frame, this.#compress);
 		if (this.#socket.readyState === OPEN) this.#socket.send(data);
 		else this.#outbox.push(data);
+		return typeof data === "string" ? data.length : data.byteLength;
 	}
 
 	protected shutdown(): void {

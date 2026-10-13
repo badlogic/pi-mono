@@ -544,6 +544,10 @@ function resolve(root: JsonValue, path: Path): JsonValue {
 // Path interning and arity omission live between the tracker and a boundary;
 // `Op` and `apply` know nothing about them.
 //
+// Consecutive batches of one encoder may be concatenated into one batch (links
+// coalesce waiting state this way): only path ids span batches, and every batch
+// starts with an explicit path.
+//
 // ONE PAIR PER INDEPENDENT STATE STREAM. Every decoder must observe exactly the
 // batches encoded by its matching encoder, beginning with that state's base.
 // Sharing a transport connection does not make separately hydrated states one

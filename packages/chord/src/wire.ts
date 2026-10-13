@@ -7,7 +7,8 @@ import { CHORD_ERROR_CODES, ChordError } from "./errors.ts";
 // subscription; every frame type has one direction, so ids never collide:
 //   consumer → provider: hold, release, call, cancel, sub, unsub
 //   provider → consumer: shape, gone, result, state
-//   both: hello, ping, pong, bye, root_end; parent → child: invalidate, prepare, commit, abort, retire; child → parent: vote
+//   both: hello, ping, pong, bye, root_end, ack; parent → child: invalidate, prepare, commit, abort, retire;
+//   child → parent: vote
 //
 // Each frame is declared once, as the schema every received frame is checked against (`isFrame`); the types are derived
 // from it. Payloads (hold inputs, call args, results, snapshots) stay `unknown`: they are validated where they are used,
@@ -53,7 +54,11 @@ const FrameSchema = Type.Union([
 		name: Name,
 		kind: Type.Union([Type.Literal("host"), Type.Literal("client")]),
 		epoch: Type.Integer({ minimum: 0 }),
+		/** The sender acknowledges what it receives (`ack`). Flow control applies only when both hellos say so. */
+		acks: Type.Optional(Type.Boolean()),
 	}),
+	/** Every frame received so far except `ack` frames, counted from the link's start, once processed. */
+	Type.Object({ t: Type.Literal("ack"), n: Type.Integer({ minimum: 1 }) }),
 	Type.Object({
 		t: Type.Literal("hold"),
 		id: Id,

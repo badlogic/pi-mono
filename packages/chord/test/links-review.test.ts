@@ -45,13 +45,13 @@ class WatchedLink implements Link {
 	get closed(): boolean {
 		return this.inner.closed;
 	}
-	send(frame: Frame): void {
+	send(frame: Frame): number | undefined {
 		this.sent.push(frame);
 		if (this.closeOn?.(frame)) {
 			this.inner.close("dropped");
-			return;
+			return undefined;
 		}
-		this.inner.send(frame);
+		return this.inner.send(frame);
 	}
 	receive(handler: (frame: Frame) => void): void {
 		this.inner.receive(handler);

@@ -683,6 +683,7 @@ const sessions = self.get(Sessions, {}, { at: "server" });  // worker → server
   - a forwarded principal is accepted only from the parent link;
   - calls an object makes itself act as its host;
   - links ping, and a dead link releases everything held through it.
+- **Slow peers:** a peer acknowledges what it processed. While a window (`window`, default 256 KiB) of frames is unacknowledged, state waits and is coalesced per subscription; calls and results are never held back. So under load a result can arrive before the state change it caused: wait for the state you need instead of assuming it is there when the call returns.
 - **Reloads across hosts:** the server coordinates prepare and commit for every host.
 - **Workers that start behind** (spawned after a reload) are caught up to the server's epoch before anything is routed to them. Calls their roots make to the server meanwhile run in the server's current epoch instead of failing `superseded`.
 - **Browsers** don't take part in commits. They learn about new code through shape and `reset` messages, and an incompatible contract makes their calls fail with `upgrade_required`.
