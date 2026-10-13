@@ -221,6 +221,13 @@ export const SettingsSchema = Type.Object(
 				{ default: SETTINGS_DEFAULTS.transport },
 			),
 		),
+		sessionShareDestination: Type.Optional(
+			Type.Union([Type.Literal("auto"), Type.Literal("gist"), Type.Literal("radius")], {
+				description:
+					'Destination used by /share. "auto" uses Radius when authenticated and otherwise creates a GitHub gist.',
+				default: SETTINGS_DEFAULTS.sessionShareDestination,
+			}),
+		),
 		steeringMode: Type.Optional(
 			Type.Union([Type.Literal("all"), Type.Literal("one-at-a-time")], {
 				default: SETTINGS_DEFAULTS.steeringMode,
@@ -464,6 +471,7 @@ export interface CodemodeSettings extends Static<typeof CodemodeSettingsSchema> 
 export type DefaultProjectTrust = NonNullable<SettingsInput["defaultProjectTrust"]>;
 export type QuietStartup = NonNullable<SettingsInput["quietStartup"]>;
 export type TransportSetting = NonNullable<SettingsInput["transport"]>;
+export type SessionShareDestination = NonNullable<SettingsInput["sessionShareDestination"]>;
 export type PackageSource = Static<typeof PackageSourceSchema>;
 export type FullscreenExitOutput = NonNullable<SettingsInput["fullscreenExitOutput"]>;
 export type TuiMode = NonNullable<SettingsInput["tuiMode"]>;
