@@ -160,6 +160,15 @@ describe("Google thinking level maps", () => {
 		expect(payload.config?.thinkingConfig).toEqual({ includeThoughts: true, thinkingLevel: "MEDIUM" });
 	});
 
+	it.each(googleAdapters)(
+		"sends thinkingLevel instead of thinkingBudget for Gemini 4 models on $name",
+		async ({ capture }) => {
+			const payload = await capture("gemini-4-flash", { off: null }, "medium");
+
+			expect(payload.config?.thinkingConfig).toEqual({ includeThoughts: true, thinkingLevel: "MEDIUM" });
+		},
+	);
+
 	it.each(googleAdapters)("disables Gemini 2.5 thinking when reasoning is omitted on $name", async ({ capture }) => {
 		const payload = await capture("gemini-2.5-flash", {});
 
