@@ -1,6 +1,6 @@
 import { Value } from "typebox/value";
 import type { AnyContract } from "./contract.ts";
-import { applyImmutable, type Decoder, decoder, type WireOp } from "./delta/index.ts";
+import { applyImmutable, type Decoder, decoder } from "./delta/index.ts";
 import { ChordError } from "./errors.ts";
 import {
 	CtxImpl,
@@ -20,7 +20,7 @@ const noop = (): void => {};
 export interface StateSink {
 	snap?: unknown;
 	reset?: unknown;
-	ops?: readonly WireOp[];
+	ops?: readonly unknown[];
 	error?: WireError;
 }
 

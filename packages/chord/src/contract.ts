@@ -1,4 +1,4 @@
-import type { Static, TSchema } from "typebox";
+import { type Static, type TSchema, Type } from "typebox";
 import { ChordError } from "./errors.ts";
 import { canonicalJson, fits, hash64 } from "./schema.ts";
 import type { Ctx, Exposed, HandleBase, Readable, StateSource } from "./types.ts";
@@ -50,21 +50,28 @@ export interface LocalDef {
 	readonly members?: Readonly<Record<string, LocalMember>>;
 }
 
-export type MemberDescription =
-	| { readonly kind: "method"; readonly args: TSchema; readonly result: TSchema }
-	| { readonly kind: "state"; readonly schema: TSchema }
-	| { readonly kind: "opaque"; readonly id: string };
+// A description travels as a hold's contract token (wire.ts), so it is declared once, as the schema that validates it.
+// `TSchema` is an empty interface: any object is one, which is all a peer's schema is checked for here.
+const SchemaObject = Type.Unsafe<TSchema>(Type.Object({}));
+
+const MemberDescriptionSchema = Type.Union([
+	Type.Object({ kind: Type.Literal("method"), args: SchemaObject, result: SchemaObject }),
+	Type.Object({ kind: Type.Literal("state"), schema: SchemaObject }),
+	Type.Object({ kind: Type.Literal("opaque"), id: Type.String() }),
+]);
+export type MemberDescription = Static<typeof MemberDescriptionSchema>;
 
 /** Local contracts have one unnamed variant. */
 export const LOCAL_VARIANT = "";
 
-export interface Description {
-	readonly name: string;
-	readonly scope: "remote" | "local";
-	readonly version: number;
-	readonly input: TSchema;
-	readonly variants: Readonly<Record<string, Readonly<Record<string, MemberDescription>>>>;
-}
+export const DescriptionSchema = Type.Object({
+	name: Type.String({ minLength: 1 }),
+	scope: Type.Union([Type.Literal("remote"), Type.Literal("local")]),
+	version: Type.Integer(),
+	input: SchemaObject,
+	variants: Type.Record(Type.String(), Type.Record(Type.String(), MemberDescriptionSchema)),
+});
+export type Description = Static<typeof DescriptionSchema>;
 
 interface ContractBase {
 	readonly name: string;

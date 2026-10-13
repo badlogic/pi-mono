@@ -655,7 +655,8 @@ export function encoder(): Encoder {
 }
 
 export interface Decoder {
-	decode(wire: readonly WireOp[]): Op[];
+	/** Ops as received: each is validated (`assertValidWireOp`) before use. */
+	decode(wire: readonly unknown[]): Op[];
 }
 
 export function decoder(): Decoder {
