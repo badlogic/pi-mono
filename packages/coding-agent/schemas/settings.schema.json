@@ -203,6 +203,11 @@
       "type": "boolean",
       "default": false
     },
+    "compactToolCalls": {
+      "type": "boolean",
+      "description": "Collapse consecutive tool calls into expandable groups in the transcript.",
+      "default": false
+    },
     "showCacheMissNotices": {
       "type": "boolean",
       "description": "Show cache cost and provider recovery notices.",

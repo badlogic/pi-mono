@@ -243,6 +243,12 @@ export const SettingsSchema = Type.Object(
 		branchSummary: Type.Optional(BranchSummarySettingsSchema),
 		retry: Type.Optional(RetrySettingsSchema),
 		hideThinkingBlock: Type.Optional(Type.Boolean({ default: SETTINGS_DEFAULTS.hideThinkingBlock })),
+		compactToolCalls: Type.Optional(
+			Type.Boolean({
+				description: "Collapse consecutive tool calls into expandable groups in the transcript.",
+				default: SETTINGS_DEFAULTS.compactToolCalls,
+			}),
+		),
 		showCacheMissNotices: Type.Optional(
 			Type.Boolean({
 				description: "Show cache cost and provider recovery notices.",

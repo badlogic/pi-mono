@@ -1,5 +1,50 @@
-import { describe, expect, it } from "vitest";
-import { KEYBINDINGS, useWindowsKeybindings } from "../src/core/keybindings.ts";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { KEYBINDINGS, KeybindingsManager, useWindowsKeybindings } from "../src/core/keybindings.ts";
+import { createHarness, type Harness } from "./suite/harness.ts";
+
+describe("tool display keybindings", () => {
+	let harness: Harness | undefined;
+	afterEach(() => {
+		harness?.cleanup();
+		harness = undefined;
+		vi.restoreAllMocks();
+	});
+
+	it.each(["f2", "alt+g"] as const)("reserves the group shortcut %s from extension overrides", async (key) => {
+		const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+		harness = await createHarness({
+			extensionFactories: [(pi) => pi.registerShortcut(key, { handler: async () => {} })],
+		});
+		const runner = harness.session.extensionRunner;
+		if (!runner) throw new Error("Expected the fixture extension runner");
+		const config = new KeybindingsManager({ "app.tools.toggleGroups": key }).getEffectiveConfig();
+		expect(runner.getShortcuts(config).has(key)).toBe(false);
+		expect(warn).toHaveBeenCalledWith(expect.stringContaining("Skipping."));
+	});
+	it("uses independent configurable actions for groups and output", () => {
+		const defaults = new KeybindingsManager().getEffectiveConfig();
+		expect(defaults["app.tools.toggleGroups"]).toBe("f2");
+		expect(defaults["app.tools.expand"]).toBe("ctrl+o");
+
+		const custom = new KeybindingsManager({ "app.tools.toggleGroups": "alt+g" }).getEffectiveConfig();
+		expect(custom["app.tools.toggleGroups"]).toBe("alt+g");
+		expect(custom["app.tools.expand"]).toBe("ctrl+o");
+	});
+
+	it("distinguishes legacy F2 sequences from output expansion without default clashes", () => {
+		const manager = new KeybindingsManager();
+		for (const data of ["\x1bOQ", "\x1b[12~"]) {
+			expect(manager.matches(data, "app.tools.toggleGroups")).toBe(true);
+			expect(manager.matches(data, "app.tools.expand")).toBe(false);
+		}
+		expect(manager.matches("\x0f", "app.tools.toggleGroups")).toBe(false);
+		expect(manager.matches("\x0f", "app.tools.expand")).toBe(true);
+		const f2Actions = Object.entries(manager.getEffectiveConfig())
+			.filter(([, keys]) => (Array.isArray(keys) ? keys.includes("f2") : keys === "f2"))
+			.map(([action]) => action);
+		expect(f2Actions).toEqual(["app.tools.toggleGroups"]);
+	});
+});
 
 describe("Windows keybinding defaults", () => {
 	it("uses Windows keybindings on native Windows", () => {

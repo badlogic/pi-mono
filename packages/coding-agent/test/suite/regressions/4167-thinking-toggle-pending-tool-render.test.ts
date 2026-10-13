@@ -1,13 +1,17 @@
+// INV-1 interactive-mode.ts (#4167): thinking toggles retain unresolved replayed tool identities.
+// INV-2 interactive-mode.ts (#4167): historical results never remain pending, in either display mode.
 import type { AgentMessage } from "@earendil-works/pi-agent-core";
 import type { AssistantMessage, ToolResultMessage, Usage } from "@earendil-works/pi-ai";
-import { Container, Text, type TUI } from "@earendil-works/pi-tui";
-import { beforeAll, describe, expect, test, vi } from "vitest";
+import { Container } from "@earendil-works/pi-tui";
+import { afterEach, beforeAll, describe, expect, test, vi } from "vitest";
 import type { AgentSessionEvent } from "../../../src/core/agent-session.ts";
 import type { SessionEntry } from "../../../src/core/session-manager.ts";
 import type { ToolExecutionComponent } from "../../../src/modes/interactive/components/tool-execution.ts";
+import { ToolGroupComponent } from "../../../src/modes/interactive/components/tool-group.ts";
 import { InteractiveMode } from "../../../src/modes/interactive/interactive-mode.ts";
 import { initTheme } from "../../../src/modes/interactive/theme/theme.ts";
 import { stripAnsi } from "../../../src/utils/ansi.ts";
+import { createHarness, type Harness } from "../harness.ts";
 
 const TOOL_CALL_ID = "tool-4167";
 const TOOL_NAME = "slow_tool";
@@ -27,71 +31,42 @@ const EMPTY_USAGE: Usage = {
 	},
 };
 
-type RenderSessionItems = (
-	this: RenderSessionContextThis,
-	items: AgentMessage[],
-	options?: { updateFooter?: boolean; populateHistory?: boolean },
-) => void;
-
-type RenderSessionContextThis = {
+interface TestInteractiveMode {
 	pendingTools: Map<string, ToolExecutionComponent>;
 	chatContainer: Container;
-	footer: { invalidate(): void };
-	programStatus: { handleEvent(): void };
-	ui: TUI;
-	settingsManager: {
-		getShowImages(): boolean;
-		getImageWidthCells(): number;
-		getShowCacheMissNotices(): boolean;
-	};
-	sessionManager: { getCwd(): string; getEntries(): SessionEntry[] };
-	session: { retryAttempt: number; modelRegistry: { find(provider: string, modelId: string): undefined } };
-	toolOutputExpanded: boolean;
-	isInitialized: boolean;
-	updateEditorBorderColor(): void;
-	getRegisteredToolDefinition(toolName: string): undefined;
-	maybeShowAssistantDiagnostics(message: AssistantMessage): void;
-	addMessageToChat(message: AgentMessage, options?: { populateHistory?: boolean }): void;
-	renderSessionItems: RenderSessionItems;
-};
-
-type RenderSessionEntries = (
-	this: RenderSessionContextThis,
-	entries: SessionEntry[],
-	options?: { updateFooter?: boolean; populateHistory?: boolean },
-) => void;
-
-type HandleEvent = (this: RenderSessionContextThis, event: AgentSessionEvent) => Promise<void>;
-
-function createFakeInteractiveModeThis(): RenderSessionContextThis {
-	const chatContainer = new Container();
-	return {
-		pendingTools: new Map<string, ToolExecutionComponent>(),
-		chatContainer,
-		footer: { invalidate: vi.fn() },
-		programStatus: { handleEvent: vi.fn() },
-		ui: { requestRender: vi.fn() } as unknown as TUI,
-		settingsManager: {
-			getShowImages: () => false,
-			getImageWidthCells: () => 60,
-			getShowCacheMissNotices: () => false,
-		},
-		sessionManager: { getCwd: () => process.cwd(), getEntries: () => [] },
-		session: { retryAttempt: 0, modelRegistry: { find: () => undefined } },
-		toolOutputExpanded: false,
-		isInitialized: true,
-		updateEditorBorderColor: vi.fn(),
-		getRegisteredToolDefinition: (_toolName: string) => undefined,
-		maybeShowAssistantDiagnostics: vi.fn(),
-		renderSessionItems: (InteractiveMode.prototype as unknown as { renderSessionItems: RenderSessionItems })
-			.renderSessionItems,
-		addMessageToChat(message: AgentMessage) {
-			chatContainer.addChild(new Text(message.role, 0, 0));
-		},
-	};
+	renderSessionEntries(entries: SessionEntry[]): void;
+	handleEvent(event: AgentSessionEvent): Promise<void>;
+	toggleThinkingBlockVisibility(): void;
 }
 
-function createAssistantToolCallMessage(): AssistantMessage {
+const harnesses: Harness[] = [];
+
+async function createTestInteractiveMode(compactToolCalls: boolean) {
+	const harness = await createHarness({
+		tools: [],
+		settings: { compactToolCalls, terminal: { showImages: false } },
+	});
+	harnesses.push(harness);
+	const mode = Object.assign(Object.create(InteractiveMode.prototype), {
+		runtimeHost: { session: harness.session },
+		pendingTools: new Map<string, ToolExecutionComponent>(),
+		chatContainer: new Container(),
+		footer: { invalidate: vi.fn() },
+		programStatus: { handleEvent: vi.fn() },
+		ui: { requestRender: vi.fn(), terminal: { columns: 120 } },
+		toolOutputExpanded: false,
+		toolGroupsExpanded: false,
+		hideThinkingBlock: false,
+		hiddenThinkingLabel: "Thinking...",
+		outputPad: 1,
+		mermaidMarkdownTransformer: (markdown: string) => markdown,
+		isInitialized: true,
+	}) as TestInteractiveMode;
+	return { mode, harness };
+}
+
+function createAssistantToolCallMessage(harness: Harness): AssistantMessage {
+	const model = harness.getModel();
 	return {
 		role: "assistant",
 		content: [
@@ -102,9 +77,9 @@ function createAssistantToolCallMessage(): AssistantMessage {
 				arguments: { delayMs: 10_000 },
 			},
 		],
-		api: "test-api",
-		provider: "test-provider",
-		model: "test-model",
+		api: model.api,
+		provider: model.provider,
+		model: model.id,
 		usage: EMPTY_USAGE,
 		stopReason: "toolUse",
 		timestamp: Date.now(),
@@ -141,46 +116,60 @@ function renderChat(container: Container): string {
 	return stripAnsi(container.render(120).join("\n"));
 }
 
-describe("InteractiveMode.renderSessionEntries", () => {
-	beforeAll(() => {
-		initTheme("dark");
+describe("InteractiveMode.renderSessionEntries (#4167)", () => {
+	beforeAll(() => initTheme("dark"));
+	afterEach(() => {
+		for (const harness of harnesses) harness.cleanup();
+		harnesses.length = 0;
 	});
 
-	test("keeps unresolved rendered tool calls registered for live completion events", async () => {
-		const fakeThis = createFakeInteractiveModeThis();
-		const renderSessionEntries = (
-			InteractiveMode.prototype as unknown as { renderSessionEntries: RenderSessionEntries }
-		).renderSessionEntries;
-		const handleEvent = (InteractiveMode.prototype as unknown as { handleEvent: HandleEvent }).handleEvent;
+	test.each([false, true])(
+		"keeps replayed tool identity through thinking toggles and live completion (compactToolCalls=%s)",
+		async (compact) => {
+			const { mode, harness } = await createTestInteractiveMode(compact);
+			mode.renderSessionEntries(createSessionEntries([createAssistantToolCallMessage(harness)]));
+			const component = mode.pendingTools.get(TOOL_CALL_ID);
+			expect(component).toBeDefined();
 
-		renderSessionEntries.call(fakeThis, createSessionEntries([createAssistantToolCallMessage()]));
+			mode.toggleThinkingBlockVisibility();
+			expect(harness.settingsManager.getHideThinkingBlock()).toBe(true);
+			expect(mode.pendingTools.get(TOOL_CALL_ID)).toBe(component);
 
-		expect(fakeThis.pendingTools.has(TOOL_CALL_ID)).toBe(true);
+			await mode.handleEvent({
+				type: "tool_execution_end",
+				toolCallId: TOOL_CALL_ID,
+				toolName: TOOL_NAME,
+				result: { content: [{ type: "text", text: "FINAL_RESULT" }], details: undefined },
+				isError: false,
+			});
 
-		await handleEvent.call(fakeThis, {
-			type: "tool_execution_end",
-			toolCallId: TOOL_CALL_ID,
-			toolName: TOOL_NAME,
-			result: { content: [{ type: "text", text: "FINAL_RESULT" }], details: undefined },
-			isError: false,
-		});
+			expect(mode.pendingTools.has(TOOL_CALL_ID)).toBe(false);
+			for (const child of mode.chatContainer.children) {
+				if (child instanceof ToolGroupComponent) {
+					expect(child.tools).toContain(component);
+					child.setExpanded(true);
+				}
+			}
+			expect(renderChat(mode.chatContainer)).toContain("FINAL_RESULT");
+		},
+	);
 
-		expect(fakeThis.pendingTools.has(TOOL_CALL_ID)).toBe(false);
-		expect(renderChat(fakeThis.chatContainer)).toContain("FINAL_RESULT");
-	});
+	test.each([false, true])(
+		"does not keep completed historical calls pending (compactToolCalls=%s)",
+		async (compact) => {
+			const { mode, harness } = await createTestInteractiveMode(compact);
+			mode.renderSessionEntries(
+				createSessionEntries([
+					createAssistantToolCallMessage(harness),
+					createToolResultMessage("HISTORICAL_RESULT"),
+				]),
+			);
 
-	test("does not keep completed historical tool calls registered as pending", () => {
-		const fakeThis = createFakeInteractiveModeThis();
-		const renderSessionEntries = (
-			InteractiveMode.prototype as unknown as { renderSessionEntries: RenderSessionEntries }
-		).renderSessionEntries;
-
-		renderSessionEntries.call(
-			fakeThis,
-			createSessionEntries([createAssistantToolCallMessage(), createToolResultMessage("HISTORICAL_RESULT")]),
-		);
-
-		expect(fakeThis.pendingTools.size).toBe(0);
-		expect(renderChat(fakeThis.chatContainer)).toContain("HISTORICAL_RESULT");
-	});
+			expect(mode.pendingTools.size).toBe(0);
+			for (const child of mode.chatContainer.children) {
+				if (child instanceof ToolGroupComponent) child.setExpanded(true);
+			}
+			expect(renderChat(mode.chatContainer)).toContain("HISTORICAL_RESULT");
+		},
+	);
 });

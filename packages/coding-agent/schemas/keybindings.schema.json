@@ -235,6 +235,10 @@
       "$ref": "#/$defs/KeybindingValue",
       "description": "Toggle tool output"
     },
+    "app.tools.toggleGroups": {
+      "$ref": "#/$defs/KeybindingValue",
+      "description": "Toggle tool groups"
+    },
     "app.thinking.toggle": {
       "$ref": "#/$defs/KeybindingValue",
       "description": "Toggle thinking blocks"

@@ -63,6 +63,24 @@ describe("SettingsSelectorComponent", () => {
 		expect(onWheelScrollLinesChange.mock.calls.flat()).toEqual([10, "auto", 1]);
 	});
 
+	it("offers an opt-in compact tool-call toggle", () => {
+		const onCompactToolCallsChange = vi.fn();
+		const config = {
+			compactToolCalls: false,
+			warnings: {},
+			defaultModel: "not set",
+			availableDefaultModels: [],
+			modelThinkingLevels: {},
+			availableThemes: [],
+		} as unknown as SettingsConfig;
+		const callbacks = { onCompactToolCallsChange } as unknown as SettingsCallbacks;
+		const list = new SettingsSelectorComponent(config, callbacks).getSettingsList();
+		list.selectItem("compact-tool-calls");
+		list.handleInput("\r");
+		list.handleInput("\r");
+		expect(onCompactToolCallsChange.mock.calls.flat()).toEqual([true, false]);
+	});
+
 	it("cycles through share destinations", () => {
 		const onSessionShareDestinationChange = vi.fn();
 		const config = {

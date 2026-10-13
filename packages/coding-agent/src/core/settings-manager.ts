@@ -954,6 +954,16 @@ export class SettingsManager {
 		return this.settings.hideThinkingBlock ?? SETTINGS_DEFAULTS.hideThinkingBlock;
 	}
 
+	getCompactToolCalls(): boolean {
+		return this.settings.compactToolCalls ?? SETTINGS_DEFAULTS.compactToolCalls;
+	}
+
+	setCompactToolCalls(compact: boolean): void {
+		this.globalSettings.compactToolCalls = compact;
+		this.markModified("compactToolCalls");
+		this.save();
+	}
+
 	getShowCacheMissNotices(): boolean {
 		return this.settings.showCacheMissNotices ?? SETTINGS_DEFAULTS.showCacheMissNotices;
 	}

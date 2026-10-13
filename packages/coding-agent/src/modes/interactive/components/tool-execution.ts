@@ -167,6 +167,19 @@ export class ToolExecutionComponent extends Container {
 		});
 	}
 
+	getToolName(): string {
+		return this.toolName;
+	}
+
+	getToolCallId(): string {
+		return this.toolCallId;
+	}
+
+	getStatus(): "pending" | "running" | "error" | "success" {
+		if (!this.isPartial) return this.result?.isError ? "error" : "success";
+		return this.executionStarted || this.result ? "running" : "pending";
+	}
+
 	updateArgs(args: any): void {
 		this.args = args;
 		this.updateDisplay();

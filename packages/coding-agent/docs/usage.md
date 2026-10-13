@@ -22,6 +22,8 @@ To include files or images:
 
 Pi shows each tool call and result while it works. Press `Ctrl+O` to expand or collapse tool output. Press `Ctrl+T` to show or hide thinking blocks.
 
+Enable **Compact tool calls** in `/settings` to replace consecutive tool calls with a one-line summary. Press `F2` to open or close all groups, or click a summary in fullscreen mode to toggle one group. Group visibility is independent of `Ctrl+O`: closing and reopening a group preserves its tools' output detail. Summaries show running and failed calls; opening a group restores the original tools, including images.
+
 The startup header lists the instructions and resources Pi loaded. The editor border indicates the current thinking level. The footer updates as the model uses context and reports usage.
 
 Pi does not ask before every tool call. Review commands and changed files, and use a sandbox for untrusted or unattended work. See [Security](security.md).
