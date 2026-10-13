@@ -402,6 +402,13 @@ export const OpenAIResponsesCompatSchema = Type.Object(
 				default: true,
 			}),
 		),
+		supportsMidConvoEffort: Type.Optional(
+			Type.Boolean({
+				description:
+					"Whether the model changes reasoning effort with configuration_update input items, keeping the request-level effort fixed for the conversation.",
+				default: false,
+			}),
+		),
 	},
 	{ description: "Compatibility settings for OpenAI Responses APIs.", additionalProperties: true },
 );
@@ -541,6 +548,12 @@ const ProviderCompatPropertyOverrides = {
 	sendSessionAffinityHeaders: optionalCompatBoolean({
 		description: "Whether to send session-affinity data from options.sessionId. Defaults are API-specific.",
 	}),
+	supportsMidConvoEffort: Type.Optional(
+		Type.Boolean({
+			description: "Whether the exact model transport supports mid-conversation reasoning effort changes.",
+			default: false,
+		}),
+	),
 } satisfies TProperties;
 
 type UnionToIntersection<Union> = (Union extends unknown ? (value: Union) => void : never) extends (

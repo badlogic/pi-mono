@@ -42,7 +42,12 @@ import {
 import { uuidv7 } from "../utils/uuid.ts";
 import { createGrammarToolInputProperties } from "./constrained-sampling.ts";
 import { clampOpenAIPromptCacheKey } from "./openai-prompt-cache.ts";
-import { convertResponsesMessages, convertResponsesTools, processResponsesStream } from "./openai-responses-shared.ts";
+import {
+	convertResponsesMessages,
+	convertResponsesTools,
+	processResponsesStream,
+	resolveUserTurnEfforts,
+} from "./openai-responses-shared.ts";
 import { buildBaseOptions } from "./simple-options.ts";
 
 // ============================================================================
@@ -275,7 +280,9 @@ export const stream: StreamFunction<"openai-codex-responses", OpenAICodexRespons
 			);
 			const cacheSessionId = options?.cacheRetention === "none" ? undefined : options?.sessionId;
 			const codexSessionId = clampOpenAIPromptCacheKey(cacheSessionId);
-			let body = buildRequestBody(model, normalizedContext, options, codexSessionId, grammarToolInputProperties);
+			const built = buildRequestBody(model, normalizedContext, options, codexSessionId, grammarToolInputProperties);
+			let body = built.body;
+			if (built.providerThinkingLevel !== undefined) output.providerThinkingLevel = built.providerThinkingLevel;
 			const nextBody = await options?.onPayload?.(body, model);
 			if (nextBody !== undefined) {
 				body = nextBody as RequestBody;
@@ -534,20 +541,12 @@ function buildRequestBody(
 		getDeclaredTools(context.messages),
 		model.compat?.supportsOpenAIGrammarTools ?? false,
 	),
-): RequestBody {
+): { body: RequestBody; providerThinkingLevel: string | undefined } {
 	const supportsStrictMode = model.compat?.supportsStrictMode ?? true;
 	const supportsOpenAIGrammarTools = model.compat?.supportsOpenAIGrammarTools ?? false;
 	const supportsAdditionalTools = model.compat?.supportsAdditionalTools ?? false;
 	const supportsToolSearch = model.compat?.supportsToolSearch ?? false;
 	const transcriptTools = resolveTranscriptTools(context.messages, supportsAdditionalTools || supportsToolSearch);
-	const messages = convertResponsesMessages(model, context, CODEX_TOOL_CALL_PROVIDERS, {
-		includeSystemPrompt: false,
-		grammarToolInputProperties,
-		supportsMidConvoSystemMessages: model.compat?.supportsMidConvoSystemMessages ?? false,
-		supportsAdditionalTools,
-		supportsToolSearch,
-		toolOptions: { strict: null, supportsStrictMode, supportsOpenAIGrammarTools },
-	});
 
 	const initialSystemMessage = getInitialSystemMessage(context.messages);
 	const instructions = initialSystemMessage ? getSystemMessageText(initialSystemMessage) : "";
@@ -556,7 +555,6 @@ function buildRequestBody(
 		store: false,
 		stream: true,
 		instructions: instructions || "You are a helpful assistant.",
-		input: messages,
 		text: { verbosity: options?.textVerbosity || "low" },
 		include: ["reasoning.encrypted_content"],
 		prompt_cache_key: cacheSessionId,
@@ -597,7 +595,25 @@ function buildRequestBody(
 		body.reasoning = { effort: model.thinkingLevelMap?.off ?? "none" };
 	}
 
-	return body;
+	const userTurnEfforts =
+		model.compat?.supportsMidConvoEffort && body.reasoning?.effort
+			? resolveUserTurnEfforts(context.messages, model, body.reasoning.effort)
+			: undefined;
+	if (userTurnEfforts?.length) {
+		// Keep the conversation's first effort so WebSocket continuations survive effort changes.
+		body.reasoning = { effort: userTurnEfforts[0], summary: options?.reasoningSummary ?? "auto" };
+	}
+	body.input = convertResponsesMessages(model, context, CODEX_TOOL_CALL_PROVIDERS, {
+		includeSystemPrompt: false,
+		grammarToolInputProperties,
+		supportsMidConvoSystemMessages: model.compat?.supportsMidConvoSystemMessages ?? false,
+		supportsAdditionalTools,
+		supportsToolSearch,
+		userTurnEfforts,
+		toolOptions: { strict: null, supportsStrictMode, supportsOpenAIGrammarTools },
+	});
+
+	return { body, providerThinkingLevel: userTurnEfforts?.at(-1) };
 }
 
 function getServiceTierCostMultiplier(

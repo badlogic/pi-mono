@@ -25,7 +25,12 @@ import { getDeclaredTools, resolveTranscript, resolveTranscriptTools } from "../
 import { createGrammarToolInputProperties } from "./constrained-sampling.ts";
 import { buildCopilotDynamicHeaders, hasCopilotVisionInput } from "./github-copilot-headers.ts";
 import { clampOpenAIPromptCacheKey } from "./openai-prompt-cache.ts";
-import { convertResponsesMessages, convertResponsesTools, processResponsesStream } from "./openai-responses-shared.ts";
+import {
+	convertResponsesMessages,
+	convertResponsesTools,
+	processResponsesStream,
+	resolveUserTurnEfforts,
+} from "./openai-responses-shared.ts";
 import { buildBaseOptions, resolveSamplingParams } from "./simple-options.ts";
 
 const OPENAI_TOOL_CALL_PROVIDERS = new Set(["openai", "openai-codex", "opencode"]);
@@ -91,6 +96,7 @@ function getCompat(model: Model<"openai-responses">): Required<OpenAIResponsesCo
 		supportsToolSearch: model.compat?.supportsToolSearch ?? false,
 		supportsExplicitPromptCacheMode: model.compat?.supportsExplicitPromptCacheMode ?? false,
 		supportsMaxOutputTokens: model.compat?.supportsMaxOutputTokens ?? true,
+		supportsMidConvoEffort: model.compat?.supportsMidConvoEffort ?? false,
 	};
 }
 
@@ -170,7 +176,9 @@ export const stream: StreamFunction<"openai-responses", OpenAIResponsesOptions> 
 				options?.fetch,
 				cacheSessionId,
 			);
-			let params = buildParams(model, normalizedContext, options, compat, grammarToolInputProperties);
+			const built = buildParams(model, normalizedContext, options, compat, grammarToolInputProperties);
+			let params = built.params;
+			if (built.providerThinkingLevel !== undefined) output.providerThinkingLevel = built.providerThinkingLevel;
 			const nextParams = await options?.onPayload?.(params, model);
 			if (nextParams !== undefined) {
 				params = nextParams as ResponseCreateParamsStreaming;
@@ -313,23 +321,12 @@ function buildParams(
 		context.messages,
 		compat.supportsAdditionalTools || compat.supportsToolSearch,
 	);
-	const messages = convertResponsesMessages(model, context, OPENAI_TOOL_CALL_PROVIDERS, {
-		grammarToolInputProperties,
-		supportsMidConvoSystemMessages: compat.supportsMidConvoSystemMessages,
-		supportsAdditionalTools: compat.supportsAdditionalTools,
-		supportsToolSearch: compat.supportsToolSearch,
-		toolOptions: {
-			supportsStrictMode: compat.supportsStrictMode,
-			supportsOpenAIGrammarTools: compat.supportsOpenAIGrammarTools,
-		},
-	});
 
 	const cacheRetention = resolveCacheRetention(options?.cacheRetention, options?.env);
 	// Sign in with ChatGPT rejects these request fields.
 	const omitUnsupportedFields = isChatGPTSignIn(model, options?.apiKey);
 	const params: ResponseCreateParamsStreaming = {
 		model: model.id,
-		input: messages,
 		stream: true,
 		prompt_cache_key: cacheRetention === "none" ? undefined : clampOpenAIPromptCacheKey(options?.sessionId),
 		prompt_cache_retention: omitUnsupportedFields ? undefined : getPromptCacheRetention(compat, cacheRetention),
@@ -379,13 +376,38 @@ function buildParams(
 		if (model.provider === "xai") params.include = ["reasoning.encrypted_content"];
 	}
 
+	const userTurnEfforts =
+		compat.supportsMidConvoEffort && params.reasoning?.effort
+			? resolveUserTurnEfforts(context.messages, model, params.reasoning.effort)
+			: undefined;
+	if (userTurnEfforts?.length) {
+		// Keep the conversation's first effort; later changes are sent as configuration_update items.
+		// Summaries and encrypted reasoning stay on because the effort in force can differ from it.
+		params.reasoning = {
+			effort: userTurnEfforts[0] as NonNullable<typeof params.reasoning>["effort"],
+			summary: options?.reasoningSummary || "auto",
+		};
+		params.include = ["reasoning.encrypted_content"];
+	}
+	params.input = convertResponsesMessages(model, context, OPENAI_TOOL_CALL_PROVIDERS, {
+		grammarToolInputProperties,
+		supportsMidConvoSystemMessages: compat.supportsMidConvoSystemMessages,
+		supportsAdditionalTools: compat.supportsAdditionalTools,
+		supportsToolSearch: compat.supportsToolSearch,
+		userTurnEfforts,
+		toolOptions: {
+			supportsStrictMode: compat.supportsStrictMode,
+			supportsOpenAIGrammarTools: compat.supportsOpenAIGrammarTools,
+		},
+	});
+
 	// Last so model and request sampling parameters override named request fields.
 	const samplingParams = resolveSamplingParams(model, reasoningEffort ?? "off", options?.samplingParams);
 	if (samplingParams) {
 		Object.assign(params, samplingParams);
 	}
 
-	return params;
+	return { params, providerThinkingLevel: userTurnEfforts?.at(-1) };
 }
 
 function getServiceTierCostMultiplier(

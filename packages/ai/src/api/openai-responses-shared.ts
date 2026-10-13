@@ -1,6 +1,7 @@
 import type OpenAI from "openai";
 import type {
 	Tool as OpenAITool,
+	ResponseConfigurationUpdateItemParam,
 	ResponseCreateParamsStreaming,
 	ResponseInput,
 	ResponseInputContent,
@@ -18,6 +19,7 @@ import type {
 	Api,
 	AssistantMessage,
 	ImageContent,
+	Message,
 	Model,
 	StopReason,
 	StreamOptions,
@@ -128,6 +130,8 @@ export interface ConvertResponsesMessagesOptions {
 	supportsMidConvoSystemMessages?: boolean;
 	supportsAdditionalTools?: boolean;
 	supportsToolSearch?: boolean;
+	/** Effort for each user message from `resolveUserTurnEfforts`. Changes are sent as `configuration_update` items. */
+	userTurnEfforts?: readonly string[];
 	toolOptions?: ConvertResponsesToolsOptions;
 }
 
@@ -141,6 +145,36 @@ export interface ConvertResponsesToolsOptions {
 // =============================================================================
 // Message conversion
 // =============================================================================
+
+/**
+ * Effort in force for each user message on models that change effort with `configuration_update`
+ * items. Each user message keeps the effort recorded on its first response from this model, so
+ * replayed history matches the original requests. The trailing unanswered user message gets
+ * `requested`. The first entry is the request-level effort for the whole conversation.
+ */
+export function resolveUserTurnEfforts(messages: readonly Message[], model: Model<Api>, requested: string): string[] {
+	const efforts: (string | undefined)[] = [];
+	for (const message of messages) {
+		if (message.role === "user") {
+			efforts.push(undefined);
+		} else if (
+			message.role === "assistant" &&
+			efforts.length > 0 &&
+			message.provider === model.provider &&
+			message.api === model.api &&
+			message.model === model.id
+		) {
+			efforts[efforts.length - 1] ??= message.providerThinkingLevel;
+		}
+	}
+	if (efforts.length > 0) efforts[efforts.length - 1] ??= requested;
+	// Turns answered by another model or before effort was recorded inherit the previous effort.
+	let previous = efforts.find((effort) => effort !== undefined) ?? requested;
+	return efforts.map((effort) => {
+		previous = effort ?? previous;
+		return previous;
+	});
+}
 
 export function convertResponsesMessages<TApi extends Api>(
 	model: Model<TApi>,
@@ -216,6 +250,8 @@ export function convertResponsesMessages<TApi extends Api>(
 
 	let msgIndex = 0;
 	let sourceIndex = 0;
+	let userTurn = 0;
+	let currentEffort = options?.userTurnEfforts?.[0];
 	for (const msg of transformedMessages) {
 		const isLeadingSystemMessage = sourceIndex++ === 0 && msg.role === "system";
 		if (msg.role === "system") {
@@ -227,6 +263,15 @@ export function convertResponsesMessages<TApi extends Api>(
 				}
 			}
 		} else if (msg.role === "user") {
+			const effort = options?.userTurnEfforts?.[userTurn++];
+			const emitsMessage = typeof msg.content === "string" || msg.content.length > 0;
+			if (effort !== undefined && effort !== currentEffort && emitsMessage) {
+				messages.push({
+					type: "configuration_update",
+					reasoning: { effort: effort as ResponseConfigurationUpdateItemParam.Reasoning["effort"] },
+				} satisfies ResponseInputItem);
+				currentEffort = effort;
+			}
 			if (typeof msg.content === "string") {
 				messages.push({
 					role: "user",
