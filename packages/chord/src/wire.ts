@@ -96,7 +96,7 @@ const FrameSchema = Type.Union([
 		id: Id,
 		hold: Id,
 		member: Name,
-		args: Type.Unknown(),
+		args: Type.Optional(Type.Unknown()),
 		/** Absent: the receiving host starts a root (browsers never carry roots). */
 		root: Type.Optional(RootRefSchema),
 	}),

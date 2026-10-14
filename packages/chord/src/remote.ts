@@ -1,5 +1,5 @@
 import { Value } from "typebox/value";
-import type { AnyContract } from "./contract.ts";
+import { type AnyContract, takesNoArgs } from "./contract.ts";
 import { applyImmutable, type Decoder, decoder } from "./delta/index.ts";
 import { ChordError } from "./errors.ts";
 import {
@@ -161,7 +161,7 @@ export class RemoteRef implements RefCore {
 	binding: { readonly channel: RemoteChannel; readonly id: number } | undefined;
 	readonly shapeListeners = new Set<(shape: Shape) => void>();
 	readonly #readables = new Map<string, RemoteReadable>();
-	readonly #callers = new Map<string, (args: unknown, ctx?: Ctx) => Promise<unknown>>();
+	readonly #callers = new Map<string, (...given: unknown[]) => Promise<unknown>>();
 	#settleReady: { resolve: () => void; reject: (error: unknown) => void } | undefined;
 	#live: { promise: Promise<void>; resolve: () => void; reject: (error: unknown) => void };
 
@@ -303,10 +303,13 @@ export class RemoteRef implements RefCore {
 		return undefined;
 	}
 
-	#caller(name: string): (args: unknown, ctx?: Ctx) => Promise<unknown> {
+	#caller(name: string): (...given: unknown[]) => Promise<unknown> {
 		let caller = this.#callers.get(name);
 		if (caller === undefined) {
-			caller = (args, ctx) => {
+			const noArgs = takesNoArgs(this.contract, name);
+			caller = (...given) => {
+				// A method without arguments is called as `ref.name(ctx)`.
+				const [args, ctx] = (noArgs ? [undefined, given[0]] : given) as [unknown, Ctx | undefined];
 				if (this.host.inFactory > 0)
 					throw new ChordError("not_ready", `${this.address}.${name} called inside a factory`);
 				if (ctx instanceof CtxImpl) {
@@ -342,7 +345,12 @@ export class RemoteRef implements RefCore {
 			}
 			// Send only what the consumer's own schema knows (the additive rule's premise; see RecordImpl.call).
 			const description = this.contract.description.variants[variant]?.[name];
-			const sent = description?.kind === "method" ? Value.Clean(description.args, Value.Clone(args)) : args;
+			const sent =
+				description?.kind !== "method"
+					? args
+					: description.args === undefined
+						? undefined
+						: Value.Clean(description.args, Value.Clone(args));
 			return binding.channel.call(
 				binding.id,
 				name,

@@ -10,7 +10,6 @@ import {
 	local,
 	memoryLinkPair,
 	remote,
-	resource,
 } from "../src/index.ts";
 
 const tick = () => new Promise<void>((resolve) => setImmediate(resolve));
@@ -33,14 +32,12 @@ describe("host: eager readiness", () => {
 					serve(
 						Eager,
 						(_input, _principal, self) => {
-							self.resources({
-								r: resource({
-									rev: 1,
-									open: () =>
-										new Promise<void>((resolve) => {
-											opened = resolve;
-										}),
-								}),
+							self.resource("r", {
+								version: 1,
+								open: () =>
+									new Promise<void>((resolve) => {
+										opened = resolve;
+									}),
 							});
 							self.register(entries, { eager: "live" });
 							return {};
@@ -87,13 +84,11 @@ describe("host: eager readiness", () => {
 								if (failure === "factory") throw cause;
 								if (failure === "dependency") self.get(Lazy, {});
 								if (failure === "resource")
-									self.resources({
-										r: resource({
-											rev: 1,
-											open: () => {
-												throw cause;
-											},
-										}),
+									self.resource("r", {
+										version: 1,
+										open: () => {
+											throw cause;
+										},
 									});
 								return {};
 							},
@@ -217,14 +212,12 @@ describe("host: eager readiness", () => {
 						Eager,
 						(_input, _principal, self) => {
 							const status = self.get(Status, {}, { at: "server" });
-							self.resources({
-								r: resource({
-									rev: 1,
-									deps: [status],
-									open: () => {
-										reported = true;
-									},
-								}),
+							self.resource("r", {
+								version: 1,
+								deps: [status],
+								open: () => {
+									reported = true;
+								},
 							});
 							return {};
 						},

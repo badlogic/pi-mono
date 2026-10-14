@@ -3,19 +3,17 @@ import { Type } from "typebox";
 import { describe, it } from "vitest";
 import {
 	type Ctx,
-	cell,
 	createHost,
 	defineRegistry,
 	type Facet,
 	isChordError,
-	listener,
 	local,
 	method,
 	remote,
-	resource,
 	type Self,
 	type ServeOptions,
 	type StateEvent,
+	type StateOptions,
 } from "../src/index.ts";
 
 const tick = () => new Promise<void>((resolve) => setImmediate(resolve));
@@ -43,6 +41,7 @@ interface GreeterSpec {
 	readonly initial?: object;
 	readonly bump?: (draft: Record<string, number>) => void;
 	readonly options?: ServeOptions;
+	readonly state?: StateOptions<never>;
 	readonly extra?: (self: Self, input: { id?: string }) => void;
 }
 
@@ -54,11 +53,16 @@ function greeterFacet(spec: GreeterSpec): Facet {
 				Greeter,
 				(input, _principal, self) => {
 					spec.extra?.(self, input);
-					const state = self.state({ count: cell(spec.schema ?? CountV1, (spec.initial ?? { n: 0 }) as never) });
+					const count = self.state(
+						"count",
+						spec.schema ?? CountV1,
+						(spec.initial ?? { n: 0 }) as never,
+						spec.state,
+					);
 					return {
-						count: state.count,
+						count,
 						greet: (name: string, ctx: Ctx) => {
-							state.count.change(ctx, (draft) => {
+							count.change(ctx, (draft) => {
 								const bump =
 									spec.bump ??
 									((d: Record<string, number>) => {
@@ -124,8 +128,8 @@ describe("reload", () => {
 		const writing = greeterFacet({
 			greeting: "hi",
 			extra: (self) => {
-				const state = self.state({ probe: cell(Type.Object({}), {}) });
-				state.probe.replace(captured!, {});
+				const probe = self.state("probe", Type.Object({}), {});
+				probe.replace(captured!, {});
 			},
 		});
 		await assert.rejects(host.reload([writing]), /read_only/);
@@ -134,12 +138,10 @@ describe("reload", () => {
 		const failing = greeterFacet({
 			greeting: "hi",
 			extra: (self, input) => {
-				self.resources({
-					extra: resource({
-						rev: 1,
-						open: () => void log.push(`open ${input.id}`),
-						close: () => void log.push(`close ${input.id}`),
-					}),
+				self.resource("extra", {
+					version: 1,
+					open: () => void log.push(`open ${input.id}`),
+					close: () => void log.push(`close ${input.id}`),
 				});
 				if (input.id === "b") throw new Error("b fails");
 			},
@@ -155,7 +157,7 @@ describe("reload", () => {
 		assert.equal(await a.greet("x"), "hello x");
 	});
 
-	it("refuses a changed cell schema without a state-version bump", async () => {
+	it("refuses a changed cell schema without a version bump", async () => {
 		const host = quiet();
 		host.install(greeterFacet({ greeting: "hello" }));
 		await host.get(Greeter, {}).ready;
@@ -167,9 +169,7 @@ describe("reload", () => {
 		await assert.rejects(
 			host.reload([changed]),
 			(error) =>
-				isChordError(error, "invalid") &&
-				error.reason === "state" &&
-				/without a state-version bump/.test(error.message),
+				isChordError(error, "invalid") && error.reason === "state" && /without a version bump/.test(error.message),
 		);
 	});
 
@@ -195,15 +195,11 @@ describe("reload", () => {
 			bump: (draft) => {
 				draft.total = (draft.total ?? 0) + 1;
 			},
-			options: {
-				state: {
-					version: 2,
-					migrate: {
-						count: (old, from) => {
-							froms.push(from);
-							return { total: (old as { n: number }).n };
-						},
-					},
+			state: {
+				version: 2,
+				migrate: (old, from) => {
+					froms.push(from);
+					return { total: (old as { n: number }).n } as never;
 				},
 			},
 		});
@@ -215,6 +211,46 @@ describe("reload", () => {
 		assert.deepEqual(ref.count.value, { total: 3 });
 		go.open();
 		await assert.rejects(late, (error) => isChordError(error, "upgrade_conflict") && error.retryable);
+	});
+
+	it("versions are per cell: a raised one migrates only that cell, a lowered one is refused", async () => {
+		const host = quiet();
+		const Pair = local("t.pair", {
+			version: 1,
+			input: Type.Object({}),
+			members: { a: Type.Unknown(), b: Type.Unknown(), bump: method() },
+		});
+		const migrated: string[] = [];
+		const facet = (version: number): Facet => ({
+			name: "pair",
+			setup: (api) =>
+				api.serve(Pair, (_input, _principal, self) => {
+					const a = self.state("a", Type.Number(), 1);
+					const b = self.state("b", Type.Number(), 1, {
+						version,
+						migrate: (old, from) => {
+							migrated.push(`b ${from}->${version}`);
+							return (old as number) * 10;
+						},
+					});
+					return {
+						a,
+						b,
+						bump: (ctx) => {
+							a.replace(ctx, a.value + 1);
+						},
+					};
+				}),
+		});
+		host.install(facet(1));
+		const pair = host.get(Pair, {});
+		await pair.ready;
+		await pair.bump();
+		const report = await host.reload([facet(2)]);
+		assert.equal(report.gated.length, 1);
+		assert.deepEqual(migrated, ["b 1->2"]);
+		assert.deepEqual([pair.a.value, pair.b.value], [2, 10], "a kept as it was, b migrated");
+		await assert.rejects(host.reload([facet(1)]), /version of state b lowered from 2 to 1/);
 	});
 
 	it("gate: late old roots get upgrade_conflict, grandfathered roots re-enter, then commit", async () => {
@@ -229,7 +265,7 @@ describe("reload", () => {
 			return ref.greet("g", ctx);
 		});
 		await tick();
-		const reload = host.reload([greeterFacet({ greeting: "hi", options: { state: { version: 2 } } })]);
+		const reload = host.reload([greeterFacet({ greeting: "hi", state: { version: 2 } })]);
 		await until(async () => {
 			try {
 				await ref.greet("probe");
@@ -251,21 +287,15 @@ describe("reload", () => {
 		const facet = (greeting: string, version: number): Facet => ({
 			name: "greeter",
 			setup: (api) =>
-				api.serve(
-					Greeter,
-					(_input, _principal, self) => {
-						self.tasks({
-							loop: async (ctx) => {
-								log.push(`start ${greeting}`);
-								await new Promise<void>((resolve) => ctx.signal.addEventListener("abort", () => resolve()));
-								log.push(`stop ${greeting}`);
-							},
-						});
-						const state = self.state({ count: cell(Type.Number(), 0) });
-						return { count: state.count, greet: (name: string) => `${greeting} ${name}` };
-					},
-					{ state: { version } },
-				),
+				api.serve(Greeter, (_input, _principal, self) => {
+					self.task(async (ctx) => {
+						log.push(`start ${greeting}`);
+						await new Promise<void>((resolve) => ctx.signal.addEventListener("abort", () => resolve()));
+						log.push(`stop ${greeting}`);
+					});
+					const count = self.state("count", Type.Number(), 0, { version });
+					return { count, greet: (name: string) => `${greeting} ${name}` };
+				}),
 		});
 		host.install(facet("hello", 1));
 		const ref = host.get(Greeter, {});
@@ -295,24 +325,22 @@ describe("reload", () => {
 			name: "greeter",
 			setup: (api) =>
 				api.serve(Greeter, (_input, _principal, self) => {
-					const res = self.resources({
-						lock: resource({
-							rev,
-							exclusive: true,
-							open: () => {
-								log.push(`open lock ${rev}`);
-								return rev;
-							},
-							close: () => void log.push(`close lock ${rev}`),
-						}),
-						cache: resource({
-							rev,
-							open: () => void log.push(`open cache ${rev}`),
-							close: () => void log.push(`close cache ${rev}`),
-						}),
+					const lock = self.resource("lock", {
+						version: rev,
+						exclusive: true,
+						open: () => {
+							log.push(`open lock ${rev}`);
+							return rev;
+						},
+						close: () => void log.push(`close lock ${rev}`),
 					});
-					const state = self.state({ count: cell(Type.Number(), 0) });
-					return { count: state.count, greet: (name: string) => `${res.lock.value} ${name}` };
+					self.resource("cache", {
+						version: rev,
+						open: () => void log.push(`open cache ${rev}`),
+						close: () => void log.push(`close cache ${rev}`),
+					});
+					const count = self.state("count", Type.Number(), 0);
+					return { count, greet: (name: string) => `${lock.value} ${name}` };
 				}),
 		});
 		host.install(facet(1));
@@ -355,17 +383,17 @@ describe("reload", () => {
 		const DocV1 = remote("t.rdoc", {
 			version: 1,
 			input: Type.Object({}),
-			variants: { main: { methods: { read: method(Type.Null(), Type.Object({ text: Type.String() })) } } },
+			variants: { main: { methods: { read: method(undefined, Type.Object({ text: Type.String() })) } } },
 		});
 		const DocBroken = remote("t.rdoc", {
 			version: 1,
 			input: Type.Object({}),
-			variants: { main: { methods: { read: method(Type.Null(), Type.Object({ text: Type.Number() })) } } },
+			variants: { main: { methods: { read: method(undefined, Type.Object({ text: Type.Number() })) } } },
 		});
 		const DocV2 = remote("t.rdoc", {
 			version: 2,
 			input: Type.Object({}),
-			variants: { main: { methods: { fetch: method(Type.Null(), Type.Object({ body: Type.String() })) } } },
+			variants: { main: { methods: { fetch: method(undefined, Type.Object({ body: Type.String() })) } } },
 		});
 		const host = quiet();
 		host.install({
@@ -373,7 +401,7 @@ describe("reload", () => {
 			setup: (api) => api.serve(DocV1, () => ({ variant: "main", read: () => ({ text: "v1" }) })),
 		});
 		const consumer = host.get(DocV1, {});
-		assert.deepEqual(await consumer.read(null), { text: "v1" });
+		assert.deepEqual(await consumer.read(), { text: "v1" });
 
 		const broken: Facet = {
 			name: "doc",
@@ -398,9 +426,9 @@ describe("reload", () => {
 				}),
 		};
 		await host.reload([adapted]);
-		assert.deepEqual(await consumer.read(null), { text: "v2 via adapter" });
+		assert.deepEqual(await consumer.read(), { text: "v2 via adapter" });
 		const modern = host.get(DocV2, {});
-		assert.deepEqual(await modern.fetch(null), { body: "v2" });
+		assert.deepEqual(await modern.fetch(), { body: "v2" });
 	});
 
 	it("rebinds listeners to the new code and restarts tasks", async () => {
@@ -425,25 +453,22 @@ describe("reload", () => {
 			name: "sum",
 			setup: (api) =>
 				api.serve(Sum, (_input, _principal, self) => {
-					const state = self.state({ sum: cell(Type.Object({ v: Type.Number() }), { v: 0 }) });
-					self.listen({
-						add: listener(
-							events,
-							(source) => source,
-							(value, ctx) =>
-								state.sum.change(ctx, (draft) => {
-									draft.v += value * factor;
-								}),
-						),
+					const sum = self.state("sum", Type.Object({ v: Type.Number() }), { v: 0 });
+					self.on(
+						"add",
+						events,
+						(source) => source,
+						(value, ctx) =>
+							sum.change(ctx, (draft) => {
+								draft.v += value * factor;
+							}),
+					);
+					self.task(async (ctx) => {
+						log.push(`start ${factor}`);
+						await new Promise<void>((resolve) => ctx.signal.addEventListener("abort", () => resolve()));
+						log.push(`stop ${factor}`);
 					});
-					self.tasks({
-						run: async (ctx) => {
-							log.push(`start ${factor}`);
-							await new Promise<void>((resolve) => ctx.signal.addEventListener("abort", () => resolve()));
-							log.push(`stop ${factor}`);
-						},
-					});
-					return { sum: state.sum };
+					return { sum };
 				}),
 		});
 		host.install(facet(1));
@@ -503,7 +528,7 @@ describe("reload", () => {
 		const Clock = local("t.clock", {
 			version: 1,
 			input: Type.Object({}),
-			members: { now: method(Type.Null(), Type.Number()) },
+			members: { now: method(undefined, Type.Number()) },
 		});
 		const clockFacet: Facet = { name: "clock", setup: (api) => api.serve(Clock, () => ({ now: () => 42 })) };
 		const consumer = (fail: boolean): Facet => ({
@@ -511,11 +536,11 @@ describe("reload", () => {
 			setup: (api) =>
 				api.serve(Greeter, (_input, _principal, self) => {
 					const clock = self.get(Clock, {});
-					const state = self.state({ count: cell(CountV1, { n: 0 }) });
+					const count = self.state("count", CountV1, { n: 0 });
 					if (fail) throw new Error("consumer fails");
 					return {
-						count: state.count,
-						greet: async (name: string, ctx: Ctx) => `${await clock.now(null, ctx)} ${name}`,
+						count,
+						greet: async (name: string, ctx: Ctx) => `${await clock.now(ctx)} ${name}`,
 					};
 				}),
 		});
@@ -543,7 +568,7 @@ describe("reload", () => {
 			return ref.greet("old", ctx);
 		});
 		await tick();
-		const reload = host.reload([greeterFacet({ greeting: "hi", options: { state: { version: 2 } } })]);
+		const reload = host.reload([greeterFacet({ greeting: "hi", state: { version: 2 } })]);
 		await until(async () => {
 			try {
 				await ref.greet("probe");

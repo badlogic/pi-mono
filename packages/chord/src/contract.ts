@@ -5,7 +5,11 @@ import type { Ctx, Exposed, Readable, RefBase, StateSource } from "./types.ts";
 
 const MEMBER = Symbol("chord.member");
 
-export interface MethodSpec<A extends TSchema = TSchema, R extends TSchema = TSchema> {
+/** A method's arguments and result; `undefined`: it takes no arguments, or returns nothing (void). */
+export interface MethodSpec<
+	A extends TSchema | undefined = TSchema | undefined,
+	R extends TSchema | undefined = TSchema | undefined,
+> {
 	readonly [MEMBER]: "method";
 	readonly args: A;
 	readonly result: R;
@@ -18,11 +22,17 @@ export interface OpaqueSpec<T = unknown> {
 	readonly type?: T;
 }
 
-export const method = <A extends TSchema, R extends TSchema>(args: A, result: R): MethodSpec<A, R> => ({
-	[MEMBER]: "method",
-	args,
-	result,
-});
+/**
+ * A method. `method()`: no arguments (called as `ref.name(ctx)`, implemented as `(ctx) => …`) and no result.
+ * `method(args)`: no result, the handler returns nothing (void). `method(args, result)`, or `method(undefined, result)`
+ * for a method without arguments that returns something.
+ */
+export function method(): MethodSpec<undefined, undefined>;
+export function method<A extends TSchema>(args: A): MethodSpec<A, undefined>;
+export function method<A extends TSchema | undefined, R extends TSchema>(args: A, result: R): MethodSpec<A, R>;
+export function method(args?: TSchema, result?: TSchema): MethodSpec {
+	return { [MEMBER]: "method", args, result };
+}
 
 /** A native in-process object identified by `name@version` (local contracts only). */
 export const opaque = <T = unknown>(id: string): OpaqueSpec<T> => {
@@ -55,7 +65,12 @@ export interface LocalDef {
 const SchemaObject = Type.Unsafe<TSchema>(Type.Object({}));
 
 const MemberDescriptionSchema = Type.Union([
-	Type.Object({ kind: Type.Literal("method"), args: SchemaObject, result: SchemaObject }),
+	// Absent `args`: the method takes none. Absent `result`: it returns nothing.
+	Type.Object({
+		kind: Type.Literal("method"),
+		args: Type.Optional(SchemaObject),
+		result: Type.Optional(SchemaObject),
+	}),
 	Type.Object({ kind: Type.Literal("state"), schema: SchemaObject }),
 	Type.Object({ kind: Type.Literal("opaque"), id: Type.String() }),
 ]);
@@ -112,7 +127,11 @@ function describeMember(name: string, member: unknown, scope: "remote" | "local"
 	const brand = (member as { [MEMBER]?: string })[MEMBER];
 	if (brand === "method") {
 		const spec = member as MethodSpec;
-		return { kind: "method", args: spec.args, result: spec.result };
+		return {
+			kind: "method",
+			...(spec.args === undefined ? {} : { args: spec.args }),
+			...(spec.result === undefined ? {} : { result: spec.result }),
+		};
 	}
 	if (brand === "opaque") {
 		if (scope === "remote") throw new TypeError(`remote contracts cannot expose opaque members: ${name}`);
@@ -196,8 +215,12 @@ export function coverage(provider: Description, consumer: Description): string |
 			const offered = providerMembers[name];
 			if (offered === undefined || offered.kind !== wanted.kind) return `${kind}.${name} missing or of another kind`;
 			if (offered.kind === "method" && wanted.kind === "method") {
-				if (!fits(wanted.args, offered.args)) return `${kind}.${name} arguments`;
-				if (!fits(offered.result, wanted.result)) return `${kind}.${name} result`;
+				// Both take arguments or neither does; a consumer that expects no result accepts any.
+				if ((wanted.args === undefined) !== (offered.args === undefined)) return `${kind}.${name} arguments`;
+				if (wanted.args !== undefined && offered.args !== undefined && !fits(wanted.args, offered.args))
+					return `${kind}.${name} arguments`;
+				if (wanted.result !== undefined && (offered.result === undefined || !fits(offered.result, wanted.result)))
+					return `${kind}.${name} result`;
 			} else if (offered.kind === "state" && wanted.kind === "state") {
 				if (!fits(offered.schema, wanted.schema)) return `${kind}.${name} state`;
 			} else if (offered.kind === "opaque" && wanted.kind === "opaque" && offered.id !== wanted.id) {
@@ -243,12 +266,30 @@ type StateOf<V> = V extends { readonly state: infer S extends Readonly<Record<st
 type StaticOf<S> = S extends TSchema ? Static<S> : never;
 type MethodsOf<V> = V extends { readonly methods: infer M extends Readonly<Record<string, MethodSpec>> } ? M : Empty;
 
+/** What a handler returns: the result's value, or nothing for a void method. */
+type Returned<R> = [R] extends [TSchema] ? Static<R> | Promise<Static<R>> : void | Promise<void>;
+/** What a call resolves to. */
+type Resolved<R> = [R] extends [TSchema] ? Static<R> : undefined;
+
 export type MethodImplementation<M> = M extends MethodSpec<infer A, infer R>
-	? (args: Static<A>, ctx: Ctx) => Static<R> | Promise<Static<R>>
+	? [A] extends [TSchema]
+		? (args: Static<A>, ctx: Ctx) => Returned<R>
+		: (ctx: Ctx) => Returned<R>
 	: never;
 export type Call<M> = M extends MethodSpec<infer A, infer R>
-	? (args: Static<A>, ctx?: Ctx) => Promise<Static<R>>
+	? [A] extends [TSchema]
+		? (args: Static<A>, ctx?: Ctx) => Promise<Resolved<R>>
+		: (ctx?: Ctx) => Promise<Resolved<R>>
 	: never;
+
+/** Whether `contract`'s method `name` takes no arguments (it is called as `ref.name(ctx)`). */
+export function takesNoArgs(contract: AnyContract, name: string): boolean {
+	for (const members of Object.values(contract.description.variants)) {
+		const member = members[name];
+		if (member?.kind === "method") return member.args === undefined;
+	}
+	return false;
+}
 
 type VariantImplementation<K, V> = { readonly variant: K } & {
 	readonly [S in keyof StateOf<V>]: StateSource<StaticOf<StateOf<V>[S]>>;

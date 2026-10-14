@@ -5,7 +5,6 @@ import { describe, it } from "vitest";
 import { applyImmutable } from "../src/delta/index.ts";
 import {
 	type Ctx,
-	cell,
 	createHost,
 	defineFacet,
 	defineRegistry,
@@ -13,13 +12,11 @@ import {
 	type FacetApi,
 	type FacetLoader,
 	isChordError,
-	listener,
 	local,
 	memoryLinkPair,
 	method,
 	opaque,
 	remote,
-	resource,
 	type StateEvent,
 } from "../src/index.ts";
 
@@ -45,7 +42,7 @@ describe("application requests", () => {
 		const Conv = remote("t.conv", {
 			version: 1,
 			input: Type.Object({}),
-			variants: { main: { state: { view: View }, methods: { set: method(Type.String(), Type.Null()) } } },
+			variants: { main: { state: { view: View }, methods: { set: method(Type.String()) } } },
 		});
 		const Chat = remote("t.chat", {
 			version: 1,
@@ -54,13 +51,12 @@ describe("application requests", () => {
 		});
 		const server = createHost({ name: "server", onError: () => {} });
 		server.serve(Conv, (_input, _principal, self) => {
-			const state = self.state({ view: cell(View, { text: "" }) });
+			const view = self.state("view", View, { text: "" });
 			return {
 				variant: "main",
-				view: state.view,
+				view,
 				set: (text, ctx) => {
-					state.view.replace(ctx, { text });
-					return null;
+					view.replace(ctx, { text });
 				},
 			};
 		});
@@ -95,7 +91,7 @@ describe("application requests", () => {
 		const Reader = local("t.reader", {
 			version: 1,
 			input: Type.Object({}),
-			members: { read: method(Type.Null(), Type.String()) },
+			members: { read: method(undefined, Type.String()) },
 		});
 		const captured: FacetApi[] = [];
 		const facet = (value: string): Facet => ({
@@ -111,7 +107,7 @@ describe("application requests", () => {
 					{ lifetime: "host" },
 				);
 				api.serve(Reader, () => ({
-					read: (_args: null, ctx: Ctx) => api.registry(Config).get("greeting", ctx) ?? "",
+					read: (ctx: Ctx) => api.registry(Config).get("greeting", ctx) ?? "",
 				}));
 			}),
 		});
@@ -121,11 +117,11 @@ describe("application requests", () => {
 		const api = captured[0]!;
 		assert.equal(api.name, "worker");
 		// A callback outside Chord (a Durable tool, say) starts its own root.
-		assert.equal(await api.root((ctx) => ctx.get(Reader, {}).read(null, ctx)), "v1");
+		assert.equal(await api.root((ctx) => ctx.get(Reader, {}).read(ctx)), "v1");
 		await host.reload([facet("v2")]);
 		await sleep(5);
 		assert.equal(captured[1]!.registry(Config).get("greeting"), "v2");
-		assert.equal(await api.root((ctx) => ctx.get(Reader, {}).read(null, ctx)), "v2");
+		assert.equal(await api.root((ctx) => ctx.get(Reader, {}).read(ctx)), "v2");
 	});
 
 	it("#3 a listener keeps its subscription across reloads when resource and select are unchanged", async () => {
@@ -151,17 +147,16 @@ describe("application requests", () => {
 			name: "watcher",
 			setup: (api) =>
 				api.serve(Watcher, (_input, _principal, self) => {
-					const state = self.state({ seen: cell(Type.Array(Type.String()), []) });
-					const res = self.resources({ watch: resource({ rev: 1, open: () => single }) });
-					self.listen({
-						// A new adapter object per call, and a new arrow per factory run.
-						events: listener(
-							res.watch,
-							(watch) => ({ subscribe: (fn: (event: string) => void) => watch.start(fn) }),
-							(event, ctx) => state.seen.change(ctx, (draft) => void draft.push(`${tag}:${event}`)),
-						),
-					});
-					return { seen: state.seen };
+					const seen = self.state("seen", Type.Array(Type.String()), []);
+					const watchResource = self.resource("watch", { version: 1, open: () => single });
+					// A new adapter object per call, and a new arrow per factory run.
+					self.on(
+						"events",
+						watchResource,
+						(watch) => ({ subscribe: (fn: (event: string) => void) => watch.start(fn) }),
+						(event, ctx) => seen.change(ctx, (draft) => void draft.push(`${tag}:${event}`)),
+					);
+					return { seen };
 				}),
 		});
 		const host = createHost({ onError: () => {} });
@@ -190,8 +185,8 @@ describe("application requests", () => {
 			name: "watcher2",
 			setup: (api) =>
 				api.serve(Watcher, (_input, _principal, self) => {
-					const res = self.resources({ s: resource({ rev: 1, open: () => source }) });
-					self.listen({ s: listener(res.s, selectText ? (s) => s : (value) => value, () => {}) });
+					const sResource = self.resource("s", { version: 1, open: () => source });
+					self.on("s", sResource, selectText ? (s) => s : (value) => value, () => {});
 					return {};
 				}),
 		});
@@ -208,18 +203,17 @@ describe("application requests", () => {
 		const Mirror = local("t.mirror", {
 			version: 1,
 			input: Type.Object({}),
-			members: { doc: Type.Unknown(), set: method(Type.Unknown(), Type.Null()) },
+			members: { doc: Type.Unknown(), set: method(Type.Unknown()) },
 		});
 		const Doc = Type.Object({ entries: Type.Array(Type.String()), status: Type.String() });
 		let lastOptions: { diff?: boolean } | undefined;
 		const host = createHost({ onError: () => {} });
 		host.serve(Mirror, (_input, _principal, self) => {
-			const state = self.state({ doc: cell(Doc, { entries: ["a", "b"], status: "idle" }) });
+			const doc = self.state("doc", Doc, { entries: ["a", "b"], status: "idle" });
 			return {
-				doc: state.doc,
+				doc,
 				set: (value: unknown, ctx: Ctx) => {
-					state.doc.replace(ctx, value as never, lastOptions);
-					return null;
+					doc.replace(ctx, value as never, lastOptions);
 				},
 			};
 		});
@@ -255,13 +249,12 @@ describe("application requests", () => {
 		const Echo = remote("t.echo", {
 			version: 1,
 			input: Type.Object({}),
-			variants: { main: { methods: { codeVersion: method(Type.Null(), Type.Number()) } } },
+			variants: { main: { methods: { codeVersion: method(undefined, Type.Number()) } } },
 		});
 		const server = createHost({ name: "server", onError: () => {} });
 		const echoFacet: Facet = {
 			name: "echo",
-			setup: (api) =>
-				api.serve(Echo, () => ({ variant: "main", codeVersion: (_args: null, ctx: Ctx) => ctx.codeVersion })),
+			setup: (api) => api.serve(Echo, () => ({ variant: "main", codeVersion: (ctx: Ctx) => ctx.codeVersion })),
 		};
 		server.install(echoFacet);
 		await server.reload([echoFacet]);
@@ -273,7 +266,7 @@ describe("application requests", () => {
 		// A worker root of code version 1 (an eager object's listener, say) calls the server after connecting.
 		const call = worker.root(async (ctx) => {
 			await go.promise;
-			return ctx.get(Echo, {}, { at: "server" }).codeVersion(null, ctx);
+			return ctx.get(Echo, {}, { at: "server" }).codeVersion(ctx);
 		});
 		const [down, up] = memoryLinkPair();
 		server.accept(down, { principal: { worker: "S1" }, kind: "host", name: "session:S1" });
@@ -298,16 +291,14 @@ describe("application requests", () => {
 		const native = { queries: [] as string[] };
 		const host = createHost({ onError: () => {} });
 		host.serve(Store, (_input, _principal, self) => {
-			const res = self.resources({
-				db: resource({
-					rev: 1,
-					open: async () => {
-						await gate.promise;
-						return native;
-					},
-				}),
+			const db = self.resource("db", {
+				version: 1,
+				open: async () => {
+					await gate.promise;
+					return native;
+				},
 			});
-			return { db: self.expose(res.db) };
+			return { db: self.expose(db) };
 		});
 		const ref = host.get(Store, {});
 		assert.equal(ref.db, undefined);
@@ -356,17 +347,16 @@ describe("application requests", () => {
 		const Counter = remote("t.count8", {
 			version: 1,
 			input: Type.Object({}),
-			variants: { main: { state: { n: Type.Number() }, methods: { set: method(Type.Number(), Type.Null()) } } },
+			variants: { main: { state: { n: Type.Number() }, methods: { set: method(Type.Number()) } } },
 		});
 		const server = createHost({ name: "server", onError: () => {} });
 		server.serve(Counter, (_input, _principal, self) => {
-			const state = self.state({ n: cell(Type.Number(), 0) });
+			const n = self.state("n", Type.Number(), 0);
 			return {
 				variant: "main",
-				n: state.n,
+				n,
 				set: (value, ctx) => {
-					state.n.replace(ctx, value);
-					return null;
+					n.replace(ctx, value);
 				},
 			};
 		});
@@ -425,14 +415,13 @@ describe("application requests", () => {
 		const Remote = remote("t.remote10", {
 			version: 1,
 			input: Type.Object({}),
-			variants: { main: { methods: { note: method(Type.String(), Type.Null()) } } },
+			variants: { main: { methods: { note: method(Type.String()) } } },
 		});
 		const server = createHost({ name: "server", onError: () => {} });
 		server.serve(Remote, () => ({
 			variant: "main",
 			note: (text) => {
 				log.push(`server: ${text}`);
-				return null;
 			},
 		}));
 		const Proc = local("t.proc", {
@@ -448,10 +437,12 @@ describe("application requests", () => {
 		worker.serve(
 			Proc,
 			(_input, _principal, self) => {
-				const res = self.resources({
-					tracker: resource({ rev: 1, open: () => new Set<string>(), close: () => void log.push("proc closed") }),
+				const tracker = self.resource("tracker", {
+					version: 1,
+					open: () => new Set<string>(),
+					close: () => void log.push("proc closed"),
 				});
-				return { tracker: self.expose(res.tracker) };
+				return { tracker: self.expose(tracker) };
 			},
 			{ lifetime: "host" },
 		);
@@ -459,16 +450,14 @@ describe("application requests", () => {
 		worker.serve(Chat, (_input, _principal, self) => {
 			const proc = self.get(Proc, {});
 			const upstream = self.get(Remote, {}, { at: "server" });
-			self.resources({
-				session: resource({
-					rev: 1,
-					open: () => proc.tracker?.add("chat"),
-					close: async () => {
-						proc.tracker?.delete("chat");
-						log.push(`chat closed, proc ${proc.status}, tracker ${proc.tracker === undefined ? "gone" : "ok"}`);
-						await upstream.note("bye");
-					},
-				}),
+			self.resource("session", {
+				version: 1,
+				open: () => proc.tracker?.add("chat"),
+				close: async () => {
+					proc.tracker?.delete("chat");
+					log.push(`chat closed, proc ${proc.status}, tracker ${proc.tracker === undefined ? "gone" : "ok"}`);
+					await upstream.note("bye");
+				},
 			});
 			return {};
 		});

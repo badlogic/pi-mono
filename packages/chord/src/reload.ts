@@ -84,12 +84,9 @@ function dryRun(candidate: Candidate): void {
 	const values = new Map<unknown, unknown>(migrated);
 	const derives = [...run.decls.derives].sort(([, a], [, b]) => a.seq - b.seq);
 	for (const [name, derived] of derives) {
-		const value = derived.compute(
-			(source) => (values.has(source) ? values.get(source) : source.value),
-			run.decls.deriveFns.get(name),
-		);
+		const value = derived.compute((source) => (values.has(source) ? values.get(source) : source.value));
 		for (const schema of exposed.get(derived) ?? [])
-			assertValid("state", `${object.address}: derived ${name}`, schema, value);
+			assertValid("state", `${object.address}: derivation ${name}`, schema, value);
 		values.set(derived, value);
 	}
 	candidate.derived = values;
@@ -346,17 +343,16 @@ export class Reload {
 			staged: undefined,
 		};
 		this.candidates.set(object, candidate);
-		const bumped = service.stateVersion !== object.stateVersion;
-		if (bumped) candidate.reasons.push(`state version ${object.stateVersion} -> ${service.stateVersion}`);
+		// Each cell carries its own version: a raised one gates and migrates, a schema change without one is refused.
 		for (const [name, cell] of run.decls.cells) {
-			if (object.decls.cells.get(name) !== cell || deepEqual(cell.schema, run.decls.cellSchemas.get(name))) continue;
-			if (!bumped) {
-				throw invalid("state", `${object.address}: schema of state ${name} changed without a state-version bump`);
-			}
-		}
-		for (const name of Object.keys(service.options.state?.migrate ?? {})) {
-			if (!run.decls.cells.has(name))
-				throw invalid("state", `${object.address}: migrate for undeclared state ${name}`);
+			if (object.decls.cells.get(name) !== cell) continue;
+			const from = object.decls.cellVersions.get(name) ?? 1;
+			const to = run.decls.cellVersions.get(name) ?? 1;
+			if (to < from)
+				throw invalid("state", `${object.address}: version of state ${name} lowered from ${from} to ${to}`);
+			if (to > from) candidate.reasons.push(`state ${name} version ${from} -> ${to}`);
+			else if (!deepEqual(cell.schema, run.decls.cellSchemas.get(name)))
+				throw invalid("state", `${object.address}: schema of state ${name} changed without a version bump`);
 		}
 		const deferred = new Set<ResourceImpl>();
 		for (const resource of run.created.resources) {
@@ -457,15 +453,15 @@ export class Reload {
 	}
 
 	migrate(candidate: Candidate): void {
-		const { object, service, run } = candidate;
-		const migrate = service.options.state?.migrate ?? {};
-		const bumped = service.stateVersion !== object.stateVersion;
+		const { object, run } = candidate;
 		for (const [name, cell] of run.decls.cells) {
 			if (object.decls.cells.get(name) !== cell) continue;
 			const schema = run.decls.cellSchemas.get(name)!;
-			const fn = migrate[name];
+			const from = object.decls.cellVersions.get(name) ?? 1;
+			const fn = run.decls.cellMigrations.get(name);
 			let value: unknown;
-			if (bumped && fn !== undefined) value = fn(structuredClone(cell.value), object.stateVersion);
+			if ((run.decls.cellVersions.get(name) ?? 1) > from && fn !== undefined)
+				value = fn(structuredClone(cell.value), from);
 			else if (!deepEqual(cell.schema, schema)) value = cell.value;
 			else continue;
 			assertValid("state", `${object.address}: migrated state ${name}`, schema, value);
@@ -617,7 +613,6 @@ export class Reload {
 		}
 		object.decls = run.decls;
 		object.service = service;
-		object.stateVersion = service.stateVersion;
 		object.implementations.set(codeVersion, {
 			codeVersion,
 			service,
@@ -632,7 +627,6 @@ export class Reload {
 		}
 		// Schemas first, then the values validated against them in prepare.
 		object.refreshSchemas();
-		for (const [name, derived] of run.decls.derives) derived.setFn(run.decls.deriveFns.get(name)!);
 		for (const [name, cell] of run.decls.cells) {
 			const schema = run.decls.cellSchemas.get(name)!;
 			if (candidate.migrated.has(cell)) cell.reset(candidate.migrated.get(cell), schema);

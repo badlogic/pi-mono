@@ -3,7 +3,6 @@ import { Type } from "typebox";
 import { describe, it } from "vitest";
 import {
 	type Ctx,
-	cell,
 	createHost,
 	type Frame,
 	type Host,
@@ -13,7 +12,6 @@ import {
 	PROTOCOL_VERSION,
 	type Principal,
 	remote,
-	resource,
 	type StateEvent,
 } from "../src/index.ts";
 import { Packed, unpack } from "../src/link.ts";
@@ -29,25 +27,25 @@ const Counter = remote("t.counter", {
 			state: { count: Type.Object({ n: Type.Number() }) },
 			methods: {
 				add: method(Type.Number(), Type.Number()),
-				who: method(Type.Null(), Type.Unknown()),
+				who: method(undefined, Type.Unknown()),
 			},
 		},
 	},
 });
 
-/** Serves Counter and objects the principal of every object it creates. */
+/** Serves Counter and records the principal of every object it creates. */
 function serveCounter(host: Host, principals: unknown[] = []) {
 	host.serve(Counter, (_input, principal, self) => {
 		principals.push(principal);
-		const state = self.state({ count: cell(Type.Object({ n: Type.Number() }), { n: 0 }) });
+		const count = self.state("count", Type.Object({ n: Type.Number() }), { n: 0 });
 		return {
 			variant: "main",
-			count: state.count,
+			count,
 			add: (delta, ctx) => {
-				state.count.change(ctx, (draft) => {
+				count.change(ctx, (draft) => {
 					draft.n += delta;
 				});
-				return state.count.value.n;
+				return count.value.n;
 			},
 			who: () => principal,
 		};
@@ -73,7 +71,7 @@ describe("links: calls and state across hosts", () => {
 			const counter = ctx.get(Counter, { name: "c" }, { at: "server" });
 			await counter.ready;
 			assert.equal(counter.variant, "main");
-			return [await counter.add(2, ctx), await counter.who(null, ctx)];
+			return [await counter.add(2, ctx), await counter.who(ctx)];
 		});
 		assert.deepEqual(result, [2, { worker: "session:S1" }]);
 		assert.deepEqual(principals, [{ worker: "session:S1" }]);
@@ -168,22 +166,20 @@ function cluster(options: { pingInterval?: number; pingTimeout?: number } = {}):
 			const [down, up] = memoryLinkPair();
 			const worker = createHost({ name, upstream: up, upstreamOptions: options, onError: () => {} });
 			worker.serve(Counter, (input, principal, self) => {
-				self.resources({
-					probe: resource({
-						rev: 1,
-						open: () => void log.push(`open ${input.name}`),
-						close: () => void log.push(`close ${input.name}`),
-					}),
+				self.resource("probe", {
+					version: 1,
+					open: () => void log.push(`open ${input.name}`),
+					close: () => void log.push(`close ${input.name}`),
 				});
-				const counter = self.state({ count: cell(Type.Object({ n: Type.Number() }), { n: 0 }) });
+				const count = self.state("count", Type.Object({ n: Type.Number() }), { n: 0 });
 				return {
 					variant: "main",
-					count: counter.count,
+					count,
 					add: (delta: number, ctx: Ctx) => {
-						counter.count.change(ctx, (draft) => {
+						count.change(ctx, (draft) => {
 							draft.n += delta;
 						});
-						return counter.count.value.n;
+						return count.value.n;
 					},
 					who: () => principal,
 				};
@@ -202,7 +198,7 @@ describe("links: relay, stamping, lifetime", () => {
 		const browser = c.browser(guest);
 		const counter = browser.host.get(Counter, { name: "a" }, { at: "session:S1" });
 		assert.equal(await counter.add(3), 3);
-		assert.deepEqual(await counter.who(null), guest);
+		assert.deepEqual(await counter.who(), guest);
 		const values: unknown[] = [];
 		counter.count.subscribe((value) => values.push(value));
 		await counter.add(1);
@@ -317,7 +313,7 @@ describe("links: relay, stamping, lifetime", () => {
 		const CounterV2 = remote("t.counter", {
 			version: 2,
 			input: Type.Object({ name: Type.String() }),
-			variants: { main: { methods: { inc: method(Type.Null(), Type.Number()) } } },
+			variants: { main: { methods: { inc: method(undefined, Type.Number()) } } },
 		});
 		const { server, worker } = serverWithWorker();
 		server.serve(CounterV2, () => ({ variant: "main", inc: () => 1 }));
@@ -344,7 +340,7 @@ describe("links: relay, stamping, lifetime", () => {
 		for (let i = 0; i < 20 && !c.log.includes("close a"); i++) await tick();
 		assert.ok(c.log.includes("close a"));
 		const again = browser.host.get(Counter, { name: "a" }, { at: "session:S1" });
-		assert.deepEqual(await again.who(null), { guest: "g1", revision: 2 });
+		assert.deepEqual(await again.who(), { guest: "g1", revision: 2 });
 	});
 
 	it("after a reconnect, state subscribers get a reset and calls work again", async () => {
@@ -380,6 +376,49 @@ const Big = remote("t.big", {
 
 /** About 160,000 characters of JSON: above PACK_THRESHOLD. */
 const large = (tag: string) => Array.from({ length: 40 }, (_, i) => `${tag}${i}:${"x".repeat(4000)}`);
+
+describe("links: methods without arguments or result", () => {
+	it("travel without args and without a value, and resolve to the result or undefined", async () => {
+		const Tool = remote("t.tool", {
+			version: 1,
+			input: Type.Object({}),
+			variants: {
+				main: { methods: { ping: method(), count: method(undefined, Type.Number()), note: method(Type.String()) } },
+			},
+		});
+		const server = createHost({ name: "server", onError: () => {} });
+		const notes: string[] = [];
+		server.serve(Tool, () => ({
+			variant: "main",
+			ping: () => {},
+			count: () => 2,
+			note: (text) => {
+				notes.push(text);
+				return "dropped" as never;
+			},
+		}));
+		const [down, up] = memoryLinkPair();
+		server.accept(down, { principal: { guest: "g" } });
+		const sent: Frame[] = [];
+		const send = up.send.bind(up);
+		up.send = (frame) => {
+			sent.push(frame);
+			return send(frame);
+		};
+		const browser = createHost({ name: "browser", kind: "client", upstream: up, onError: () => {} });
+		const tool = browser.get(Tool, {}, { at: "server" });
+		await tool.ready;
+		assert.equal(await tool.ping(), undefined);
+		assert.equal(await tool.count(), 2);
+		assert.equal(await tool.note("hi"), undefined);
+		assert.deepEqual(notes, ["hi"]);
+		const calls = sent.filter((frame) => frame.t === "call");
+		assert.deepEqual(
+			calls.map((frame) => (frame.t === "call" ? "args" in frame && frame.args !== undefined : undefined)),
+			[false, false, true],
+		);
+	});
+});
 
 describe("links: protocol version", () => {
 	const mismatches = () => {
@@ -455,8 +494,8 @@ describe("links: packed payloads", () => {
 				const [down, up] = memoryLinkPair();
 				const worker = createHost({ name, upstream: up, onError: () => {} });
 				worker.serve(Big, (_input, _principal, self) => {
-					const state = self.state({ notes: cell(Type.Array(Type.String()), large("a")) });
-					return { variant: "main", notes: state.notes, echo: (notes: string[]) => notes };
+					const notesState = self.state("notes", Type.Array(Type.String()), large("a"));
+					return { variant: "main", notes: notesState, echo: (notes: string[]) => notes };
 				});
 				return down;
 			},

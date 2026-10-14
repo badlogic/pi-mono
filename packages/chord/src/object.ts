@@ -1,6 +1,6 @@
-import type { TSchema } from "typebox";
+import type { Static, TSchema } from "typebox";
 import { Value } from "typebox/value";
-import { Cell, Derived, isSource, notReady } from "./cell.ts";
+import { Cell, Derived, isSource, notReady, type Sources, type SourceValues } from "./cell.ts";
 import {
 	type Accepts,
 	type Adapter,
@@ -11,20 +11,9 @@ import {
 	LOCAL_VARIANT,
 	type MemberDescription,
 	type Ref,
+	takesNoArgs,
 } from "./contract.ts";
-import {
-	type CellDecl,
-	type Cells,
-	type DerivationDecl,
-	type Derivations,
-	declKind,
-	type ListenerDecl,
-	type Resource,
-	type ResourceDecl,
-	type ResourceDeclaration,
-	type Resources,
-	type Subscribable,
-} from "./declare.ts";
+import type { EventOf, ListenerDecl, Resource, ResourceDeclaration, Subscribable, ValueOf } from "./declare.ts";
 import { asChordError, ChordError, invalid, runAll } from "./errors.ts";
 import { enqueue } from "./publish.ts";
 import type { Registration, Registry } from "./registry.ts";
@@ -36,14 +25,6 @@ const noop = (): void => {};
 // ─── Services ────────────────────────────────────────────────────────────────
 
 export interface ServeOptions {
-	/**
-	 * State version: the meaning of the object's cells. At a bump, `migrate[name](old, fromVersion)` maps a cell's
-	 * value; the object may be several versions behind.
-	 */
-	readonly state?: {
-		readonly version: number;
-		readonly migrate?: Readonly<Record<string, (old: unknown, fromVersion: number) => unknown>>;
-	};
 	/**
 	 * How long objects of the type live. `"referenced"` (default): created at the first `get` of an address, disposed
 	 * after the last reference is released (plus `linger`). `"host"`: one object, created when its facet loads (loading
@@ -72,7 +53,6 @@ export interface Service {
 	readonly factory: AnyFactory;
 	readonly options: ServeOptions;
 	readonly facet: string;
-	readonly stateVersion: number;
 }
 
 export const makeService = <C extends AnyContract>(
@@ -87,7 +67,6 @@ export const makeService = <C extends AnyContract>(
 		factory: factory as unknown as AnyFactory,
 		options: options as ServeOptions,
 		facet,
-		stateVersion: options.state?.version ?? 1,
 	};
 };
 
@@ -117,20 +96,60 @@ function checkLifetime(contract: AnyContract, options: ServeOptions): void {
 
 // ─── Declarations ────────────────────────────────────────────────────────────
 
+/** Options of `self.state`. */
+export interface StateOptions<T> {
+	/** The meaning of the cell's value (default 1). A reload that raises it runs `migrate`. */
+	readonly version?: number;
+	/**
+	 * Maps the value of an older version (`from`) to this version's, at the reload that raised the version. The cell
+	 * may be several versions behind. Without it, the value is kept and must fit the new schema.
+	 */
+	readonly migrate?: (old: unknown, from: number) => T;
+}
+
 export interface Self {
-	/** Cells by name. Existing names keep their cell (and value) across reloads. */
-	state<const D extends Readonly<Record<string, CellDecl<unknown>>>>(cells: D): Cells<D>;
+	/**
+	 * A state cell named `name`: its schema (required: there is no TypeScript at runtime) and initial value
+	 * (validated). The name identifies it across reloads: a reload keeps the cell and its value (`initial` is ignored),
+	 * migrates it when its version rises, and refuses a schema change without a version bump.
+	 */
+	state<S extends TSchema>(
+		name: string,
+		schema: S,
+		initial: Static<S>,
+		options?: StateOptions<Static<S>>,
+	): Cell<Static<S>>;
 	/** An object-owned reference, identified by its address. */
 	get<C extends AnyContract>(type: C, input: InputOf<C>, options?: GetOptions): Ref<C>;
-	resources<const D extends Readonly<Record<string, ResourceDecl<unknown>>>>(resources: D): Resources<D>;
-	listen(listeners: Readonly<Record<string, ListenerDecl>>): void;
-	tasks(tasks: Readonly<Record<string, (ctx: Ctx) => Promise<void>>>): void;
-	derive<const D extends Readonly<Record<string, DerivationDecl<unknown>>>>(derivations: D): Derivations<D>;
+	/**
+	 * A resource named `name`: opened before the object goes live, closed after it is disposed. A reload keeps it unless
+	 * its `version`, `deps` or `exclusive` changed.
+	 */
+	resource<T>(name: string, declaration: ResourceDeclaration<T>): Resource<T>;
+	/**
+	 * Reacts to `source` once the object is live: a readable (cell, derivation, reference state member) delivers its
+	 * current value, then every new value; an event source (or a resource whose value is one) delivers its events.
+	 * With `select`, subscribes to `select(value)` instead (the opened value for a resource). Each event runs `handler`
+	 * in a fresh root. The name keeps the subscription across reloads while its source and `select` are unchanged; a
+	 * listener on state whose source the reload replaced (a derivation is new at every reload) subscribes again and
+	 * gets the current value again, so a handler of state must reconcile, not count.
+	 */
+	on<S>(name: string, source: S, handler: (event: EventOf<S>, ctx: Ctx) => void | Promise<void>): void;
+	on<S, E>(
+		name: string,
+		source: S,
+		select: (value: ValueOf<S>) => Subscribable<E>,
+		handler: (event: E, ctx: Ctx) => void | Promise<void>,
+	): void;
+	/** Long-running work of the live object (a code holder: its calls start fresh roots), restarted at every reload. */
+	task(fn: (ctx: Ctx) => Promise<void>): void;
+	/** A synchronous projection of readables, recomputed when they change; a new one at every reload. */
+	derive<const S extends Sources, T>(sources: S, fn: (...values: SourceValues<S>) => T): Readable<T>;
 	/** Objects of lifetime `"host"` only. Keys are the registry's own keys. */
 	register<V>(registry: Registry<V>, entries: Readonly<Record<string, V>>): void;
 	/**
 	 * A member backed by one of this object's resources, for local contracts: references read the resource's value once
-	 * the object is live (`undefined` before). Typically an `opaque` member: `{ harness: self.expose(res.durable) }`.
+	 * the object is live (`undefined` before). Typically an `opaque` member: `{ harness: self.expose(durable) }`.
 	 */
 	expose<T>(resource: Resource<T>): Exposed<T>;
 }
@@ -242,12 +261,15 @@ type TaskFn = (ctx: Ctx) => Promise<void>;
 export class Decls {
 	readonly cells = new Map<string, Cell<unknown>>();
 	readonly cellSchemas = new Map<string, TSchema>();
+	readonly cellVersions = new Map<string, number>();
+	readonly cellMigrations = new Map<string, (old: unknown, from: number) => unknown>();
 	readonly refs = new Map<string, RefCore>();
 	readonly resources = new Map<string, ResourceImpl>();
 	readonly listeners = new Map<string, ListenerDecl>();
+	/** By position (`#0`, `#1`, …): tasks have no names. */
 	readonly tasks = new Map<string, TaskFn>();
+	/** By position: derivations have no names and are new at every run. */
 	readonly derives = new Map<string, Derived<unknown>>();
-	readonly deriveFns = new Map<string, (...values: never[]) => unknown>();
 	readonly registrations = new Map<string, Registration>();
 }
 
@@ -542,7 +564,7 @@ export class RefImpl {
 	readonly readables = new Map<string, MemberReadable>();
 	readonly bindings = new Map<Service, Adapter | undefined>();
 	readonly views = new WeakMap<Record<string, unknown>, Record<string, unknown>>();
-	readonly callers = new Map<string, (args: unknown, ctx?: Ctx) => Promise<unknown>>();
+	readonly callers = new Map<string, (...given: unknown[]) => Promise<unknown>>();
 
 	constructor(object: ObjectImpl, contract: AnyContract, owner: RefOwner) {
 		this.object = object;
@@ -711,10 +733,13 @@ export class RefImpl {
 		return value instanceof ExposedImpl ? value.resource.value : value;
 	}
 
-	caller(name: string): (args: unknown, ctx?: Ctx) => Promise<unknown> {
+	caller(name: string): (...given: unknown[]) => Promise<unknown> {
 		let caller = this.callers.get(name);
 		if (caller === undefined) {
-			caller = (args, ctx) => {
+			const noArgs = takesNoArgs(this.contract, name);
+			caller = (...given) => {
+				// A method without arguments is called as `ref.name(ctx)`.
+				const [args, ctx] = (noArgs ? [undefined, given[0]] : given) as [unknown, Ctx | undefined];
 				if (this.object.host.inFactory > 0) {
 					throw new ChordError("not_ready", `${this.address}.${name} called inside a factory`);
 				}
@@ -803,7 +828,6 @@ export class ObjectImpl {
 	status: ObjectStatus = "activating";
 	ready: Promise<void> = Promise.resolve();
 	service: Service | undefined;
-	stateVersion = 0;
 	/** Calls carrying an older code version are rejected upgrade_conflict (state bump or exclusive resource replaced). */
 	minCodeVersion = 0;
 	decls = new Decls();
@@ -866,7 +890,6 @@ export class ObjectImpl {
 		if (service === undefined)
 			throw new ChordError("unavailable", `${this.typeName} is not served`, { reason: "unknown_type" });
 		this.service = service;
-		this.stateVersion = service.stateVersion;
 		const run = this.run(service, undefined);
 		try {
 			await this.open(run.created.resources, run.created.refs, signal);
@@ -1038,7 +1061,8 @@ export class ObjectImpl {
 	 * nothing left subscribed, if any source fails.
 	 */
 	stageListeners(decls: Decls): StagedListeners {
-		const fresh = new Map<string, Subscription & { buffer: unknown[] | undefined }>();
+		type Fresh = Subscription & { buffer: unknown[] | undefined; subscribe?: () => void };
+		const fresh = new Map<string, Fresh>();
 		const kept = new Set<string>();
 		try {
 			for (const [key, decl] of decls.listeners) {
@@ -1049,13 +1073,22 @@ export class ObjectImpl {
 					continue;
 				}
 				const source = this.#listenSource(key, decl);
-				const entry: Subscription & { buffer: unknown[] | undefined } = {
+				const entry: Fresh = {
 					origin,
 					select: decl.select,
 					unsubscribe: noop,
 					buffer: [],
 				};
 				fresh.set(key, entry);
+				// State (a readable) is subscribed when the listener activates: it delivers the value current then, not one
+				// of the candidate before the commit (a new derivation computes its value at the commit).
+				if (isSource(source) || isReadableLike(source)) {
+					entry.buffer = undefined;
+					entry.subscribe = () => {
+						entry.unsubscribe = source.subscribe((event) => this.#deliver(key, event));
+					};
+					continue;
+				}
 				entry.unsubscribe = source.subscribe((event) => {
 					if (entry.buffer !== undefined) entry.buffer.push(event);
 					else this.#deliver(key, event);
@@ -1074,6 +1107,7 @@ export class ObjectImpl {
 				}
 				for (const [key, entry] of fresh) {
 					this.#subscriptions.set(key, entry);
+					entry.subscribe?.();
 					const buffered = entry.buffer ?? [];
 					entry.buffer = undefined;
 					for (const event of buffered) this.#deliver(key, event);
@@ -1187,7 +1221,7 @@ export class ObjectImpl {
 		}
 	}
 
-	/** Objects that the root of `ctx` touched this object (a reload gate grandfathers it). */
+	/** Records that the root of `ctx` touched this object (a reload gate grandfathers it). */
 	lease(ctx: Ctx): void {
 		if (this.leases.has(ctx.rootId)) return;
 		this.leases.set(ctx.rootId, ctx.codeVersion);
@@ -1233,22 +1267,34 @@ export class ObjectImpl {
 		const schema = direct
 			? installed.service.contract.description.variants[variant ?? LOCAL_VARIANT]?.[name]
 			: wanted;
-		const validated = ref.contract.scope === "remote" && schema?.kind === "method" ? schema : undefined;
-		// The additive rule assumes a consumer sends only what its own schema knows, and a provider sees only what its
-		// schema knows: strip with both before validating.
-		const own = ref.contract.scope === "remote" && wanted?.kind === "method" ? wanted.args : undefined;
-		const sent = own === undefined ? args : Value.Clean(own, Value.Clone(args));
-		const input = validated ? Value.Clean(validated.args, Value.Clone(sent)) : sent;
-		if (validated) assertValid("args", `${this.address}.${name} args`, validated.args, input);
+		const method = schema?.kind === "method" ? schema : undefined;
+		const validated = ref.contract.scope === "remote" ? method : undefined;
+		// No arguments: the handler takes only ctx. No result (void): the caller gets undefined, whatever it returned.
+		const takesArgs = method === undefined || method.args !== undefined;
+		const returns = method === undefined || method.result !== undefined;
+		let input: unknown;
+		if (takesArgs) {
+			// The additive rule assumes a consumer sends only what its own schema knows, and a provider sees only what its
+			// schema knows: strip with both before validating.
+			const own = ref.contract.scope === "remote" && wanted?.kind === "method" ? wanted.args : undefined;
+			const sent = own === undefined ? args : Value.Clean(own, Value.Clone(args));
+			input = validated?.args ? Value.Clean(validated.args, Value.Clone(sent)) : sent;
+			if (validated?.args) assertValid("args", `${this.address}.${name} args`, validated.args, input);
+		}
 		this.lease(ctx);
 		const child = ctx.child(this);
 		let result: unknown;
 		try {
-			result = await this.#invoke(() => (fn as (args: unknown, ctx: Ctx) => unknown)(input, child));
+			result = await this.#invoke(() =>
+				takesArgs
+					? (fn as (args: unknown, ctx: Ctx) => unknown)(input, child)
+					: (fn as (ctx: Ctx) => unknown)(child),
+			);
 		} finally {
 			child.close();
 		}
-		if (validated) assertValid("result", `${this.address}.${name} result`, validated.result, result);
+		if (!returns) return undefined;
+		if (validated?.result) assertValid("result", `${this.address}.${name} result`, validated.result, result);
 		return result;
 	}
 
@@ -1430,39 +1476,34 @@ class SelfImpl implements Self {
 		return { implementation: implementation as Record<string, unknown>, decls: this.#decls, created: this.#created };
 	}
 
-	/** Iterates named declarations of one kind, rejecting repeated names and wrong descriptors. */
-	*#entries<T>(
-		map: ReadonlyMap<string, unknown>,
-		kind: string,
-		entries: Readonly<Record<string, T>>,
-		descriptor?: string,
-	) {
-		if (entries === null || typeof entries !== "object")
-			throw new TypeError(`${kind} takes an object of named declarations`);
-		for (const [name, value] of Object.entries(entries)) {
-			if (map.has(name)) throw invalid("duplicate", `${this.#object.typeName}: duplicate ${kind} name ${name}`);
-			if (descriptor !== undefined && declKind(value) !== descriptor) {
-				throw new TypeError(`${kind}.${name} must be declared with ${descriptor}()`);
-			}
-			yield [name, value] as const;
-		}
+	/** Refuses a second declaration of `name` of one kind in this run (TypeScript cannot see string names). */
+	#unique(map: ReadonlyMap<string, unknown>, kind: string, name: string): void {
+		if (typeof name !== "string" || name === "") throw new TypeError(`${kind} needs a name`);
+		if (map.has(name)) throw invalid("duplicate", `${this.#object.typeName}: duplicate ${kind} name ${name}`);
 	}
 
-	state<const D extends Readonly<Record<string, CellDecl<unknown>>>>(cells: D): Cells<D> {
-		const result: Record<string, Cell<unknown>> = {};
+	state<S extends TSchema>(
+		name: string,
+		schema: S,
+		initial: Static<S>,
+		options: StateOptions<Static<S>> = {},
+	): Cell<Static<S>> {
+		this.#unique(this.#decls.cells, "state", name);
+		const version = options.version ?? 1;
+		if (!Number.isInteger(version) || version < 1)
+			throw new TypeError(`state ${name}: version must be a positive integer`);
 		const host = this.#object.host;
-		for (const [name, decl] of this.#entries(this.#decls.cells, "state", cells, "cell")) {
-			const cell =
-				this.#previous?.cells.get(name) ??
-				new Cell(name, decl.schema, decl.initial, this.#object.guard, {
-					dev: host.dev,
-					report: (error) => host.report(error),
-				});
-			this.#decls.cells.set(name, cell);
-			this.#decls.cellSchemas.set(name, decl.schema);
-			result[name] = cell;
-		}
-		return result as Cells<D>;
+		const cell =
+			this.#previous?.cells.get(name) ??
+			new Cell(name, schema, initial, this.#object.guard, {
+				dev: host.dev,
+				report: (error) => host.report(error),
+			});
+		this.#decls.cells.set(name, cell as Cell<unknown>);
+		this.#decls.cellSchemas.set(name, schema);
+		this.#decls.cellVersions.set(name, version);
+		if (options.migrate !== undefined) this.#decls.cellMigrations.set(name, options.migrate);
+		return cell as Cell<Static<S>>;
 	}
 
 	get<C extends AnyContract>(type: C, input: InputOf<C>, options?: GetOptions): Ref<C> {
@@ -1494,65 +1535,58 @@ class SelfImpl implements Self {
 		return ref.proxy as Ref<C>;
 	}
 
-	resources<const D extends Readonly<Record<string, ResourceDecl<unknown>>>>(resources: D): Resources<D> {
-		const result: Record<string, ResourceImpl> = {};
-		for (const [name, { spec }] of this.#entries(this.#decls.resources, "resources", resources, "resource")) {
-			const deps = (spec.deps ?? []).map((dep) => {
-				const resolved = refOf(dep) ?? resourceOf(dep);
-				if (resolved === undefined) {
-					throw new TypeError(`resource ${name}: deps must be references or resources of this object`);
-				}
-				return resolved;
-			});
-			const existing = this.#previous?.resources.get(name);
-			const kept =
-				existing !== undefined &&
-				existing.spec.rev === spec.rev &&
-				existing.exclusive === (spec.exclusive === true) &&
-				existing.deps.length === deps.length &&
-				existing.deps.every((dep, index) => dep === deps[index]);
-			const resource = kept ? existing : new ResourceImpl(name, spec, deps);
-			if (!kept) this.#created.resources.push(resource);
-			this.#decls.resources.set(name, resource);
-			result[name] = new ResourceFacade(resource, this.#object.host) as unknown as ResourceImpl;
-		}
-		return result as unknown as Resources<D>;
-	}
-
-	listen(listeners: Readonly<Record<string, ListenerDecl>>): void {
-		for (const [name, decl] of this.#entries(this.#decls.listeners, "listen", listeners, "listener")) {
-			this.#decls.listeners.set(name, decl);
-		}
-	}
-
-	tasks(tasks: Readonly<Record<string, (ctx: Ctx) => Promise<void>>>): void {
-		for (const [name, fn] of this.#entries(this.#decls.tasks, "tasks", tasks)) {
-			if (typeof fn !== "function") throw new TypeError(`tasks.${name} must be a function`);
-			this.#decls.tasks.set(name, fn);
-		}
-	}
-
-	derive<const D extends Readonly<Record<string, DerivationDecl<unknown>>>>(derivations: D): Derivations<D> {
-		const result: Record<string, Derived<unknown>> = {};
-		const host = this.#object.host;
-		for (const [name, { sources, fn }] of this.#entries(this.#decls.derives, "derive", derivations, "derivation")) {
-			const existing = this.#previous?.derives.get(name);
-			let derived: Derived<unknown>;
-			if (
-				existing !== undefined &&
-				existing.sources.length === sources.length &&
-				existing.sources.every((source, index) => source === sources[index])
-			) {
-				derived = existing;
-			} else {
-				derived = new Derived(name, sources, fn, { dev: host.dev, report: (error) => host.report(error) });
-				this.#created.derives.push(derived);
+	resource<T>(name: string, declaration: ResourceDeclaration<T>): Resource<T> {
+		this.#unique(this.#decls.resources, "resource", name);
+		if (!Number.isInteger(declaration.version)) throw new TypeError(`resource ${name}: version must be an integer`);
+		const deps = (declaration.deps ?? []).map((dep) => {
+			const resolved = refOf(dep) ?? resourceOf(dep);
+			if (resolved === undefined) {
+				throw new TypeError(`resource ${name}: deps must be references or resources of this object`);
 			}
-			this.#decls.derives.set(name, derived);
-			this.#decls.deriveFns.set(name, fn);
-			result[name] = derived;
-		}
-		return result as unknown as Derivations<D>;
+			return resolved;
+		});
+		const existing = this.#previous?.resources.get(name);
+		const kept =
+			existing !== undefined &&
+			existing.spec.version === declaration.version &&
+			existing.exclusive === (declaration.exclusive === true) &&
+			existing.deps.length === deps.length &&
+			existing.deps.every((dep, index) => dep === deps[index]);
+		const resource = kept ? existing : new ResourceImpl(name, declaration as ResourceDeclaration<unknown>, deps);
+		if (!kept) this.#created.resources.push(resource);
+		this.#decls.resources.set(name, resource);
+		return new ResourceFacade(resource, this.#object.host) as unknown as Resource<T>;
+	}
+
+	on(name: string, source: unknown, ...rest: readonly unknown[]): void {
+		this.#unique(this.#decls.listeners, "listener", name);
+		const [select, fn] = rest.length === 1 ? [undefined, rest[0]] : [rest[0], rest[1]];
+		if (typeof fn !== "function") throw new TypeError(`listener ${name}: the handler must be a function`);
+		if (select !== undefined && typeof select !== "function")
+			throw new TypeError(`listener ${name}: select must be a function`);
+		this.#decls.listeners.set(name, {
+			source,
+			select: select as ListenerDecl["select"],
+			fn: fn as ListenerDecl["fn"],
+		});
+	}
+
+	task(fn: (ctx: Ctx) => Promise<void>): void {
+		if (typeof fn !== "function") throw new TypeError("a task must be a function");
+		this.#decls.tasks.set(`#${this.#decls.tasks.size}`, fn);
+	}
+
+	derive<const S extends Sources, T>(sources: S, fn: (...values: SourceValues<S>) => T): Readable<T> {
+		if (typeof fn !== "function") throw new TypeError("a derivation needs a function");
+		const host = this.#object.host;
+		const key = `#${this.#decls.derives.size}`;
+		const derived = new Derived(key, sources, fn as unknown as (...values: never[]) => unknown, {
+			dev: host.dev,
+			report: (error) => host.report(error),
+		});
+		this.#created.derives.push(derived);
+		this.#decls.derives.set(key, derived);
+		return derived as unknown as Readable<T>;
 	}
 
 	expose<T>(resource: Resource<T>): Exposed<T> {
@@ -1566,14 +1600,10 @@ class SelfImpl implements Self {
 	register<V>(registry: Registry<V>, entries: Readonly<Record<string, V>>): void {
 		if (!this.#object.hostLifetime)
 			throw invalid("not_host_lifetime", `${this.#object.typeName}: only objects of lifetime "host" may register`);
-		const prefixed: Record<string, V> = {};
-		for (const [key, value] of Object.entries(entries)) prefixed[`${registry.name}\u0000${key}`] = value;
-		for (const [id, value] of this.#entries(this.#decls.registrations, "register", prefixed)) {
-			this.#decls.registrations.set(id, {
-				registry: registry as Registry<unknown>,
-				key: id.slice(registry.name.length + 1),
-				value,
-			});
+		for (const [key, value] of Object.entries(entries)) {
+			const id = `${registry.name}\u0000${key}`;
+			this.#unique(this.#decls.registrations, "register", id);
+			this.#decls.registrations.set(id, { registry: registry as Registry<unknown>, key, value });
 		}
 	}
 }

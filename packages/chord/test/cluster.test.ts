@@ -3,7 +3,6 @@ import { Type } from "typebox";
 import { describe, it, onTestFinished } from "vitest";
 import {
 	type Ctx,
-	cell,
 	createHost,
 	type Facet,
 	type FacetLoader,
@@ -11,7 +10,6 @@ import {
 	memoryLinkPair,
 	method,
 	remote,
-	resource,
 } from "../src/index.ts";
 
 const tick = () => new Promise<void>((resolve) => setImmediate(resolve));
@@ -41,18 +39,23 @@ const GreeterV2 = remote("t.greeter", {
 	variants: { main: { methods: { hello: method(Type.String(), Type.String()) } } },
 });
 
-function greeterFacet(greeting: string, options: { fail?: boolean } = {}): Facet {
+function greeterFacet(greeting: string, options: { fail?: boolean; stateVersion?: number } = {}): Facet {
 	return {
 		name: "greeter",
 		setup: (api) =>
 			api.serve(Greeter, (_input, _principal, self) => {
 				if (options.fail) throw new Error("worker factory fails");
-				const state = self.state({ count: cell(Type.Object({ n: Type.Number() }), { n: 0 }) });
+				const count = self.state(
+					"count",
+					Type.Object({ n: Type.Number() }),
+					{ n: 0 },
+					{ version: options.stateVersion ?? 1 },
+				);
 				return {
 					variant: "main",
-					count: state.count,
+					count,
 					greet: (name: string, ctx: Ctx) => {
-						state.count.change(ctx, (draft) => {
+						count.change(ctx, (draft) => {
 							draft.n += 1;
 						});
 						return `${greeting} ${name}`;
@@ -131,14 +134,7 @@ describe("cross-host reload", () => {
 		});
 		await tick();
 		const before = [server.codeVersion, worker.codeVersion];
-		const bumped: Facet = {
-			name: "greeter",
-			setup: (api) =>
-				greeterFacet("v2").setup({
-					...api,
-					serve: ((type: never, factory: never) => api.serve(type, factory, { state: { version: 2 } })) as never,
-				}),
-		};
+		const bumped = greeterFacet("v2", { stateVersion: 2 });
 		modules.set("greeter", bumped);
 		await assert.rejects(server.reload([], { remote: { "session:": ["greeter"] }, gateDeadline: 30 }), (error) => {
 			assert.ok(isChordError(error, "aborted") && error.reason === "gate_deadline");
@@ -248,18 +244,16 @@ describe("cross-host reload", () => {
 			name: "greeter",
 			setup: (api) =>
 				api.serve(Greeter, (_input, _principal, self) => {
-					self.resources({
-						late: resource({
-							rev: 1,
-							open: async () => {
-								await go.promise;
-								log.push("opened");
-							},
-							close: () => void log.push("closed"),
-						}),
+					self.resource("late", {
+						version: 1,
+						open: async () => {
+							await go.promise;
+							log.push("opened");
+						},
+						close: () => void log.push("closed"),
 					});
-					const state = self.state({ count: cell(Type.Object({ n: Type.Number() }), { n: 0 }) });
-					return { variant: "main", count: state.count, greet: (name: string) => `slow ${name}` };
+					const count = self.state("count", Type.Object({ n: Type.Number() }), { n: 0 });
+					return { variant: "main", count, greet: (name: string) => `slow ${name}` };
 				}),
 		};
 		modules.set("greeter", slow);

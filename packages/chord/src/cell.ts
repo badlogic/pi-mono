@@ -274,7 +274,7 @@ const isReadable = (value: unknown): value is Readable<unknown> =>
  */
 export class Derived<T> extends Source<T> {
 	readonly sources: readonly Readable<unknown>[];
-	#fn: (...values: never[]) => unknown;
+	readonly #fn: (...values: never[]) => unknown;
 	#value: T;
 	#external: (() => void)[] = [];
 
@@ -310,15 +310,10 @@ export class Derived<T> extends Source<T> {
 		for (const unsubscribe of this.#external.splice(0)) unsubscribe();
 	}
 
-	compute(read: (source: Readable<unknown>) => unknown, fn: (...values: never[]) => unknown = this.#fn): T {
-		const result: unknown = fn(...(this.sources.map(read) as never[]));
+	compute(read: (source: Readable<unknown>) => unknown): T {
+		const result: unknown = this.#fn(...(this.sources.map(read) as never[]));
 		if (result instanceof Promise) throw new TypeError(`derive ${this.key}: fn must be synchronous`);
 		return result as T;
-	}
-
-	/** Replaces the function without recomputing (reload commit, before migrated cells are installed). */
-	setFn(fn: (...values: never[]) => unknown): void {
-		this.#fn = fn;
 	}
 
 	/** Recomputes and republishes, including dependents. Errors are reported (the source write already happened). */

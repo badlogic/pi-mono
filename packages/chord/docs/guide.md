@@ -37,7 +37,7 @@ Chord builds applications out of **objects** that live in several processes (a s
 
 ```ts
 import { Type } from "typebox";
-import { cell, createHost, method, remote } from "@earendil-works/chord";
+import { createHost, method, remote } from "@earendil-works/chord";
 
 // contract.ts: shared by provider and consumers
 export const Counter = remote("demo.counter", {
@@ -46,7 +46,7 @@ export const Counter = remote("demo.counter", {
 	variants: {
 		default: {
 			state: { count: Type.Number() },
-			methods: { increment: method(Type.Object({ by: Type.Number() }), Type.Null()) },
+			methods: { increment: method(Type.Object({ by: Type.Number() })) },
 		},
 	},
 });
@@ -54,13 +54,12 @@ export const Counter = remote("demo.counter", {
 const host = createHost({ name: "server", principalKey: (p) => p.kind });
 
 host.serve(Counter, ({ name }, _principal, self) => {
-	const state = self.state({ count: cell(Type.Number(), 0) });
+	const count = self.state("count", Type.Number(), 0);
 	return {
 		variant: "default",
-		count: state.count,
+		count,
 		increment: async ({ by }, ctx) => {
-			state.count.change(ctx, (n) => n + by);
-			return null;
+			count.change(ctx, (n) => n + by);
 		},
 	};
 });
@@ -92,7 +91,7 @@ export const Chat = remote("pi.chat", {
 			state: { view: ConversationViewSchema },
 			methods: {
 				send: method(SendInputSchema, Type.Object({ submissionId: Type.Number() })),
-				stop: method(Type.Null(), Type.Null()),
+				stop: method(),  // no arguments, no result: `chat.stop(ctx)`
 			},
 		},
 	},
@@ -156,7 +155,6 @@ host.serve(Type, (input, principal, self) => implementation, options);
 - The **factory** runs synchronously. It declares what the object needs and returns its implementation: methods and state members, plus `variant` for remote types. Returning a promise throws.
 - There is one **object** per `(type, input, principal)`. It holds the object's state, resources and references, and survives reloads. Only the implementation is replaced.
 - **Options:**
-  - `state: { version, migrate }`: the state version and its migrations (see [Hot reload](#hot-reload));
   - `accepts`: adapters for consumers built against older contract versions;
   - `lifetime`: `"referenced"` (default) creates the object at its first `get` and disposes it after the last reference
     is released; `"host"` creates it when the plugin loads and keeps it until the host closes (see [Lifetime](#lifetime));
@@ -164,52 +162,46 @@ host.serve(Type, (input, principal, self) => implementation, options);
 
 ## Declarations
 
-A reload runs the factory again over the same object. Declarations are matched by **property name**, so the new code's `status` cell is the old code's `status` cell, with its value.
+A reload runs the factory again over the same object. Declarations that keep something across a reload have a **name**: the new code's `status` cell is the old code's `status` cell, with its value. Derivations and tasks hold nothing across a reload and have no name.
 
 ```ts
 host.serve(StatusStore, ({ session }, _host, self) => {
-	const state = self.state({
-		status: cell(StatusSchema, { running: false, tasks: 0 }),
-		errors: cell(Type.Array(Type.String()), []),
-	});
+	const status = self.state("status", StatusSchema, { running: false, tasks: 0 });
+	const errors = self.state("errors", Type.Array(Type.String()), []);
 	const catalog = self.get(Catalog, {});
-	const res = self.resources({
-		db: resource({
-			rev: 1,
-			open: async ({ signal }) => openSqlite(statusPath(session), { signal }),
-			close: async (db) => db.close(),
-		}),
+	const db = self.resource("db", {
+		version: 1,
+		open: async ({ signal }) => openSqlite(statusPath(session), { signal }),
+		close: async (db) => db.close(),
 	});
-	self.listen({
-		catalogChanges: listener(catalog.rows, (rows, ctx) => state.errors.replace(ctx, checkRows(rows))),
+	self.on("catalogChanges", catalog.rows, (rows, ctx) => errors.replace(ctx, checkRows(rows)));
+	self.task(async (ctx) => {
+		while (!ctx.signal.aborted) {
+			await sleep(10_000, ctx.signal);
+			await db.value.run("INSERT INTO history VALUES (?)", [JSON.stringify(status.value)]);
+		}
 	});
-	self.tasks({
-		flush: async (ctx) => {
-			while (!ctx.signal.aborted) {
-				await sleep(10_000, ctx.signal);
-				await res.db.value.run("INSERT INTO history VALUES (?)", [JSON.stringify(state.status.value)]);
-			}
-		},
-	});
-	const derived = self.derive({
-		summary: derivation([state.status, state.errors], (s, e) => ({ ...s, failing: e.length > 0 })),
-	});
-	return { summary: derived.summary, report: reportMethod(state) };
+	const summary = self.derive([status, errors], (s, e) => ({ ...s, failing: e.length > 0 }));
+	return { summary, report: reportMethod(status) };  // exposed state is what the implementation returns
 });
 ```
 
 | Declaration | What it is | On reload |
 | --- | --- | --- |
-| `self.state({ name: cell(schema, initial) })` | an observable JSON cell; the schema is required | same cell and value; migrated when the state version is bumped |
+| `self.state(name, schema, initial, { version?, migrate? })` | an observable JSON cell; the schema is required | same cell and value; migrated when its version rises |
 | `self.get(Type, input, { at? })` | a reference to another object; its identity is the address | kept if declared again, otherwise released |
-| `self.resources({ name: resource({ rev, deps?, exclusive?, open, close }) })` | a connection, watch, socket, port | kept; reopened only if `rev` or `deps` change |
-| `self.listen({ name: listener(source, fn) })` or `listener(source, select, fn)` | reacts to a state or resource event | the same subscription, with the new `fn`, as long as the source (resource) and `select` are unchanged |
-| `self.tasks({ name: async (ctx) => ... })` | long-running background work | the old run is aborted through `ctx.signal`, and the new code starts |
-| `self.derive({ name: derivation(sources, fn) })` | live projection of state; `fn` is synchronous | kept; `fn` replaced |
+| `self.resource(name, { version, deps?, exclusive?, open, close? })` | a connection, watch, socket, port | kept; reopened only if `version`, `deps` or `exclusive` change |
+| `self.on(name, source, handler)` or `self.on(name, source, select, handler)` | reacts to state or to an event source | the same subscription, with the new handler, as long as the source and `select` are unchanged |
+| `self.task(async (ctx) => ...)` | long-running background work | the old run is aborted through `ctx.signal`, and the new code starts |
+| `self.derive(sources, fn)` | live projection of state; `fn` is synchronous | a new derivation, computed when the reload commits |
 | `self.register(Registry, { key: value })` | an entry in a registry | replaced at commit |
-| `self.expose(res.name)` | a member backed by a resource (local types) | follows the resource |
+| `self.expose(resource)` | a member backed by a resource (local types) | follows the resource |
+
+Names are strings: declaring one twice in a run fails (`invalid/duplicate`). Each kind has its own names, so a cell and a resource may share one.
 
 A listener keeps its subscription across reloads when it is declared on the same resource (or source) with the same `select`: the same function, or one with the same source text. `select` is not called again, so a source that accepts a single subscriber (a Durable watch) survives reloads, and `select` may wrap the value in a new adapter object. A `select` whose result depends on captured values that change between reloads is not noticed; give such a listener a new name.
+
+**A listener on state reconciles.** A listener on state (a cell, a derivation, a reference's state member) gets the current value when it starts, then every new value. When a reload replaces its source (a derivation is new at every reload), it subscribes again and gets the current value again. Write its handler to bring things in line with the value it gets (set, compare, start or stop what the value says), not to count or append per call. An event source (a resource's events) delivers no current value.
 
 A name you no longer declare is released, closed or stopped, after the old code has finished what it was doing.
 
@@ -219,20 +211,22 @@ A name you no longer declare is released, closed or stopped, after the old code 
 // wrong: reset on every reload
 host.serve(Visits, (_, _p, self) => {
 	let visits = 0;
-	return { hit: async (_, ctx) => ++visits };
+	return { hit: async (ctx) => ++visits };
 });
 
 // right
 host.serve(Visits, (_, _p, self) => {
-	const state = self.state({ visits: cell(Type.Number(), 0) });
+	const visits = self.state("visits", Type.Number(), 0);
 	return {
-		hit: async (_, ctx) => {
-			state.visits.change(ctx, (n) => n + 1);
-			return state.visits.value;
+		hit: async (ctx) => {
+			visits.change(ctx, (n) => n + 1);
+			return visits.value;
 		},
 	};
 });
 ```
+
+**Methods** are declared with `method(args?, result?)` in the contract. Without `args` a method takes none: callers write `ref.hit(ctx)` (or `ref.hit()`), and its implementation is `(ctx) => …`. Without `result` it returns nothing: the implementation returns nothing, and callers get `undefined`. `method(undefined, Type.Number())` takes no arguments and returns a number.
 
 ## Activation
 
@@ -248,11 +242,9 @@ get(Index, { session: "S1" })
 
 ```ts
 host.serve(Index, ({ session }, _host, self) => {
-	const res = self.resources({
-		db: resource({ rev: 1, open: () => openSqlite(indexPath(session)), close: (db) => db.close() }),
-	});
+	const db = self.resource("db", { version: 1, open: () => openSqlite(indexPath(session)), close: (db) => db.close() });
 	return {
-		search: async ({ query }, ctx) => res.db.value.all("SELECT entryId, text FROM fts WHERE fts MATCH ?", [query]),
+		search: async ({ query }, ctx) => db.value.all("SELECT entryId, text FROM fts WHERE fts MATCH ?", [query]),
 	};
 });
 
@@ -267,7 +259,7 @@ host.serve(Chat, ({ session, conversation }, principal, self) => {
 ```
 
 **Rules:**
-- Inside the factory, never use what you declared: `res.db.value` throws `not_ready`, and calling a reference throws. Use them in methods, listeners and tasks.
+- Inside the factory, never use what you declared: `db.value` throws `not_ready`, and calling a reference throws. Use them in methods, listeners and tasks.
 - **Concurrent `get`s** of one address share one activation, so the database opens once.
 - **Failure propagates:** if `openSqlite` throws, `Index` fails, `Chat` fails with that cause, and every waiting `get` rejects. The next `get` tries again.
 - **Abandoned activations:** if everyone releases before activation finishes, the result is disposed.
@@ -309,8 +301,8 @@ To hand out a native object a resource opens (a local type's `opaque` member), e
 
 ```ts
 host.serve(Harness, (_, _host, self) => {
-	const res = self.resources({ durable: resource({ rev: 1, open: () => DurableHarness.open(storage), close: (h) => h.close() }) });
-	return { harness: self.expose(res.durable) };  // contract member: harness: opaque<DurableHarness>("pi.durable-harness@1")
+	const durable = self.resource("durable", { version: 1, open: () => DurableHarness.open(storage), close: (h) => h.close() });
+	return { harness: self.expose(durable) };  // contract member: harness: opaque<DurableHarness>("pi.durable-harness@1")
 });
 
 const harness = ctx.get(Harness, {});
@@ -353,9 +345,8 @@ host.serve(Chat, ({ session, conversation }, principal, self) => {
 		variant: "participant",
 		view: c.view,
 		send: async (input, ctx) => c.submit(input, author, ctx),
-		stop: async (_, ctx) => {
+		stop: async (ctx) => {
 			await c.stop(author, ctx);
-			return null;
 		},
 	};
 });
@@ -400,22 +391,22 @@ chat.release();
 ## State
 
 ```ts
-const state = self.state({ todos: cell(Type.Array(TodoSchema), []) });
+const todos = self.state("todos", Type.Array(TodoSchema), []);
 
-state.todos.change(ctx, (draft) => {
+todos.change(ctx, (draft) => {
 	draft.push({ id: "t1", text: "Write docs", done: false });
 });
-state.todos.change(ctx, (draft) => {
+todos.change(ctx, (draft) => {
 	draft[0].done = true;
 });
-state.todos.replace(ctx, []);
+todos.replace(ctx, []);
 
-state.todos.value;  // immutable
-state.todos.subscribe((value) => render(value));
+todos.value;  // immutable
+todos.subscribe((value) => render(value));
 
 // mirroring an external immutable store: subscribers get a diff, not the whole value
-state.view.replace(ctx, conversation.view);                    // diffs when the new value reuses old containers
-state.view.replace(ctx, rebuilt, { diff: true });              // always diff
+view.replace(ctx, conversation.view);                    // diffs when the new value reuses old containers
+view.replace(ctx, rebuilt, { diff: true });              // always diff
 ```
 
 - A `change` is atomic: one revision, or nothing if the callback throws.
@@ -426,17 +417,16 @@ state.view.replace(ctx, rebuilt, { diff: true });              // always diff
 - An implementation may expose another object's state member as its own: `return { variant: "viewer", view: conversation.view }`. It reads `undefined` only while that object is loading, which never happens once this object is live.
 
 ```ts
-const derived = self.derive({
-	visible: derivation([catalog.rows], (rows) => rows.filter((r) => visibleTo(principal, r))),
-	openCount: derivation([state.todos], (t) => t.filter((x) => !x.done).length),
-});
+const visible = self.derive([catalog.rows], (rows) => rows.filter((r) => visibleTo(principal, r)));
+const openCount = self.derive([todos], (t) => t.filter((x) => !x.done).length);
 ```
 
-`derivation` functions are synchronous.
+Derivation functions are synchronous. A derivation has no name: every reload makes a new one, computed when the
+reload commits.
 
 ## Calls, ctx and roots
 
-Every method gets `(args, ctx)`. Pass `ctx` on to everything you call:
+Every method gets `(args, ctx)`, or `(ctx)` when it takes no arguments. Pass `ctx` on to everything you call:
 
 ```ts
 send: async (input, ctx) => {
@@ -450,27 +440,25 @@ send: async (input, ctx) => {
 A **root** is a short tree of calls, started at ingress:
 - by a link, for a request that arrives without one;
 - by `host.root(fn)`, for timers and scripts;
-- by each event delivered to a `listener`;
+- by each event delivered to a listener (`self.on`);
 - by each Chord call made from a `task` or a Durable phase.
 
 A root runs on the code that was current when it started (its **code version**), across hosts, until it ends. Keep roots short. Long-running work is a `task`, and long waits are state.
 
 ```ts
 // wrong: holds a root (and its version of the code) open for minutes
-approve: async (_, ctx) => waitForHuman(ctx),
+approve: async (ctx) => waitForHuman(ctx),
 
-// right: object the request as state; the answer is a separate call
+// right: record the request as state; the answer is a separate call
 request: async (req, ctx) => {
-	state.pending.change(ctx, (d) => {
+	pending.change(ctx, (d) => {
 		d.push(req);
 	});
-	return null;
 },
 answer: async ({ id, value }, ctx) => {
-	state.pending.change(ctx, (d) => {
+	pending.change(ctx, (d) => {
 		settle(d, id, value);
 	});
-	return null;
 },
 ```
 
@@ -587,7 +575,7 @@ await host.reload([new URL("../plugins/chat/worker.ts", import.meta.url)]);  // 
 
 1. **Load** the new modules.
 2. **Prepare:** run the new factories over the existing objects, without side effects. Cell writes throw, listeners and tasks don't start, registrations are collected, and changed resources are opened next to the old ones. Contracts are checked against every live consumer. Any failure leaves everything as it was.
-3. **Gate:** only if a state version was bumped or an exclusive resource changes.
+3. **Gate:** only if a cell's version was raised or an exclusive resource changes.
 4. **Commit:** in one synchronous step, install the new code, swap registry tables, restart tasks, rebind listeners, and send `reset` and shape updates to subscribers.
 5. **Retire:** old code keeps running the roots it started. Once they end, it's dropped, along with whatever it alone declared.
 
@@ -595,27 +583,22 @@ await host.reload([new URL("../plugins/chat/worker.ts", import.meta.url)]);  // 
 
 Bug fixes, new methods, new cells, new resources and registration changes all switch immediately. A root that started on the old code finishes on it, and new roots get the new code.
 
-### Changing what state looks like or means: bump the state version
+### Changing what state looks like or means: bump the cell's version
 
 ```ts
 // v1: { running, tasks } where tasks counted phases
 // v2: tasks counts tasks, and usage is new
 host.serve(StatusStore, ({ session }, _host, self) => {
-	const state = self.state({ status: cell(StatusV2, { running: false, tasks: 0, usage: emptyUsage() }) });
+	const status = self.state("status", StatusV2, { running: false, tasks: 0, usage: emptyUsage() }, {
+		version: 2,
+		migrate: (old, from) => (from < 2 ? { running: old.running, tasks: 0, usage: emptyUsage() } : old),
+	});
 	return {
-		status: state.status,
+		status,
 		report: async (s, ctx) => {
-			state.status.replace(ctx, s);
-			return null;
+			status.replace(ctx, s);
 		},
 	};
-}, {
-	state: {
-		version: 2,
-		migrate: {
-			status: (old, from) => (from < 2 ? { running: old.running, tasks: 0, usage: emptyUsage() } : old),
-		},
-	},
 });
 ```
 
@@ -627,23 +610,23 @@ At the gate, for each live `StatusStore`:
 
 If the roots inside don't finish within the deadline (5 s), the reload is **aborted** and nothing changes. The error names the blocking roots.
 
-The runtime compares each cell's schema between old and new code:
+The version belongs to the cell (default 1); other cells of the object are not migrated. The runtime compares each
+cell's schema and version between old and new code:
 - unchanged: compatible;
-- changed with a bump: migrate;
-- changed **without** a bump: the reload is refused.
+- version raised: migrate (without `migrate`, the value is kept and must fit the new schema);
+- schema changed **without** a raised version, or a lowered version: the reload is refused.
 
 A change of meaning with an identical schema needs a bump too. Nothing can detect that one for you.
 
 ### Resources
 
 ```ts
-const res = self.resources({
-	db: resource({ rev: 2, open: () => openSqlite(path, { wal: true }), close: (db) => db.close() }),  // rev 1 → 2: reopen
-	port: resource({ rev: 1, exclusive: true, open: () => listen(8787), close: (s) => s.close() }),
-});
+const db = self.resource("db", { version: 2, open: () => openSqlite(path, { wal: true }), close: (db) => db.close() });  // 1 → 2: reopen
+const port = self.resource("port", { version: 1, exclusive: true, open: () => listen(8787), close: (s) => s.close() });
 ```
 
-- A reload doesn't touch a resource unless its `rev` or `deps` change.
+- A reload doesn't touch a resource unless its `version`, `deps` or `exclusive` change. The version is required: a
+  native value has no schema to detect a change.
 - A changed resource opens next to the old one during prepare.
 - An `exclusive` resource can't exist twice, so it's swapped at the gate: close the old one, open the new one, and reopen the old one if that fails.
 
@@ -711,14 +694,12 @@ A worker's host provides the Durable Harness as a local object of lifetime `"hos
 
 ```ts
 host.serve(Harness, (_, _host, self) => {
-	const res = self.resources({
-		durable: resource({
-			rev: 1,
-			open: () => DurableHarness.open(storage, { models, registry: durableRegistry(host, Extensions) }),  // a reader over the code version tables
-			close: (h) => h.close(),
-		}),
+	const durable = self.resource("durable", {
+		version: 1,
+		open: () => DurableHarness.open(storage, { models, registry: durableRegistry(host, Extensions) }),  // a reader over the code version tables
+		close: (h) => h.close(),
 	});
-	return { conversation: (id: number) => res.durable.value.conversation(id) };
+	return { conversation: (id: number) => durable.value.conversation(id) };
 }, { lifetime: "host" });
 
 // a plugin contributes a Durable extension like any registration
@@ -757,7 +738,7 @@ A reload changing the guard: Durable phases already running keep the old snapsho
 | Do | Not |
 | --- | --- |
 | Keep reloadable state in cells | Closure variables (lost on reload) |
-| Bump the state version, with `migrate`, when a cell's shape or meaning changes | Changing a schema without a bump (refused) or a meaning without a bump (silent) |
+| Bump the cell's version, with `migrate`, when a cell's shape or meaning changes | Changing a schema without a bump (refused) or a meaning without a bump (silent) |
 | Bump the contract version on breaking changes; add `accepts` for old consumers | Renaming or removing members at the same version (refused) |
 | Do slow setup in a resource's `open` | Awaiting inside the factory (it's synchronous) |
 | Do side effects in resources, listeners, tasks and registrations | Effects in the factory body (they run during prepare) |

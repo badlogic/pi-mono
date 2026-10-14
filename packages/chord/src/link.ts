@@ -135,7 +135,7 @@ type PayloadField = "args" | "value" | "snap" | "reset";
 const PAYLOAD_FIELDS: ReadonlySet<string> = new Set<PayloadField>(["args", "value", "snap", "reset"]);
 
 function payloadField(frame: Frame): PayloadField | undefined {
-	if (frame.t === "call") return "args";
+	if (frame.t === "call") return frame.args === undefined ? undefined : "args";
 	if (frame.t === "result") return frame.value === undefined ? undefined : "value";
 	if (frame.t === "state") return frame.snap !== undefined ? "snap" : frame.reset !== undefined ? "reset" : undefined;
 	return undefined;

@@ -56,7 +56,7 @@ try {
 	const Shared = local("t.shared", {
 		version: 1,
 		input: Type.Object({}),
-		members: { same: method(Type.Null(), Type.Boolean()) },
+		members: { same: method(undefined, Type.Boolean()) },
 	});
 	mkdirSync(`${plugins}a`, { recursive: true });
 	mkdirSync(`${plugins}b`, { recursive: true });
@@ -68,12 +68,12 @@ try {
 	writeFileSync(
 		`${plugins}a/facet.ts`,
 		`import { Type } from "typebox";\nimport { defineFacet, local, method } from ${JSON.stringify(chord)};\nimport { state } from "../b/state.ts";\n` +
-			`const Shared = local("t.shared", { version: 1, input: Type.Object({}), members: { same: method(Type.Null(), Type.Boolean()) } });\n` +
+			`const Shared = local("t.shared", { version: 1, input: Type.Object({}), members: { same: method(undefined, Type.Boolean()) } });\n` +
 			`export default defineFacet((host) => host.serve(Shared, () => ({ same: async () => (await import(new URL("../b/facet.ts", import.meta.url).href)).own === state })));\n`,
 	);
 	const ordered = createHost({ loader: nodeLoader, onError: () => {} });
 	await ordered.load([`${plugins}a/facet.ts`, `${plugins}b/facet.ts`]);
-	assert.equal(await ordered.get(Shared, {}).same(null), true);
+	assert.equal(await ordered.get(Shared, {}).same(), true);
 	await ordered.close();
 } finally {
 	rmSync(dir, { recursive: true, force: true });

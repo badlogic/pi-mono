@@ -14,7 +14,7 @@ Contracts are runtime values described with [TypeBox](https://github.com/sinclai
 
 | Import | Contents | Runs in |
 |--------|----------|---------|
-| `@earendil-works/chord` | Contracts (`local`, `remote`, `method`, `opaque`), declarations (`cell`, `derivation`, `listener`, `resource`), hosts (`createHost`, `defineFacet`, `defineRegistry`), links (`memoryLinkPair`, `ipcLink`, `webSocketLink`, `acceptWebSockets`), errors (`ChordError`, `isChordError`, `forbidden`, `invalid`). Also the shared base: `Context`, `JsonValue`, `JsonRepresentation`, `Draft`, `copyJson`, `isJsonValue`, and `replicatedState` with its types. | Node and browsers |
+| `@earendil-works/chord` | Contracts (`local`, `remote`, `method`, `opaque`), declarations (through the factory's `self`: `state`, `derive`, `resource`, `on`, `task`), hosts (`createHost`, `defineFacet`, `defineRegistry`), links (`memoryLinkPair`, `ipcLink`, `webSocketLink`, `acceptWebSockets`), errors (`ChordError`, `isChordError`, `forbidden`, `invalid`). Also the shared base: `Context`, `JsonValue`, `JsonRepresentation`, `Draft`, `copyJson`, `isJsonValue`, and `replicatedState` with its types. | Node and browsers |
 | `@earendil-works/chord/node` | Child host processes: `createHostManager`, `forkDriver`, `childControl`, `processLock`; the facet module loader `nodeLoader`. | Node |
 | `@earendil-works/chord/context` | Explicit cancellation and invocation values: `BACKGROUND_CONTEXT`, `withCancel`, `withAbortSignal`, `withoutAbortSignal`, `withContextValue`, `awaitWithContext`. | Node and browsers |
 | `@earendil-works/chord/delta` | The transactional JSON tracker, structural diff, immutable apply, and the wire encoder/decoder for operation batches. | Node and browsers |
@@ -23,7 +23,7 @@ Contracts are runtime values described with [TypeBox](https://github.com/sinclai
 
 ```ts
 import { Type } from "typebox";
-import { cell, createHost, method, remote } from "@earendil-works/chord";
+import { createHost, method, remote } from "@earendil-works/chord";
 
 // contract.ts: shared by provider and consumers
 export const Counter = remote("demo.counter", {
@@ -32,7 +32,7 @@ export const Counter = remote("demo.counter", {
 	variants: {
 		default: {
 			state: { count: Type.Number() },
-			methods: { increment: method(Type.Object({ by: Type.Number() }), Type.Null()) },
+			methods: { increment: method(Type.Object({ by: Type.Number() })) },
 		},
 	},
 });
@@ -40,13 +40,12 @@ export const Counter = remote("demo.counter", {
 const host = createHost({ name: "server", principalKey: (p) => p.kind });
 
 host.serve(Counter, ({ name }, _principal, self) => {
-	const state = self.state({ count: cell(Type.Number(), 0) });
+	const count = self.state("count", Type.Number(), 0);
 	return {
 		variant: "default",
-		count: state.count,
+		count,
 		increment: async ({ by }, ctx) => {
-			state.count.change(ctx, (n) => n + by);
-			return null;
+			count.change(ctx, (n) => n + by);
 		},
 	};
 });

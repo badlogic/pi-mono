@@ -5,7 +5,6 @@ import { Type } from "typebox";
 import { describe, it } from "vitest";
 import {
 	type Ctx,
-	cell,
 	createHost,
 	type Frame,
 	type Host,
@@ -23,7 +22,7 @@ async function until(check: () => boolean, attempts = 200): Promise<void> {
 	assert.ok(check(), "condition not reached");
 }
 
-/** A client's end of a link that can hold back its acknowledgements, and objects what it receives. */
+/** A client's end of a link that can hold back its acknowledgements, and records what it receives. */
 class AckGate implements Link {
 	readonly inner: Link;
 	readonly received: Frame[] = [];
@@ -67,32 +66,32 @@ const Counter = remote("t.flow-counter", {
 	variants: {
 		main: {
 			state: { count: Type.Object({ n: Type.Number() }) },
-			methods: { add: method(Type.Number(), Type.Number()), wait: method(Type.Null(), Type.Null()) },
+			methods: { add: method(Type.Number(), Type.Number()), wait: method() },
 		},
 	},
 });
 
 let release = () => {};
 const waiting = () =>
-	new Promise<null>((resolve) => {
+	new Promise<void>((resolve) => {
 		const previous = release;
 		release = () => {
 			previous();
-			resolve(null);
+			resolve();
 		};
 	});
 
 function serveCounter(host: Host): void {
 	host.serve(Counter, (_input, _principal, self) => {
-		const state = self.state({ count: cell(Type.Object({ n: Type.Number() }), { n: 0 }) });
+		const count = self.state("count", Type.Object({ n: Type.Number() }), { n: 0 });
 		return {
 			variant: "main",
-			count: state.count,
+			count,
 			add: (delta: number, ctx: Ctx) => {
-				state.count.change(ctx, (draft) => {
+				count.change(ctx, (draft) => {
 					draft.n += delta;
 				});
-				return state.count.value.n;
+				return count.value.n;
 			},
 			wait: waiting,
 		};
@@ -263,8 +262,8 @@ describe("link call limit", () => {
 		const counter = host.get(Counter, {}, { at: "server" });
 		await counter.ready;
 		release = () => {};
-		const first = counter.wait(null);
-		const second = counter.wait(null);
+		const first = counter.wait();
+		const second = counter.wait();
 		await assert.rejects(
 			counter.add(1),
 			(error) => isChordError(error, "unavailable") && error.reason === "too_many_calls",

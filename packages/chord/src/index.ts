@@ -19,19 +19,7 @@ export {
 	type RemoteContract,
 	remote,
 } from "./contract.ts";
-export {
-	type CellDecl,
-	cell,
-	type DerivationDecl,
-	derivation,
-	type ListenerDecl,
-	listener,
-	type Resource,
-	type ResourceDecl,
-	type ResourceDeclaration,
-	resource,
-	type Subscribable,
-} from "./declare.ts";
+export type { EventOf, Resource, ResourceDeclaration, Subscribable, ValueOf } from "./declare.ts";
 export type { Draft } from "./delta/index.ts";
 export { ChordError, type ChordErrorCode, forbidden, invalid, isChordError } from "./errors.ts";
 export type { PrincipalMatch, Route } from "./host.ts";
@@ -61,7 +49,7 @@ export {
 	type WebSocketLinkOptions,
 	webSocketLink,
 } from "./link.ts";
-export type { Factory, Lifetime, Self, ServeOptions } from "./object.ts";
+export type { Factory, Lifetime, Self, ServeOptions, StateOptions } from "./object.ts";
 export { defineRegistry, type Registry, type RegistryTable, type RegistryView } from "./registry.ts";
 export type { ReloadOptions, ReloadReport } from "./reload.ts";
 export {

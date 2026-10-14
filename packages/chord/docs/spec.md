@@ -59,7 +59,7 @@ export const Index = local("pi.index", {
 
 A consumer built against version M binds to a provider at version N iff N = M and the provider's description covers the consumer's; otherwise only through `accepts[M]` adapters declared by the provider (`serve(type, factory, { accepts: { 1: (current) => v1View } })`); else `contract_mismatch`.
 
-Covers: every consumer member exists with the same kind; methods: provider accepts every argument the consumer can send (new fields optional, nothing newly required or retyped) and the provider's result fits the consumer's expected result (extra fields fine); state: provider value fits consumer schema (extra fields fine); opaque: same name@version.
+Covers: every consumer member exists with the same kind; methods: both take arguments or neither does, the provider accepts every argument the consumer can send (new fields optional, nothing newly required or retyped), and the provider's result fits the consumer's expected result (extra fields fine; a void consumer accepts any); state: provider value fits consumer schema (extra fields fine); opaque: same name@version.
 
 Additive changes need no bump. Breaking changes (remove/rename/retype, newly required, or a change of meaning with the same shape) bump the number. Same version + non-covering description = forgotten bump, refused. Meaning changes without a bump are undetectable (author's responsibility, as with Durable document versions).
 
@@ -73,49 +73,47 @@ and the normal coverage/adapter checks; state-version and migration checks are u
 
 ## 3. Factory and declarations
 
-Factories are synchronous; returning a promise throws. Declarations are identified across factory reruns by **property names** in object literals (not call order, not separate string keys). Names are unique per object per declaration kind; a declaration method may be called more than once if names don't repeat. References are identified by their address.
+Factories are synchronous; returning a promise throws. A declaration has a name only if something of it survives a reload and must be found again: state (its value) and resources (the open value), plus listeners (a kept subscription). Names are strings, unique per object per declaration kind (a repeated name is `invalid/duplicate`); kinds have separate names. Derivations and tasks have no names: a reload makes new ones. References are identified by their address.
 
 ```ts
 host.serve(StatusStore, ({ session }, _host, self) => {
-	const state = self.state({
-		status: cell(StatusSchema, { running: false, tasks: 0 }),   // schema required, initial value
-		errors: cell(Type.Array(Type.String()), []),
-	});
+	const status = self.state("status", StatusSchema, { running: false, tasks: 0 },  // schema required, initial value
+		{ version: 2, migrate: (old, from) => upgrade(old, from) });                     // per cell; default version 1
+	const errors = self.state("errors", Type.Array(Type.String()), []);
 	const catalog = self.get(Catalog, {});                         // reference; identity = canonical address (+ at)
-	const res = self.resources({
-		watch: resource({
-			rev: 1, deps: [catalog], exclusive: false,
-			open: async ({ signal }) => openWatch(session, signal),
-			close: async (w) => w.close(),
-		}),
+	const watch = self.resource("watch", {
+		version: 1, deps: [catalog], exclusive: false,
+		open: async ({ signal }) => openWatch(session, signal),
+		close: async (w) => w.close(),
 	});
-	self.listen({
-		changes: listener(res.watch, (w) => w.events, (event, ctx) => state.status.change(ctx, (d) => { d.tasks = event.tasks; })),
-	});
-	self.tasks({ poll: async (ctx) => { /* loop until ctx.signal aborts */ } });
-	const derived = self.derive({ visible: derivation([state.status], (s) => project(s)) });  // synchronous
+	self.on("changes", watch, (w) => w.events, (event, ctx) => status.change(ctx, (d) => { d.tasks = event.tasks; }));
+	self.task(async (ctx) => { /* loop until ctx.signal aborts */ });
+	const visible = self.derive([status], (s) => project(s));      // synchronous
 	self.register(Routes, { "GET /status": handler });              // registry keys are the registry's own keys; `lifetime: "host"` objects only
-	return { status: derived.visible, report: (args, ctx) => { state.status.replace(ctx, args); return null; } };
+	return { status: visible, errors, report: (args, ctx) => { status.replace(ctx, args); } };  // exposed state = what is returned
 }, {
-	state: { version: 2, migrate: { status: (old, from) => upgrade(old, from) } },  // migrate gets the old value and its version
 	linger: 30_000,                                                  // with lifetime "referenced" (the default) only
 });
 ```
 
 | Declaration | Survives reload | Notes |
 | --- | --- | --- |
-| `state({ name: cell(schema, initial) })` | same cell and value; migrated on state-version bump | Schema required (no TypeScript at runtime). `change(ctx, draft => void)`, `replace(ctx, value)`, `value`, `subscribe`. Writes through `change` touch only mutated paths. |
+| `state(name, schema, initial, { version?, migrate? })` | same cell and value (`initial` ignored); migrated when its version rises | Schema required (no TypeScript at runtime). `change(ctx, draft => void)`, `replace(ctx, value)`, `value`, `subscribe`. Writes through `change` touch only mutated paths. Private state is a cell the implementation does not return. |
 | `get(type, input, { at? })` | kept if declared again (same address) | returns a reference |
-| `resources({ name: resource({ rev, deps?, exclusive?, open, close }) })` | kept unless `rev`/`deps` change | `open` runs at prepare (non-exclusive) or at the gate (exclusive); reference exposes `.value` |
-| `listen({ name: listener(source, select?, fn) })` | same subscription while source (resource) and `select` (identity or source text) are unchanged; `fn` swapped | each event starts a fresh root in the current code version; `select` is not re-run for a kept subscription |
-| `tasks({ name: fn })` | restarted with new code at commit (old one aborted via ctx.signal) | a code holder; calls inside start fresh roots |
-| `derive({ name: derivation(sources, fn) })` | kept; fn swapped | synchronous fn |
+| `resource(name, { version, deps?, exclusive?, open, close? })` | kept unless `version`, `deps` or `exclusive` change | `open` runs at prepare (non-exclusive) or at the gate (exclusive); returns a resource whose `.value` is the open value |
+| `on(name, source, [select,] handler)` | same subscription while source and `select` (identity or source text) are unchanged; `handler` swapped | each event starts a fresh root in the current code version; `select` is not re-run for a kept subscription. State sources deliver their current value at start and after every reload that replaced them |
+| `task(fn)` | restarted with new code at commit (old one aborted via ctx.signal) | a code holder; calls inside start fresh roots |
+| `derive(sources, fn)` | a new derivation, computed at commit | synchronous fn |
 | `register(registry, { key: value })` | value swapped at commit | `lifetime: "host"` objects only |
 | `expose(resource)` | follows the resource | a local member (usually `opaque`) whose reference value is the resource's value once live |
 
 State members of an implementation may be cells, derivations, or state members of references the object holds (they are defined once the object is live). `cell.replace(ctx, value, { diff? })` publishes a structural diff when the new value shares containers with the old one (or `diff: true`), else `r`. Facet `setup` receives `{ serve, name, root, registry }` of its host.
 
-`migrate` per cell is `(old, fromVersion) => new`. An object may be several versions behind (author bumped more than once between reloads).
+`migrate` per cell is `(old, fromVersion) => new`. A cell may be several versions behind (author bumped more than once between reloads). Without `migrate`, a raised version keeps the value, which must fit the new schema.
+
+**Listeners on state reconcile.** A listener whose source is state (a cell, a derivation, a reference's state member) is subscribed when it starts and gets the current value, then every new value. A reload that replaces its source (every derivation is new; a reference to another address is another source) subscribes it again, so it gets the current value again: its handler must reconcile (be idempotent), not count events. An event source (a resource's events, any other `subscribe`) delivers no current value; a kept subscription to it is not touched by a reload.
+
+**Methods.** `method(args?, result?)`: without `args` the method takes none (callers `ref.name(ctx?)`, implementation `(ctx) => …`; `method(undefined, result)` for one that returns something); without `result` it is void (callers get `undefined`, whatever the implementation returned). The description records both (absent fields), and the `call` frame carries no `args` and the `result` frame no `value` for them. A consumer and provider must agree on whether a method takes arguments; a consumer without a result accepts a provider's.
 
 Removed vs guide: `self.own`, `holdWhile`, async factories, inferred dependencies.
 
@@ -199,19 +197,19 @@ Explicit trigger (`reload_plugins` tool, button, API). Serialized; no nesting.
 
 1. Build/type-check gate (application tooling, outside Chord): dependency-closed set; refuse breaking remote contract changes without a contract version bump.
 2. Load: on every affected host, import new facet modules (cache-busted).
-3. Prepare: for each live object of each affected type, run the new factory in recording mode: existing cells readable, writes throw; listeners/tasks/registrations recorded, not started; references recorded; non-exclusive resources whose key is new or `rev`/`deps` changed are opened as candidate-owned (closed on abort). Validate keys, variants, registry collisions. New objects activated during prepare use the current code version (old code). Any failure: abort, discard candidates. Vote.
-4. Gate (only objects whose state version was bumped or which replace an exclusive resource, plus objects depending on those resources):
+3. Prepare: for each live object of each affected type, run the new factory in recording mode: existing cells readable, writes throw; listeners/tasks/registrations recorded, not started; references recorded; non-exclusive resources whose name is new or whose `version`/`deps` changed are opened as candidate-owned (closed on abort). Validate keys, variants, registry collisions. New objects activated during prepare use the current code version (old code). Any failure: abort, discard candidates. Vote.
+4. Gate (only objects with a cell whose version was raised or which replace an exclusive resource, plus objects depending on those resources):
    - Admission cut: from now, an old-code-version root that has not touched the object gets `upgrade_conflict` (retryable), not queued. Roots that already hold an activation lease on it are grandfathered; their re-entry is admitted.
    - Wait for grandfathered activations to finish, deadline (default 5 s). Missed deadline: abort the reload, reopen, nothing changed (report blocking roots).
    - Exclusive resources: close old, open new; on failure reopen old and abort.
    - Run `migrate` into private copies; validate.
-5. Commit (server commits itself, then sends commit to children; the decision is not persisted, see section 12; FIFO links guarantee no host receives a new-code version root before committing): each host in one synchronous step installs migrated cell values and state versions, installs implementations as code version E', swaps registry tables, restarts tasks with new code, rebinds listeners, pushes shape/reset to subscribers, opens gates. E' current, E previous.
+5. Commit (server commits itself, then sends commit to children; the decision is not persisted, see section 12; FIFO links guarantee no host receives a new-code-version root before committing): each host in one synchronous step installs migrated cell values and cell versions, installs implementations as code version E', swaps registry tables, restarts tasks with new code, rebinds listeners, pushes shape/reset to subscribers, opens gates. E' current, E previous.
    The coordinator's result carries `children`: each participating child's prepared report (its vote).
 6. Retire: when no roots of `previous` remain (or on the next reload, which first waits for retirement with a deadline), drop its implementations and release declarations only it declared.
 
 Compatible changes (no state bump, no exclusive resource change) skip the gate: no waiting.
 
-State compatibility rule: reload prepare compares each cell's old and new schema. Unchanged: compatible (no gate). Changed with the state version bumped: gate + `migrate`, output validated against the new schema. Changed without a bump: reload refused. A change of meaning with an identical schema needs a bump too (undetectable; author's responsibility). Initial values and migrate outputs are validated; per-write validation in dev mode.
+State compatibility rule: reload prepare compares each cell's old and new schema and version. Unchanged: compatible (no gate). Version raised: gate + `migrate` (or the kept value), validated against the new schema. Schema changed without a raised version: reload refused. A lowered version: refused. A change of meaning with an identical schema needs a bump too (undetectable; author's responsibility). Initial values and migrate outputs are validated; per-write validation in dev mode.
 
 ## 8. Registries
 
@@ -265,7 +263,7 @@ The tests cover at least: lifetime/references/linger/forced disposal/gone; activ
 - **Errors.** The guide's codes; a `reason` field carries the detail, for example `invalid/args`, `invalid/cycle`, `invalid/duplicate`, `invalid/read_only`, `invalid/not_host_lifetime`, `invalid/registry_conflict`, or `unavailable/unknown_type`. A `ChordError` thrown by a factory or a dependency keeps its code through every dependent; other errors become `unavailable`, with the original as `cause`.
 - **Reload errors.** There is no `reload_aborted` code. A failed reload throws the cause's code and reason with the message `reload aborted: …` (the cause is attached). Reasons of its own are `aborted/gate_deadline` (with the blocking roots in `details`), `aborted/deadline`, `aborted/vote_deadline` and `unavailable/reload_running`. Across hosts, the message names the host that failed. A child cannot reload on its own (`unavailable/not_coordinator`).
 - **New objects during prepare.** A reload pre-allocates the next code version ("pending"). Types the same reload adds are served from it; their objects install implementation only for the pending code version and are force-disposed if the reload aborts.
-- **Gate admission.** From the gate until commit or abort, creating a new object of a changed type fails with `upgrade_conflict` (retryable, reason `gate`); nothing is paused, so nothing can deadlock. Gated objects get `minCodeVersion = E'`: calls and writes carrying an older code version are rejected `upgrade_conflict` permanently, and a gated object drops its previous-code-version implementation at commit. Only objects whose state version or exclusive resources change are gated.
+- **Gate admission.** From the gate until commit or abort, creating a new object of a changed type fails with `upgrade_conflict` (retryable, reason `gate`); nothing is paused, so nothing can deadlock. Gated objects get `minCodeVersion = E'`: calls and writes carrying an older code version are rejected `upgrade_conflict` permanently, and a gated object drops its previous-code-version implementation at commit. Only objects whose cell versions or exclusive resources change are gated.
 - **Tasks and listeners during the gate.** Tasks of gated objects are aborted at the admission cut and restart with new code at commit, or with the old code on abort. Listener events for gated objects are queued and replayed through the new listener at commit, or the old one at abort.
 - **Grandfathered roots** are the roots that called into the object and are still running at the cut. Every host remembers on which links a root's calls went out and sends `root_end` on them when the root ends, so leases outlive calls across hosts.
 - **Removed types and missed retirement.** Objects of removed types are force-disposed at commit. When a retirement deadline is missed, retirement is forced, so those roots get `superseded` on their next call.
@@ -278,4 +276,4 @@ The tests cover at least: lifetime/references/linger/forced disposal/gone; activ
 - **Resources and disposal.** New and replaced exclusive resources open at the gate, and so do non-exclusive resources of the same object that depend on them. A new object for an address that is still being disposed waits for that disposal. A resource open that completes after its signal aborted closes its value at once.
 - **Links and the host manager.** Every received frame is validated against its schema; malformed frames, duplicate ids and control frames from the wrong side close the link. Each connection pings every `pingInterval` and closes after `pingTimeout` without a frame. The child holds a kernel lock (an abstract socket on Linux and Android, a named pipe on Windows, a probed socket file elsewhere), acquired by `childControl().lock()` before storage opens. The manager kills the child's process group on every exit path and derives `booting` and `idleFor` from the child's liveness reports. WebSocket support is structural, so Chord does not depend on `ws`.
 - **Flow control holds back state only.** A relay (Cloudflare to a browser) can hide a slow reader, so transport backpressure cannot be relied on; acknowledgements are end to end. Results must not wait behind state, so links are FIFO except that waiting state frames can be overtaken: a result may arrive before state changes made before it. Frames of one subscription stay in order. Waiting state is coalesced rather than queued, so a stalled peer costs at most a bounded slot per subscription, and the next frame it gets is current.
-- **The state API stays.** Objects keep named cells and derivations; giving each object exactly one state value was rejected. Do not reopen this without a new, concrete problem.
+- **The state API stays.** Objects keep named cells and unnamed derivations; giving each object exactly one state value was rejected. Do not reopen this without a new, concrete problem.
