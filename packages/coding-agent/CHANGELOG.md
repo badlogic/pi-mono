@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Added
+
+- Added inherited `compat.inlineSchemaRefs` support in `models.json` for OpenAI-compatible endpoints whose models return `$ref`-described objects as JSON strings. It is on by default for NVIDIA NIM ([#10270](https://github.com/earendil-works/pi/issues/10270))
+
 ### Fixed
 
 - Pinned internal Pi dependencies to exact release versions to prevent fresh installs from mixing incompatible packages ([#10865](https://github.com/earendil-works/pi/issues/10865))

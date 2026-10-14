@@ -2,10 +2,15 @@
 
 ## [Unreleased]
 
+### Added
+
+- Added `OpenAICompletionsCompat.inlineSchemaRefs` to inline local `$ref` references in tool schemas before sending them. It defaults to true for NVIDIA NIM, where models returned referenced objects as JSON strings ([#10270](https://github.com/earendil-works/pi/issues/10270))
+
 ### Fixed
 
 - Fixed tool-call argument parsing dropping fields when a string contains an invalid `\u` escape such as `\usepackage` ([#10868](https://github.com/earendil-works/pi/issues/10868))
 - Fixed Anthropic requests failing with a 400 when an error tool result contains images; the images are now replaced with a text note ([#10794](https://github.com/earendil-works/pi/issues/10794))
+- Fixed tool argument coercion and optional-null cleanup skipping values whose schema is a local `$ref` ([#10270](https://github.com/earendil-works/pi/issues/10270))
 
 ## [1.2.0] - 2026-10-12
 
