@@ -48,15 +48,27 @@
               ;
             platforms = systems;
           };
+          devShell = import ./nix/devshell.nix {
+            inherit pkgs nodejs treefmtWrapper;
+          };
         in
         {
-          inherit pkgs pi treefmtWrapper;
+          inherit
+            pkgs
+            pi
+            devShell
+            treefmtWrapper
+            ;
         };
     in
     {
       packages = forAllSystems (system: {
         default = (perSystem system).pi;
         pi = (perSystem system).pi;
+      });
+
+      devShells = forAllSystems (system: {
+        default = (perSystem system).devShell;
       });
 
       formatter = forAllSystems (system: (perSystem system).treefmtWrapper);
