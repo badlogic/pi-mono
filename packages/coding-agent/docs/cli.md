@@ -63,13 +63,13 @@ See [Choose a Model](models.md) for model selection and [Providers](providers.md
 - `--provider <name>`<br>
   Restricts `--model` lookup to one provider. It requires `--model`.
 - `--model <pattern>`<br>
-  Selects by exact ID or fuzzy ID/name match. It accepts `provider/id` and an optional `:<thinking>` suffix. With a `provider/` prefix, Pi prefers that provider's exact or fuzzy match, and uses another provider whose model ID is the full `provider/id` text only when the named provider has no match, or lacks credentials while that provider has them. Otherwise, when several providers offer the same model ID, Pi selects the one with configured credentials and reports the ambiguity if none or several have them. Fuzzy matches prefer providers with configured credentials, then the best-ranked ID; differently spelled IDs such as `claude-sonnet-5-5` and `claude-sonnet-5.5` count as different models. With `--api-key`, stored credentials do not decide, so an ambiguous match needs `--provider` or `provider/id`.
+  Selects by exact ID or fuzzy ID/name match. It accepts `provider/id` and an optional `:<thinking>` suffix. If several providers match, Pi prefers the one with credentials, otherwise it asks for `--provider`.
 - `--api-key <key>`<br>
-  Uses a non-persistent API-key override. It requires a model selected through `--model` or `--models`.
+  Uses a non-persistent API-key override. It requires a model selected through `--model` or `--models`. It does not choose between providers that offer the same model.
 - `--thinking <level>`<br>
   Sets `off`, `minimal`, `low`, `medium`, `high`, `xhigh`, or `max`. It overrides a `--model` suffix and is clamped to the model's capabilities.
 - `--models <patterns>`<br>
-  Sets a comma-separated scope for startup and cycling. It accepts exact IDs, fuzzy matches, case-insensitive globs, and optional `:<thinking>` suffixes. A pattern matching the same ID on several providers adds each of them.
+  Sets a comma-separated scope for startup and cycling. It accepts exact IDs, fuzzy matches, case-insensitive globs, and optional `:<thinking>` suffixes. A model offered by several providers is added for each.
 - `--list-models [search]`<br>
   Lists available models, optionally filtered by a fuzzy search, then exits.
 
