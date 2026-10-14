@@ -135,6 +135,10 @@ function writeTrustFile(path: string, data: TrustFile): void {
 	writeFileSync(path, `${JSON.stringify(sorted, null, 2)}\n`, "utf-8");
 }
 
+function sleepSync(ms: number): void {
+	Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
+}
+
 function acquireTrustLockSync(path: string): () => void {
 	const trustDir = dirname(path);
 	mkdirSync(trustDir, { recursive: true });
@@ -144,7 +148,7 @@ function acquireTrustLockSync(path: string): () => void {
 
 	for (let attempt = 1; attempt <= maxAttempts; attempt++) {
 		try {
-			return lockfile.lockSync(trustDir, { realpath: false, lockfilePath: `${path}.lock` });
+			return lockfile.lockSync(trustDir, { realpath: false, lockfilePath: `${path}.lock`, stale: 5000 });
 		} catch (error) {
 			const code =
 				typeof error === "object" && error !== null && "code" in error
@@ -154,10 +158,7 @@ function acquireTrustLockSync(path: string): () => void {
 				throw error;
 			}
 			lastError = error;
-			const start = Date.now();
-			while (Date.now() - start < delayMs) {
-				// Sleep synchronously to avoid changing trust store callers to async.
-			}
+			sleepSync(delayMs);
 		}
 	}
 

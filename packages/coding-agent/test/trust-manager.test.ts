@@ -1,7 +1,8 @@
-import { mkdirSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, rmSync, utimesSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import lockfile from "proper-lockfile";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { hasTrustRequiringProjectResources, ProjectTrustStore } from "../src/core/trust-manager.ts";
 
 describe("ProjectTrustStore", () => {
@@ -34,6 +35,36 @@ describe("ProjectTrustStore", () => {
 		expect(store.get(childDir)).toBe(false);
 		store.set(childDir, null);
 		expect(store.get(childDir)).toBe(true);
+	});
+
+	it("reclaims an orphaned trust lock older than the stale window under frozen fake timers", () => {
+		vi.useFakeTimers();
+		try {
+			const trustPath = join(agentDir, "trust.json");
+			const lockPath = `${trustPath}.lock`;
+			lockfile.lockSync(agentDir, { realpath: false, lockfilePath: lockPath });
+			const backdated = new Date(Date.now() - 60_000);
+			utimesSync(lockPath, backdated, backdated);
+
+			const store = new ProjectTrustStore(agentDir);
+			expect(store.get(cwd)).toBeNull();
+		} finally {
+			vi.useRealTimers();
+		}
+	});
+
+	it("gives up instead of spinning when a held trust lock blocks a frozen fake-timer read", () => {
+		vi.useFakeTimers();
+		try {
+			const trustPath = join(agentDir, "trust.json");
+			const lockPath = `${trustPath}.lock`;
+			lockfile.lockSync(agentDir, { realpath: false, lockfilePath: lockPath });
+
+			const store = new ProjectTrustStore(agentDir);
+			expect(() => store.get(cwd)).toThrowError(/already being held/);
+		} finally {
+			vi.useRealTimers();
+		}
 	});
 
 	it("detects trust-requiring project resources", () => {
