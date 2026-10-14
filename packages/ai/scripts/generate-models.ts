@@ -2462,10 +2462,23 @@ async function loadModelsDevData(): Promise<Model<any>[]> {
 		// Built-in `xiaomi` targets the API billing endpoint (single stable URL,
 		// keys from platform.xiaomimimo.com). The three `xiaomi-token-plan-*`
 		// providers cover prepaid Token Plan endpoints in cn / ams / sgp.
+		// MiMo Chat Completions only documents thinking.type enabled/disabled and
+		// rejects some reasoning_effort values (e.g. "minimal"). Xiaomi documents
+		// all effort levels as identical, so expose only off and high.
 		const xiaomiCompat: OpenAICompletionsCompat = {
+			supportsReasoningEffort: false,
 			requiresReasoningContentOnAssistantMessages: true,
 			thinkingFormat: "deepseek",
 		};
+		const xiaomiThinkingLevelMap = {
+			off: "off",
+			minimal: null,
+			low: null,
+			medium: null,
+			high: "high",
+			xhigh: null,
+			max: null,
+		} as const;
 		const xiaomiVariants = [
 			{ source: "xiaomi", provider: "xiaomi", baseUrl: "https://api.xiaomimimo.com/v1" },
 			{
@@ -2502,12 +2515,12 @@ async function loadModelsDevData(): Promise<Model<any>[]> {
 					baseUrl,
 					compat: xiaomiCompat,
 					reasoning: m.reasoning === true,
+					...(m.reasoning === true ? { thinkingLevelMap: xiaomiThinkingLevelMap } : {}),
 					input: m.modalities?.input?.includes("image") ? ["text", "image"] : ["text"],
 					cost: getModelsDevCost(m.cost),
 					contextWindow: m.limit?.context || 4096,
 					maxTokens: m.limit?.output || 4096,
 				});
-				recordModelsDevReasoningOptions(provider, modelId, m);
 			}
 		}
 
