@@ -1,6 +1,5 @@
 import type { Api, CredentialInfo, Model } from "@earendil-works/pi-ai";
-import { resolveModelReference } from "../core/model-reference.ts";
-import { resolveCliModel } from "../core/model-resolver.ts";
+import { resolveCliModel, resolveModelReference } from "../core/model-resolver.ts";
 import type { ModelRuntime } from "../core/model-runtime.ts";
 import type { Args } from "./args.ts";
 import { AuthCommandError, type AuthCommandKind, getAuthCredential, validateAuthCommandArgs } from "./auth-command.ts";
