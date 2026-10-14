@@ -60,22 +60,21 @@ describe("state cells", () => {
 	it("publishes snapshots then exact ops; derivations follow", async () => {
 		const host = createHost({ self: { kind: "host" }, onError: () => {} });
 		serveList(host);
-		const ref = host.get(List, {});
+		const ref = host.hold(List, {});
 		const events: StateEvent<unknown>[] = [];
 		const labels: StateEvent<unknown>[] = [];
 		ref.list.events((event) => events.push(event));
 		ref.labels.events((event) => labels.push(event));
 		await ref.push({ id: 1, label: "a" });
-		// Subscribed while loading: an empty snapshot, the hydrated value as a reset, then exact ops.
-		assert.deepEqual(events[0], { type: "snap", value: undefined });
-		assert.deepEqual(events[1], { type: "reset", value: { items: [], count: 0 } });
-		const ops = events[2]?.type === "ops" ? events[2].ops.map((op) => JSON.stringify(op)).sort() : [];
+		// Subscribed while loading: the snapshot once live, then exact ops.
+		assert.deepEqual(events[0], { type: "snap", value: { items: [], count: 0 } });
+		const ops = events[1]?.type === "ops" ? events[1].ops.map((op) => JSON.stringify(op)).sort() : [];
 		assert.deepEqual(ops, ['["p",["items"],0,0,[{"id":1,"label":"a"}]]', '["s",["count"],1]']);
-		assert.deepEqual(events[2]?.value, { items: [{ id: 1, label: "a" }], count: 1 });
+		assert.deepEqual(events[1]?.value, { items: [{ id: 1, label: "a" }], count: 1 });
 		assert.deepEqual(ref.labels.value, ["a"]);
 		assert.deepEqual(
 			labels.map((event) => event.type),
-			["snap", "reset", "ops"],
+			["snap", "ops"],
 		);
 		await ref.set({ items: [], count: 0 });
 		assert.deepEqual(ref.labels.value, []);
@@ -98,7 +97,7 @@ describe("state cells", () => {
 				},
 			};
 		});
-		const ref = host.get(Counter, {});
+		const ref = host.hold(Counter, {});
 		const values: unknown[] = [];
 		await ref.ready;
 		const events: StateEvent<unknown>[] = [];
@@ -130,7 +129,7 @@ describe("state cells", () => {
 				},
 			};
 		});
-		await assert.rejects(host.get(Box, {}).put(), (error) => isChordError(error, "invalid"));
+		await assert.rejects(host.hold(Box, {}).put(), (error) => isChordError(error, "invalid"));
 	});
 
 	it("validates initial values always and writes only in dev mode", async () => {
@@ -140,15 +139,15 @@ describe("state cells", () => {
 			self.state("x", Type.Object({ n: Type.Number() }), { n: "no" } as never);
 			return {};
 		});
-		await assert.rejects(host.get(Bad, {}).ready, /initial value of state x/);
+		await assert.rejects(host.hold(Bad, {}).ready, /initial value of state x/);
 
 		const lax = createHost({ self: { kind: "host" }, onError: () => {} });
 		serveList(lax);
-		await lax.get(List, {}).set({ items: [], count: "x" } as never);
+		await lax.hold(List, {}).set({ items: [], count: "x" } as never);
 
 		const dev = createHost({ self: { kind: "host" }, dev: true, onError: () => {} });
 		serveList(dev);
-		const ref = dev.get(List, {});
+		const ref = dev.hold(List, {});
 		await assert.rejects(
 			ref.set({ items: [], count: "x" } as never),
 			(error) => isChordError(error, "invalid") && error.reason === "state",
@@ -173,7 +172,7 @@ describe("state cells", () => {
 			x.replace(captured!, {});
 			return {};
 		});
-		await assert.rejects(host.get(Writer, {}).ready, /read_only/);
+		await assert.rejects(host.hold(Writer, {}).ready, /read_only/);
 	});
 
 	it("listeners run each event in a fresh root; tasks get an abortable ctx", async () => {
@@ -206,7 +205,7 @@ describe("state cells", () => {
 			});
 			return { seen };
 		});
-		const ref = host.get(Watcher, {});
+		const ref = host.hold(Watcher, {});
 		await ref.ready;
 		events.emit(2);
 		events.emit(3);
@@ -242,7 +241,7 @@ describe("state cells", () => {
 				},
 			};
 		});
-		const ref = host.get(Echo, {});
+		const ref = host.hold(Echo, {});
 		await ref.ready;
 		const values: unknown[] = [];
 		let replica: unknown;

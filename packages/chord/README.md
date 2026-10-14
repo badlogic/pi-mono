@@ -52,7 +52,7 @@ host.serve(Counter, ({ name }, _principal, self) => {
 });
 
 await host.root(async (ctx) => {
-	const clicks = ctx.get(Counter, { name: "clicks" }); // a reference; released when this root ends
+	const clicks = await ctx.get(Counter, { name: "clicks" }); // ready, with its state; released when this root ends
 	clicks.count.subscribe((n) => console.log("count", n));
 	await clicks.increment({ by: 2 }, ctx); // logs 0, then 2
 });

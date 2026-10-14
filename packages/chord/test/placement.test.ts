@@ -69,11 +69,11 @@ describe("placement", () => {
 	it("a get goes where the contract places the input: here, a child, or the parent, never named by the caller", async () => {
 		const { server, s1, close } = cluster();
 		await tick();
-		assert.equal(await server.get(Note, { session: "S1", id: "a" }).where(), "session:S1 a");
-		assert.equal(await server.get(Note, { session: "S2", id: "b" }).where(), "session:S2 b");
+		assert.equal(await server.hold(Note, { session: "S1", id: "a" }).where(), "session:S1 a");
+		assert.equal(await server.hold(Note, { session: "S2", id: "b" }).where(), "session:S2 b");
 		// From a session host: its own notes locally, the other session's through the server, the catalog upstream.
-		assert.equal(await s1.get(Note, { session: "S1", id: "c" }).where(), "session:S1 c");
-		assert.equal(await s1.get(Catalog, {}).where(), "server");
+		assert.equal(await s1.hold(Note, { session: "S1", id: "c" }).where(), "session:S1 c");
+		assert.equal(await s1.hold(Catalog, {}).where(), "server");
 		await close();
 	});
 
@@ -134,8 +134,8 @@ describe("placement", () => {
 		s1.serve(Doc, () => ({ variant: "main", where: () => "session:S1" }));
 		await tick();
 		// An untyped caller leaves the field out: the default places it.
-		assert.equal(await server.get(Doc, {} as never).where(), "session:S1");
-		assert.throws(() => server.get(Note, { session: "", id: "x" }), /input field session names no host/);
+		assert.equal(await server.hold(Doc, {} as never).where(), "session:S1");
+		assert.throws(() => server.hold(Note, { session: "", id: "x" }), /input field session names no host/);
 		await close();
 	});
 
@@ -164,8 +164,7 @@ describe("placement", () => {
 				),
 		});
 		await host.install(facet(1, "server"));
-		const ref = host.get(at("server"), {});
-		await ref.ready;
+		await host.get(at("server"), {});
 		// Same version, other placement: a forgotten bump.
 		await assert.rejects(host.reload([facet(1, "session:S1")]), /declared for session:S1|without a version bump/);
 		// A new version that `accepts` version 1 but lives elsewhere: no adapter makes version 1 consumers bind.

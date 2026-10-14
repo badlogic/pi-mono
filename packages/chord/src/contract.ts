@@ -352,9 +352,6 @@ export function bind(provider: AnyContract, accepts: Accepts | undefined, consum
 
 // ─── Static types ────────────────────────────────────────────────────────────
 
-type UnionToIntersection<U> = (U extends unknown ? (value: U) => void : never) extends (value: infer I) => void
-	? I
-	: never;
 type Empty = Record<never, never>;
 type StateOf<V> = V extends { readonly state: infer S extends Readonly<Record<string, TSchema>> } ? S : Empty;
 type StaticOf<S> = S extends TSchema ? Static<S> : never;
@@ -391,7 +388,13 @@ type VariantImplementation<K, V, P> = { readonly variant: K } & {
 } & {
 	readonly [M in keyof MethodsOf<V>]: MethodImplementation<MethodsOf<V>[M], P>;
 };
-type VariantRef<V> = { readonly [S in keyof StateOf<V>]: Readable<StaticOf<StateOf<V>[S]> | undefined> } & {
+/**
+ * A reference in one variant: its state members are plain readables (a reference you hold has its state) and its
+ * methods calls. `variant` discriminates the union `Ref` is for a multi-variant type.
+ */
+type VariantRef<C extends AnyContract, K, V> = RefBase<C> & { readonly variant: K } & {
+	readonly [S in keyof StateOf<V>]: Readable<StaticOf<StateOf<V>[S]>>;
+} & {
 	readonly [M in keyof MethodsOf<V>]: Call<MethodsOf<V>[M]>;
 };
 
@@ -407,7 +410,7 @@ type LocalRefMember<M> = M extends MethodSpec
 	: M extends OpaqueSpec<infer T>
 		? T | undefined
 		: M extends TSchema
-			? Readable<Static<M> | undefined>
+			? Readable<Static<M>>
 			: never;
 type LocalMembers<D> = D extends { readonly members: infer M extends Readonly<Record<string, LocalMember>> }
 	? M
@@ -425,11 +428,13 @@ export type ImplementationOf<C, P = unknown> = C extends RemoteContract<infer D>
 			>
 		: never;
 
-/** Late-bound members a reference exposes for contract C (all variants merged). */
-export type MembersOf<C> = C extends RemoteContract<infer D>
-	? UnionToIntersection<{ [K in keyof D["variants"]]: VariantRef<D["variants"][K]> }[keyof D["variants"]]>
+/**
+ * What `get` returns for contract C. A remote type's reference is a union discriminated by `variant`: another variant's
+ * members are reachable only after narrowing (`if (ref.variant === "editor") ref.add(…)`). A local type's reference has
+ * its members.
+ */
+export type Ref<C extends AnyContract = AnyContract> = C extends RemoteContract<infer D>
+	? { [K in keyof D["variants"]]: VariantRef<C, K, D["variants"][K]> }[keyof D["variants"]]
 	: C extends LocalContract<infer D>
-		? { readonly [K in keyof LocalMembers<D>]: LocalRefMember<LocalMembers<D>[K]> }
+		? RefBase<C> & { readonly [K in keyof LocalMembers<D>]: LocalRefMember<LocalMembers<D>[K]> }
 		: never;
-
-export type Ref<C extends AnyContract = AnyContract> = RefBase<C> & MembersOf<C>;

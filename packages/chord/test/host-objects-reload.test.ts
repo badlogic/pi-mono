@@ -137,7 +137,7 @@ test("the host's reference to a host object follows contract bumps at commit wit
 	await host.load([facets.v1]);
 	const initial = host.hostObjects.get(SwitchV1.name)!;
 	const object = initial.object;
-	const original = host.get(SwitchV1, {});
+	const original = host.hold(SwitchV1, {});
 	await original.set(true);
 	original.release();
 	const codeVersion = host.codeVersion;
@@ -154,7 +154,7 @@ test("the host's reference to a host object follows contract bumps at commit wit
 	assert.equal(initial.status, "released");
 	assert.equal(object?.refs.size, 1, "Attach the replacement before releasing the only old hold");
 	assert.deepEqual(host.registry(Read).get("current")!(), { 1: true });
-	const modern = host.get(SwitchV2, {});
+	const modern = host.hold(SwitchV2, {});
 	await modern.set({ conversation: 2, enabled: true });
 	modern.release();
 	assert.deepEqual((await host.reload([facets.v3])).gated, []);
@@ -202,7 +202,7 @@ test("external old-version consumers still refuse a host object's upgrade withou
 	onTestFinished(() => host.close());
 	await host.load([readerV1]);
 	const own = host.hostObjects.get(ReadV1.name)!;
-	const consumer = host.get(ReadV1, {});
+	const consumer = host.hold(ReadV1, {});
 	assert.equal(await consumer.read(), "one");
 	await assert.rejects(host.reload([readerV2()]), (error) => isChordError(error, "contract_mismatch"));
 	assert.equal(host.hostObjects.get(ReadV1.name), own);
@@ -211,7 +211,7 @@ test("external old-version consumers still refuse a host object's upgrade withou
 	assert.equal(host.hostObjects.get(ReadV2.name)?.contract, ReadV2);
 	assert.equal(await consumer.read(), "two");
 	assert.equal(consumer.contract, ReadV1, "Only the bootstrap hold is retokened");
-	assert.equal(await host.get(ReadV2, {}).fetch(), "two");
+	assert.equal(await host.hold(ReadV2, {}).fetch(), "two");
 });
 
 test("object-owned old-version references still block a host object's upgrade unless their consumer is replaced in the same batch", async () => {
@@ -239,7 +239,7 @@ test("object-owned old-version references still block a host object's upgrade un
 			}),
 	};
 	await host.load([readerV1, oldConsumer]);
-	const consumer = host.get(Consumer, {});
+	const consumer = host.hold(Consumer, {});
 	assert.equal(await consumer.read(), "one");
 	await assert.rejects(host.reload([readerV2()]), (error) => isChordError(error, "contract_mismatch"));
 	assert.equal(await consumer.read(), "one");

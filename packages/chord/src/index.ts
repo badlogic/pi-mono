@@ -16,7 +16,6 @@ export {
 	type InputOf,
 	type LocalContract,
 	local,
-	type MembersOf,
 	method,
 	opaque,
 	type Placement,

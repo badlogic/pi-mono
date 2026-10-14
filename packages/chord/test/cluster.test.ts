@@ -131,7 +131,7 @@ describe("cross-host reload", () => {
 	it("prepares every host, commits the server first, then the workers; code versions stay in step", async () => {
 		const { server, worker, modules } = setup();
 		await tick();
-		const greeter = server.get(Greeter, { session: "S1" });
+		const greeter = server.hold(Greeter, { session: "S1" });
 		assert.equal(await greeter.greet("a"), "v1 a");
 		const go = latch();
 		const pinned = server.root(async (ctx) => {
@@ -140,8 +140,8 @@ describe("cross-host reload", () => {
 			return greeter.greet("p", ctx);
 		});
 		await tick();
-		const shapes: number[] = [];
-		greeter.onShape((shape) => shapes.push(shape.codeVersion));
+		const shapes: string[] = [];
+		greeter.onShape((shape) => shapes.push(shape.contract));
 		modules.set("greeter", greeterFacet("v2"));
 		const report = await server.reload([], { remote: { "session:": ["greeter"] } });
 		// No waiting: the commit frame precedes this call on the FIFO link, so the worker has committed when it arrives.
@@ -150,7 +150,7 @@ describe("cross-host reload", () => {
 		assert.equal(worker.codeVersion, report.codeVersion);
 		go.open();
 		assert.equal(await pinned, "v1 p");
-		assert.deepEqual(shapes, [report.codeVersion]);
+		assert.equal(shapes.length, 1, "one shape push at the commit");
 		// The server retires the old code version once its last old root ended, then tells the worker.
 		for (let i = 0; i < 20 && worker.previousCodeVersion !== undefined; i++) await tick();
 		assert.equal(server.previousCodeVersion, undefined);
@@ -160,7 +160,7 @@ describe("cross-host reload", () => {
 	it("a failing vote aborts every host; the error keeps its code and names the host", async () => {
 		const { server, worker, modules } = setup();
 		await tick();
-		const greeter = server.get(Greeter, { session: "S1" });
+		const greeter = server.hold(Greeter, { session: "S1" });
 		await greeter.greet("a");
 		const before = [server.codeVersion, worker.codeVersion];
 		modules.set("greeter", greeterFacet("v2", { fail: true }));
@@ -176,7 +176,7 @@ describe("cross-host reload", () => {
 	it("a worker gate blocked past its deadline aborts the whole reload", async () => {
 		const { server, worker, modules } = setup();
 		await tick();
-		const greeter = server.get(Greeter, { session: "S1" });
+		const greeter = server.hold(Greeter, { session: "S1" });
 		const go = latch();
 		const blocker = server.root(async (ctx) => {
 			await greeter.greet("g", ctx);
@@ -205,8 +205,8 @@ describe("cross-host reload", () => {
 		});
 		await server.install(greeterFacet("v1"));
 		await tick();
-		const local = server.get(ServerGreeter, {});
-		const child = server.get(Greeter, { session: "S1" });
+		const local = server.hold(ServerGreeter, {});
+		const child = server.hold(Greeter, { session: "S1" });
 		assert.equal(await local.greet("a"), "v1 a");
 		assert.equal(await child.greet("a"), "v1 a");
 		await server.reload([], { remove: ["greeter"], remoteRemove: { "session:": ["greeter"] } });
@@ -225,7 +225,7 @@ describe("cross-host reload", () => {
 		});
 		onTestFinished(() => cold.close());
 		await cold.install(greeterFacet("v1"));
-		const old = cold.get(Greeter, { session: "cold" });
+		const old = cold.hold(Greeter, { session: "cold" });
 		await old.ready;
 		const [down, up] = memoryLinkPair();
 		server.accept(down, { principal: { worker: "cold" }, kind: "host", name: "session:cold" });
@@ -237,7 +237,7 @@ describe("cross-host reload", () => {
 		await cold.close();
 		modules.set("greeter", greeterFacet("v2"));
 		await server.reload([greeterFacet("v2")], { remote: { "session:": ["greeter"] } });
-		assert.equal(await server.get(Greeter, { session: "S1" }).greet("b"), "v2 b");
+		assert.equal(await server.hold(Greeter, { session: "S1" }).greet("b"), "v2 b");
 		const fresh = createHost({
 			self: { kind: "host" },
 			name: "session:fresh",
@@ -249,7 +249,7 @@ describe("cross-host reload", () => {
 		const [freshDown, freshUp] = memoryLinkPair();
 		server.accept(freshDown, { principal: { worker: "fresh" }, kind: "host", name: "session:fresh" });
 		fresh.connect(freshUp, { principal: { kind: "server" } });
-		assert.equal(await server.get(Greeter, { session: "fresh" }).greet("c"), "v2 c");
+		assert.equal(await server.hold(Greeter, { session: "fresh" }).greet("c"), "v2 c");
 	});
 
 	it("only the server coordinates reloads", async () => {
@@ -275,14 +275,14 @@ describe("cross-host reload", () => {
 			upstream: { link: up, principal: { kind: "server" } },
 			onError: () => {},
 		});
-		const viewer = browser.get(Greeter, { session: "S1" });
+		const viewer = browser.hold(Greeter, { session: "S1" });
 		assert.equal(await viewer.greet("a"), "v1 a");
-		const shapes: number[] = [];
-		viewer.onShape((shape) => shapes.push(shape.codeVersion));
+		const shapes: string[] = [];
+		viewer.onShape((shape) => shapes.push(shape.contract));
 		modules.set("greeter", greeterFacet("v2"));
-		const report = await server.reload([], { remote: { "session:": ["greeter"] } });
+		await server.reload([], { remote: { "session:": ["greeter"] } });
 		for (let i = 0; i < 20 && shapes.length === 0; i++) await tick();
-		assert.deepEqual(shapes, [report.codeVersion]);
+		assert.equal(shapes.length, 1, "one shape push at the commit");
 		assert.equal(await viewer.greet("b"), "v2 b");
 
 		modules.set("greeter", {
@@ -298,7 +298,7 @@ describe("cross-host reload", () => {
 	it("an abort while a worker is still preparing: a late open closes itself and the worker can reload again", async () => {
 		const { server, worker, modules } = setup();
 		await tick();
-		const greeter = server.get(Greeter, { session: "S1" });
+		const greeter = server.hold(Greeter, { session: "S1" });
 		await greeter.greet("a");
 		const log: string[] = [];
 		const go = latch();
@@ -363,7 +363,7 @@ describe("cross-host reload", () => {
 		loading.open();
 		const report = await reloading;
 		assert.deepEqual(Object.keys(report.children ?? {}), [], "it was not a participant");
-		const greeter = server.get(Greeter, { session: "S1" });
+		const greeter = server.hold(Greeter, { session: "S1" });
 		assert.equal(await greeter.greet("a"), "v2 a");
 		assert.equal(worker.codeVersion, server.codeVersion);
 	});
@@ -371,7 +371,7 @@ describe("cross-host reload", () => {
 	it("a child keeps the previous code version until its parent retired it (spec 12)", async () => {
 		const { server, worker, modules } = setup();
 		await tick();
-		const greeter = server.get(Greeter, { session: "S1" });
+		const greeter = server.hold(Greeter, { session: "S1" });
 		assert.equal(await greeter.greet("a"), "v1 a");
 		const first = server.codeVersion;
 		const go = latch();
@@ -471,7 +471,7 @@ describe("cross-host reload", () => {
 		const report = await reloading;
 		assert.deepEqual(Object.keys(report.children ?? {}), []);
 		assert.equal(report.codeVersion, 3);
-		const greeter = server.get(Greeter, { session: "S1" });
+		const greeter = server.hold(Greeter, { session: "S1" });
 		assert.equal(await greeter.greet("a"), "v2 a");
 		assert.equal(worker.codeVersion, server.codeVersion);
 	});
@@ -506,7 +506,7 @@ describe("cross-host reload", () => {
 		});
 		onTestFinished(() => worker.close());
 		// While the server's reload still loads its modules, a worker root (code version 1) calls the server.
-		const answer = await worker.root((ctx) => ctx.get(Ping, {}).ping(ctx));
+		const answer = await worker.root(async (ctx) => (await ctx.get(Ping, {})).ping(ctx));
 		assert.equal(answer, "pong");
 		loading.open();
 		await reloading;
@@ -619,7 +619,7 @@ describe("cross-host reload", () => {
 		});
 		onTestFinished(() => browser.close());
 		// The relayed call's root runs on the server's code version 1.
-		const call = browser.get(Slow, {}).wait();
+		const call = browser.hold(Slow, {}).wait();
 		call.catch(() => {});
 		for (let i = 0; i < 50 && log.length === 0 && !worker.codeVersion; i++) await tick();
 		await new Promise((resolve) => setTimeout(resolve, 10));
