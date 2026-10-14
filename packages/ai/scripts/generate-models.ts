@@ -2159,8 +2159,8 @@ async function loadModelsDevData(): Promise<Model<any>[]> {
 		// - @ai-sdk/google → google-generative-ai
 		// - null/undefined/@ai-sdk/openai-compatible → openai-completions
 		const opencodeVariants = [
-			{ key: "opencode", provider: "opencode", basePath: "https://opencode.ai/zen" },
-			{ key: "opencode-go", provider: "opencode-go", basePath: "https://opencode.ai/zen/go" },
+			{ key: "opencode", provider: "opencode", basePath: "https://opencode.ai/inference" },
+			{ key: "opencode-go", provider: "opencode-go", basePath: "https://opencode.ai/inference/go" },
 		] as const;
 
 		for (const variant of opencodeVariants) {
@@ -2209,16 +2209,9 @@ async function loadModelsDevData(): Promise<Model<any>[]> {
 
 				// Fix known mismatches between models.dev npm data and actual
 				// OpenCode Go endpoint behaviour. models.dev reports these models
-				// as @ai-sdk/anthropic, but the OpenCode Go endpoints either don't
-				// accept Anthropic SDK auth (MiniMax M2.7) or are served through
-				// the OpenAI-compatible /v1/chat/completions path (Qwen 3.5/3.6).
-				// Switch them to openai-completions so requests use Bearer auth
-				// and the standard /v1/chat/completions endpoint.
+				// as @ai-sdk/anthropic, but OpenCode Go serves them through the
+				// OpenAI-compatible /v1/chat/completions path.
 				if (variant.provider === "opencode-go") {
-					if (modelId === "minimax-m2.7") {
-						api = "openai-completions";
-						baseUrl = `${variant.basePath}/v1`;
-					}
 					if (modelId === "qwen3.5-plus" || modelId === "qwen3.6-plus") {
 						api = "openai-completions";
 						baseUrl = `${variant.basePath}/v1`;
@@ -2619,7 +2612,7 @@ async function loadModelsDevClassifierModels(): Promise<ClassifierModel<"typesaf
 // System One models yet. Cloudflare publishes pricing only in the dashboard.
 // https://developers.cloudflare.com/ai/models/typesafe/jev/
 // OpenCode Zen serves Jev through its TypeSafe-compatible System One endpoint.
-// Neither its /zen/v1/models listing nor models.dev carries metadata for it.
+// Neither its /inference/v1/models listing nor models.dev carries metadata for it.
 // https://opencode.ai/docs/zen
 const OPENCODE_CLASSIFIER_MODELS: ClassifierModel<"typesafe-system-one">[] = [
 	{
@@ -2628,7 +2621,7 @@ const OPENCODE_CLASSIFIER_MODELS: ClassifierModel<"typesafe-system-one">[] = [
 		name: "Jev 1.13",
 		api: "typesafe-system-one",
 		provider: "opencode",
-		baseUrl: "https://opencode.ai/zen/v1",
+		baseUrl: "https://opencode.ai/inference/v1",
 		input: ["text"],
 		cost: { input: 0.042, output: 0, cacheRead: 0, cacheWrite: 0 },
 		contextWindow: 32000,
@@ -2639,7 +2632,7 @@ const OPENCODE_CLASSIFIER_MODELS: ClassifierModel<"typesafe-system-one">[] = [
 		name: "Jev 1.13 Free",
 		api: "typesafe-system-one",
 		provider: "opencode",
-		baseUrl: "https://opencode.ai/zen/v1",
+		baseUrl: "https://opencode.ai/inference/v1",
 		input: ["text"],
 		cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
 		contextWindow: 32000,

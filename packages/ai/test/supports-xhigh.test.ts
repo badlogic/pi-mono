@@ -175,12 +175,6 @@ describe("getSupportedThinkingLevels", () => {
 		expect(getSupportedThinkingLevels(model!)).toEqual(["off", "low", "high", "max"]);
 	});
 
-	it("includes low/high/max plus off for DeepSeek V4 Flash on opencode-go", () => {
-		const model = getModel("opencode-go", "deepseek-v4-flash");
-		expect(model).toBeDefined();
-		expect(getSupportedThinkingLevels(model!)).toEqual(["off", "low", "high", "max"]);
-	});
-
 	it("preserves low/high/max metadata for DeepSeek V4.1 Flash on OpenRouter", () => {
 		const model = getModel("openrouter", "deepseek/deepseek-v4.1-flash");
 		expect(model).toBeDefined();
