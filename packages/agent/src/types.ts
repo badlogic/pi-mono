@@ -13,6 +13,7 @@ import type {
 	ToolResultMessage,
 	TranscriptContext,
 	Usage,
+	VideoContent,
 } from "@earendil-works/pi-ai";
 import type { Static, TSchema } from "typebox";
 
@@ -90,7 +91,7 @@ export interface BeforeToolCallResult {
  * There is no deep merge for `content`, `details`, or `usage`.
  */
 export interface AfterToolCallResult {
-	content?: (TextContent | ImageContent)[];
+	content?: (TextContent | ImageContent | VideoContent)[];
 	details?: unknown;
 	structuredContent?: JsonValue;
 	isError?: boolean;
@@ -422,8 +423,8 @@ export interface AgentState {
 
 /** Final or partial result produced by a tool. */
 export interface AgentToolResult<T = JsonValue | undefined> {
-	/** Text or image content returned to the model. */
-	content: (TextContent | ImageContent)[];
+	/** Text or media content (text, images, videos) returned to the model. */
+	content: (TextContent | ImageContent | VideoContent)[];
 	/** Arbitrary structured details for logs or UI rendering. */
 	details: T;
 	/**

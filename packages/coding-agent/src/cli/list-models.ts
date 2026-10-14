@@ -27,7 +27,7 @@ function formatTokenCount(count: number): string {
  * List available models, optionally filtered by search pattern
  */
 export async function listModels(
-	modelRuntime: ModelRuntime,
+	modelRuntime: Pick<ModelRuntime, "getError" | "getAvailable">,
 	searchPattern?: string,
 	signal?: AbortSignal,
 ): Promise<void> {
@@ -69,6 +69,7 @@ export async function listModels(
 		maxOut: formatTokenCount(m.maxTokens),
 		thinking: m.reasoning ? "yes" : "no",
 		images: m.input.includes("image") ? "yes" : "no",
+		videos: m.input.includes("video") ? "yes" : "no",
 	}));
 
 	const headers = {
@@ -78,6 +79,7 @@ export async function listModels(
 		maxOut: "max-out",
 		thinking: "thinking",
 		images: "images",
+		videos: "videos",
 	};
 
 	const widths = {
@@ -87,6 +89,7 @@ export async function listModels(
 		maxOut: Math.max(headers.maxOut.length, ...rows.map((r) => r.maxOut.length)),
 		thinking: Math.max(headers.thinking.length, ...rows.map((r) => r.thinking.length)),
 		images: Math.max(headers.images.length, ...rows.map((r) => r.images.length)),
+		videos: Math.max(headers.videos.length, ...rows.map((r) => r.videos.length)),
 	};
 
 	// Print header
@@ -97,6 +100,7 @@ export async function listModels(
 		headers.maxOut.padEnd(widths.maxOut),
 		headers.thinking.padEnd(widths.thinking),
 		headers.images.padEnd(widths.images),
+		headers.videos.padEnd(widths.videos),
 	].join("  ");
 	console.log(headerLine);
 
@@ -109,6 +113,7 @@ export async function listModels(
 			row.maxOut.padEnd(widths.maxOut),
 			row.thinking.padEnd(widths.thinking),
 			row.images.padEnd(widths.images),
+			row.videos.padEnd(widths.videos),
 		].join("  ");
 		console.log(line);
 	}

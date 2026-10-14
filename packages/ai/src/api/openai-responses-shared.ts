@@ -5,6 +5,7 @@ import type {
 	ResponseCreateParamsStreaming,
 	ResponseInput,
 	ResponseInputContent,
+	ResponseInputFile,
 	ResponseInputImage,
 	ResponseInputItem,
 	ResponseInputText,
@@ -30,6 +31,8 @@ import type {
 	ToolCall,
 	TranscriptContext,
 	Usage,
+	UserContent,
+	VideoContent,
 } from "../types.ts";
 import type { AssistantMessageEventStream } from "../utils/event-stream.ts";
 import { shortHash } from "../utils/hash.ts";
@@ -77,33 +80,65 @@ function parseTextSignature(
 	return { id: signature };
 }
 
-type ToolResultOutputContent = Array<ResponseInputText | ResponseInputImage>;
+type ResponseVideoInputItem =
+	| { type: "video_url"; video_url: { url: string } }
+	| { type: "input_video"; input_video: { data: string; mime_type: string } };
+
+type ToolResultOutputContent = Array<ResponseInputText | ResponseInputImage | ResponseVideoInputItem>;
+
+/**
+ * Build a video item in the wire format the endpoint was verified to accept. OpenAI Responses has no
+ * video item; endpoints that read video take a video_url (a data: URL) or an input_video (base64)
+ * part, and compat.videoPartFormat picks one per endpoint, as in the chat-completions serializer
+ * (the default is input_video, the llama.cpp spelling).
+ */
+function videoInputItem(block: VideoContent, videoPartFormat: "video_url" | "input_video"): ResponseVideoInputItem {
+	return videoPartFormat === "video_url"
+		? { type: "video_url", video_url: { url: `data:${block.mimeType};base64,${block.data}` } }
+		: { type: "input_video", input_video: { data: block.data, mime_type: block.mimeType } };
+}
 
 function convertToolResultOutput<TApi extends Api>(
 	model: Model<TApi>,
-	content: readonly (TextContent | ImageContent)[],
+	content: readonly UserContent[],
 ): string | ToolResultOutputContent {
 	const textResult = content
 		.filter((c): c is TextContent => c.type === "text")
 		.map((c) => c.text)
 		.join("\n");
 	const images = content.filter((c): c is ImageContent => c.type === "image");
-	const hasText = textResult.length > 0;
+	const videos = content.filter((c): c is VideoContent => c.type === "video");
+	const mediaNotes: string[] = [];
+	if (images.length > 0 && !model.input.includes("image")) mediaNotes.push("(see attached image)");
+	if (videos.length > 0 && !model.input.includes("video"))
+		mediaNotes.push("(video omitted: model does not accept video)");
+	const combinedText = [textResult, ...mediaNotes].filter(Boolean).join("\n");
+	const sendImages = model.input.includes("image") ? images : [];
+	const sendVideos = model.input.includes("video") ? videos : [];
 
-	if (images.length === 0 || !model.input.includes("image")) {
-		return sanitizeSurrogates(hasText ? textResult : images.length > 0 ? "(see attached image)" : "(no tool output)");
+	if (sendImages.length === 0 && sendVideos.length === 0) {
+		return sanitizeSurrogates(combinedText || "(no tool output)");
 	}
 
 	const output: ToolResultOutputContent = [];
-	if (hasText) {
-		output.push({ type: "input_text", text: sanitizeSurrogates(textResult) });
+	if (combinedText) {
+		output.push({ type: "input_text", text: sanitizeSurrogates(combinedText) });
 	}
-	for (const image of images) {
+	for (const image of sendImages) {
 		output.push({
 			type: "input_image",
 			detail: "auto",
 			image_url: `data:${image.mimeType};base64,${image.data}`,
 		});
+	}
+	for (const video of sendVideos) {
+		output.push(
+			videoInputItem(
+				video,
+				(model.compat as { videoPartFormat?: "input_video" | "video_url" } | undefined)?.videoPartFormat ??
+					"input_video",
+			),
+		);
 	}
 	return output;
 }
@@ -228,7 +263,9 @@ export function convertResponsesMessages<TApi extends Api>(
 			reasoning: { effort: effort as NonNullable<ResponseConfigurationUpdateItemParam.Reasoning["effort"]> },
 		} satisfies ResponseConfigurationUpdateItemParam);
 	};
-	const compat = model.compat as { supportsDeveloperRole?: boolean } | undefined;
+	const compat = model.compat as
+		| { supportsDeveloperRole?: boolean; videoPartFormat?: "input_video" | "video_url" }
+		| undefined;
 	const instructionRole = model.reasoning && compat?.supportsDeveloperRole !== false ? "developer" : "system";
 
 	let msgIndex = 0;
@@ -256,6 +293,9 @@ export function convertResponsesMessages<TApi extends Api>(
 							type: "input_text",
 							text: sanitizeSurrogates(item.text),
 						} satisfies ResponseInputText;
+					}
+					if (item.type === "video") {
+						return videoInputItem(item, compat?.videoPartFormat ?? "input_video") as unknown as ResponseInputContent;
 					}
 					return {
 						type: "input_image",
@@ -355,7 +395,11 @@ export function convertResponsesMessages<TApi extends Api>(
 			messages.push(...output);
 		} else if (msg.role === "toolResult") {
 			const [callId] = msg.toolCallId.split("|");
-			const output = convertToolResultOutput(model, msg.content);
+			// SDK-boundary cast: the SDK's output item type predates video, so a video part is
+			// typed as one of the accepted text/image/file items. The wire payload is unchanged.
+			const output = convertToolResultOutput(model, msg.content) as
+				| string
+				| (ResponseInputFile | ResponseInputImage | ResponseInputText)[];
 
 			if (options?.grammarToolInputProperties?.has(msg.toolName)) {
 				messages.push({

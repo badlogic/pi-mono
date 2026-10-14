@@ -1,19 +1,24 @@
 /**
- * Process @file CLI arguments into text content and image attachments
+ * Process @file CLI arguments into text content and media attachments
  */
 
 import { access, readFile, stat } from "node:fs/promises";
-import type { ImageContent } from "@earendil-works/pi-ai";
+import type { ImageContent, VideoContent } from "@earendil-works/pi-ai";
 import chalk from "chalk";
 import { resolve } from "path";
 import { resolveReadPath } from "../core/tools/path-utils.ts";
 import { processImage } from "../utils/image-process.ts";
-import { detectSupportedImageMimeTypeFromFile } from "../utils/mime.ts";
+import {
+	detectSupportedImageMimeTypeFromFile,
+	detectSupportedVideoMimeTypeFromFile,
+	MAX_VIDEO_BYTES,
+} from "../utils/mime.ts";
 import { stripBom } from "../utils/text.ts";
 
 export interface ProcessedFiles {
 	text: string;
 	images: ImageContent[];
+	videos: VideoContent[];
 }
 
 export interface ProcessFileOptions {
@@ -21,11 +26,12 @@ export interface ProcessFileOptions {
 	autoResizeImages?: boolean;
 }
 
-/** Process @file arguments into text content and image attachments */
+/** Process @file arguments into text content and media attachments */
 export async function processFileArguments(fileArgs: string[], options?: ProcessFileOptions): Promise<ProcessedFiles> {
 	const autoResizeImages = options?.autoResizeImages ?? true;
 	let text = "";
 	const images: ImageContent[] = [];
+	const videos: VideoContent[] = [];
 
 	for (const fileArg of fileArgs) {
 		// Expand and resolve path (handles ~ expansion and macOS screenshot Unicode spaces)
@@ -47,6 +53,7 @@ export async function processFileArguments(fileArgs: string[], options?: Process
 		}
 
 		const mimeType = await detectSupportedImageMimeTypeFromFile(absolutePath);
+		const videoMimeType = mimeType ? null : await detectSupportedVideoMimeTypeFromFile(absolutePath);
 
 		if (mimeType) {
 			// Handle image file
@@ -71,6 +78,22 @@ export async function processFileArguments(fileArgs: string[], options?: Process
 			} else {
 				text += `<file name="${absolutePath}"></file>\n`;
 			}
+		} else if (videoMimeType) {
+			if (stats.size > MAX_VIDEO_BYTES) {
+				console.error(
+					chalk.red(
+						`Error: Video file exceeds ${MAX_VIDEO_BYTES / (1024 * 1024)}MB attachment limit: ${absolutePath}`,
+					),
+				);
+				process.exit(1);
+			}
+			const content = await readFile(absolutePath);
+			videos.push({
+				type: "video",
+				mimeType: videoMimeType,
+				data: content.toString("base64"),
+			});
+			text += `<file name="${absolutePath}"></file>\n`;
 		} else {
 			// Handle text file
 			try {
@@ -84,5 +107,5 @@ export async function processFileArguments(fileArgs: string[], options?: Process
 		}
 	}
 
-	return { text, images };
+	return { text, images, videos };
 }

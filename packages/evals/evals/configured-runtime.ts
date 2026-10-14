@@ -7,7 +7,7 @@ type ModelFields = {
 	name: string;
 	provider: string;
 	reasoning: boolean;
-	input: Array<"text" | "image">;
+	input: Array<"text" | "image" | "video">;
 	cost: { input: number; output: number; cacheRead: number; cacheWrite: number };
 	contextWindow: number;
 	maxTokens: number;

@@ -9,6 +9,7 @@ import {
 	type Model,
 	type Provider,
 	type ProviderHeaders,
+	type VideoContent,
 } from "@earendil-works/pi-ai";
 import type { KeyId } from "@earendil-works/pi-tui";
 import { type Theme, theme } from "../../modes/interactive/theme/theme.ts";
@@ -167,7 +168,7 @@ function isUserBashEventResult(value: unknown): value is UserBashEventResult {
 
 /** The message that starts a run: the before_agent_start event without its prompt fields. */
 export type BeforeAgentStartTrigger =
-	| Pick<BeforeAgentStartUserEvent, "messageType" | "prompt" | "images">
+	| Pick<BeforeAgentStartUserEvent, "messageType" | "prompt" | "images" | "videos">
 	| Pick<BeforeAgentStartCustomEvent, "messageType" | "message">;
 
 /** Combined result from all before_agent_start handlers. */
@@ -1527,10 +1528,12 @@ export class ExtensionRunner {
 		images: ImageContent[] | undefined,
 		source: InputSource,
 		streamingBehavior?: "steer" | "followUp",
+		videos?: VideoContent[],
 	): Promise<InputEventResult> {
 		const ctx = this.createContext();
 		let currentText = text;
 		let currentImages = images;
+		let currentVideos = videos;
 
 		for (const { ext, handlers } of snapshotEventHandlers(this.extensions, "input")) {
 			for (const handler of handlers) {
@@ -1539,6 +1542,7 @@ export class ExtensionRunner {
 						type: "input",
 						text: currentText,
 						images: currentImages,
+						videos: currentVideos,
 						source,
 						streamingBehavior,
 					};
@@ -1547,6 +1551,7 @@ export class ExtensionRunner {
 					if (result?.action === "transform") {
 						currentText = result.text;
 						currentImages = result.images ?? currentImages;
+						currentVideos = result.videos ?? currentVideos;
 					}
 				} catch (err) {
 					this.emitError({
@@ -1558,8 +1563,8 @@ export class ExtensionRunner {
 				}
 			}
 		}
-		return currentText !== text || currentImages !== images
-			? { action: "transform", text: currentText, images: currentImages }
+		return currentText !== text || currentImages !== images || currentVideos !== videos
+			? { action: "transform", text: currentText, images: currentImages, videos: currentVideos }
 			: { action: "continue" };
 	}
 }

@@ -31,7 +31,6 @@ import type {
 	Api,
 	AssistantMessage,
 	CacheRetention,
-	ImageContent,
 	JsonObject,
 	JsonValue,
 	Model,
@@ -48,6 +47,7 @@ import type {
 	Tool,
 	ToolCall,
 	ToolResultMessage,
+	UserContent,
 } from "../types.ts";
 import { appendAssistantMessageDiagnostic } from "../utils/diagnostics.ts";
 import { normalizeProviderError } from "../utils/error-body.ts";
@@ -959,11 +959,13 @@ function sanitizeBedrockDocument(value: JsonValue): DocumentType {
 	return value;
 }
 
-function convertToolResultContent(content: (TextContent | ImageContent)[]): ToolResultContentBlock[] {
+function convertToolResultContent(content: UserContent[]): ToolResultContentBlock[] {
 	const result: ToolResultContentBlock[] = [];
 	for (const c of content) {
 		if (c.type === "image") {
 			result.push({ image: createImageBlock(c.mimeType, c.data) });
+		} else if (c.type === "video") {
+			result.push({ text: "(video omitted: Bedrock Converse serializer does not support videos)" });
 		} else {
 			const textBlock = createNonBlankTextBlock(c.text);
 			if (textBlock) result.push(textBlock);

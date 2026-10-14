@@ -1,6 +1,7 @@
 import { open } from "node:fs/promises";
 
-const IMAGE_TYPE_SNIFF_BYTES = 4100;
+const MEDIA_TYPE_SNIFF_BYTES = 4100;
+export const MAX_VIDEO_BYTES = 50 * 1024 * 1024;
 const PNG_SIGNATURE = [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a];
 
 export function detectSupportedImageMimeType(buffer: Uint8Array): string | null {
@@ -23,11 +24,42 @@ export function detectSupportedImageMimeType(buffer: Uint8Array): string | null 
 }
 
 export async function detectSupportedImageMimeTypeFromFile(filePath: string): Promise<string | null> {
+	return detectMimeTypeFromFile(filePath, detectSupportedImageMimeType);
+}
+
+export function detectSupportedVideoMimeType(buffer: Uint8Array): string | null {
+	if (startsWithAscii(buffer, 4, "ftyp")) {
+		return startsWithAscii(buffer, 8, "qt  ") ? "video/quicktime" : "video/mp4";
+	}
+	if (startsWithAscii(buffer, 0, "RIFF") && startsWithAscii(buffer, 8, "AVI ")) {
+		return "video/x-msvideo";
+	}
+	if (startsWith(buffer, [0x1a, 0x45, 0xdf, 0xa3])) {
+		if (includesAscii(buffer, "webm")) return "video/webm";
+		if (includesAscii(buffer, "matroska")) return "video/x-matroska";
+	}
+	if (startsWith(buffer, [0x00, 0x00, 0x01, 0xba]) || startsWith(buffer, [0x00, 0x00, 0x01, 0xb3])) {
+		return "video/mpeg";
+	}
+	if (hasTransportStreamPackets(buffer, 188, 0) || hasTransportStreamPackets(buffer, 192, 4)) {
+		return "video/mp2t";
+	}
+	return null;
+}
+
+export async function detectSupportedVideoMimeTypeFromFile(filePath: string): Promise<string | null> {
+	return detectMimeTypeFromFile(filePath, detectSupportedVideoMimeType);
+}
+
+async function detectMimeTypeFromFile(
+	filePath: string,
+	detect: (buffer: Uint8Array) => string | null,
+): Promise<string | null> {
 	const fileHandle = await open(filePath, "r");
 	try {
-		const buffer = Buffer.alloc(IMAGE_TYPE_SNIFF_BYTES);
-		const { bytesRead } = await fileHandle.read(buffer, 0, IMAGE_TYPE_SNIFF_BYTES, 0);
-		return detectSupportedImageMimeType(buffer.subarray(0, bytesRead));
+		const buffer = Buffer.alloc(MEDIA_TYPE_SNIFF_BYTES);
+		const { bytesRead } = await fileHandle.read(buffer, 0, MEDIA_TYPE_SNIFF_BYTES, 0);
+		return detect(buffer.subarray(0, bytesRead));
 	} finally {
 		await fileHandle.close();
 	}
@@ -107,10 +139,24 @@ function startsWith(buffer: Uint8Array, bytes: number[]): boolean {
 	return bytes.every((byte, index) => buffer[index] === byte);
 }
 
+function hasTransportStreamPackets(buffer: Uint8Array, packetSize: number, syncOffset: number): boolean {
+	for (let packet = 0; packet < 3; packet++) {
+		if (buffer[syncOffset + packet * packetSize] !== 0x47) return false;
+	}
+	return true;
+}
+
 function startsWithAscii(buffer: Uint8Array, offset: number, text: string): boolean {
 	if (buffer.length < offset + text.length) return false;
 	for (let index = 0; index < text.length; index++) {
 		if (buffer[offset + index] !== text.charCodeAt(index)) return false;
 	}
 	return true;
+}
+
+function includesAscii(buffer: Uint8Array, text: string): boolean {
+	for (let offset = 0; offset <= buffer.length - text.length; offset++) {
+		if (startsWithAscii(buffer, offset, text)) return true;
+	}
+	return false;
 }

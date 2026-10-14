@@ -341,6 +341,12 @@ export const OpenAICompletionsCompatSchema = Type.Object(
 					"vLLM scheduler priority sent as the top-level priority request field. Lower values are handled earlier and the server default is 0. Only meaningful with --scheduling-policy priority. Off by default and not set on the generated catalog.",
 			}),
 		),
+		videoPartFormat: Type.Optional(
+			Type.Union([Type.Literal("input_video"), Type.Literal("video_url")], {
+				description:
+					"Wire format for a video attachment on an OpenAI-compatible endpoint. input_video (the default) is the part llama.cpp's server and Strata accept; video_url sends a data: URL, which vLLM's multimodal server takes when launched with a video limit-mm-per-prompt. Set only on an endpoint verified to accept the format.",
+			}),
+		),
 	},
 	{
 		description:
@@ -407,6 +413,12 @@ export const OpenAIResponsesCompatSchema = Type.Object(
 			Type.Boolean({
 				description: "Whether the provider accepts max_output_tokens. Some Codex-protocol gateways reject it.",
 				default: true,
+			}),
+		),
+		videoPartFormat: Type.Optional(
+			Type.Union([Type.Literal("input_video"), Type.Literal("video_url")], {
+				description:
+					"Wire format for a video attachment on an OpenAI Responses-compatible endpoint. OpenAI Responses has no video item; endpoints that read video take an input_video (base64) or video_url (data: URL) part. input_video (the default) is the llama.cpp spelling. Set only on an endpoint verified to accept the format.",
 			}),
 		),
 	},
@@ -553,6 +565,12 @@ const ProviderCompatPropertyOverrides = {
 	sendSessionAffinityHeaders: optionalCompatBoolean({
 		description: "Whether to send session-affinity data from options.sessionId. Defaults are API-specific.",
 	}),
+	videoPartFormat: Type.Optional(
+		Type.Union([Type.Literal("input_video"), Type.Literal("video_url")], {
+			description:
+				"Wire format for a video attachment on an OpenAI-compatible endpoint (openai-completions and openai-responses). input_video (the default) is the part llama.cpp's server and Strata accept; video_url sends a data: URL, which vLLM's multimodal server takes when launched with a video limit-mm-per-prompt. OpenAI's own API has no video input item, so this only applies to self-hosted endpoints that read video.",
+		}),
+	),
 } satisfies TProperties;
 
 type UnionToIntersection<Union> = (Union extends unknown ? (value: Union) => void : never) extends (

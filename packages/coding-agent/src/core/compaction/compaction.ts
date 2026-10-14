@@ -284,7 +284,7 @@ function estimateTextAndImageContentChars(content: string | Array<{ type: string
 	for (const block of content) {
 		if (block.type === "text" && block.text) {
 			chars += block.text.length;
-		} else if (block.type === "image") {
+		} else if (block.type === "image" || block.type === "video") {
 			chars += ESTIMATED_IMAGE_CHARS;
 		}
 	}

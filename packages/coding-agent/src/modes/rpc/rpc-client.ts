@@ -6,7 +6,7 @@
 
 import { type ChildProcess, spawn } from "node:child_process";
 import type { AgentMessage, ThinkingLevel } from "@earendil-works/pi-agent-core";
-import type { ImageContent } from "@earendil-works/pi-ai";
+import type { ImageContent, VideoContent } from "@earendil-works/pi-ai";
 import type { PromptDisposition, QueuedInputDisposition, SessionStats } from "../../core/agent-session.ts";
 import type { BashResult } from "../../core/bash-executor.ts";
 import type { CompactionResult } from "../../core/compaction/index.ts";
@@ -199,24 +199,25 @@ export class RpcClient {
 		message: string,
 		images?: ImageContent[],
 		streamingBehavior?: "steer" | "followUp",
+		videos?: VideoContent[],
 	): Promise<PromptDisposition> {
-		const response = await this.send({ type: "prompt", message, images, streamingBehavior });
+		const response = await this.send({ type: "prompt", message, images, videos, streamingBehavior });
 		return this.getData<{ disposition: PromptDisposition }>(response).disposition;
 	}
 
 	/**
 	 * Queue a steering message to interrupt the agent mid-run.
 	 */
-	async steer(message: string, images?: ImageContent[]): Promise<QueuedInputDisposition> {
-		const response = await this.send({ type: "steer", message, images });
+	async steer(message: string, images?: ImageContent[], videos?: VideoContent[]): Promise<QueuedInputDisposition> {
+		const response = await this.send({ type: "steer", message, images, videos });
 		return this.getData<{ disposition: QueuedInputDisposition }>(response).disposition;
 	}
 
 	/**
 	 * Queue a follow-up message to be processed after the agent finishes.
 	 */
-	async followUp(message: string, images?: ImageContent[]): Promise<QueuedInputDisposition> {
-		const response = await this.send({ type: "follow_up", message, images });
+	async followUp(message: string, images?: ImageContent[], videos?: VideoContent[]): Promise<QueuedInputDisposition> {
+		const response = await this.send({ type: "follow_up", message, images, videos });
 		return this.getData<{ disposition: QueuedInputDisposition }>(response).disposition;
 	}
 
@@ -510,9 +511,14 @@ export class RpcClient {
 	/**
 	 * Send prompt and wait for completion, returning all events.
 	 */
-	async promptAndWait(message: string, images?: ImageContent[], timeout = 60000): Promise<JsonAgentSessionEvent[]> {
+	async promptAndWait(
+		message: string,
+		images?: ImageContent[],
+		timeout = 60000,
+		videos?: VideoContent[],
+	): Promise<JsonAgentSessionEvent[]> {
 		const eventsPromise = this.collectEvents(timeout);
-		await this.prompt(message, images);
+		await this.prompt(message, images, undefined, videos);
 		return eventsPromise;
 	}
 

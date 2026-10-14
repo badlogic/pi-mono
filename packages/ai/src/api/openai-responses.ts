@@ -93,6 +93,7 @@ function getCompat(model: Model<"openai-responses">): Required<OpenAIResponsesCo
 		supportsToolSearch: model.compat?.supportsToolSearch ?? false,
 		supportsExplicitPromptCacheMode: model.compat?.supportsExplicitPromptCacheMode ?? false,
 		supportsMaxOutputTokens: model.compat?.supportsMaxOutputTokens ?? true,
+		videoPartFormat: model.compat?.videoPartFormat ?? "input_video",
 		supportsMidConvoEffort: model.compat?.supportsMidConvoEffort ?? false,
 	};
 }

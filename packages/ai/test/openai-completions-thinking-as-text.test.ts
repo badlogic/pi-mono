@@ -49,6 +49,7 @@ const compat = {
 	sendSessionAffinityHeaders: false,
 	sessionAffinityFormat: "openai",
 	supportsLongCacheRetention: true,
+	videoPartFormat: "input_video",
 } satisfies Omit<
 	Required<OpenAICompletionsCompat>,
 	"cacheControlFormat" | "thinkingTokenBudgetField" | "vllmPriority"

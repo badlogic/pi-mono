@@ -1,4 +1,4 @@
-import type { AssistantMessage, ImageContent, Message, TextContent, TranscriptContext, Usage } from "../types.ts";
+import type { AssistantMessage, Message, TranscriptContext, Usage, UserContent } from "../types.ts";
 import { getSystemMessageText } from "./text.ts";
 
 export interface ContextUsageEstimate {
@@ -13,7 +13,7 @@ export interface ContextUsageEstimate {
 }
 
 const CHARS_PER_TOKEN = 3.5;
-const ESTIMATED_IMAGE_CHARS = 4800;
+const ESTIMATED_MEDIA_CHARS = 4800;
 
 export function calculateContextTokens(usage: Usage): number {
 	return usage.totalTokens || usage.input + usage.output + usage.cacheRead + usage.cacheWrite;
@@ -27,11 +27,11 @@ function safeJsonStringify(value: unknown): string {
 	}
 }
 
-function estimateTextAndImageContentChars(content: string | Array<TextContent | ImageContent>): number {
+function estimateTextAndImageContentChars(content: string | UserContent[]): number {
 	if (typeof content === "string") return content.length;
 
 	let chars = 0;
-	for (const block of content) chars += block.type === "text" ? block.text.length : ESTIMATED_IMAGE_CHARS;
+	for (const block of content) chars += block.type === "text" ? block.text.length : ESTIMATED_MEDIA_CHARS;
 	return chars;
 }
 
@@ -39,7 +39,7 @@ export function estimateTextTokens(text: string): number {
 	return Math.ceil(text.length / CHARS_PER_TOKEN);
 }
 
-export function estimateTextAndImageContentTokens(content: string | Array<TextContent | ImageContent>): number {
+export function estimateTextAndImageContentTokens(content: string | UserContent[]): number {
 	return Math.ceil(estimateTextAndImageContentChars(content) / CHARS_PER_TOKEN);
 }
 

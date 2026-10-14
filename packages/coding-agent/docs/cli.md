@@ -32,7 +32,7 @@ With terminal stdin and stdout, Pi opens the terminal UI unless `--print`, `--mo
 | Input | Behavior |
 |---|---|
 | `message` | Provide an initial prompt |
-| `@path` | Include a text file or image in the first prompt |
+| `@path` | Include a text file, image or video in the first prompt |
 | Piped stdin | Prepend its contents to the first prompt |
 | `--` | Stop option parsing so a prompt can begin with `-` |
 

@@ -127,6 +127,22 @@ Pi first clamps unsupported thinking levels, then merges model `samplingParams`,
 
 Compatibility settings should describe verified differences in the endpoint's request or response behavior. Do not enable them based only on an endpoint advertising OpenAI or Anthropic compatibility.
 
+### Send video to a vLLM-style endpoint
+
+Pi sends a video attachment as llama.cpp's `input_video` part, which llama.cpp's own server accepts. vLLM's multimodal server validates content parts and answers `400 {"error":"Unexpected item type in content."}` to that part, while it takes vLLM's own `video_url` data part once launched with `--limit-mm-per-prompt '{"image": 64, "video": 64}'`. Set `videoPartFormat` for such an endpoint:
+
+```json
+{
+  "id": "qwen3.8-27b-quasar-nvfp4",
+  "input": ["text", "image", "video"],
+  "compat": {
+    "videoPartFormat": "video_url"
+  }
+}
+```
+
+Verify the part an endpoint takes by posting it directly and reading `usage.prompt_tokens`: a video that was never read leaves that number at the size of the text alone, and a server can answer `200` instead of rejecting the request. A clip costs image tokens per sampled frame, so a 3 second 960x270 clip that arrived measured 101 prompt tokens against 66 for the same instruction without it.
+
 ## Use classifier models
 
 Classifier models do not chat. They answer typed questions about JSON state: pick one of several choices, answer yes or no, or give a score, each with probabilities. Pi includes TypeSafe's Jev model from these providers, Cloudflare's Clef and Clef Flash models from Workers AI, and OpenAI's GPT-6 Luna through the [Decisions API](https://developers.openai.com/api/docs/guides/decisions):

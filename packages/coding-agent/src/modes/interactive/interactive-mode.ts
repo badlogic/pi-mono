@@ -12,6 +12,7 @@ import type { AuthEvent, AuthPrompt } from "@earendil-works/pi-ai";
 import {
 	type AssistantMessage,
 	type ImageContent,
+	type VideoContent,
 	isRetryableAssistantError,
 	type Message,
 	type Model,
@@ -436,6 +437,8 @@ export interface InteractiveModeOptions {
 	initialMessage?: string;
 	/** Images to attach to the initial message */
 	initialImages?: ImageContent[];
+	/** Videos to attach to the initial message */
+	initialVideos?: VideoContent[];
 	/** Additional messages to send after the initial message */
 	initialMessages?: string[];
 	/** Force verbose startup (overrides quietStartup setting) */
@@ -1191,6 +1194,7 @@ export class InteractiveMode {
 			modelFallbackMessage,
 			initialMessage,
 			initialImages,
+			initialVideos,
 			initialMessages,
 		} = this.options;
 
@@ -1230,7 +1234,7 @@ export class InteractiveMode {
 		// Process initial messages
 		if (initialMessage) {
 			try {
-				await this.session.prompt(initialMessage, { images: initialImages });
+				await this.session.prompt(initialMessage, { images: initialImages, videos: initialVideos });
 			} catch (error: unknown) {
 				const errorMessage = error instanceof Error ? error.message : "Unknown error occurred";
 				this.showError(errorMessage);

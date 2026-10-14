@@ -1,6 +1,6 @@
 import * as os from "node:os";
 import { pathToFileURL } from "node:url";
-import type { ImageContent, TextContent } from "@earendil-works/pi-ai";
+import type { UserContent } from "@earendil-works/pi-ai";
 import { getCapabilities, getImageDimensions, hyperlink, imageFallback } from "@earendil-works/pi-tui";
 import type { Theme } from "../../modes/interactive/theme/theme.ts";
 import { stripAnsi } from "../../utils/ansi.ts";
@@ -63,6 +63,7 @@ export function getTextOutput(
 
 	const textBlocks = result.content.filter((c) => c.type === "text");
 	const imageBlocks = result.content.filter((c) => c.type === "image");
+	const videoBlocks = result.content.filter((c) => c.type === "video");
 
 	let output = textBlocks.map((c) => sanitizeBinaryOutput(stripAnsi(c.text || "")).replace(/\r/g, "")).join("\n");
 
@@ -78,12 +79,16 @@ export function getTextOutput(
 			.join("\n");
 		output = output ? `${output}\n${imageIndicators}` : imageIndicators;
 	}
+	if (videoBlocks.length > 0) {
+		const videoIndicators = videoBlocks.map((video) => `[Video: ${video.mimeType ?? "video/unknown"}]`).join("\n");
+		output = output ? `${output}\n${videoIndicators}` : videoIndicators;
+	}
 
 	return output;
 }
 
 export type ToolRenderResultLike<TDetails> = {
-	content: (TextContent | ImageContent)[];
+	content: UserContent[];
 	details: TDetails;
 };
 

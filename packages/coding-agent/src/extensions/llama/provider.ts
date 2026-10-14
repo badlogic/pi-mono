@@ -142,7 +142,13 @@ function toPiModel(
 		...(reasoning && {
 			thinkingLevelMap: { off: "off", minimal: null, low: null, medium: "medium", high: null, xhigh: null },
 		}),
-		input: model.architecture?.input_modalities?.includes("image") ? ["text", "image"] : ["text"],
+		input: (() => {
+			const modalities = model.architecture?.input_modalities ?? [];
+			const input: Array<"text" | "image" | "video"> = ["text"];
+			if (modalities.includes("image")) input.push("image");
+			if (modalities.includes("video")) input.push("video");
+			return input;
+		})(),
 		cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
 		contextWindow,
 		maxTokens: contextWindow,

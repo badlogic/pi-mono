@@ -6,7 +6,7 @@
  */
 
 import { createInterface } from "node:readline";
-import { type ImageContent, modelsAreEqual } from "@earendil-works/pi-ai";
+import { type ImageContent, type VideoContent, modelsAreEqual } from "@earendil-works/pi-ai";
 import { setCapabilityOverrides } from "@earendil-works/pi-tui";
 import chalk from "chalk";
 import { type Args, type Mode, normalizeSessionName, parseArgs, printHelp } from "./cli/args.ts";
@@ -214,17 +214,19 @@ async function prepareInitialMessage(
 ): Promise<{
 	initialMessage?: string;
 	initialImages?: ImageContent[];
+	initialVideos?: VideoContent[];
 }> {
 	if (parsed.fileArgs.length === 0) {
 		return buildInitialMessage({ parsed, stdinContent });
 	}
 
 	// AgentSession resizes these after extension hooks select the request model.
-	const { text, images } = await processFileArguments(parsed.fileArgs, { autoResizeImages: false });
+	const { text, images, videos } = await processFileArguments(parsed.fileArgs, { autoResizeImages: false });
 	return buildInitialMessage({
 		parsed,
 		fileText: text,
 		fileImages: images,
+		fileVideos: videos,
 		stdinContent,
 	});
 }
@@ -901,7 +903,7 @@ export async function main(args: string[], options?: MainOptions) {
 	}
 	time("readPipedStdin");
 
-	const { initialMessage, initialImages } = await prepareInitialMessage(parsed, stdinContent);
+	const { initialMessage, initialImages, initialVideos } = await prepareInitialMessage(parsed, stdinContent);
 	time("prepareInitialMessage");
 	initTheme(settingsManager.getTheme(), appMode === "interactive");
 	time("initTheme");
@@ -957,6 +959,7 @@ export async function main(args: string[], options?: MainOptions) {
 			autoTrustOnReloadCwd,
 			initialMessage,
 			initialImages,
+			initialVideos,
 			initialMessages: parsed.messages,
 			verbose: parsed.verbose,
 			tuiMode: parsed.tuiMode,
@@ -989,6 +992,7 @@ export async function main(args: string[], options?: MainOptions) {
 			messages: parsed.messages,
 			initialMessage,
 			initialImages,
+			initialVideos,
 		});
 		stopThemeWatcher();
 		restoreStdout();

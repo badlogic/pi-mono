@@ -821,12 +821,14 @@ function toChatMessages(messages: Message[], supportsImages: boolean): MistralCh
 				continue;
 			}
 			const hadImages = msg.content.some((item) => item.type === "image");
-			const content: MistralContentChunk[] = msg.content
-				.filter((item) => item.type === "text" || supportsImages)
-				.map((item) => {
-					if (item.type === "text") return { type: "text", text: sanitizeSurrogates(item.text) };
-					return { type: "image_url", imageUrl: `data:${item.mimeType};base64,${item.data}` };
-				});
+			const content: MistralContentChunk[] = msg.content.flatMap((item): MistralContentChunk[] => {
+				if (item.type === "text") return [{ type: "text", text: sanitizeSurrogates(item.text) }];
+				if (item.type === "video") {
+					return [{ type: "text", text: "(video omitted: Mistral serializer does not support videos)" }];
+				}
+				if (!supportsImages) return [];
+				return [{ type: "image_url", imageUrl: `data:${item.mimeType};base64,${item.data}` }];
+			});
 			if (content.length > 0) {
 				result.push({ role: "user", content });
 				continue;
@@ -878,7 +880,8 @@ function toChatMessages(messages: Message[], supportsImages: boolean): MistralCh
 			.map((part) => (part.type === "text" ? sanitizeSurrogates(part.text) : ""))
 			.join("\n");
 		const hasImages = msg.content.some((part) => part.type === "image");
-		const toolText = buildToolResultText(textResult, hasImages, supportsImages, msg.isError);
+		const hasVideos = msg.content.some((part) => part.type === "video");
+		const toolText = buildToolResultText(textResult, hasImages, supportsImages, hasVideos, msg.isError);
 		toolContent.push({ type: "text", text: toolText });
 		for (const part of msg.content) {
 			if (!supportsImages) continue;
@@ -899,25 +902,34 @@ function toChatMessages(messages: Message[], supportsImages: boolean): MistralCh
 	return result;
 }
 
-function buildToolResultText(text: string, hasImages: boolean, supportsImages: boolean, isError: boolean): string {
+function buildToolResultText(
+	text: string,
+	hasImages: boolean,
+	supportsImages: boolean,
+	hasVideos: boolean,
+	isError: boolean,
+): string {
 	const trimmed = text.trim();
-	const errorPrefix = isError ? "[tool error] " : "";
+	const parts: string[] = [];
 
 	if (trimmed.length > 0) {
-		const imageSuffix = hasImages && !supportsImages ? "\n[tool image omitted: model does not support images]" : "";
-		return `${errorPrefix}${trimmed}${imageSuffix}`;
+		parts.push(trimmed);
+	} else if (hasImages) {
+		parts.push(supportsImages ? "(see attached image)" : "(image omitted: model does not support images)");
+	} else if (hasVideos) {
+		parts.push("(video omitted: Mistral serializer does not support videos)");
+	} else {
+		parts.push("(no tool output)");
 	}
 
-	if (hasImages) {
-		if (supportsImages) {
-			return isError ? "[tool error] (see attached image)" : "(see attached image)";
-		}
-		return isError
-			? "[tool error] (image omitted: model does not support images)"
-			: "(image omitted: model does not support images)";
+	if (trimmed.length > 0 && hasImages && !supportsImages) {
+		parts.push("[tool image omitted: model does not support images]");
+	}
+	if (hasVideos && (trimmed.length > 0 || hasImages)) {
+		parts.push("[tool video omitted: Mistral serializer does not support videos]");
 	}
 
-	return isError ? "[tool error] (no tool output)" : "(no tool output)";
+	return `${isError ? "[tool error] " : ""}${parts.join("\n")}`;
 }
 
 function mapToolChoice(

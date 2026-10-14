@@ -65,6 +65,22 @@ pi
 
 If the server uses an API key, start `llama-server` with the matching `--api-key` value. Keep `--host 127.0.0.1` for local-only access.
 
+## Video input
+
+For a video-capable multimodal model, Pi sends video attachments to llama.cpp's OpenAI-compatible endpoint as raw base64 `input_video` content. Add `"video"` to the model's `input` list when configuring it manually. Router catalogs that report `architecture.input_modalities` containing `"video"` are detected automatically.
+
+```json
+{
+  "input": ["text", "image", "video"]
+}
+```
+
+llama.cpp video decoding requires a build with `MTMD_VIDEO=ON` and both `ffmpeg` and `ffprobe` available in the `llama-server` process's `PATH`. Install them and restart the server after changing `PATH`. A server can report video model capability while still failing every video request if these runtime executables are unavailable; the typical response is `Failed to load image or audio file`.
+
+You can attach a local file at startup with `pi @clip.mp4 "Describe this video"`. During a session, give the agent a local path and ask it to read the video; the built-in `read` tool attaches files up to 50MB. Pi reads local files itself and sends base64, so llama.cpp does not need `--media-path` for these requests.
+
+A server that is OpenAI-compatible but not llama.cpp - vLLM and forks of it - takes a different video part and rejects `input_video` outright. See [Send video to a vLLM-style endpoint](models.md#send-video-to-a-vllm-style-endpoint).
+
 ## Manage models
 
 Run:

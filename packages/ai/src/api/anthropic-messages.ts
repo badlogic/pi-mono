@@ -22,7 +22,6 @@ import type {
 	Api,
 	AssistantMessage,
 	CacheRetention,
-	ImageContent,
 	Message,
 	Model,
 	ProviderEnv,
@@ -36,6 +35,7 @@ import type {
 	Tool,
 	ToolCall,
 	ToolResultMessage,
+	UserContent,
 } from "../types.ts";
 import { appendAssistantMessageDiagnostic } from "../utils/diagnostics.ts";
 import { AssistantMessageEventStream } from "../utils/event-stream.ts";
@@ -134,7 +134,7 @@ const fromClaudeCodeName = (name: string, tools?: Tool[]) => {
 /**
  * Convert content blocks to Anthropic API format
  */
-function convertContentBlocks(content: (TextContent | ImageContent)[]):
+function convertContentBlocks(content: UserContent[]):
 	| string
 	| Array<
 			| { type: "text"; text: string }
@@ -148,9 +148,9 @@ function convertContentBlocks(content: (TextContent | ImageContent)[]):
 			  }
 	  > {
 	// If only text blocks, return as concatenated string for simplicity
-	const hasImages = content.some((c) => c.type === "image");
-	if (!hasImages) {
-		return sanitizeSurrogates(content.map((c) => (c as TextContent).text).join("\n"));
+	const hasMedia = content.some((block) => block.type !== "text");
+	if (!hasMedia) {
+		return sanitizeSurrogates(content.map((block) => (block.type === "text" ? block.text : "")).join("\n"));
 	}
 
 	// If we have images, convert to content block array
@@ -160,6 +160,9 @@ function convertContentBlocks(content: (TextContent | ImageContent)[]):
 				type: "text" as const,
 				text: sanitizeSurrogates(block.text),
 			};
+		}
+		if (block.type === "video") {
+			return { type: "text" as const, text: "(video omitted: Anthropic serializer does not support videos)" };
 		}
 		return {
 			type: "image" as const,

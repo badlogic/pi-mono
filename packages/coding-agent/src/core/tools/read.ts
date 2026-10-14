@@ -1,10 +1,14 @@
 import type { AgentTool } from "@earendil-works/pi-agent-core";
-import type { Api, ImageContent, Model, ModelImageResizeOptions, TextContent } from "@earendil-works/pi-ai";
+import type { Api, ImageContent, Model, ModelImageResizeOptions, TextContent, VideoContent } from "@earendil-works/pi-ai";
 import { constants } from "fs";
-import { access as fsAccess, readFile as fsReadFile } from "fs/promises";
+import { access as fsAccess, readFile as fsReadFile, stat as fsStat } from "fs/promises";
 import { type Static, Type } from "typebox";
 import { processImage } from "../../utils/image-process.ts";
-import { detectSupportedImageMimeTypeFromFile } from "../../utils/mime.ts";
+import {
+	detectSupportedImageMimeTypeFromFile,
+	detectSupportedVideoMimeTypeFromFile,
+	MAX_VIDEO_BYTES,
+} from "../../utils/mime.ts";
 import type { ExtensionContext, ToolDefinition } from "../extensions/types.ts";
 import { resolveReadPathAsync } from "./path-utils.ts";
 import { readRenderers } from "./renderers/read.ts";
@@ -52,12 +56,18 @@ export interface ReadOperations {
 	access: (absolutePath: string) => Promise<void>;
 	/** Detect image MIME type, return null or undefined for non-images */
 	detectImageMimeType?: (absolutePath: string) => Promise<string | null | undefined>;
+	/** Detect video MIME type, return null or undefined for non-videos */
+	detectVideoMimeType?: (absolutePath: string) => Promise<string | null | undefined>;
+	/** Read a file size before loading large media into memory. */
+	getSize?: (absolutePath: string) => Promise<number>;
 }
 
 const defaultReadOperations: ReadOperations = {
 	readFile: (path) => fsReadFile(path),
 	access: (path) => fsAccess(path, constants.R_OK),
 	detectImageMimeType: detectSupportedImageMimeTypeFromFile,
+	detectVideoMimeType: detectSupportedVideoMimeTypeFromFile,
+	getSize: async (path) => (await fsStat(path)).size,
 };
 
 export interface ReadToolOptions {
@@ -70,7 +80,7 @@ export interface ReadToolOptions {
 }
 
 /** The image block and its note, or the text for text files and images that could not be processed. */
-function toReadOutput(content: (TextContent | ImageContent)[]): ReadToolOutput {
+function toReadOutput(content: (TextContent | ImageContent | VideoContent)[]): ReadToolOutput {
 	const text = content.find((block) => block.type === "text")?.text ?? "";
 	const image = content.find((block) => block.type === "image");
 	return image ? { type: "image", data: image.data, mimeType: image.mimeType, note: text } : text;
@@ -83,6 +93,13 @@ function getNonVisionImageNote(model: Model<Api> | undefined): string | undefine
 	return "[Current model does not support images. The image will be omitted from this request.]";
 }
 
+function getNonVideoNote(model: Model<Api> | undefined): string | undefined {
+	if (!model || model.input.includes("video")) {
+		return undefined;
+	}
+	return "[Current model does not support videos. The video will be omitted from this request.]";
+}
+
 export function createReadToolDefinition(
 	cwd: string,
 	options?: ReadToolOptions,
@@ -93,7 +110,7 @@ export function createReadToolDefinition(
 	return {
 		name: "read",
 		label: "read",
-		description: `Read the contents of a file. Supports text files and images (jpg, png, gif, webp, bmp). Images are sent as attachments. For text files, output is truncated to ${DEFAULT_MAX_LINES} lines or ${DEFAULT_MAX_BYTES / 1024}KB (whichever is hit first). Use offset/limit for large files. When you need the full file, continue with offset until complete.`,
+		description: `Read the contents of a file. Supports text files, images (jpg, png, gif, webp, bmp), and videos (mp4, mov, avi, webm, mkv, mpeg, mpg, ts, m2ts). Images and videos are sent as attachments. Videos are limited to ${MAX_VIDEO_BYTES / (1024 * 1024)}MB. For text files, output is truncated to ${DEFAULT_MAX_LINES} lines or ${DEFAULT_MAX_BYTES / 1024}KB (whichever is hit first). Use offset/limit for large files. When you need the full file, continue with offset until complete.`,
 		promptSnippet: readToolSystemPromptContribution.snippet,
 		promptGuidelines: [...readToolSystemPromptContribution.guidelines],
 		parameters: readSchema,
@@ -106,7 +123,7 @@ export function createReadToolDefinition(
 			_onUpdate?,
 			ctx?: ExtensionContext,
 		) {
-			return new Promise<{ content: (TextContent | ImageContent)[]; details: ReadToolDetails | undefined }>(
+			return new Promise<{ content: (TextContent | ImageContent | VideoContent)[]; details: ReadToolDetails | undefined }>(
 				(resolve, reject) => {
 					if (signal?.aborted) {
 						reject(new Error("Operation aborted"));
@@ -127,7 +144,9 @@ export function createReadToolDefinition(
 							await ops.access(absolutePath);
 							if (aborted) return;
 							const mimeType = ops.detectImageMimeType ? await ops.detectImageMimeType(absolutePath) : undefined;
-							let content: (TextContent | ImageContent)[];
+							const videoMimeType =
+								!mimeType && ops.detectVideoMimeType ? await ops.detectVideoMimeType(absolutePath) : null;
+							let content: (TextContent | ImageContent | VideoContent)[];
 							let details: ReadToolDetails | undefined;
 							const nonVisionImageNote = getNonVisionImageNote(ctx?.model);
 							if (mimeType) {
@@ -150,6 +169,26 @@ export function createReadToolDefinition(
 										{ type: "image", data: processed.data, mimeType: processed.mimeType },
 									];
 								}
+							} else if (videoMimeType) {
+								const reportedSize = ops.getSize ? await ops.getSize(absolutePath) : undefined;
+								if (reportedSize !== undefined && reportedSize > MAX_VIDEO_BYTES) {
+									throw new Error(
+										`Video file is ${formatSize(reportedSize)}, exceeds ${formatSize(MAX_VIDEO_BYTES)} limit`,
+									);
+								}
+								const buffer = await ops.readFile(absolutePath);
+								if (buffer.byteLength > MAX_VIDEO_BYTES) {
+									throw new Error(
+										`Video file is ${formatSize(buffer.byteLength)}, exceeds ${formatSize(MAX_VIDEO_BYTES)} limit`,
+									);
+								}
+								let textNote = `Read video file [${videoMimeType}] (${formatSize(buffer.byteLength)})`;
+								const nonVideoNote = getNonVideoNote(ctx?.model);
+								if (nonVideoNote) textNote += `\n${nonVideoNote}`;
+								content = [
+									{ type: "text", text: textNote },
+									{ type: "video", data: buffer.toString("base64"), mimeType: videoMimeType },
+								];
 							} else {
 								// Read text content.
 								const buffer = await ops.readFile(absolutePath);

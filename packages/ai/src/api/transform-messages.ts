@@ -1,54 +1,59 @@
-import type {
-	Api,
-	AssistantMessage,
-	ImageContent,
-	Message,
-	Model,
-	TextContent,
-	ToolCall,
-	ToolResultMessage,
-} from "../types.ts";
+import type { Api, AssistantMessage, Message, Model, ToolCall, ToolResultMessage, UserContent } from "../types.ts";
 
 const NON_VISION_USER_IMAGE_PLACEHOLDER = "(image omitted: model does not support images)";
+const NON_VIDEO_USER_VIDEO_PLACEHOLDER = "(video omitted: model does not support videos)";
 const NON_VISION_TOOL_IMAGE_PLACEHOLDER = "(tool image omitted: model does not support images)";
+const NON_VIDEO_TOOL_VIDEO_PLACEHOLDER = "(tool video omitted: model does not support videos)";
 
-function replaceImagesWithPlaceholder(content: (TextContent | ImageContent)[], placeholder: string): TextContent[] {
-	const result: TextContent[] = [];
-	let previousWasPlaceholder = false;
-
+function replaceUnsupportedMedia<TApi extends Api>(
+	content: UserContent[],
+	model: Model<TApi>,
+	imagePlaceholder: string,
+	videoPlaceholder: string,
+): UserContent[] {
+	const result: UserContent[] = [];
 	for (const block of content) {
-		if (block.type === "image") {
-			if (!previousWasPlaceholder) {
+		const placeholder =
+			block.type === "image" && !model.input.includes("image")
+				? imagePlaceholder
+				: block.type === "video" && !model.input.includes("video")
+					? videoPlaceholder
+					: undefined;
+		if (placeholder) {
+			const previous = result[result.length - 1];
+			if (previous?.type !== "text" || previous.text !== placeholder) {
 				result.push({ type: "text", text: placeholder });
 			}
-			previousWasPlaceholder = true;
-			continue;
+		} else {
+			result.push(block);
 		}
-
-		result.push(block);
-		previousWasPlaceholder = block.text === placeholder;
 	}
-
 	return result;
 }
 
-function downgradeUnsupportedImages<TApi extends Api>(messages: Message[], model: Model<TApi>): Message[] {
-	if (model.input.includes("image")) {
-		return messages;
-	}
-
+function downgradeUnsupportedMedia<TApi extends Api>(messages: Message[], model: Model<TApi>): Message[] {
 	return messages.map((msg) => {
 		if (msg.role === "user" && Array.isArray(msg.content)) {
 			return {
 				...msg,
-				content: replaceImagesWithPlaceholder(msg.content, NON_VISION_USER_IMAGE_PLACEHOLDER),
+				content: replaceUnsupportedMedia(
+					msg.content,
+					model,
+					NON_VISION_USER_IMAGE_PLACEHOLDER,
+					NON_VIDEO_USER_VIDEO_PLACEHOLDER,
+				),
 			};
 		}
 
 		if (msg.role === "toolResult") {
 			return {
 				...msg,
-				content: replaceImagesWithPlaceholder(msg.content, NON_VISION_TOOL_IMAGE_PLACEHOLDER),
+				content: replaceUnsupportedMedia(
+					msg.content,
+					model,
+					NON_VISION_TOOL_IMAGE_PLACEHOLDER,
+					NON_VIDEO_TOOL_VIDEO_PLACEHOLDER,
+				),
 			};
 		}
 
@@ -71,10 +76,10 @@ export function transformMessages<TApi extends Api>(
 	// Normalize null/undefined content from untyped callers (custom tools, hand-built
 	// histories, old session files) so downstream code can rely on the type contract.
 	const normalizedMessages = messages.map((msg) => (msg.content == null ? { ...msg, content: [] } : msg));
-	const imageAwareMessages = downgradeUnsupportedImages(normalizedMessages, model);
+	const mediaAwareMessages = downgradeUnsupportedMedia(normalizedMessages, model);
 
-	// First pass: transform messages (unsupported image downgrade, thinking blocks, tool call ID normalization)
-	const transformed = imageAwareMessages.map((msg) => {
+	// First pass: transform messages (unsupported media downgrade, thinking blocks, tool call ID normalization)
+	const transformed = mediaAwareMessages.map((msg) => {
 		// System and user messages pass through unchanged
 		if (msg.role === "system" || msg.role === "user") {
 			return msg;
