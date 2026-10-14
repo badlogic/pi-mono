@@ -5,6 +5,15 @@
 ### Added
 
 - Added cache-preserving thinking level changes for GPT-6 models on the openai provider: with an API key, the level is sent as configuration_update input items instead of changing reasoning.effort, controlled by compat.supportsMidConvoEffort ([#10853](https://github.com/earendil-works/pi/issues/10853))
+  
+### Breaking Changes
+
+- Removed the `thinkingFormat: "ant-ling"` compat value. Use `thinkingFormat: "deepseek"` for Ant Ling models.
+
+### Changed
+
+- Replaced Ling 2.6 and Ring 2.6 with Ling 3.0 and Ling 3.1 models.
+- Changed Ant Ling reasoning requests to use the DeepSeek-compatible `thinking` and `reasoning_effort` format instead of nested `reasoning`.
 
 ### Fixed
 
