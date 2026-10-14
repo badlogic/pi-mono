@@ -27,7 +27,7 @@ asking for it again.
 
 <!-- example:01 -->
 ```ts
-const host = createHost({ name: "todo-server" });
+const host = createHost({ self: "server", name: "todo-server" });
 assert.equal(host.name, "todo-server");
 await host.close();
 ```
@@ -76,7 +76,7 @@ call from that root.
 
 <!-- example:02-call -->
 ```ts
-const host = createHost();
+const host = createHost({ self: "server" });
 host.serve(TodoLabel, ({ list }) => ({ label: () => `Todos for ${list}` }));
 const result = await host.root(async (ctx) => {
 	const todos = ctx.get(TodoLabel, { list: "family" });
@@ -183,7 +183,7 @@ receive the same resulting value.
 
 <!-- example:03-call -->
 ```ts
-const host = createHost({ dev: true });
+const host = createHost({ self: "server", dev: true });
 host.serve(TodoStore, todoFactory);
 const todos = host.get(TodoStore, { list: "family" });
 await todos.ready;
@@ -239,7 +239,7 @@ const SavedTodos = local("tutorial.saved-todos", {
 	input: Type.Object({ list: Type.String() }),
 	members: { add: method(Type.Object({ text: Type.String() })) },
 });
-const host = createHost();
+const host = createHost({ self: "server" });
 let opens = 0;
 const closed = Promise.withResolvers<void>();
 host.serve(Database, (_input, _principal, self) => {
@@ -331,14 +331,17 @@ whether an editing method is available.
 
 Do not create a separate data cell for each viewer: their lists would diverge.
 Instead, each view holds the same host-local `TodoStore` and exposes its rows.
-`self.get` defaults to the host principal, so owner and guest views share
+`self.get` acts as the host's own principal, so owner and guest views share
 that store. Remote view objects themselves are separate per principal key.
+A remote contract also says where its objects live: `host: hostNamed("server")`
+puts every `Todos` object on the host named `server`. Section 6 uses that.
 
 <!-- example:05-views -->
 ```ts
 const Todos = remote("tutorial.todo-view", {
 	version: 1,
 	input: Type.Object({ list: Type.String() }),
+	host: hostNamed("server"),
 	variants: {
 		viewer: { state: { rows: Rows } },
 		editor: {
@@ -348,11 +351,14 @@ const Todos = remote("tutorial.todo-view", {
 	},
 });
 
-function serveViews(api: Pick<Host, "serve">): void {
+/** Who may ask: the owner, a guest, or the server's own code. */
+type Principal = "owner" | "guest" | "server";
+
+function serveViews(api: Pick<Host<Principal>, "serve">): void {
 	api.serve(Todos, ({ list }, principal, self) => {
 		if (list !== "family") throw forbidden("This list is not shared");
 		const store = self.get(TodoStore, { list });
-		if (principal !== "owner" && principal !== hostPrincipal) {
+		if (principal === "guest") {
 			return { variant: "viewer", rows: store.rows };
 		}
 		return {
@@ -368,13 +374,17 @@ function serveViews(api: Pick<Host, "serve">): void {
 ```
 
 Here principals are the strings `"owner"` and `"guest"`, assigned by
-trusted application code. The built-in `hostPrincipal` can also edit.
-`principalKey` maps identity to object identity. Real applications should use
-stable identity, connection provenance, and grant revision, not display names.
+trusted application code, and `"server"`, the host's own code: every host is
+created with `self`, the principal its own roots and objects act as. Chord
+invents no principals. The `Principal` type parameter of `createHost` and
+`Host` makes `principal` in the factory that type, so TypeScript checks the
+comparisons. `principalKey` maps identity to object identity. Real
+applications should use stable identity, connection provenance, and grant
+revision, not display names.
 
 <!-- example:05-call -->
 ```ts
-const host = createHost({ principalKey: (principal) => String(principal) });
+const host = createHost<Principal>({ name: "server", self: "server", principalKey: (principal) => principal });
 host.serve(TodoStore, todoFactory);
 serveViews(host);
 const owner = host.get(Todos, { list: "family" }, { principal: "owner" });
@@ -406,22 +416,34 @@ for callers who may not do something.
 
 A browser cannot call a host-only contract. `remote` contracts describe only
 schema-checked state and methods that can travel as JSON. Our `Todos` view is
-remote; the underlying `TodoStore` and database stay local.
+remote; the underlying `TodoStore` and database stay local. A caller never
+names a host: `browser.get(Todos, …)` goes to `server` because the contract
+says so, and the server refuses to serve, or to be asked for, a type it is not
+the place of. A type that lives on one host per session says
+`host: hostFamily("session:", "session")`: its input's `session` field picks
+the host (`{ session: "S1" }` lives on `session:S1`).
 
 A **link** carries ordered messages between hosts. A memory link runs both ends
 in one test process, but uses the remote protocol. The accepting host stamps
 the caller's principal from its authenticator, not from method arguments or a
-client's claimed identity.
+client's claimed identity. The connecting side names the principal its parent's
+own requests act as (`upstream: { link, principal }`, or `connect(link, {
+principal })`).
 
 <!-- example:06 -->
 ```ts
-const server = createHost({ name: "server" });
+const server = createHost<Principal>({ self: "server", name: "server" });
 server.serve(TodoStore, todoFactory);
 serveViews(server);
 const [down, up] = memoryLinkPair();
 server.accept(down, { principal: "owner", kind: "client" });
-const browser = createHost({ name: "browser", kind: "client", upstream: up });
-const todos = browser.get(Todos, { list: "family" }, { at: "server" });
+const browser = createHost({
+	self: "browser",
+	name: "browser",
+	kind: "client",
+	upstream: { link: up, principal: "server" },
+});
+const todos = browser.get(Todos, { list: "family" });
 const hydrated = Promise.withResolvers<void>();
 const updated = Promise.withResolvers<void>();
 const stop = todos.rows.subscribe((rows) => {
@@ -483,7 +505,7 @@ const Activity = local("tutorial.activity", {
 	input: Type.Object({}),
 	members: { seen: Type.Number() },
 });
-const host = createHost();
+const host = createHost({ self: "server" });
 host.serve(TodoStore, todoFactory);
 const observed = Promise.withResolvers<void>();
 const seeded = Promise.withResolvers<void>();
@@ -581,7 +603,7 @@ const menuFacet: Facet = {
 		{ uses: [TodoStore] },
 	),
 };
-const host = createHost();
+const host = createHost({ self: "server" });
 await host.load([menuFacet, storeFacet], { awaitHostObjects: false });
 await host.ready();
 assert.equal(await click!(), 1);
@@ -632,7 +654,7 @@ old root sees; application methods should not pause like this.
 
 <!-- example:09-compatible -->
 ```ts
-const host = createHost();
+const host = createHost({ self: "server" });
 const facet = (label: string): Facet => ({
 	name: "todos",
 	setup: (api) =>
@@ -775,7 +797,7 @@ Here the fake records what the editing view sends to the store.
 
 <!-- example:10 -->
 ```ts
-const host = createHost({ dev: true });
+const host = createHost<Principal>({ name: "server", self: "server", dev: true });
 const received: string[] = [];
 const fake: Facet = {
 	name: "fake-store",
@@ -821,7 +843,7 @@ screen should not lose its data merely because a button click finishes. Use
 
 <!-- example:11 -->
 ```ts
-const host = createHost();
+const host = createHost({ self: "server" });
 host.serve(TodoStore, todoFactory);
 const screen = host.get(TodoStore, { list: "family" });
 await screen.ready;
@@ -883,7 +905,7 @@ import {
 	type Factory,
 	forbidden,
 	type Host,
-	hostPrincipal,
+	hostNamed,
 	invalid,
 	isChordError,
 	local,

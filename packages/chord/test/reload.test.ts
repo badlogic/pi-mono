@@ -6,6 +6,7 @@ import {
 	createHost,
 	defineRegistry,
 	type Facet,
+	hostNamed,
 	isChordError,
 	local,
 	method,
@@ -17,7 +18,7 @@ import {
 } from "../src/index.ts";
 
 const tick = () => new Promise<void>((resolve) => setImmediate(resolve));
-const quiet = () => createHost({ onError: () => {} });
+const quiet = () => createHost({ self: { kind: "host" }, onError: () => {} });
 
 function latch() {
 	let open = () => {};
@@ -457,7 +458,7 @@ describe("reload", () => {
 			vi.useRealTimers();
 		});
 		const errors: unknown[] = [];
-		const host = createHost({ onError: (error) => errors.push(error), taskStopDeadline: 30 });
+		const host = createHost({ self: { kind: "host" }, onError: (error) => errors.push(error), taskStopDeadline: 30 });
 		const log: string[] = [];
 		const stuck = latch();
 		const facet = (label: string): Facet => ({
@@ -523,16 +524,19 @@ describe("reload", () => {
 		const DocV1 = remote("t.rdoc", {
 			version: 1,
 			input: Type.Object({}),
+			host: hostNamed("host"),
 			variants: { main: { methods: { read: method(undefined, Type.Object({ text: Type.String() })) } } },
 		});
 		const DocBroken = remote("t.rdoc", {
 			version: 1,
 			input: Type.Object({}),
+			host: hostNamed("host"),
 			variants: { main: { methods: { read: method(undefined, Type.Object({ text: Type.Number() })) } } },
 		});
 		const DocV2 = remote("t.rdoc", {
 			version: 2,
 			input: Type.Object({}),
+			host: hostNamed("host"),
 			variants: { main: { methods: { fetch: method(undefined, Type.Object({ body: Type.String() })) } } },
 		});
 		const host = quiet();

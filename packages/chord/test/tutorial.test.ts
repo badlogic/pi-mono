@@ -13,7 +13,7 @@ import {
 	type Factory,
 	forbidden,
 	type Host,
-	hostPrincipal,
+	hostNamed,
 	invalid,
 	isChordError,
 	local,
@@ -108,6 +108,7 @@ const todoFactory = todoStore();
 const Todos = remote("tutorial.todo-view", {
 	version: 1,
 	input: Type.Object({ list: Type.String() }),
+	host: hostNamed("server"),
 	variants: {
 		viewer: { state: { rows: Rows } },
 		editor: {
@@ -117,11 +118,14 @@ const Todos = remote("tutorial.todo-view", {
 	},
 });
 
-function serveViews(api: Pick<Host, "serve">): void {
+/** Who may ask: the owner, a guest, or the server's own code. */
+type Principal = "owner" | "guest" | "server";
+
+function serveViews(api: Pick<Host<Principal>, "serve">): void {
 	api.serve(Todos, ({ list }, principal, self) => {
 		if (list !== "family") throw forbidden("This list is not shared");
 		const store = self.get(TodoStore, { list });
-		if (principal !== "owner" && principal !== hostPrincipal) {
+		if (principal === "guest") {
 			return { variant: "viewer", rows: store.rows };
 		}
 		return {
@@ -139,7 +143,7 @@ function serveViews(api: Pick<Host, "serve">): void {
 it("01: objects live inside hosts", { timeout: 5000 }, async () => {
 	checkExamples("01");
 	// example:01
-	const host = createHost({ name: "todo-server" });
+	const host = createHost({ self: "server", name: "todo-server" });
 	assert.equal(host.name, "todo-server");
 	await host.close();
 	// end-example:01
@@ -149,7 +153,7 @@ it("02: first contract, factory, reference and root", { timeout: 5000 }, async (
 	checkExamples("02");
 	onTestFinished(() => host.close());
 	// example:02-call
-	const host = createHost();
+	const host = createHost({ self: "server" });
 	host.serve(TodoLabel, ({ list }) => ({ label: () => `Todos for ${list}` }));
 	const result = await host.root(async (ctx) => {
 		const todos = ctx.get(TodoLabel, { list: "family" });
@@ -163,7 +167,7 @@ it("03: cells publish values and derivations", { timeout: 5000 }, async () => {
 	checkExamples("03");
 	onTestFinished(() => host.close());
 	// example:03-call
-	const host = createHost({ dev: true });
+	const host = createHost({ self: "server", dev: true });
 	host.serve(TodoStore, todoFactory);
 	const todos = host.get(TodoStore, { list: "family" });
 	await todos.ready;
@@ -195,7 +199,7 @@ it("04: holds, asynchronous resources and release", { timeout: 5000 }, async () 
 		input: Type.Object({ list: Type.String() }),
 		members: { add: method(Type.Object({ text: Type.String() })) },
 	});
-	const host = createHost();
+	const host = createHost({ self: "server" });
 	let opens = 0;
 	const closed = Promise.withResolvers<void>();
 	host.serve(Database, (_input, _principal, self) => {
@@ -248,7 +252,7 @@ it("05: principals select views of one shared store", { timeout: 5000 }, async (
 	checkExamples("05");
 	onTestFinished(() => host.close());
 	// example:05-call
-	const host = createHost({ principalKey: (principal) => String(principal) });
+	const host = createHost<Principal>({ name: "server", self: "server", principalKey: (principal) => principal });
 	host.serve(TodoStore, todoFactory);
 	serveViews(host);
 	const owner = host.get(Todos, { list: "family" }, { principal: "owner" });
@@ -268,13 +272,18 @@ it("06: remote methods and live state over a memory link", { timeout: 5000 }, as
 	onTestFinished(() => server.close());
 	onTestFinished(() => browser.close());
 	// example:06
-	const server = createHost({ name: "server" });
+	const server = createHost<Principal>({ self: "server", name: "server" });
 	server.serve(TodoStore, todoFactory);
 	serveViews(server);
 	const [down, up] = memoryLinkPair();
 	server.accept(down, { principal: "owner", kind: "client" });
-	const browser = createHost({ name: "browser", kind: "client", upstream: up });
-	const todos = browser.get(Todos, { list: "family" }, { at: "server" });
+	const browser = createHost({
+		self: "browser",
+		name: "browser",
+		kind: "client",
+		upstream: { link: up, principal: "server" },
+	});
+	const todos = browser.get(Todos, { list: "family" });
 	const hydrated = Promise.withResolvers<void>();
 	const updated = Promise.withResolvers<void>();
 	const stop = todos.rows.subscribe((rows) => {
@@ -304,7 +313,7 @@ it("07: listeners react and tasks start fresh calls", { timeout: 5000 }, async (
 		input: Type.Object({}),
 		members: { seen: Type.Number() },
 	});
-	const host = createHost();
+	const host = createHost({ self: "server" });
 	host.serve(TodoStore, todoFactory);
 	const observed = Promise.withResolvers<void>();
 	const seeded = Promise.withResolvers<void>();
@@ -370,7 +379,7 @@ it("08: plugins contribute registry entries and expose callbacks", { timeout: 50
 			{ uses: [TodoStore] },
 		),
 	};
-	const host = createHost();
+	const host = createHost({ self: "server" });
 	await host.load([menuFacet, storeFacet], { awaitHostObjects: false });
 	await host.ready();
 	assert.equal(await click!(), 1);
@@ -382,7 +391,7 @@ it("09: compatible reload, migration and an old-contract adapter", { timeout: 50
 	checkExamples("09");
 	onTestFinished(() => host.close());
 	// example:09-compatible
-	const host = createHost();
+	const host = createHost({ self: "server" });
 	const facet = (label: string): Facet => ({
 		name: "todos",
 		setup: (api) =>
@@ -471,7 +480,7 @@ it("10: stub a provider with a fake facet and check error codes", { timeout: 500
 	checkExamples("10");
 	onTestFinished(() => host.close());
 	// example:10
-	const host = createHost({ dev: true });
+	const host = createHost<Principal>({ name: "server", self: "server", dev: true });
 	const received: string[] = [];
 	const fake: Facet = {
 		name: "fake-store",
@@ -499,7 +508,7 @@ it("11: short roots release temporary holds", { timeout: 5000 }, async () => {
 	checkExamples("11");
 	onTestFinished(() => host.close());
 	// example:11
-	const host = createHost();
+	const host = createHost({ self: "server" });
 	host.serve(TodoStore, todoFactory);
 	const screen = host.get(TodoStore, { list: "family" });
 	await screen.ready;

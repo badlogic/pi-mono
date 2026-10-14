@@ -50,7 +50,7 @@ const RELOADS = 6;
 describe("generation GC", () => {
 	it("a reference held across reloads keeps only the current generation alive", async () => {
 		const generations = tracker();
-		const host = createHost({ onError: () => {} });
+		const host = createHost({ self: { kind: "host" }, onError: () => {} });
 		const facet = (generation: number): Facet => {
 			const sentinel = generations.track(generation, { generation });
 			return {
@@ -75,7 +75,7 @@ describe("generation GC", () => {
 
 	it('a lifetime "host" object with state, a kept resource, a listener, a task and registrations keeps only the current generation alive', async () => {
 		const generations = tracker();
-		const host = createHost({ onError: () => {} });
+		const host = createHost({ self: { kind: "host" }, onError: () => {} });
 		const facet = (generation: number): Facet => {
 			const sentinel = generations.track(generation, { generation });
 			return {
@@ -114,7 +114,7 @@ describe("generation GC", () => {
 
 	it("abort listeners that calls and tasks add to their ctx.signal do not outlive them", async () => {
 		const generations = tracker();
-		const host = createHost({ onError: () => {} });
+		const host = createHost({ self: { kind: "host" }, onError: () => {} });
 		const facet = (generation: number): Facet => {
 			const sentinel = generations.track(generation, { generation });
 			return {
@@ -156,7 +156,7 @@ describe("generation GC", () => {
 			input: Type.Object({ id: Type.Number() }),
 			members: { id: method(undefined, Type.Number()) },
 		});
-		const host = createHost({ onError: () => {} });
+		const host = createHost({ self: { kind: "host" }, onError: () => {} });
 		host.serve(Item, (input) => {
 			// The normalized input is held by the object: it stands for the object.
 			const { id } = objects.track(input.id, input);

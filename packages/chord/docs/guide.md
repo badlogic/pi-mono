@@ -51,7 +51,7 @@ export const Counter = remote("demo.counter", {
 	},
 });
 
-const host = createHost({ name: "server", principalKey: (p) => p.kind });
+const host = createHost({ name: "server", self: { kind: "server" } });
 
 host.serve(Counter, ({ name }, _principal, self) => {
 	const count = self.state("count", Type.Number(), 0);
@@ -83,6 +83,7 @@ Remote types can be reached from other hosts. Everything that crosses the wire h
 export const Chat = remote("pi.chat", {
 	version: 1,
 	input: Type.Object({ session: Type.String(), conversation: Type.Number() }),
+	host: hostFamily("session:", "session"),  // lives on `session:S1` for `{ session: "S1", … }`
 	variants: {
 		viewer: {
 			state: { view: ConversationViewSchema },
@@ -97,6 +98,19 @@ export const Chat = remote("pi.chat", {
 	},
 });
 ```
+
+**Where a remote type lives** is part of its contract, so no caller names a host:
+
+- `host: hostNamed("server")`: every object lives on the host named `server`.
+- `host: hostFamily("session:", "session")`: an object lives on `session:` + its input's `session` field, a required
+  string. TypeScript checks the field name against the input.
+
+A `get` normalizes the input (defaults count), resolves the host, and acquires the object here if that is this host,
+otherwise over the link to it. `serve` refuses a type whose placement does not include the serving host, so a misplaced
+type fails at startup or at the reload that adds it. The host that gets a hold checks that its own contract places the
+input on itself, and a relay checks the hold's target against its contract token: a client never chooses where an
+object lives. The placement is part of the description and the fingerprint: moving a type is a breaking change, and
+references to it get `upgrade_required`.
 
 ### Local types
 
@@ -188,7 +202,7 @@ host.serve(StatusStore, ({ session }, _host, self) => {
 
 | Declaration | What it is | On reload |
 | --- | --- | --- |
-| `self.state(name, schema, initial, { version?, migrate? })` | an observable JSON cell; the schema is required | same cell and value; migrated when its version rises |
+| `self.state(name, schema, initial \| { init }, { version?, migrate? })` | an observable JSON cell; the schema is required | same cell and value (`init` does not run); migrated when its version rises |
 | `self.get(Type, input, { at? })` | a reference to another object; its identity is the address | kept if declared again, otherwise released |
 | `self.resource(name, { version, deps?, exclusive?, open, close? })` | a connection, watch, socket, port | kept; reopened only if `version`, `deps` or `exclusive` change |
 | `self.on(name, source, handler)` or `self.on(name, source, select, handler)` | reacts to state or to an event source | the same subscription, with the new handler, as long as the source and `select` are unchanged |
@@ -237,7 +251,8 @@ get(Index, { session: "S1" })
  1. run the factory               → declarations
  2. open declared resources        → e.g. connect to SQLite
  3. wait for declared refs        → dependencies activate first
- 4. live                           → refs become "live"
+ 4. run the cells' init           → e.g. read the rows into a cell
+ 5. live                           → refs become "live"; listeners and tasks start
 ```
 
 ```ts
@@ -259,7 +274,7 @@ host.serve(Chat, ({ session, conversation }, principal, self) => {
 ```
 
 **Rules:**
-- Inside the factory, never use what you declared: `db.value` throws `not_ready`, and calling a reference throws. Use them in methods, listeners and tasks.
+- Inside the factory, never use what you declared: `db.value` throws `not_ready`, and calling a reference throws. Use them in methods, listeners, tasks and `init`.
 - **Concurrent `get`s** of one address share one activation, so the database opens once.
 - **Failure propagates:** if `openSqlite` throws, `Index` fails, `Chat` fails with that cause, and every waiting `get` rejects. The next `get` tries again.
 - **Abandoned activations:** if everyone releases before activation finishes, the result is disposed.
@@ -312,26 +327,39 @@ harness.harness.resume();  // the DurableHarness itself
 
 ## Principals and variants
 
-The application defines its principals and how they're keyed:
+The application defines its principals and how they're keyed. Chord invents none: the app gives every principal a
+request can act as.
 
 ```ts
 type Principal =
-	| { kind: "owner"; via: "device" | "tunnel" | "relay" }
+	| { kind: "owner"; access: "local" | "relay" }
 	| { kind: "guest"; id: string; name: string; session: string; mode: "view" | "full"; revision: number }
-	| { kind: "worker"; session: string; generation: number };
+	| { kind: "worker"; session: string; generation: number }
+	| { kind: "server" }   // the parent's own requests, as a worker sees them
+	| { kind: "host" };    // a host's own code
 
-const host = createHost({
+const host = createHost<Principal>({
 	name: "server",
-	principalKey: (p: Principal) =>
-		p.kind === "owner" ? `owner@${p.via}` :
+	self: { kind: "host" },
+	principalKey: (p) =>
+		p.kind === "owner" ? `owner:${p.access}` :
 		p.kind === "guest" ? `guest:${p.id}:r${p.revision}` :
-		`worker:${p.session}:${p.generation}`,
+		p.kind === "worker" ? `worker:${p.session}:${p.generation}` :
+		p.kind,
 });
 ```
 
+- `createHost<Principal>` types every factory's `principal`, `ctx.principal`, routes, `accept` and
+  `invalidatePrincipal` patterns, so code narrows on `kind` without casts. Facet modules say it too:
+  `defineFacet<Principal>((api) => …)` (an app usually exports its own `defineFacet` and `Ctx` aliases). Without a type
+  argument, principals are `unknown`.
 - There is one object per principal key: two tabs of the owner share an object, and a guest gets its own.
-- Code inside a host acts as the built-in `host` principal, so internal objects are shared.
+- Code inside a host acts as `self`, so internal objects are shared. A principal with the same key as `self` is the
+  host's own, whichever object carries it.
 - A link stamps the principal of whatever connects to it. Callers can never supply their own.
+- A child host names what its parent's own requests act as: `connect(link, { principal })` (or
+  `upstream: { link, principal }`). Requests the parent relays act as the caller it forwards.
+- A route names what the hosts it resolves act as when they call back: `route(prefix, { …, principal: (name) => … })`.
 
 **A remote factory picks a variant:**
 
@@ -353,7 +381,7 @@ host.serve(Chat, ({ session, conversation }, principal, self) => {
 ```
 
 ```ts
-const chat = ctx.get(Chat, { session: "S1", conversation: 1 }, { at: "session:S1" });
+const chat = ctx.get(Chat, { session: "S1", conversation: 1 });  // on session:S1
 await chat.ready;
 if (chat.variant === "participant") showComposer(chat.send);
 else showReadOnly();
@@ -364,12 +392,12 @@ else showReadOnly();
 - **It doesn't cover flags that change while you hold the object.** Those are state, for example `you: { canDraw: boolean }`.
 - **Revocation** is `host.invalidatePrincipal(match)`. It force-disposes matching objects, here and over links, and their references become `gone`. A new `get` runs the factory with the new grants.
 
-Local types have no variants. Their only callers are inside the host, acting as `host`. If a local object needs to know who's acting, pass that explicitly, like `author` above.
+Local types have no variants. Their only callers are inside the host, acting as its `self`. If a local object needs to know who's acting, pass that explicitly, like `author` above.
 
 ## References
 
 ```ts
-const chat = ctx.get(Chat, input, { at: "session:S1" });
+const chat = ctx.get(Chat, input);
 chat.status;  // "loading" | "live" | "released" | "gone"
 await chat.ready;  // live, or rejects with the activation error
 chat.variant;  // the current variant
@@ -415,6 +443,24 @@ view.replace(ctx, rebuilt, { diff: true });              // always diff
 - Remote subscribers get a snapshot, then deltas. After a reconnect or a reload they get a `reset` snapshot, and nothing is replayed.
 - `replace` sends a structural diff when the new value shares containers with the old one (a new revision of the same state), and a single replacement otherwise. `{ diff: true | false }` forces either. The value is the same either way.
 - An implementation may expose another object's state member as its own: `return { variant: "viewer", view: conversation.view }`. It reads `undefined` only while that object is loading, which never happens once this object is live.
+
+**A cell whose first value comes from a source** declares `{ init }` instead of an initial value:
+
+```ts
+const db = self.resource("db", { version: 1, open: () => openSqlite(path), close: (db) => db.close() });
+const notes = self.state("notes", Type.Array(NoteSchema), { init: () => db.value.all("SELECT * FROM notes") });
+```
+
+`init(ctx)` runs once the resources are open and the references live, before the object goes live, so no method,
+listener, task or subscriber sees a value that did not come from the source. A task that loads the value instead
+starts only after the object is live: a method called in between answers from the placeholder (a note that exists
+reads as unknown), and an async load can overwrite a write made during its `await`. `init` may be async and gets a
+`ctx` to call other objects. The `init`s of one object run in parallel, so one must not read another's cell. A throw or
+an invalid value fails the activation. A reload keeps the cell and its value and does not run `init` again; a cell the
+reload adds runs its `init` while the reload prepares, and a failure refuses the reload.
+
+`init` reads a source the object has anyway. It saves nothing: what must outlive the process is written to that source
+(a database, a file, a Durable document) by the code that changes it.
 
 ```ts
 const visible = self.derive([catalog.rows], (rows) => rows.filter((r) => visibleTo(principal, r)));
@@ -561,7 +607,7 @@ The facet's `setup` argument is its host, scoped to what a plugin needs: `serve`
 export default defineFacet((host) => {
 	host.serve(Sessions, sessionsFactory);
 	tools.register("rename_session", (args) =>
-		host.root((ctx) => ctx.get(Sessions, {}, { at: "server" }).rename(args, ctx)),
+		host.root((ctx) => ctx.get(Sessions, {}).rename(args, ctx)),
 	);
 });
 ```
@@ -658,19 +704,25 @@ On the server, `host.reload(serverFacets, { remote: { "session:": workerFacets }
 
 ```ts
 // server
-const server = createHost({ name: "server", principalKey });
+const server = createHost<Principal>({ name: "server", self: { kind: "host" }, principalKey });
 server.accept(webSocketLink(wss, { principal: (req) => authenticate(req) }));  // stamps owner or guest from cookies
 server.route("session:", {
 	authorize: (principal, host) => canReach(principal, host),  // before resolving or spawning
 	resolve: (host) => workers.ensure(host),  // a link to the worker, spawned if needed
+	principal: (host) => workers.principal(host),  // what the worker acts as when it calls the server
 });
 
 // worker
-const worker = createHost({ name: `session:${id}`, principalKey, upstream: ipcLink(process) });
+const worker = createHost<Principal>({
+	name: `session:${id}`,
+	self: { kind: "host" },
+	principalKey,
+	upstream: { link: ipcLink(process), principal: { kind: "server" } },  // the server's own requests act as this
+});
 
 // anywhere
-const chat = ctx.get(Chat, input, { at: "session:S1" });  // browser → server → worker
-const sessions = self.get(Sessions, {}, { at: "server" });  // worker → server, acting as worker{S1}
+const chat = ctx.get(Chat, { session: "S1", conversation: 1 });  // browser → server → worker session:S1
+const sessions = self.get(Sessions, {});  // `hostNamed("server")`: worker → server, acting as worker{S1}
 ```
 
 - **The server relays** between its children: worker to worker, and browser to worker.

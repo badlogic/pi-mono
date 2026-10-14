@@ -393,12 +393,17 @@ export class Reload {
 			if (resource.exclusive && old?.exclusive && old.state === "open") candidate.replaced.push(old);
 		}
 		if (deferred.size > 0) candidate.reasons.push("exclusive resource replaced");
-		if (candidate.reasons.length === 0) dryRun(candidate);
 		await object.open(
 			run.created.resources.filter((resource) => !deferred.has(resource)),
 			run.created.refs,
 			this.abort.signal,
 		);
+		// Cells this reload adds read their first value once the new resources are open (gated objects: at the gate);
+		// the derivations over them are checked after.
+		if (candidate.reasons.length === 0) {
+			await object.initCells(run, this.abort.signal);
+			dryRun(candidate);
+		}
 	}
 
 	/**
@@ -475,6 +480,8 @@ export class Reload {
 				await old.close(object.openOrder);
 			}
 			await object.open(candidate.atGate, [], this.abort.signal);
+			this.#alive();
+			await object.initCells(candidate.run, this.abort.signal);
 			this.#alive();
 		}
 		for (const candidate of this.gated) this.migrate(candidate);

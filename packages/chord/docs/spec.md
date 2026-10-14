@@ -30,6 +30,7 @@ Contracts are runtime values for every type (shipped bundles have no TypeScript;
 export const Chat = remote("pi.chat", {
 	version: 1,                                   // contract version: a plain number, bumped only on breaking changes
 	input: Type.Object({ session: Type.String(), conversation: Type.Number() }),
+	host: hostFamily("session:", "session"),       // where its objects live: `session:` + input.session
 	variants: {
 		viewer: { state: { view: ViewSchema } },
 		participant: {
@@ -54,6 +55,7 @@ export const Index = local("pi.index", {
 - Remote calls validate args/results and state values at the provider boundary. Local calls are not validated per call.
 - Local contracts list every member (`members: { search: method(...), harness: opaque(...), status: Schema }`). A reference that is still `loading` must know whether `h.x` is a method (a caller that waits until live), a state member (a readable) or an opaque value, before any implementation exists. Members missing from the contract are found only once the reference is live.
 - Every bundle embeds the contract tokens it was built against (its own copy). Fingerprint = hash of the canonical description.
+- Placement (remote types, required): `host: hostNamed(name)` (one host) or `hostFamily(prefix, key)` (the host `prefix` + the input's required string field `key`). Data only, in the description (and so the fingerprint and the `hold` token); there is no `at` option. A `get` normalizes the input with the caller's contract, resolves the host and acquires locally if that is this host, else remotely. `serve` (and a reload that loads a facet) refuses a type whose placement excludes the host's name. A host refuses a hold whose input its own contract places elsewhere (`invalid/placement`), and a relay refuses a hold whose target disagrees with its token's placement and input. Coverage requires equal placements, and an `accepts` adapter never bridges two placements: a moved type is a breaking change. A remote reference's address is the type, the normalized input and the principal: no host name.
 
 ### Compatibility rule
 
@@ -98,7 +100,7 @@ host.serve(StatusStore, ({ session }, _host, self) => {
 
 | Declaration | Survives reload | Notes |
 | --- | --- | --- |
-| `state(name, schema, initial, { version?, migrate? })` | same cell and value (`initial` ignored); migrated when its version rises | Schema required (no TypeScript at runtime). `change(ctx, draft => void)`, `replace(ctx, value)`, `value`, `subscribe`. Writes through `change` touch only mutated paths. Private state is a cell the implementation does not return. |
+| `state(name, schema, initial \| { init }, { version?, migrate? })` | same cell and value (`initial` ignored, `init` not run); migrated when its version rises; a cell the reload adds runs `init` at prepare (gated objects: at the gate) | Schema required (no TypeScript at runtime). `change(ctx, draft => void)`, `replace(ctx, value)`, `value`, `subscribe`. Writes through `change` touch only mutated paths. Private state is a cell the implementation does not return. `init(ctx)` (may be async) gives the first value, see activation |
 | `get(type, input, { at? })` | kept if declared again (same address) | returns a reference |
 | `resource(name, { version, deps?, exclusive?, open, close? })` | kept unless `version`, `deps` or `exclusive` change; a kept resource adopts the new declaration (its `close`) at commit | `open` runs at prepare (non-exclusive) or at the gate (exclusive); returns a resource whose `.value` is the open value; a replaced resource closes with its own declaration's `close` |
 | `on(name, source, [select,] handler)` | same subscription while source and `select` (identity or source text) are unchanged; `handler` swapped | each event starts a fresh root in the current code version; `select` is not re-run for a kept subscription. State sources deliver their current value at start and after every reload that replaced them |
@@ -124,9 +126,11 @@ Removed vs guide: `self.own`, `holdWhile`, async factories, inferred dependencie
 1. run the factory synchronously (declarations);
 2. await declared resources' `open()` (e.g. connect a DB);
 3. await declared references becoming live (dependencies activate first, coalesced);
-4. object is live: references `live`, `ready` resolves.
+4. run the `init` of every cell declared with one, in parallel, each in a root of its own acting as the host principal; validate and install the values;
+5. attach derivations, start listeners and tasks;
+6. object is live: references `live`, `ready` resolves.
 
-Inside the factory, placeholders must not be used (`resource.value` throws `not_ready`; reference calls throw). Methods/listeners/tasks run only on live objects, so their dependencies are live. External consumers (UI, roots) holding a `loading` reference: calls wait until live (ctx cancellation, deadline); state members read `undefined` until hydrated. Activation failures propagate to dependents and all waiting gets; the next get retries.
+Inside the factory, placeholders must not be used (`resource.value` and an `init` cell's `value` throw `not_ready`; reference calls throw). An `init` that throws, or returns a value its schema refuses, fails the activation like a failed `open`. An `init` must not wait for its own object or one that holds it (it is not live yet), and must not read another `init` cell of its object (they run in parallel). `init` gives a first value from a source the object reads anyway; it does not persist anything, and a cell is not saved anywhere by having one. Methods/listeners/tasks run only on live objects, so their dependencies are live. External consumers (UI, roots) holding a `loading` reference: calls wait until live (ctx cancellation, deadline); state members read `undefined` until hydrated. Activation failures propagate to dependents and all waiting gets; the next get retries.
 
 ### Lifetime
 
@@ -169,7 +173,8 @@ Inside the factory, placeholders must not be used (`resource.value` throws `not_
 
 ## 4. Principals, variants, references
 
-- `createHost({ principalKey })` maps principal to a key that includes connection provenance and grant revision. Objects are per principal key. `host` is a built-in principal for in-host calls.
+- Principals are the app's type `P` (`createHost<P>`, `Host<P>`, `defineFacet<P>`, `Factory<C, P>`, `Ctx<P>`; default `unknown`). Chord invents none: `createHost({ self })` is the principal of the host's own code (roots, code inside objects, `lifetime: "host"` objects), `connect(link, { principal })` what the parent's own requests act as, `accept(link, { principal })` what a link acts as, `Route.principal(hostName)` what a routed host acts as when it calls back. All are required.
+- `createHost({ principalKey })` maps principal to a key that includes connection provenance and grant revision. Objects are per principal key. The host's own principal is recognized by key (`principalKey(p) === principalKey(self)`), not by object identity, so an equal principal never creates a second object.
 - Remote factories return `{ variant, ...members }`; `variant` must be a declared variant; members must match it. Local factories return any object. `variant` is reserved as a member name.
 - Reference: `status` (`loading | live | released | gone`), `ready` promise, `variant`, `shape` (`{ variant, members, contract, codeVersion }`), `onStatus(listener)` (every status change, with the error for `gone`), late-bound members, `release()`. A remote reference's state member holds a value only while subscribed (`undefined` after its last subscriber leaves). Shape changes (reload, variant) are pushed; members missing from the current variant reject `not_in_variant`; released references reject `released`; forced disposal makes references `gone`.
 - Methods are `(args, ctx) => Promise<result>`. Factories still check arguments; variants are not complete authorization.
@@ -225,13 +230,13 @@ Per-code-version immutable tables; order = first registration order, kept on rep
 
 ## 9. Hosts and links
 
-- `createHost({ name, principalKey, upstream? })`; `host.accept(link)` for children; `host.route(prefix, { authorize(principal, hostName), resolve(hostName) => Promise<Link> })`.
+- `createHost({ name, self, principalKey, upstream?: { link, principal } })`; `host.accept(link, { principal })` for children; `host.connect(link, { principal })` for the parent; `host.route(prefix, { authorize(principal, hostName), resolve(hostName) => Promise<Link>, principal(hostName) })`.
 - Links: `memoryLinkPair()` (tests), Node IPC (child_process), WebSocket (server `ws`, browser `WebSocket`).
-- Principal stamping: the accepting side stamps the principal of what connects (from its authenticator); forwarded principals accepted only from the parent link; payload principal fields ignored.
+- Principal stamping: the accepting side stamps the principal of what connects (from its authenticator); forwarded principals accepted only from the parent link; the parent's own requests (no forwarded principal) act as the principal given to `connect`; payload principal fields ignored.
 - A child that connects behind its parent's code version is fenced (nothing routed to it) and reconciled by a reload of its modules to the parent's code version. Calls its roots of the old code version make upstream are admitted in the parent's current code version (the parent never ran that code version), not rejected `superseded`.
-- Relay: server forwards frames for `at` hosts to the resolved child link, mapping references per origin connection; authorizes before resolving/spawning and re-checks after.
+- Relay: server forwards a hold to the child link of its target host (`at`, resolved by the consumer from the contract's placement and the normalized input, and checked against both), mapping references per origin connection; authorizes before resolving/spawning and re-checks after.
 - Wire frames (JSON): `hello`/`bye`, `hold`/`release` (a reference over a link: `hold` returns `shape` or `gone`; there is no separate `get`), `shape`, `call`/`result`/`cancel`, `sub`/`unsub` and `state` (`snap`/`ops`/`reset` with a per-subscription delta encoder), `gone`, `root_end`, `retire`, `invalidate`, `ping`/`pong`, `ack`, reload control (`prepare`/`vote`/`commit`/`abort`).
-- Protocol version: `hello` carries `protocol` (`PROTOCOL_VERSION`, now 2; absent means 1). A side that sees another version processes nothing more, calls `LinkOptions.onProtocolMismatch({ local, peer })` and closes the link with reason `protocol-version <its version>`; the other side's connection reads that reason and reports the mismatch too. Peers do not negotiate: the outdated side must load the current code (a browser reloads its page). Frame fields follow the version: the `shape` frame names the variant `variant`, code versions travel as `codeVersion`.
+- Protocol version: `hello` carries `protocol` (`PROTOCOL_VERSION`, now 3; absent means 1). A side that sees another version processes nothing more, calls `LinkOptions.onProtocolMismatch({ local, peer })` and closes the link with reason `protocol-version <its version>`; the other side's connection reads that reason and reports the mismatch too. Peers do not negotiate: the outdated side must load the current code (a browser reloads its page). Frame fields follow the version: the `shape` frame names the variant `variant`, code versions travel as `codeVersion` (2); remote contract tokens carry their placement (`host`), and a `hold` carries the input normalized by the consumer (3).
 - Flow control: both ends announce `acks` in their hello and acknowledge what they processed (`ack`, a cumulative count of every frame but `ack`). While the frames not yet acknowledged exceed the window (`window`, default 256 KiB of JSON text), state frames wait at the sender, one slot per subscription: ops are appended, a snapshot or reset replaces the slot, an unsubscription drops it, and a slot that outgrows four windows becomes a reset of the current value (a relay subscribes downstream anew instead). Every other frame is sent at once. Links that report no frame sizes (IPC) are never windowed; a peer without `acks` is neither windowed nor acknowledged. An acceptor can limit the calls a peer has in progress (`maxCalls`); calls beyond it are answered at once with `unavailable/too_many_calls`. Nothing outside the connection may add frames to a link: acknowledgements count them.
 
 ## 10. Host manager (library)

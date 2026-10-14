@@ -58,7 +58,7 @@ function serveList(host: ReturnType<typeof createHost>) {
 
 describe("state cells", () => {
 	it("publishes snapshots then exact ops; derivations follow", async () => {
-		const host = createHost({ onError: () => {} });
+		const host = createHost({ self: { kind: "host" }, onError: () => {} });
 		serveList(host);
 		const ref = host.get(List, {});
 		const events: StateEvent<unknown>[] = [];
@@ -82,7 +82,7 @@ describe("state cells", () => {
 	});
 
 	it("supports primitive cells and value-returning changes", async () => {
-		const host = createHost({ onError: () => {} });
+		const host = createHost({ self: { kind: "host" }, onError: () => {} });
 		const Counter = local("t.prim", {
 			version: 1,
 			input: Type.Object({}),
@@ -115,7 +115,7 @@ describe("state cells", () => {
 	});
 
 	it("rejects a returned value that does not fit the schema, even outside dev mode", async () => {
-		const host = createHost({ onError: () => {} });
+		const host = createHost({ self: { kind: "host" }, onError: () => {} });
 		const Box = local("t.box", {
 			version: 1,
 			input: Type.Object({}),
@@ -135,18 +135,18 @@ describe("state cells", () => {
 
 	it("validates initial values always and writes only in dev mode", async () => {
 		const Bad = local("t.bad-initial", { version: 1, input: Type.Object({}) });
-		const host = createHost({ onError: () => {} });
+		const host = createHost({ self: { kind: "host" }, onError: () => {} });
 		host.serve(Bad, (_input, _principal, self) => {
 			self.state("x", Type.Object({ n: Type.Number() }), { n: "no" } as never);
 			return {};
 		});
 		await assert.rejects(host.get(Bad, {}).ready, /initial value of state x/);
 
-		const lax = createHost({ onError: () => {} });
+		const lax = createHost({ self: { kind: "host" }, onError: () => {} });
 		serveList(lax);
 		await lax.get(List, {}).set({ items: [], count: "x" } as never);
 
-		const dev = createHost({ dev: true, onError: () => {} });
+		const dev = createHost({ self: { kind: "host" }, dev: true, onError: () => {} });
 		serveList(dev);
 		const ref = dev.get(List, {});
 		await assert.rejects(
@@ -157,7 +157,7 @@ describe("state cells", () => {
 	});
 
 	it("rejects writes from inside a factory and placeholder use before activation", async () => {
-		const host = createHost({ onError: () => {} });
+		const host = createHost({ self: { kind: "host" }, onError: () => {} });
 		const Writer = local("t.writer", { version: 1, input: Type.Object({}) });
 		let captured: Ctx | undefined;
 		await host.root((ctx) => {
@@ -177,7 +177,7 @@ describe("state cells", () => {
 	});
 
 	it("listeners run each event in a fresh root; tasks get an abortable ctx", async () => {
-		const host = createHost({ onError: () => {} });
+		const host = createHost({ self: { kind: "host" }, onError: () => {} });
 		const events = emitter<number>();
 		const Watcher = local("t.watcher", {
 			version: 1,
@@ -221,7 +221,7 @@ describe("state cells", () => {
 	});
 
 	it("re-entrant writes publish in adoption order; derivations never go stale (Sol #3)", async () => {
-		const host = createHost({ onError: () => {} });
+		const host = createHost({ self: { kind: "host" }, onError: () => {} });
 		const Echo = local("t.reentrant", {
 			version: 1,
 			input: Type.Object({}),

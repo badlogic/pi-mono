@@ -12,7 +12,7 @@ import {
 	refsByProxy,
 	type StatusListener,
 } from "./object.ts";
-import type { Ctx, Principal, Readable, RefStatus, Shape, StateEvent } from "./types.ts";
+import type { Ctx, Readable, RefStatus, Shape, StateEvent } from "./types.ts";
 import { fromWireError, type RootRef, type WireError } from "./wire.ts";
 
 const noop = (): void => {};
@@ -150,7 +150,7 @@ export class RemoteRef implements RefCore {
 	readonly at: string;
 	readonly input: unknown;
 	/** Forwarded principal (omitted for the host's own principal). */
-	readonly principal: Principal | undefined;
+	readonly principal: unknown | undefined;
 	readonly owner: RefOwner;
 	readonly address: string;
 	readonly proxy: object;
@@ -171,7 +171,7 @@ export class RemoteRef implements RefCore {
 			contract: AnyContract;
 			at: string;
 			input: unknown;
-			principal: Principal | undefined;
+			principal: unknown | undefined;
 			owner: RefOwner;
 			address: string;
 		},

@@ -8,6 +8,10 @@ export {
 	bind,
 	coverage,
 	type Description,
+	type HostFamily,
+	type HostNamed,
+	hostFamily,
+	hostNamed,
 	type ImplementationOf,
 	type InputOf,
 	type LocalContract,
@@ -15,6 +19,8 @@ export {
 	type MembersOf,
 	method,
 	opaque,
+	type Placement,
+	type PlacementFor,
 	type Ref,
 	type RemoteContract,
 	remote,
@@ -22,7 +28,7 @@ export {
 export type { EventOf, Resource, ResourceDeclaration, Subscribable, ValueOf } from "./declare.ts";
 export type { Draft } from "./delta/index.ts";
 export { ChordError, type ChordErrorCode, forbidden, invalid, isChordError } from "./errors.ts";
-export type { PrincipalMatch, Route } from "./host.ts";
+export type { ConnectOptions, PrincipalMatch, PrincipalPattern, Route } from "./host.ts";
 export {
 	createHost,
 	defineFacet,
@@ -32,7 +38,6 @@ export {
 	type FacetLoader,
 	type Host,
 	type HostOptions,
-	hostPrincipal,
 	type LoadOptions,
 	type PluginRef,
 	type RootOptions,
@@ -57,6 +62,7 @@ export type {
 	Self,
 	ServeOptions,
 	ServeOptionsFor,
+	StateInit,
 	StateOptions,
 } from "./object.ts";
 export { defineRegistry, type Registry, type RegistryTable, type RegistryView } from "./registry.ts";
@@ -72,6 +78,6 @@ export {
 	type ReplicatedStateSourceOptions,
 	replicatedState,
 } from "./state.ts";
-export type { Ctx, GetOptions, Principal, Readable, RefStatus, Shape, StateEvent } from "./types.ts";
+export type { Ctx, GetOptions, Readable, RefStatus, Shape, StateEvent } from "./types.ts";
 export { acceptWebSockets, type WebSocketAcceptOptions, type WebSocketServerLike } from "./websocket.ts";
 export { type Frame, PROTOCOL_VERSION } from "./wire.ts";

@@ -17,8 +17,9 @@ if (mode === "fatal") {
 		return new Promise<never>(() => {});
 	});
 	const host = createHost({
+		self: { kind: "host" },
 		name: process.env.HOST_NAME ?? "worker",
-		upstream: ipcLink(process as unknown as IpcChannel),
+		upstream: { link: ipcLink(process as unknown as IpcChannel), principal: { kind: "server" } },
 		onError: () => {},
 	});
 	const init = (await control.init) as { greeting: string };

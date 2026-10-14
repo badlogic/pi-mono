@@ -8,6 +8,7 @@ import {
 	type Facet,
 	forbidden,
 	type Host,
+	hostNamed,
 	isChordError,
 	local,
 	method,
@@ -17,7 +18,8 @@ import {
 } from "../src/index.ts";
 
 const tick = () => new Promise<void>((resolve) => setImmediate(resolve));
-const quiet = (errors: unknown[] = []) => createHost({ onError: (error) => errors.push(error) });
+const quiet = (errors: unknown[] = []) =>
+	createHost({ self: { kind: "host" }, onError: (error) => errors.push(error) });
 async function until(check: () => boolean): Promise<void> {
 	for (let attempt = 0; attempt < 200 && !check(); attempt++) await tick();
 	assert.ok(check(), "condition not reached");
@@ -390,7 +392,12 @@ describe("host: lifetime", () => {
 
 	it('serve refuses a lifetime "host" the type cannot have, at compile time and at runtime', () => {
 		const host = quiet();
-		const Remote = remote("t.remote-store", { version: 1, input: Type.Object({}), variants: { main: {} } });
+		const Remote = remote("t.remote-store", {
+			version: 1,
+			input: Type.Object({}),
+			host: hostNamed("host"),
+			variants: { main: {} },
+		});
 		const Keyed = local("t.keyed", { version: 1, input: Type.Object({ id: Type.String() }) });
 		// Each refused call is also a type error; the runtime check is the backstop for untyped callers.
 		const refused: [() => void, RegExp][] = [
@@ -412,7 +419,11 @@ describe("host: lifetime", () => {
 	});
 
 	it("every get reaches the one object, created at serve for the host principal; another input is invalid", async () => {
-		const host = createHost({ principalKey: (principal) => JSON.stringify(principal), onError: () => {} });
+		const host = createHost({
+			self: { kind: "host" },
+			principalKey: (principal) => JSON.stringify(principal),
+			onError: () => {},
+		});
 		const created: unknown[] = [];
 		host.serve(
 			Store,
@@ -449,6 +460,7 @@ describe("host: principals, variants and disposal", () => {
 	const Doc = remote("t.doc", {
 		version: 1,
 		input: Type.Object({ id: Type.String() }),
+		host: hostNamed("host"),
 		variants: {
 			viewer: { state: { view: Type.Object({ text: Type.String() }) } },
 			editor: {
@@ -475,7 +487,11 @@ describe("host: principals, variants and disposal", () => {
 	}
 
 	it("keeps objects per principal key and enforces variants", async () => {
-		const host = createHost({ principalKey: (principal) => (principal as { user: string }).user, onError: () => {} });
+		const host = createHost({
+			self: { kind: "host" },
+			principalKey: (principal) => (principal as { user: string }).user,
+			onError: () => {},
+		});
 		const principals: unknown[] = [];
 		serveDoc(host, principals);
 		const viewer = host.get(Doc, { id: "1" }, { principal: { user: "v", role: "viewer" } });
@@ -657,7 +673,11 @@ describe("host: composition", () => {
 	});
 
 	it("ctx.get acts as the root principal at ingress and as the host inside objects", async () => {
-		const host = createHost({ principalKey: (principal) => JSON.stringify(principal), onError: () => {} });
+		const host = createHost({
+			self: { kind: "host" },
+			principalKey: (principal) => JSON.stringify(principal),
+			onError: () => {},
+		});
 		const seen: unknown[] = [];
 		const Who = local("t.who", {
 			version: 1,
@@ -678,7 +698,7 @@ describe("host: composition", () => {
 			return { relay: (ctx: Ctx) => ctx.get(Who, {}).ping(ctx) };
 		});
 		await host.root((ctx) => ctx.get(Front, {}).relay(ctx), { principal: { user: "guest" } });
-		assert.deepEqual(seen, [{ user: "guest" }, { host: true }]);
+		assert.deepEqual(seen, [{ user: "guest" }, { kind: "host" }]);
 	});
 
 	it("calling a reference inside a factory throws not_ready", async () => {

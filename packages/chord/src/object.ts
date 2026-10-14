@@ -19,7 +19,7 @@ import { asChordError, ChordError, invalid, runAll } from "./errors.ts";
 import { enqueue } from "./publish.ts";
 import type { Registration, Registry } from "./registry.ts";
 import { assertValid, normalize } from "./schema.ts";
-import type { Ctx, Exposed, GetOptions, Principal, Readable, RefStatus, Shape, StateEvent } from "./types.ts";
+import type { Ctx, Exposed, GetOptions, Readable, RefStatus, Shape, StateEvent } from "./types.ts";
 
 const noop = (): void => {};
 
@@ -63,12 +63,13 @@ export type ServeOptionsFor<C extends AnyContract> = C extends LocalContract
 
 export type Lifetime = "referenced" | "host";
 
-export type Factory<C extends AnyContract> = (
+/** A type's factory. `P` is the app's principal type: `principal` is the caller the object is created for. */
+export type Factory<C extends AnyContract, P = unknown> = (
 	input: InputOf<C>,
-	principal: Principal,
-	self: Self,
-) => ImplementationOf<C>;
-type AnyFactory = (input: unknown, principal: Principal, self: Self) => unknown;
+	principal: P,
+	self: Self<P>,
+) => ImplementationOf<C, P>;
+type AnyFactory = (input: unknown, principal: unknown, self: Self) => unknown;
 
 export interface Service {
 	readonly contract: AnyContract;
@@ -129,20 +130,33 @@ export interface StateOptions<T> {
 	readonly migrate?: (old: unknown, from: number) => T;
 }
 
-export interface Self {
+/**
+ * A cell's first value from its source: `init` runs after the object's resources are open and its references are live,
+ * before the object goes live, so no call, listener or subscriber sees a value that is not from the source. It runs in
+ * a root of its own (acting as the host principal) and may be async; the inits of one object run in parallel. Its
+ * value is validated against the schema; a throw or an invalid value fails the activation.
+ */
+export interface StateInit<T, P = unknown> {
+	readonly init: (ctx: Ctx<P>) => T | Promise<T>;
+}
+
+/** What a factory declares through. `P` is the app's principal type (`ctx.principal` of its listeners and tasks). */
+export interface Self<P = unknown> {
 	/**
-	 * A state cell named `name`: its schema (required: there is no TypeScript at runtime) and initial value
-	 * (validated). The name identifies it across reloads: a reload keeps the cell and its value (`initial` is ignored),
-	 * migrates it when its version rises, and refuses a schema change without a version bump.
+	 * A state cell named `name`: its schema (required: there is no TypeScript at runtime) and its initial value
+	 * (validated), or `{ init }` to read the first value from its source before the object goes live. The name identifies
+	 * the cell across reloads: a reload keeps the cell and its value (`initial` is ignored, `init` does not run), migrates
+	 * it when its version rises, and refuses a schema change without a version bump. A cell a reload adds runs its `init`
+	 * while the reload prepares.
 	 */
 	state<S extends TSchema>(
 		name: string,
 		schema: S,
-		initial: Static<S>,
+		initial: Static<S> | StateInit<Static<S>, P>,
 		options?: StateOptions<Static<S>>,
 	): Cell<Static<S>>;
 	/** An object-owned reference, identified by its address. */
-	get<C extends AnyContract>(type: C, input: InputOf<C>, options?: GetOptions): Ref<C>;
+	get<C extends AnyContract>(type: C, input: InputOf<C>, options?: GetOptions<P>): Ref<C>;
 	/**
 	 * A resource named `name`: opened before the object goes live, closed after it is disposed. A reload keeps it unless
 	 * its `version`, `deps` or `exclusive` changed.
@@ -156,15 +170,15 @@ export interface Self {
 	 * listener on state whose source the reload replaced (a derivation is new at every reload) subscribes again and
 	 * gets the current value again, so a handler of state must reconcile, not count.
 	 */
-	on<S>(name: string, source: S, handler: (event: EventOf<S>, ctx: Ctx) => void | Promise<void>): void;
+	on<S>(name: string, source: S, handler: (event: EventOf<S>, ctx: Ctx<P>) => void | Promise<void>): void;
 	on<S, E>(
 		name: string,
 		source: S,
 		select: (value: ValueOf<S>) => Subscribable<E>,
-		handler: (event: E, ctx: Ctx) => void | Promise<void>,
+		handler: (event: E, ctx: Ctx<P>) => void | Promise<void>,
 	): void;
 	/** Long-running work of the live object (a code holder: its calls start fresh roots), restarted at every reload. */
-	task(fn: (ctx: Ctx) => Promise<void>): void;
+	task(fn: (ctx: Ctx<P>) => Promise<void>): void;
 	/** A synchronous projection of readables, recomputed when they change; a new one at every reload. */
 	derive<const S extends Sources, T>(sources: S, fn: (...values: SourceValues<S>) => T): Readable<T>;
 	/** Objects of lifetime `"host"` only. Keys are the registry's own keys. */
@@ -306,6 +320,8 @@ export class Decls {
 	readonly registrations = new Map<string, Registration>();
 }
 
+type InitFn = (ctx: Ctx) => unknown;
+
 /** One factory run: its implementation, declarations and the objects it created (not reused from the previous run). */
 export interface Run {
 	readonly implementation: Record<string, unknown>;
@@ -314,8 +330,13 @@ export interface Run {
 		readonly refs: RefCore[];
 		readonly resources: ResourceImpl[];
 		readonly derives: Derived<unknown>[];
+		/** Cells this run created with `init`, which fills them before they are used. */
+		readonly inits: (readonly [Cell<unknown>, InitFn])[];
 	};
 }
+
+const isStateInit = (value: unknown): value is StateInit<unknown> =>
+	value !== null && typeof value === "object" && typeof (value as { init?: unknown }).init === "function";
 
 export interface Installed {
 	readonly codeVersion: number;
@@ -329,7 +350,7 @@ export interface Installed {
 export interface HostCore {
 	readonly name: string;
 	readonly dev: boolean;
-	readonly principal: Principal;
+	readonly principal: unknown;
 	inFactory: number;
 	/** Set when a commit failed midway: the host admits no more work (terminal). */
 	readonly failed: unknown;
@@ -347,7 +368,7 @@ export interface HostCore {
 		from?: ObjectImpl,
 		candidate?: boolean,
 	): RefCore;
-	addressOf(type: AnyContract, input: unknown, principal: Principal, at?: string, candidate?: boolean): string;
+	addressOf(type: AnyContract, input: unknown, principal: unknown, candidate?: boolean): string;
 	root<T>(fn: (ctx: Ctx) => T | Promise<T>, options?: { codeVersion?: number; signal?: AbortSignal }): Promise<T>;
 	touch(rootId: string, object: ObjectImpl): void;
 	forget(object: ObjectImpl): void;
@@ -367,7 +388,7 @@ export class CtxImpl implements Ctx {
 	readonly signal: AbortSignal;
 	readonly rootId: string;
 	readonly codeVersion: number;
-	readonly principal: Principal;
+	readonly principal: unknown;
 	/** Code holders (tasks): every call they make starts a fresh root. */
 	readonly holder: boolean;
 	readonly #refs: RefCore[] = [];
@@ -399,7 +420,7 @@ export class CtxImpl implements Ctx {
 			signals: readonly AbortSignal[];
 			rootId: string;
 			codeVersion: number;
-			principal: Principal;
+			principal: unknown;
 			holder?: boolean;
 		},
 	) {
@@ -894,7 +915,7 @@ export interface ObjectIdentity {
 	readonly address: string;
 	readonly typeName: string;
 	readonly input: unknown;
-	readonly principal: Principal;
+	readonly principal: unknown;
 	/** The one object of a `lifetime: "host"` type. */
 	readonly hostLifetime: boolean;
 }
@@ -904,7 +925,7 @@ export class ObjectImpl {
 	readonly address: string;
 	readonly typeName: string;
 	readonly input: unknown;
-	readonly principal: Principal;
+	readonly principal: unknown;
 	/** The one object of a `lifetime: "host"` type: only such objects may register. */
 	readonly hostLifetime: boolean;
 	status: ObjectStatus = "activating";
@@ -978,6 +999,8 @@ export class ObjectImpl {
 		const run = this.run(service, undefined);
 		try {
 			await this.open(run.created.resources, run.created.refs, signal);
+			if (signal.aborted) throw abandoned();
+			await this.initCells(run, signal);
 			if (signal.aborted) throw abandoned();
 			this.host.checkRegistrations(this, run.decls);
 			this.decls = run.decls;
@@ -1079,6 +1102,22 @@ export class ObjectImpl {
 			return promise;
 		};
 		const results = await Promise.allSettled([...resources.map(openOne), ...refs.map((ref) => ref.ready)]);
+		const failure = results.find((result) => result.status === "rejected");
+		if (failure !== undefined) throw failure.reason;
+	}
+
+	/**
+	 * Fills the cells `run` created with `init`, each in a root of its own, in parallel; settles all before failing. Runs
+	 * after the run's resources are open and its references live, before anything reads the cells.
+	 */
+	async initCells(run: Run, signal: AbortSignal): Promise<void> {
+		if (run.created.inits.length === 0) return;
+		const results = await Promise.allSettled(
+			run.created.inits.map(async ([cell, init]) => {
+				const value = await this.host.root((ctx) => init(ctx), { signal });
+				if (!signal.aborted) cell.initialize(value);
+			}),
+		);
 		const failure = results.find((result) => result.status === "rejected");
 		if (failure !== undefined) throw failure.reason;
 	}
@@ -1584,11 +1623,7 @@ class SelfImpl implements Self {
 	readonly #object: ObjectImpl;
 	readonly #previous: Decls | undefined;
 	readonly #decls = new Decls();
-	readonly #created: { refs: RefCore[]; resources: ResourceImpl[]; derives: Derived<unknown>[] } = {
-		refs: [],
-		resources: [],
-		derives: [],
-	};
+	readonly #created: Run["created"] = { refs: [], resources: [], derives: [], inits: [] };
 
 	constructor(object: ObjectImpl, previous: Decls | undefined) {
 		this.#object = object;
@@ -1608,7 +1643,7 @@ class SelfImpl implements Self {
 	state<S extends TSchema>(
 		name: string,
 		schema: S,
-		initial: Static<S>,
+		initial: Static<S> | StateInit<Static<S>>,
 		options: StateOptions<Static<S>> = {},
 	): Cell<Static<S>> {
 		this.#unique(this.#decls.cells, "state", name);
@@ -1616,13 +1651,23 @@ class SelfImpl implements Self {
 		if (!Number.isInteger(version) || version < 1)
 			throw new TypeError(`state ${name}: version must be a positive integer`);
 		const host = this.#object.host;
-		const cell =
-			this.#previous?.cells.get(name) ??
-			new Cell(name, schema, initial, this.#object.guard, {
-				dev: host.dev,
-				report: (error) => host.report(error),
-			});
-		this.#decls.cells.set(name, cell as Cell<unknown>);
+		// A JSON value never holds a function: an object with a function `init` is the initializer, not a value.
+		const init = isStateInit(initial) ? initial.init : undefined;
+		let cell = this.#previous?.cells.get(name);
+		if (cell === undefined) {
+			cell = new Cell<unknown>(
+				name,
+				schema,
+				init === undefined ? { value: initial } : undefined,
+				this.#object.guard,
+				{
+					dev: host.dev,
+					report: (error) => host.report(error),
+				},
+			);
+			if (init !== undefined) this.#created.inits.push([cell, init]);
+		}
+		this.#decls.cells.set(name, cell);
 		this.#decls.cellSchemas.set(name, schema);
 		this.#decls.cellVersions.set(name, version);
 		if (options.migrate !== undefined) this.#decls.cellMigrations.set(name, options.migrate);
@@ -1634,7 +1679,7 @@ class SelfImpl implements Self {
 		// A prepare rerun (recording mode) binds new references against the reload's pending contracts: a breaking provider
 		// change and its updated consumer reload together.
 		const candidate = this.#previous !== undefined;
-		const address = host.addressOf(type, input, options?.principal ?? host.principal, options?.at, candidate);
+		const address = host.addressOf(type, input, options?.principal ?? host.principal, candidate);
 		const declared = this.#decls.refs.get(address);
 		if (declared !== undefined) {
 			if (declared.contract.fingerprint !== type.fingerprint) {

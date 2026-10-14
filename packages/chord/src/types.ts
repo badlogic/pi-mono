@@ -1,26 +1,26 @@
 import type { AnyContract, InputOf, Ref } from "./contract.ts";
 import type { Op } from "./delta/index.ts";
 
-/** App-defined, JSON-serializable identity of a caller. Mapped to an object key by `createHost({ principalKey })`. */
-export type Principal = unknown;
-
-export interface GetOptions {
-	/** Principal the object is created for. Defaults to the host principal. */
-	readonly principal?: Principal;
-	/** Host name. Only the local host in phase 1a. */
-	readonly at?: string;
+/**
+ * Options of `get`. `P` is the app's principal type: a JSON-serializable identity of a caller, mapped to an object key
+ * by `createHost({ principalKey })`.
+ */
+export interface GetOptions<P = unknown> {
+	/** Principal the object is created for. Defaults to the host's own principal (`createHost({ self })`). */
+	readonly principal?: P;
 }
 
 /**
  * The explicit call context of one root (a short Chord call tree). Calls made with it carry its root id and code
  * version; `get` references are released when the call that received this ctx settles.
  */
-export interface Ctx {
+export interface Ctx<P = unknown> {
 	readonly signal: AbortSignal;
 	readonly rootId: string;
 	readonly codeVersion: number;
-	readonly principal: Principal;
-	get<C extends AnyContract>(type: C, input: InputOf<C>, options?: GetOptions): Ref<C>;
+	/** Who the root acts as: the caller at ingress, the host's own principal inside objects. */
+	readonly principal: P;
+	get<C extends AnyContract>(type: C, input: InputOf<C>, options?: GetOptions<P>): Ref<C>;
 }
 
 export type StateEvent<T> =

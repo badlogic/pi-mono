@@ -1,4 +1,4 @@
-import { contractFromDescription, LOCAL_VARIANT } from "./contract.ts";
+import { contractFromDescription, LOCAL_VARIANT, resolveHost } from "./contract.ts";
 import { type Encoder, encoder } from "./delta/index.ts";
 import { ChordError, invalid } from "./errors.ts";
 import type { HostImpl } from "./host.ts";
@@ -6,7 +6,7 @@ import { type Link, Packed, unpack } from "./link.ts";
 import { type CtxImpl, RefImpl, variantOf } from "./object.ts";
 import type { RemoteChannel, RemoteRef, StateSink } from "./remote.ts";
 import { assertValid } from "./schema.ts";
-import type { Ctx, Principal, Readable, StateEvent } from "./types.ts";
+import type { Ctx, Readable, StateEvent } from "./types.ts";
 import { type Frame, fromWireError, isFrame, PROTOCOL_VERSION, type RootRef, toWireError } from "./wire.ts";
 
 export interface LinkOptions {
@@ -38,9 +38,9 @@ type StateFrame = Extract<Frame, { t: "state" }>;
  */
 type PendingState = { base: StateFrame | undefined; ops: (readonly unknown[])[]; size: number };
 
-export interface AcceptOptions extends LinkOptions {
+export interface AcceptOptions<P = unknown> extends LinkOptions {
 	/** The principal of whatever connects, from the app's authenticator. Every request on the link acts as it. */
-	readonly principal: Principal;
+	readonly principal: P;
 	/**
 	 * What the peer is, decided here and never by its `hello`: `client` (default; a browser: no roots, no code versions,
 	 * not a reload participant, not addressable) or `host` (a child host; needs `name`).
@@ -49,7 +49,7 @@ export interface AcceptOptions extends LinkOptions {
 	/** A child host's name: its hello must match, and it is reachable `at` this name. */
 	readonly name?: string;
 	/** On `invalidatePrincipal`: a new principal keeps the link, `undefined` closes it (default: close). */
-	readonly restamp?: (principal: Principal) => Principal | undefined;
+	restamp?(principal: P): P | undefined;
 	/**
 	 * Calls the peer may have in progress on this link (default: no limit). Further ones never run: they are answered
 	 * at once with `unavailable` (reason `too_many_calls`), and the link stays open.
@@ -65,7 +65,7 @@ export interface Peer {
 
 /** A hold the peer made on this host: served locally or relayed to another link. */
 type Served =
-	| { readonly kind: "local"; readonly ref: RefImpl; readonly principal: Principal; readonly feeds: Set<number> }
+	| { readonly kind: "local"; readonly ref: RefImpl; readonly principal: unknown; readonly feeds: Set<number> }
 	| { readonly kind: "relay"; readonly relay: RelayRef };
 
 type Pending = { readonly resolve: (value: unknown) => void; readonly reject: (error: unknown) => void };
@@ -82,7 +82,7 @@ const unavailable = (message: string): ChordError => new ChordError("unavailable
 export class RelayRef {
 	readonly origin: Connection;
 	readonly frame: Extract<Frame, { t: "hold" }>;
-	readonly principal: Principal;
+	readonly principal: unknown;
 	readonly client: boolean;
 	/** The origin's authorization generation when the hold arrived; a revocation bumps it. */
 	readonly generation: number;
@@ -93,7 +93,7 @@ export class RelayRef {
 	readonly subs = new Map<number, { readonly member: string; downId: number | undefined }>();
 	readonly #waiters = new Set<Pending>();
 
-	constructor(origin: Connection, frame: Extract<Frame, { t: "hold" }>, principal: Principal, client: boolean) {
+	constructor(origin: Connection, frame: Extract<Frame, { t: "hold" }>, principal: unknown, client: boolean) {
 		this.origin = origin;
 		this.frame = frame;
 		this.principal = principal;
@@ -265,8 +265,8 @@ export class Connection implements RemoteChannel {
 	/** `upstream`: the link to this host's parent. `downstream`: a link this host accepted. */
 	readonly role: "upstream" | "downstream";
 	readonly peer: Peer;
-	principal: Principal;
-	readonly restamp: ((principal: Principal) => Principal | undefined) | undefined;
+	principal: unknown;
+	readonly restamp: ((principal: unknown) => unknown | undefined) | undefined;
 	/** Bumped when the stamped principal is revoked or re-stamped: relays from before are refused. */
 	generation = 0;
 	/** The code version a downstream host peer runs (from its hello, then from commits). */
@@ -320,9 +320,9 @@ export class Connection implements RemoteChannel {
 		link: Link,
 		config: {
 			readonly role: "upstream" | "downstream";
-			readonly principal: Principal;
+			readonly principal: unknown;
 			readonly peer: Peer;
-			readonly restamp?: (principal: Principal) => Principal | undefined;
+			readonly restamp?: (principal: unknown) => unknown | undefined;
 			readonly maxCalls?: number;
 		} & LinkOptions,
 	) {
@@ -452,7 +452,7 @@ export class Connection implements RemoteChannel {
 	}
 
 	/** Revokes the stamped principal: relays made under it close at once (also those still resolving a route). */
-	revoke(next: Principal | undefined): void {
+	revoke(next: unknown | undefined): void {
 		this.generation++;
 		const error = new ChordError("gone", "principal invalidated");
 		for (const served of [...this.served.values()]) {
@@ -680,11 +680,11 @@ export class Connection implements RemoteChannel {
 
 	/**
 	 * Principal stamping: a downstream link acts as the principal it was accepted with, whatever the frame says. Only
-	 * the parent may forward a principal (relayed requests); its own requests act as `{ host: parentName }`.
+	 * the parent may forward a principal (relayed requests); its own requests act as the principal given to `connect`.
 	 */
-	#principalOf(frame: { readonly principal?: Principal }): Principal {
+	#principalOf(frame: { readonly principal?: unknown }): unknown {
 		if (this.role === "downstream") return this.principal;
-		return frame.principal ?? { host: this.#parentName ?? "parent" };
+		return frame.principal ?? this.principal;
 	}
 
 	#isClient(frame: { readonly client?: boolean }): boolean {
@@ -712,6 +712,9 @@ export class Connection implements RemoteChannel {
 		try {
 			const token = contractFromDescription(frame.token);
 			if (token.scope !== "remote") throw invalid("token", `${token.name} is local; only remote types cross links`);
+			// Addressed here, so the input must place it here (also by this host's contract, checked when acquiring).
+			if (resolveHost(token.name, token.description.host!, frame.input) !== this.host.name)
+				throw invalid("placement", `${token.name} with this input does not live on ${this.host.name}`);
 			const acquired = this.host.acquire(token, frame.input, { principal }, client ? "client" : "connection");
 			if (!(acquired instanceof RefImpl)) throw unavailable("not a local reference");
 			ref = acquired;

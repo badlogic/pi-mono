@@ -8,6 +8,7 @@ import {
 	createHost,
 	type Frame,
 	type Host,
+	hostNamed,
 	isChordError,
 	type Link,
 	memoryLinkPair,
@@ -60,16 +61,21 @@ class AckGate implements Link {
 	}
 }
 
-const Counter = remote("t.flow-counter", {
-	version: 1,
-	input: Type.Object({}),
-	variants: {
-		main: {
-			state: { count: Type.Object({ n: Type.Number() }) },
-			methods: { add: method(Type.Number(), Type.Number()), wait: method() },
+/** A counter on the server, or (`t.flow-worker-counter`) on the worker host `w`. */
+const counterOn = (name: string, host: string) =>
+	remote(name, {
+		version: 1,
+		input: Type.Object({}),
+		host: hostNamed(host),
+		variants: {
+			main: {
+				state: { count: Type.Object({ n: Type.Number() }) },
+				methods: { add: method(Type.Number(), Type.Number()), wait: method() },
+			},
 		},
-	},
-});
+	});
+const Counter = counterOn("t.flow-counter", "server");
+const WorkerCounter = counterOn("t.flow-worker-counter", "w");
 
 let release = () => {};
 const waiting = () =>
@@ -81,8 +87,8 @@ const waiting = () =>
 		};
 	});
 
-function serveCounter(host: Host): void {
-	host.serve(Counter, (_input, _principal, self) => {
+function serveCounter(host: Host, type = Counter): void {
+	host.serve(type, (_input, _principal, self) => {
 		const count = self.state("count", Type.Object({ n: Type.Number() }), { n: 0 });
 		return {
 			variant: "main",
@@ -103,7 +109,13 @@ function client(server: Host, window: number) {
 	const [down, up] = memoryLinkPair();
 	server.accept(down, { principal: { user: "u" }, window });
 	const gate = new AckGate(up);
-	const host = createHost({ name: "browser", kind: "client", upstream: gate, onError: () => {} });
+	const host = createHost({
+		self: { kind: "host" },
+		name: "browser",
+		kind: "client",
+		upstream: { link: gate, principal: { kind: "server" } },
+		onError: () => {},
+	});
 	return { host, gate };
 }
 
@@ -112,10 +124,10 @@ const stateFrames = (frames: readonly Frame[]) =>
 
 describe("link flow control", () => {
 	it("holds state back while the window is full, answers calls meanwhile, and sends one coalesced frame", async () => {
-		const server = createHost({ name: "server", onError: () => {} });
+		const server = createHost({ self: { kind: "host" }, name: "server", onError: () => {} });
 		serveCounter(server);
 		const { host, gate } = client(server, 200);
-		const counter = host.get(Counter, {}, { at: "server" });
+		const counter = host.get(Counter, {});
 		const values: unknown[] = [];
 		counter.count.subscribe((value) => values.push(value));
 		await until(() => values.at(-1) !== undefined);
@@ -136,10 +148,10 @@ describe("link flow control", () => {
 	});
 
 	it("replaces ops that outgrow their slot with the current value", async () => {
-		const server = createHost({ name: "server", onError: () => {} });
+		const server = createHost({ self: { kind: "host" }, name: "server", onError: () => {} });
 		serveCounter(server);
 		const { host, gate } = client(server, 64);
-		const counter = host.get(Counter, {}, { at: "server" });
+		const counter = host.get(Counter, {});
 		const values: unknown[] = [];
 		counter.count.subscribe((value) => values.push(value));
 		await until(() => values.at(-1) !== undefined);
@@ -160,10 +172,10 @@ describe("link flow control", () => {
 	});
 
 	it("drops what waits for a subscription that ends", async () => {
-		const server = createHost({ name: "server", onError: () => {} });
+		const server = createHost({ self: { kind: "host" }, name: "server", onError: () => {} });
 		serveCounter(server);
 		const { host, gate } = client(server, 64);
-		const counter = host.get(Counter, {}, { at: "server" });
+		const counter = host.get(Counter, {});
 		const stop = counter.count.subscribe(() => {});
 		await until(() => counter.count.value !== undefined);
 
@@ -180,14 +192,20 @@ describe("link flow control", () => {
 	});
 
 	it("coalesces relayed state for the origin and resubscribes downstream when the slot overflows", async () => {
-		const server = createHost({ name: "server", onError: () => {} });
+		const server = createHost({ self: { kind: "host" }, name: "server", onError: () => {} });
 		const toWorker: Frame[] = [];
 		server.route("w", {
+			principal: (name) => ({ host: name }),
 			authorize: () => true,
 			resolve: async (name) => {
 				const [down, up] = memoryLinkPair();
-				const worker = createHost({ name, upstream: up, onError: () => {} });
-				serveCounter(worker);
+				const worker = createHost({
+					self: { kind: "host" },
+					name,
+					upstream: { link: up, principal: { kind: "server" } },
+					onError: () => {},
+				});
+				serveCounter(worker, WorkerCounter);
 				return {
 					get closed() {
 						return down.closed;
@@ -203,7 +221,7 @@ describe("link flow control", () => {
 			},
 		});
 		const { host, gate } = client(server, 64);
-		const counter = host.get(Counter, {}, { at: "w" });
+		const counter = host.get(WorkerCounter, {});
 		const values: unknown[] = [];
 		counter.count.subscribe((value) => values.push(value));
 		await until(() => values.at(-1) !== undefined);
@@ -222,7 +240,7 @@ describe("link flow control", () => {
 	});
 
 	it("neither windows nor acknowledges a peer whose hello does not announce acks", async () => {
-		const server = createHost({ name: "server", onError: () => {} });
+		const server = createHost({ self: { kind: "host" }, name: "server", onError: () => {} });
 		serveCounter(server);
 		const [down, raw] = memoryLinkPair();
 		server.accept(down, { principal: { user: "u" }, window: 1 });
@@ -241,7 +259,7 @@ describe("link flow control", () => {
 	});
 
 	it("closes the link on an acknowledgement of frames never sent", async () => {
-		const server = createHost({ name: "server", onError: () => {} });
+		const server = createHost({ self: { kind: "host" }, name: "server", onError: () => {} });
 		const [down, raw] = memoryLinkPair();
 		server.accept(down, { principal: { user: "u" } });
 		raw.receive(() => {});
@@ -254,12 +272,18 @@ describe("link flow control", () => {
 
 describe("link call limit", () => {
 	it("answers calls beyond maxCalls at once with too_many_calls and keeps the link", async () => {
-		const server = createHost({ name: "server", onError: () => {} });
+		const server = createHost({ self: { kind: "host" }, name: "server", onError: () => {} });
 		serveCounter(server);
 		const [down, up] = memoryLinkPair();
 		server.accept(down, { principal: { user: "u" }, maxCalls: 2 });
-		const host = createHost({ name: "browser", kind: "client", upstream: up, onError: () => {} });
-		const counter = host.get(Counter, {}, { at: "server" });
+		const host = createHost({
+			self: { kind: "host" },
+			name: "browser",
+			kind: "client",
+			upstream: { link: up, principal: { kind: "server" } },
+			onError: () => {},
+		});
+		const counter = host.get(Counter, {});
 		await counter.ready;
 		release = () => {};
 		const first = counter.wait();

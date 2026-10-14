@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { Type } from "typebox";
 import { describe, it } from "vitest";
-import { bind, coverage, isChordError, local, method, opaque, remote } from "../src/index.ts";
+import { bind, coverage, hostFamily, hostNamed, isChordError, local, method, opaque, remote } from "../src/index.ts";
 import { canonicalIdentity, fits, normalize } from "../src/schema.ts";
 
 const View = Type.Object({ text: Type.String() });
@@ -9,6 +9,7 @@ const View = Type.Object({ text: Type.String() });
 const chatV1 = remote("t.chat", {
 	version: 1,
 	input: Type.Object({ session: Type.String(), conversation: Type.Number({ default: 0 }) }),
+	host: hostFamily("session:", "session"),
 	variants: {
 		viewer: { state: { view: View } },
 		participant: {
@@ -41,6 +42,7 @@ describe("contracts", () => {
 		assert.throws(() => local("t.x", { version: 1, input: Type.Object({}), members: { status: method() } }));
 		assert.throws(() =>
 			remote("t.x", {
+				host: hostNamed("server"),
 				version: 1,
 				input: Type.Object({}),
 				variants: { a: { state: { h: opaque("x@1") as never } } },

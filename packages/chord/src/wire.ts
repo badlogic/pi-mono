@@ -19,7 +19,7 @@ import { CHORD_ERROR_CODES, ChordError } from "./errors.ts";
  * closes the link with reason `protocol-version <its version>`, so the other side learns it too
  * (`LinkOptions.onProtocolMismatch`).
  */
-export const PROTOCOL_VERSION = 2;
+export const PROTOCOL_VERSION = 3;
 
 const Id = Type.Integer({ minimum: 1 });
 const Name = Type.String({ minLength: 1 });
@@ -71,10 +71,14 @@ const FrameSchema = Type.Union([
 	Type.Object({
 		t: Type.Literal("hold"),
 		id: Id,
-		/** Target host name. */
+		/**
+		 * Target host name, resolved by the consumer from the token's `host` and `input`. Relays route on it after
+		 * checking it against both; the target refuses an input its own contract places elsewhere.
+		 */
 		at: Name,
-		/** The consumer's contract token; the provider checks that it covers it. */
+		/** The consumer's contract token; the provider checks that it covers it. Remote tokens carry `host`. */
 		token: DescriptionSchema,
+		/** Normalized with the consumer's contract. */
 		input: Type.Unknown(),
 		/** A forwarded principal. Honored only on frames from the parent link. */
 		principal: Type.Optional(Type.Unknown()),

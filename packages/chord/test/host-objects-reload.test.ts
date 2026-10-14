@@ -130,7 +130,7 @@ function switchFacets(log: string[]) {
 
 test("the host's reference to a host object follows contract bumps at commit without reopening its object or resources; failures retain the old reference", async () => {
 	const errors: unknown[] = [];
-	const host = new HostImpl({ dev: true, onError: (error) => errors.push(error) });
+	const host = new HostImpl({ self: { kind: "host" }, dev: true, onError: (error) => errors.push(error) });
 	onTestFinished(() => host.close());
 	const log: string[] = [];
 	const facets = switchFacets(log);
@@ -194,6 +194,7 @@ const readerV2 = (adapt = false): Facet => ({
 
 test("external old-version consumers still refuse a host object's upgrade without accepts, and keep their adapter when it is provided", async () => {
 	const host = new HostImpl({
+		self: { kind: "host" },
 		onError: (error) => {
 			throw error;
 		},
@@ -214,7 +215,7 @@ test("external old-version consumers still refuse a host object's upgrade withou
 });
 
 test("object-owned old-version references still block a host object's upgrade unless their consumer is replaced in the same batch", async () => {
-	const host = new HostImpl({ onError: () => {} });
+	const host = new HostImpl({ self: { kind: "host" }, onError: () => {} });
 	onTestFinished(() => host.close());
 	const Consumer = local("t.eager-consumer", {
 		version: 1,
@@ -248,7 +249,7 @@ test("object-owned old-version references still block a host object's upgrade un
 });
 
 test("a forgotten contract bump remains refused even when the only consumer is the host's own reference", async () => {
-	const host = new HostImpl({ onError: () => {} });
+	const host = new HostImpl({ self: { kind: "host" }, onError: () => {} });
 	onTestFinished(() => host.close());
 	await host.load([readerV1]);
 	const incompatible = local(ReadV1.name, {
@@ -272,8 +273,13 @@ test("a cluster contract upgrade retokens the server's and worker's references t
 	const log: string[] = [];
 	const facets = switchFacets(log);
 	let valid = false;
-	const server = new HostImpl({ onError: () => {} });
-	const worker = new HostImpl({ name: "worker", onError: () => {}, loader: async () => [facets.v2(valid)] });
+	const server = new HostImpl({ self: { kind: "host" }, onError: () => {} });
+	const worker = new HostImpl({
+		self: { kind: "host" },
+		name: "worker",
+		onError: () => {},
+		loader: async () => [facets.v2(valid)],
+	});
 	onTestFinished(async () => {
 		await worker.close();
 		await server.close();
@@ -282,7 +288,7 @@ test("a cluster contract upgrade retokens the server's and worker's references t
 	await worker.load([facets.v1]);
 	const [down, up] = memoryLinkPair();
 	server.accept(down, { kind: "host", name: "worker", principal: { worker: true } });
-	worker.connect(up);
+	worker.connect(up, { principal: { kind: "server" } });
 	await new Promise((resolve) => setImmediate(resolve));
 	const serverOwn = server.hostObjects.get(SwitchV1.name);
 	const workerOwn = worker.hostObjects.get(SwitchV1.name);
@@ -303,7 +309,7 @@ test("a cluster contract upgrade retokens the server's and worker's references t
 });
 
 test("a reload that changes a type's lifetime creates its host object, or lets it go", async () => {
-	const host = createHost({ onError: () => {} });
+	const host = createHost({ self: { kind: "host" }, onError: () => {} });
 	const Kept = local("t.lifetime-change", { version: 1, input: Type.Object({}) });
 	const log: string[] = [];
 	const facet = (lifetime: "host" | "referenced"): Facet => ({
