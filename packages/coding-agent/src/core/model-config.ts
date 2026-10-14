@@ -42,6 +42,12 @@ const ModelDefinitionSchema = Type.Object({
 	promptCache: Type.Optional(ModelPromptCacheSchema),
 	contextWindow: Type.Optional(PositiveTokenCountSchema),
 	maxTokens: Type.Optional(PositiveTokenCountSchema),
+	responseModelAliases: Type.Optional(
+		Type.Array(Type.String({ minLength: 1 }), {
+			description:
+				"Provider-reported model names that identify this same route when a provider or gateway renames the model it was asked for.",
+		}),
+	),
 	samplingParams: Type.Optional(SamplingParamsSchema),
 	samplingParamsByThinkingLevel: Type.Optional(SamplingParamsByThinkingLevelSchema),
 	headers: Type.Optional(Type.Record(Type.String(), Type.String())),
@@ -58,6 +64,12 @@ const ModelOverrideSchema = Type.Object({
 	promptCache: Type.Optional(ModelPromptCacheSchema),
 	contextWindow: Type.Optional(PositiveTokenCountSchema),
 	maxTokens: Type.Optional(PositiveTokenCountSchema),
+	responseModelAliases: Type.Optional(
+		Type.Array(Type.String({ minLength: 1 }), {
+			description:
+				"Provider-reported model names that identify this same route when a provider or gateway renames the model it was asked for.",
+		}),
+	),
 	samplingParams: Type.Optional(SamplingParamsSchema),
 	samplingParamsByThinkingLevel: Type.Optional(SamplingParamsByThinkingLevelSchema),
 	headers: Type.Optional(Type.Record(Type.String(), Type.String())),

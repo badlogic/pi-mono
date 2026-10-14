@@ -79,6 +79,137 @@ function useSummaryStreamFn(
 	return () => callCount;
 }
 
+const ANTHROPIC_BUDGET_PROVIDER = "instacart-anthropic";
+const ANTHROPIC_BUDGET_MODEL_ID = "claude-opus-5-5@default";
+
+interface AnthropicSseBlock {
+	type: "text" | "tool_use";
+	text?: string;
+	id?: string;
+	name?: string;
+	input?: Record<string, unknown>;
+}
+
+/** Minimal Anthropic Messages SSE response for one scripted assistant turn. */
+function anthropicSse(options: {
+	model: string;
+	inputTokens: number;
+	outputTokens: number;
+	blocks: AnthropicSseBlock[];
+	stopReason: "end_turn" | "tool_use" | "max_tokens";
+}): Response {
+	const events: Array<{ event: string; data: unknown }> = [
+		{
+			event: "message_start",
+			data: {
+				type: "message_start",
+				message: {
+					id: "msg_test",
+					model: options.model,
+					usage: {
+						input_tokens: options.inputTokens,
+						output_tokens: 0,
+						cache_read_input_tokens: 0,
+						cache_creation_input_tokens: 0,
+					},
+				},
+			},
+		},
+	];
+	options.blocks.forEach((block, index) => {
+		if (block.type === "text") {
+			events.push({
+				event: "content_block_start",
+				data: { type: "content_block_start", index, content_block: { type: "text", text: "" } },
+			});
+			events.push({
+				event: "content_block_delta",
+				data: { type: "content_block_delta", index, delta: { type: "text_delta", text: block.text ?? "" } },
+			});
+		} else {
+			events.push({
+				event: "content_block_start",
+				data: {
+					type: "content_block_start",
+					index,
+					content_block: { type: "tool_use", id: block.id, name: block.name, input: {} },
+				},
+			});
+			events.push({
+				event: "content_block_delta",
+				data: {
+					type: "content_block_delta",
+					index,
+					delta: { type: "input_json_delta", partial_json: JSON.stringify(block.input ?? {}) },
+				},
+			});
+		}
+		events.push({ event: "content_block_stop", data: { type: "content_block_stop", index } });
+	});
+	events.push({
+		event: "message_delta",
+		data: {
+			type: "message_delta",
+			delta: { stop_reason: options.stopReason },
+			usage: { input_tokens: options.inputTokens, output_tokens: options.outputTokens },
+		},
+	});
+	events.push({ event: "message_stop", data: { type: "message_stop" } });
+	const body = events.map(({ event, data }) => `event: ${event}\ndata: ${JSON.stringify(data)}\n`).join("\n");
+	return new Response(body, { status: 200, headers: { "content-type": "text/event-stream" } });
+}
+
+type FetchLike = NonNullable<SimpleStreamOptions["fetch"]>;
+
+/** Scripted provider transport that records every request body it receives. */
+function createScriptedFetch(responses: Array<() => Response>) {
+	const queue = [...responses];
+	const requests: Array<Record<string, unknown>> = [];
+	const fetch = vi.fn(async (_input: Parameters<FetchLike>[0], init?: Parameters<FetchLike>[1]): Promise<Response> => {
+		requests.push(JSON.parse(String(init?.body ?? "{}")) as Record<string, unknown>);
+		const next = queue.shift();
+		if (!next) throw new Error("No more scripted provider responses");
+		return next();
+	}) as unknown as FetchLike;
+	return { fetch, requests };
+}
+
+function priorAssistantMessage(totalTokens: number, timestamp: number): AssistantMessage {
+	return {
+		role: "assistant",
+		content: [{ type: "text", text: "prior answer" }],
+		api: "openai-completions",
+		provider: "deepseek",
+		model: "deepseek-v3.2",
+		usage: {
+			input: totalTokens,
+			output: 0,
+			cacheRead: 0,
+			cacheWrite: 0,
+			totalTokens,
+			cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+		},
+		stopReason: "stop",
+		timestamp,
+	};
+}
+
+function seedPriorUsage(harness: Harness, totalTokens: number): void {
+	const now = Date.now();
+	harness.sessionManager.appendMessage({
+		role: "user",
+		content: [{ type: "text", text: "earlier question" }],
+		timestamp: now - 3000,
+	});
+	harness.sessionManager.appendMessage(priorAssistantMessage(totalTokens, now - 2000));
+	harness.session.agent.state.messages = harness.sessionManager.buildSessionContext().messages;
+}
+
+function useScriptedAnthropicTransport(harness: Harness, fetch: FetchLike): void {
+	harness.session.agent.streamFunction = (model, context, options) =>
+		harness.session.modelRuntime.streamSimple(model, context, { ...options, fetch });
+}
+
 function seedCompactableSession(harness: Harness): void {
 	harness.settingsManager.applyOverrides({ compaction: { keepRecentTokens: 1 } });
 	const now = Date.now();
@@ -124,6 +255,49 @@ async function createAbortableCompactionHarness(): Promise<{
 
 describe("AgentSession compaction characterization", () => {
 	const harnesses: Harness[] = [];
+
+	/**
+	 * A real Anthropic-messages provider route with a scripted HTTP transport, so the agent loop
+	 * exercises the provider request path (including the pre-provider context budget guard) without
+	 * a live gateway.
+	 */
+	async function createAnthropicBudgetHarness(
+		options: { tool?: AgentTool; reserveTokens?: number; responseModelAliases?: string[] } = {},
+	) {
+		const harness = await createHarness({
+			modelsJson: {
+				providers: {
+					[ANTHROPIC_BUDGET_PROVIDER]: {
+						api: "anthropic-messages",
+						baseUrl: "https://api.anthropic.com",
+						models: [
+							{
+								id: ANTHROPIC_BUDGET_MODEL_ID,
+								name: "Claude Opus 5.5",
+								reasoning: true,
+								contextWindow: 400_000,
+								maxTokens: 128_000,
+								responseModelAliases: options.responseModelAliases ?? ["claude-opus-5-5"],
+							},
+						],
+					},
+				},
+			},
+			settings: {
+				compaction: {
+					keepRecentTokens: 1,
+					...(options.reserveTokens === undefined ? {} : { reserveTokens: options.reserveTokens }),
+				},
+			},
+			tools: options.tool ? [options.tool] : [],
+		});
+		harnesses.push(harness);
+		await harness.authStorage.modify(ANTHROPIC_BUDGET_PROVIDER, async () => ({ type: "api_key", key: "test-key" }));
+		const model = harness.session.modelRuntime.getModel(ANTHROPIC_BUDGET_PROVIDER, ANTHROPIC_BUDGET_MODEL_ID);
+		if (!model) throw new Error("Anthropic budget test model is not registered");
+		await harness.session.setModel(model);
+		return { harness, model };
+	}
 
 	afterEach(() => {
 		vi.useRealTimers();
@@ -989,6 +1163,174 @@ describe("AgentSession compaction characterization", () => {
 		await sessionInternals._checkCompaction(errorAssistant);
 
 		expect(runAutoCompactionSpy).not.toHaveBeenCalled();
+	});
+
+	// Incident shape: a model switch with a large prior usage, a tool-use response that pushes the
+	// next request beyond the configured window, and a tool result before the follow-up request.
+	it("runs a completed tool once and resumes the same turn after a pre-provider context-budget failure", async () => {
+		let toolRuns = 0;
+		const countedTool: AgentTool = {
+			name: "counted",
+			label: "Counted",
+			description: "Counts executions",
+			parameters: Type.Object({}),
+			execute: async () => {
+				toolRuns++;
+				return { content: [{ type: "text", text: "tool done" }], details: {} };
+			},
+		};
+		// Keep the compaction threshold below the context window but above the budget guard, so the
+		// over-window follow-up request is the deciding check instead of the in-loop threshold check.
+		const { harness } = await createAnthropicBudgetHarness({ tool: countedTool, reserveTokens: 1000 });
+		const scripted = createScriptedFetch([
+			() =>
+				anthropicSse({
+					model: "claude-opus-5-5",
+					inputTokens: 395_000,
+					outputTokens: 100,
+					blocks: [
+						{ type: "text", text: "working" },
+						{ type: "tool_use", id: "toolu_test", name: "counted", input: {} },
+					],
+					stopReason: "tool_use",
+				}),
+			() =>
+				anthropicSse({
+					model: ANTHROPIC_BUDGET_MODEL_ID,
+					inputTokens: 20,
+					outputTokens: 5,
+					blocks: [{ type: "text", text: "overflow compacted" }],
+					stopReason: "end_turn",
+				}),
+			() =>
+				anthropicSse({
+					model: ANTHROPIC_BUDGET_MODEL_ID,
+					inputTokens: 20,
+					outputTokens: 5,
+					blocks: [{ type: "text", text: "turn prefix compacted" }],
+					stopReason: "end_turn",
+				}),
+			() =>
+				anthropicSse({
+					model: "claude-opus-5-5",
+					inputTokens: 30,
+					outputTokens: 5,
+					blocks: [{ type: "text", text: "recovered answer" }],
+					stopReason: "end_turn",
+				}),
+		]);
+		useScriptedAnthropicTransport(harness, scripted.fetch);
+		seedPriorUsage(harness, 285_770);
+
+		await harness.session.prompt("review the plan");
+
+		// Tool-use request, split-turn summaries, then the continuation. The over-window follow-up
+		// request never reaches HTTP, so no request carries a one-token output cap.
+		expect(scripted.requests).toHaveLength(4);
+		const outputCaps = scripted.requests.map((request) => request.max_tokens as number);
+		expect(outputCaps[0]).toBeGreaterThan(1024);
+		expect(outputCaps.at(-1)).toBeGreaterThan(1024);
+		// Summaries use the smaller reserve-derived caps, but no request is degenerately capped.
+		for (const cap of outputCaps) expect(cap).toBeGreaterThan(1);
+		expect(toolRuns).toBe(1);
+		expect(harness.eventsOfType("compaction_start").filter((event) => event.reason === "overflow")).toHaveLength(1);
+		expect(harness.session.getLastAssistantText()).toBe("recovered answer");
+		// Recovery reuses the existing turn: only the seeded question and the user prompt were submitted.
+		const userEntries = harness.sessionManager
+			.getEntries()
+			.filter((entry) => entry.type === "message" && entry.message.role === "user");
+		expect(userEntries).toHaveLength(2);
+	});
+
+	it("recovers a short length stop reported under a trusted response alias", async () => {
+		const { harness } = await createAnthropicBudgetHarness();
+		const scripted = createScriptedFetch([
+			() =>
+				anthropicSse({
+					model: "claude-opus-5-5",
+					inputTokens: 1000,
+					outputTokens: 16,
+					blocks: [{ type: "text", text: "partial answer" }],
+					stopReason: "max_tokens",
+				}),
+			() =>
+				anthropicSse({
+					model: ANTHROPIC_BUDGET_MODEL_ID,
+					inputTokens: 20,
+					outputTokens: 5,
+					blocks: [{ type: "text", text: "overflow compacted" }],
+					stopReason: "end_turn",
+				}),
+			() =>
+				anthropicSse({
+					model: ANTHROPIC_BUDGET_MODEL_ID,
+					inputTokens: 20,
+					outputTokens: 5,
+					blocks: [{ type: "text", text: "turn prefix compacted" }],
+					stopReason: "end_turn",
+				}),
+			() =>
+				anthropicSse({
+					model: "claude-opus-5-5",
+					inputTokens: 30,
+					outputTokens: 5,
+					blocks: [{ type: "text", text: "recovered answer" }],
+					stopReason: "end_turn",
+				}),
+		]);
+		useScriptedAnthropicTransport(harness, scripted.fetch);
+		seedPriorUsage(harness, 1000);
+
+		await harness.session.prompt("continue the task");
+
+		expect(scripted.requests).toHaveLength(4);
+		expect(harness.eventsOfType("compaction_start").filter((event) => event.reason === "overflow")).toHaveLength(1);
+		expect(harness.session.getLastAssistantText()).toBe("recovered answer");
+	});
+
+	it("does not recover a response model that the route does not declare as an alias", async () => {
+		const { harness } = await createAnthropicBudgetHarness({ responseModelAliases: [] });
+		const scripted = createScriptedFetch([
+			() =>
+				anthropicSse({
+					model: "claude-opus-5-5",
+					inputTokens: 1000,
+					outputTokens: 16,
+					blocks: [{ type: "text", text: "partial answer" }],
+					stopReason: "max_tokens",
+				}),
+		]);
+		useScriptedAnthropicTransport(harness, scripted.fetch);
+		seedPriorUsage(harness, 1000);
+
+		await harness.session.prompt("continue the task");
+
+		expect(scripted.requests).toHaveLength(1);
+		expect(harness.eventsOfType("compaction_start")).toHaveLength(0);
+	});
+
+	it("does not recover a length stop reported by an untrusted fallback model", async () => {
+		const { harness } = await createAnthropicBudgetHarness();
+		const scripted = createScriptedFetch([
+			() =>
+				anthropicSse({
+					model: "claude-sonnet-4-6",
+					inputTokens: 1000,
+					outputTokens: 16,
+					blocks: [{ type: "text", text: "partial answer" }],
+					stopReason: "max_tokens",
+				}),
+		]);
+		useScriptedAnthropicTransport(harness, scripted.fetch);
+		seedPriorUsage(harness, 1000);
+
+		await harness.session.prompt("continue the task");
+
+		expect(scripted.requests).toHaveLength(1);
+		expect(harness.eventsOfType("compaction_start")).toHaveLength(0);
+		const last = harness.session.messages.at(-1);
+		expect(last?.role).toBe("assistant");
+		if (last?.role === "assistant") expect(last.stopReason).toBe("length");
 	});
 
 	it("does not trigger threshold compaction below the threshold or when disabled", async () => {

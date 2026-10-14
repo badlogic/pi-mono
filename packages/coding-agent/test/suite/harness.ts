@@ -185,6 +185,7 @@ export async function createHarness(options: HarnessOptions = {}): Promise<Harne
 				cost: registeredModel.cost,
 				contextWindow: registeredModel.contextWindow,
 				maxTokens: registeredModel.maxTokens,
+				responseModelAliases: registeredModel.responseModelAliases,
 				baseUrl: registeredModel.baseUrl,
 			})),
 		});

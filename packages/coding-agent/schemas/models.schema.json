@@ -108,6 +108,14 @@
                     "type": "number",
                     "exclusiveMinimum": 0
                   },
+                  "responseModelAliases": {
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "description": "Provider-reported model names that identify this same route when a provider or gateway renames the model it was asked for."
+                  },
                   "samplingParams": {
                     "type": "object",
                     "patternProperties": {
@@ -272,6 +280,14 @@
                     "maxTokens": {
                       "type": "number",
                       "exclusiveMinimum": 0
+                    },
+                    "responseModelAliases": {
+                      "type": "array",
+                      "items": {
+                        "type": "string",
+                        "minLength": 1
+                      },
+                      "description": "Provider-reported model names that identify this same route when a provider or gateway renames the model it was asked for."
                     },
                     "samplingParams": {
                       "type": "object",

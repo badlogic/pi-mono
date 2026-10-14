@@ -68,6 +68,7 @@ export interface ProviderChatModelConfig extends ProviderModelConfigBase {
 	promptCache?: Model<Api>["promptCache"];
 	contextWindow: number;
 	maxTokens: number;
+	responseModelAliases?: Model<Api>["responseModelAliases"];
 	samplingParams?: Model<Api>["samplingParams"];
 	samplingParamsByThinkingLevel?: Model<Api>["samplingParamsByThinkingLevel"];
 	compat?: Model<Api>["compat"];
@@ -196,6 +197,7 @@ function applyModelOverride(model: Model<Api>, override: ModelsJsonModelOverride
 		promptCache: override.promptCache ? { ...model.promptCache, ...override.promptCache } : model.promptCache,
 		contextWindow: override.contextWindow ?? model.contextWindow,
 		maxTokens: override.maxTokens ?? model.maxTokens,
+		responseModelAliases: override.responseModelAliases ?? model.responseModelAliases,
 		samplingParams: override.samplingParams
 			? { ...model.samplingParams, ...override.samplingParams }
 			: model.samplingParams,
@@ -241,6 +243,7 @@ function modelFromJson(
 		promptCache: definition.promptCache,
 		contextWindow: definition.contextWindow ?? 128000,
 		maxTokens: definition.maxTokens ?? 16384,
+		responseModelAliases: definition.responseModelAliases,
 		samplingParams: definition.samplingParams,
 		samplingParamsByThinkingLevel: definition.samplingParamsByThinkingLevel,
 		headers: undefined,

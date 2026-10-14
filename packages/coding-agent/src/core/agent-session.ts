@@ -49,6 +49,7 @@ import {
 	getSupportedThinkingLevels,
 	isContextOverflow,
 	isRecoverableLength,
+	isResponseFromModel,
 	isRetryableAssistantError,
 	modelsAreEqual,
 	type RetryCallbacks,
@@ -615,8 +616,12 @@ export class AgentSession {
 	 */
 	private _modelForMessage(message: AssistantMessage): Model<any> | undefined {
 		const model = this.model;
-		if (model && isVirtualModel(model)) return this._modelRuntime.getPhysicalModel(message.provider, message.model);
-		return model?.provider === message.provider && model.id === message.model ? model : undefined;
+		if (!model) return undefined;
+		if (isVirtualModel(model)) {
+			const physical = this._modelRuntime.getPhysicalModel(message.provider, message.model);
+			return physical && isResponseFromModel(physical, message) ? physical : undefined;
+		}
+		return isResponseFromModel(model, message) ? model : undefined;
 	}
 
 	/**
