@@ -1,6 +1,8 @@
 import { clampThinkingLevel } from "../models.ts";
 import type {
 	Api,
+	AssistantMessage,
+	AssistantMessageEventStream,
 	Model,
 	ModelThinkingLevel,
 	SamplingParams,
@@ -11,14 +13,102 @@ import type {
 	TranscriptContext,
 } from "../types.ts";
 import { estimateContextTokens } from "../utils/estimate.ts";
+import { AssistantMessageEventStream as AssistantMessageEventStreamImpl } from "../utils/event-stream.ts";
 
 const CONTEXT_SAFETY_TOKENS = 4096;
 const MIN_MAX_TOKENS = 1;
 
+/** Estimated context usage and the response room left by the configured context window. */
+export interface ContextOutputBudget {
+	/** Estimated input tokens for the next request. */
+	estimatedContextTokens: number;
+	/**
+	 * Context window minus the estimate and the safety margin. This is the real budget before the
+	 * `clampMaxTokensToContext` floor, so it can be zero or negative. Infinity when the window is unknown.
+	 */
+	availableResponseTokens: number;
+}
+
+/**
+ * Resolve the estimated context and usable response budget for one request.
+ *
+ * The estimate is a protective local bound, not proof of the provider's actual ceiling, so a
+ * fixed safety margin is subtracted from the configured window.
+ */
+export function resolveContextOutputBudget(model: Model<Api>, context: TranscriptContext): ContextOutputBudget {
+	const estimatedContextTokens = estimateContextTokens(context).tokens;
+	if (model.contextWindow <= 0) {
+		return { estimatedContextTokens, availableResponseTokens: Number.POSITIVE_INFINITY };
+	}
+	return {
+		estimatedContextTokens,
+		availableResponseTokens: model.contextWindow - estimatedContextTokens - CONTEXT_SAFETY_TOKENS,
+	};
+}
+
 export function clampMaxTokensToContext(model: Model<Api>, context: TranscriptContext, maxTokens: number): number {
 	if (model.contextWindow <= 0) return Math.max(MIN_MAX_TOKENS, maxTokens);
-	const available = model.contextWindow - estimateContextTokens(context).tokens - CONTEXT_SAFETY_TOKENS;
-	return Math.min(maxTokens, Math.max(MIN_MAX_TOKENS, available));
+	const { availableResponseTokens } = resolveContextOutputBudget(model, context);
+	return Math.min(maxTokens, Math.max(MIN_MAX_TOKENS, availableResponseTokens));
+}
+
+/**
+ * Why a provider request cannot be made, or undefined when the context window leaves enough room.
+ *
+ * A request must still reserve `MIN_ANSWER_TOKENS` of answer room, or the caller's own cap when it
+ * is smaller. Providers that share the response ceiling with a thinking budget clamp that budget
+ * down to this answer floor, so the check is the same with or without thinking enabled.
+ */
+export function contextOutputBudgetFailure(
+	model: Model<Api>,
+	context: TranscriptContext,
+	options?: { maxTokens?: number },
+): string | undefined {
+	const budget = resolveContextOutputBudget(model, context);
+	if (!Number.isFinite(budget.availableResponseTokens)) return undefined;
+	const desiredMaxTokens = options?.maxTokens ?? model.maxTokens;
+	const required = Math.min(Math.max(desiredMaxTokens, 1), MIN_ANSWER_TOKENS);
+	if (budget.availableResponseTokens >= required) return undefined;
+	const room =
+		budget.availableResponseTokens > 0
+			? `only ${budget.availableResponseTokens} output tokens remain`
+			: `the estimated input exceeds the ${model.contextWindow}-token window by ${-budget.availableResponseTokens} tokens`;
+	return `Context length exceeded for ${model.id}: ${budget.estimatedContextTokens} estimated input tokens, ${room}; at least ${required} output tokens are required.`;
+}
+
+/**
+ * A pre-failed assistant stream for an unusable context budget. The message is a normal assistant
+ * error so `message_end` and the compaction recovery path still run; no provider request is made.
+ */
+export function contextOutputBudgetFailureStream(
+	model: Model<Api>,
+	context: TranscriptContext,
+	options?: { maxTokens?: number },
+): AssistantMessageEventStream | undefined {
+	const errorMessage = contextOutputBudgetFailure(model, context, options);
+	if (!errorMessage) return undefined;
+	const message: AssistantMessage = {
+		role: "assistant",
+		content: [],
+		api: model.api,
+		provider: model.provider,
+		model: model.id,
+		usage: {
+			input: 0,
+			output: 0,
+			cacheRead: 0,
+			cacheWrite: 0,
+			totalTokens: 0,
+			cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+		},
+		stopReason: "error",
+		errorMessage,
+		timestamp: Date.now(),
+	};
+	const stream = new AssistantMessageEventStreamImpl();
+	stream.push({ type: "error", reason: "error", error: message });
+	stream.end(message);
+	return stream;
 }
 
 export function resolveSamplingParams(

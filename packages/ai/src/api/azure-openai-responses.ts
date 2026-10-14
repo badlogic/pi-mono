@@ -12,7 +12,7 @@ import { type AzureEndpointOptions, resolveAzureConfig, resolveDeploymentName } 
 import { createGrammarToolInputProperties } from "./constrained-sampling.ts";
 import { clampOpenAIPromptCacheKey } from "./openai-prompt-cache.ts";
 import { convertResponsesMessages, convertResponsesTools, processResponsesStream } from "./openai-responses-shared.ts";
-import { buildBaseOptions, resolveSamplingParams } from "./simple-options.ts";
+import { buildBaseOptions, contextOutputBudgetFailureStream, resolveSamplingParams } from "./simple-options.ts";
 
 const AZURE_TOOL_CALL_PROVIDERS = new Set(["openai", "openai-codex", "opencode", "azure"]);
 // OpenAI Responses rejects max_output_tokens below 16: https://github.com/earendil-works/pi/issues/6265
@@ -138,6 +138,10 @@ export const streamSimple: StreamFunction<"azure-openai-responses", SimpleStream
 	if (!apiKey) {
 		throw new Error(`No API key for provider: ${model.provider}`);
 	}
+
+	// Fail before network I/O instead of clamping the output cap to a token or two.
+	const budgetFailure = contextOutputBudgetFailureStream(model, context, options);
+	if (budgetFailure) return budgetFailure;
 
 	const base = {
 		...buildBaseOptions(model, context, options, apiKey),

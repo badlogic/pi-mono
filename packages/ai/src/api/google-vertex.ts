@@ -46,7 +46,7 @@ import {
 	toGoogleThinkingLevel,
 	usesGoogleThinkingLevel,
 } from "./google-shared.ts";
-import { buildBaseOptions } from "./simple-options.ts";
+import { buildBaseOptions, contextOutputBudgetFailureStream } from "./simple-options.ts";
 
 export interface GoogleVertexOptions extends StreamOptions {
 	toolChoice?: "auto" | "none" | "any";
@@ -315,6 +315,10 @@ export const streamSimple: StreamFunction<"google-vertex", SimpleStreamOptions> 
 	context: TranscriptContext,
 	options?: SimpleStreamOptions,
 ): AssistantMessageEventStream => {
+	// Fail before network I/O instead of clamping the output cap to a token or two.
+	const budgetFailure = contextOutputBudgetFailureStream(model, context, options);
+	if (budgetFailure) return budgetFailure;
+
 	const base = {
 		...buildBaseOptions(model, context, options, undefined),
 		toolChoice: options?.toolChoice,

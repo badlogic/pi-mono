@@ -59,7 +59,12 @@ import {
 	type UnsupportedStrictSchemaKeywordCheck,
 } from "./constrained-sampling.ts";
 import { buildCopilotDynamicHeaders, hasCopilotVisionInput } from "./github-copilot-headers.ts";
-import { adjustMaxTokensForThinking, buildBaseOptions, clampMaxTokensToContext } from "./simple-options.ts";
+import {
+	adjustMaxTokensForThinking,
+	buildBaseOptions,
+	clampMaxTokensToContext,
+	contextOutputBudgetFailureStream,
+} from "./simple-options.ts";
 import { transformMessages } from "./transform-messages.ts";
 
 /**
@@ -966,6 +971,10 @@ export const streamSimple: StreamFunction<"anthropic-messages", SimpleStreamOpti
 	if (!getAnthropicFederation(model, options?.apiKey, options?.headers, options?.env)) {
 		assertRequestAuth(model.provider, options?.apiKey, options?.headers);
 	}
+
+	// Fail before network I/O instead of clamping the output cap to a token or two.
+	const budgetFailure = contextOutputBudgetFailureStream(model, context, options);
+	if (budgetFailure) return budgetFailure;
 
 	const base = {
 		...buildBaseOptions(model, context, options, options?.apiKey),

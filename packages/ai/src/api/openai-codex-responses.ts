@@ -43,7 +43,7 @@ import { uuidv7 } from "../utils/uuid.ts";
 import { createGrammarToolInputProperties } from "./constrained-sampling.ts";
 import { clampOpenAIPromptCacheKey } from "./openai-prompt-cache.ts";
 import { convertResponsesMessages, convertResponsesTools, processResponsesStream } from "./openai-responses-shared.ts";
-import { buildBaseOptions } from "./simple-options.ts";
+import { buildBaseOptions, contextOutputBudgetFailureStream } from "./simple-options.ts";
 
 // ============================================================================
 // Configuration
@@ -507,6 +507,10 @@ export const streamSimple: StreamFunction<"openai-codex-responses", SimpleStream
 	if (!apiKey) {
 		throw new Error(`No API key for provider: ${model.provider}`);
 	}
+
+	// Fail before network I/O instead of clamping the output cap to a token or two.
+	const budgetFailure = contextOutputBudgetFailureStream(model, context, options);
+	if (budgetFailure) return budgetFailure;
 
 	const base = {
 		...buildBaseOptions(model, context, options, apiKey),

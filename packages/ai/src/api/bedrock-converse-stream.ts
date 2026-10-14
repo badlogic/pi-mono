@@ -71,6 +71,7 @@ import {
 	buildBaseOptions,
 	clampMaxTokensToContext,
 	clampReasoning,
+	contextOutputBudgetFailureStream,
 } from "./simple-options.ts";
 import { transformMessages } from "./transform-messages.ts";
 
@@ -533,6 +534,10 @@ export const streamSimple: StreamFunction<"bedrock-converse-stream", SimpleStrea
 	context: TranscriptContext,
 	options?: SimpleStreamOptions,
 ): AssistantMessageEventStream => {
+	// Fail before network I/O instead of clamping the output cap to a token or two.
+	const budgetFailure = contextOutputBudgetFailureStream(model, context, options);
+	if (budgetFailure) return budgetFailure;
+
 	const base = {
 		...buildBaseOptions(model, context, options, undefined),
 		toolChoice: options?.toolChoice,

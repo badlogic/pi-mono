@@ -106,6 +106,28 @@ describe("provider retry classification", () => {
 		expect(isRetryableAssistantError(fauxAssistantMessage("", { stopReason: "error", errorMessage }))).toBe(true);
 	});
 
+	it("keeps context overflow errors non-retryable", () => {
+		expect(
+			isRetryableAssistantError(
+				fauxAssistantMessage("", {
+					stopReason: "error",
+					errorMessage: "prompt is too long: 213462 tokens > 200000 maximum",
+				}),
+			),
+		).toBe(false);
+		// The pre-provider budget failure must not be retried by summarization calls either, even
+		// though its token counts can contain digit sequences like "500".
+		expect(
+			isRetryableAssistantError(
+				fauxAssistantMessage("", {
+					stopReason: "error",
+					errorMessage:
+						"Context length exceeded for claude-opus-5-5@default: 500123 estimated input tokens, the estimated input exceeds the 400000-token window by 100127 tokens; at least 1024 output tokens are required.",
+				}),
+			),
+		).toBe(false);
+	});
+
 	it("classifies assistant error messages", () => {
 		expect(
 			isRetryableAssistantError(fauxAssistantMessage("", { stopReason: "error", errorMessage: "overloaded_error" })),

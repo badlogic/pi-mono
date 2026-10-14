@@ -65,6 +65,7 @@ import { clampOpenAIPromptCacheKey } from "./openai-prompt-cache.ts";
 import {
 	buildBaseOptions,
 	clampThinkingBudgetToAnswerRoom,
+	contextOutputBudgetFailureStream,
 	resolveSamplingParams,
 	thinkingBudgetForLevel,
 } from "./simple-options.ts";
@@ -741,6 +742,10 @@ export const streamSimple: StreamFunction<"openai-completions", SimpleStreamOpti
 	options?: SimpleStreamOptions,
 ): AssistantMessageEventStream => {
 	getClientApiKey(model.provider, options?.apiKey, options?.headers);
+
+	// Fail before network I/O instead of clamping the output cap to a token or two.
+	const budgetFailure = contextOutputBudgetFailureStream(model, context, options);
+	if (budgetFailure) return budgetFailure;
 
 	const base = {
 		...buildBaseOptions(model, context, options, options?.apiKey),

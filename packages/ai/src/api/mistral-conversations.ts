@@ -23,7 +23,7 @@ import { sanitizeSurrogates } from "../utils/sanitize-unicode.ts";
 import { getSystemMessageText, renderSystemMessageUpdate } from "../utils/text.ts";
 import { getCurrentTools, resolveTranscript } from "../utils/transcript.ts";
 import { getJsonSchemaToolParameters, resolveJsonSchemaStrictSampling } from "./constrained-sampling.ts";
-import { buildBaseOptions } from "./simple-options.ts";
+import { buildBaseOptions, contextOutputBudgetFailureStream } from "./simple-options.ts";
 import { transformMessages } from "./transform-messages.ts";
 
 const MISTRAL_TOOL_CALL_ID_LENGTH = 9;
@@ -193,6 +193,10 @@ export const streamSimple: StreamFunction<"mistral-conversations", SimpleStreamO
 	if (!apiKey) {
 		throw new Error(`No API key for provider: ${model.provider}`);
 	}
+
+	// Fail before network I/O instead of clamping the output cap to a token or two.
+	const budgetFailure = contextOutputBudgetFailureStream(model, context, options);
+	if (budgetFailure) return budgetFailure;
 
 	const base = {
 		...buildBaseOptions(model, context, options, apiKey),

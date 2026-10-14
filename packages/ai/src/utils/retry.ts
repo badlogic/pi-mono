@@ -1,4 +1,5 @@
 import type { AssistantMessage } from "../types.ts";
+import { isContextOverflow } from "./overflow.ts";
 
 function buildProviderErrorPattern(patterns: readonly string[]): RegExp {
 	return new RegExp(patterns.join("|"), "i");
@@ -255,6 +256,9 @@ export async function retryAssistantCall(
  */
 export function isRetryableAssistantError(message: AssistantMessage): boolean {
 	if (message.stopReason !== "error" || !message.errorMessage) return false;
+	// Context overflow is recovered by compaction, not by retrying the same request. Provider
+	// overflow wording can also contain digit sequences that resemble transient HTTP statuses.
+	if (isContextOverflow(message)) return false;
 	const errorMessage = message.errorMessage;
 	if (NON_RETRYABLE_PROVIDER_LIMIT_ERROR_PATTERN.test(errorMessage)) return false;
 	return RETRYABLE_PROVIDER_ERROR_PATTERN.test(errorMessage);

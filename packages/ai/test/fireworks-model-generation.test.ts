@@ -29,7 +29,14 @@ function generateFireworksModels(
 			models: Object.fromEntries(
 				Object.entries(options).map(([id, reasoning_options]) => [
 					`accounts/fireworks/models/${id}`,
-					{ id, tool_call: true, reasoning: true, reasoning_options },
+					{
+						id,
+						tool_call: true,
+						reasoning: true,
+						reasoning_options,
+						// Realistic limits so the context budget guard does not preempt the payload checks.
+						limit: { context: 200_000, output: 32_000 },
+					},
 				]),
 			),
 		},
