@@ -1,5 +1,6 @@
 import type { SqliteDatabase, SqliteExecutor, SqliteValue } from "./database.ts";
-import { SqliteStorage } from "./storage.ts";
+import { validateSqliteSchemaPrefix } from "./schema.ts";
+import { SqliteStorage, type SqliteStorageOptions } from "./storage.ts";
 
 /** Values a Durable Object SQL binding accepts and returns. */
 type DurableObjectSqlValue = ArrayBuffer | string | number | null;
@@ -10,20 +11,62 @@ type DurableObjectSqlValue = ArrayBuffer | string | number | null;
  */
 export type DurableObjectSqliteStorage = {
 	readonly sql: {
-		exec(query: string, ...bindings: DurableObjectSqlValue[]): { toArray(): Record<string, DurableObjectSqlValue>[] };
+		exec(
+			query: string,
+			...bindings: DurableObjectSqlValue[]
+		): {
+			next():
+				| { readonly done?: false; readonly value: Record<string, DurableObjectSqlValue> }
+				| { readonly done: true; readonly value?: undefined };
+			toArray(): Record<string, DurableObjectSqlValue>[];
+		};
 	};
 	transaction<T>(closure: () => Promise<T>): Promise<T>;
 };
 
-/** Runs operations one at a time in call order, so a transaction excludes every other operation. */
+/** SQLite storage options. Durable Objects additionally reserve prefixes beginning with `_cf_`. */
+export type DurableObjectSqliteStorageOptions = SqliteStorageOptions;
+
+/** Runs synchronous operations immediately when idle and holds queued calls behind a transaction. */
 class SerialQueue {
-	private tail: Promise<unknown> = Promise.resolve();
+	private tail: Promise<void> = Promise.resolve();
+	private pending = 0;
 
 	run<T>(operation: () => T | Promise<T>): Promise<T> {
-		const result = this.tail.then(operation);
-		this.tail = result.catch(() => {});
+		if (this.pending > 0) return this.enqueue(operation);
+		try {
+			return Promise.resolve(operation());
+		} catch (error) {
+			return Promise.reject(error);
+		}
+	}
+
+	hold<T>(operation: () => Promise<T>): Promise<T> {
+		return this.enqueue(operation);
+	}
+
+	private enqueue<T>(operation: () => T | Promise<T>): Promise<T> {
+		this.pending++;
+		const result = this.tail.then(operation).finally(() => {
+			this.pending--;
+		});
+		this.tail = result.then(
+			() => {},
+			() => {},
+		);
 		return result;
 	}
+}
+
+const storageQueues = new WeakMap<DurableObjectSqliteStorage, SerialQueue>();
+
+function queueFor(storage: DurableObjectSqliteStorage): SerialQueue {
+	let queue = storageQueues.get(storage);
+	if (queue === undefined) {
+		queue = new SerialQueue();
+		storageQueues.set(storage, queue);
+	}
+	return queue;
 }
 
 /** Durable Object SQL binds numbers as doubles: a `bigint` outside the safe integer range would lose precision. */
@@ -38,15 +81,13 @@ function bindValue(value: SqliteValue): DurableObjectSqlValue {
 
 const bind = (params: readonly SqliteValue[]): DurableObjectSqlValue[] => params.map(bindValue);
 
-/** Rows as returned, with `BLOB` columns converted to `Uint8Array` in place; no other copy is made. */
-function rows<T>(rows: Record<string, DurableObjectSqlValue>[]): T[] {
-	for (const row of rows) {
-		for (const key in row) {
-			const value = row[key];
-			if (value instanceof ArrayBuffer) (row as Record<string, unknown>)[key] = new Uint8Array(value);
-		}
+/** A row as returned, with `BLOB` columns converted to `Uint8Array` in place; no other copy is made. */
+function row<T>(row: Record<string, DurableObjectSqlValue>): T {
+	for (const key in row) {
+		const value = row[key];
+		if (value instanceof ArrayBuffer) (row as Record<string, unknown>)[key] = new Uint8Array(value);
 	}
-	return rows as T[];
+	return row as T;
 }
 
 /** Executes SQL through `ctx.storage.sql`, which has no separate prepare step. */
@@ -69,12 +110,16 @@ class DurableObjectSqliteExecutor implements SqliteExecutor {
 
 	async get<T extends object>(sql: string, ...params: SqliteValue[]): Promise<T | undefined> {
 		this.check();
-		return rows<T>(this.storage.sql.exec(sql, ...bind(params)).toArray())[0];
+		const result = this.storage.sql.exec(sql, ...bind(params)).next();
+		return result.done ? undefined : row<T>(result.value);
 	}
 
 	async all<T extends object>(sql: string, ...params: SqliteValue[]): Promise<T[]> {
 		this.check();
-		return rows<T>(this.storage.sql.exec(sql, ...bind(params)).toArray());
+		return this.storage.sql
+			.exec(sql, ...bind(params))
+			.toArray()
+			.map((value) => row<T>(value));
 	}
 
 	/** Throws when this handle may no longer run SQL. */
@@ -95,7 +140,12 @@ class DurableObjectSqliteTransaction extends DurableObjectSqliteExecutor {
  * binding a `bigint` outside the safe integer range throws.
  */
 export class DurableObjectSqliteDatabase extends DurableObjectSqliteExecutor implements SqliteDatabase {
-	private readonly queue = new SerialQueue();
+	private readonly queue: SerialQueue;
+
+	constructor(storage: DurableObjectSqliteStorage) {
+		super(storage);
+		this.queue = queueFor(storage);
+	}
 
 	override exec(sql: string): Promise<void> {
 		return this.queue.run(() => super.exec(sql));
@@ -115,7 +165,7 @@ export class DurableObjectSqliteDatabase extends DurableObjectSqliteExecutor imp
 
 	/** `ctx.storage.transaction()` commits when the callback resolves and rolls back when it rejects. */
 	transaction<T>(callback: (transaction: SqliteExecutor) => Promise<T>): Promise<T> {
-		return this.queue.run(() =>
+		return this.queue.hold(() =>
 			this.storage.transaction(async () => {
 				const transaction = new DurableObjectSqliteTransaction(this.storage);
 				try {
@@ -133,7 +183,16 @@ export class DurableObjectSqliteDatabase extends DurableObjectSqliteExecutor imp
 	}
 }
 
-/** Open durable storage on a SQLite-backed Durable Object's `ctx.storage`. */
-export function openDurableObjectSqliteStorage(storage: DurableObjectSqliteStorage): Promise<SqliteStorage> {
-	return SqliteStorage.open(new DurableObjectSqliteDatabase(storage));
+/** Open durable storage on a SQLite-backed Durable Object's `ctx.storage`, optionally under a table prefix. */
+export function openDurableObjectSqliteStorage(
+	storage: DurableObjectSqliteStorage,
+	options: DurableObjectSqliteStorageOptions = {},
+): Promise<SqliteStorage> {
+	if (options.prefix !== undefined) {
+		validateSqliteSchemaPrefix(options.prefix);
+		if (options.prefix.toLowerCase().startsWith("_cf_")) {
+			throw new Error(`Durable Object SQLite prefix ${JSON.stringify(options.prefix)} is reserved`);
+		}
+	}
+	return SqliteStorage.open(new DurableObjectSqliteDatabase(storage), options);
 }

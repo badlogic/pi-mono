@@ -5,4 +5,4 @@ export {
 	SQLITE_MIGRATIONS,
 	type SqliteMigration,
 } from "./migrations.ts";
-export { SqliteStorage } from "./storage.ts";
+export { SqliteStorage, type SqliteStorageOptions } from "./storage.ts";
