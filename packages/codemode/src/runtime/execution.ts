@@ -14,8 +14,8 @@
  *    results go back through {@link VmChannel.post}. Replies produced before the launcher has
  *    returned its channel are queued and flushed when it arrives.
  * 3. The first terminal event wins: `done`, `crash`, a launcher failure, the deadline, or an abort.
- *    `finish()` aborts pending tool calls, stops the channel, and resolves the result once the
- *    channel reports it stopped. Later events are ignored.
+ *    `finish()` aborts pending tool calls, asks the channel to stop, and resolves the result once
+ *    that request completes. A worker or remote VM may exit later. Later events are ignored.
  *
  * The launcher, not this class, is responsible for actually stopping a running VM: a worker is
  * terminated, an in-thread VM is interrupted and disposed, and a remote VM is told to stop at its
@@ -71,7 +71,7 @@ export interface VmEvents {
 /** The host's handle on a running VM. */
 export interface VmChannel {
 	post(message: HostToWorkerMessage): void;
-	/** Stops the VM. Called once, after the execution has its result. */
+	/** Requests VM shutdown. Called once; may resolve before a worker or remote VM actually exits. */
 	stop(): Promise<void>;
 }
 

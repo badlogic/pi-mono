@@ -3,16 +3,17 @@ import { Type } from "typebox";
 import { describe, it } from "vitest";
 import {
 	type Ctx,
-	cell,
 	createHost,
 	type Frame,
 	type Host,
+	type IpcChannel,
+	ipcLink,
 	isChordError,
 	memoryLinkPair,
 	method,
+	PROTOCOL_VERSION,
 	type Principal,
 	remote,
-	resource,
 	type StateEvent,
 } from "../src/index.ts";
 import { Packed, unpack } from "../src/link.ts";
@@ -28,25 +29,25 @@ const Counter = remote("t.counter", {
 			state: { count: Type.Object({ n: Type.Number() }) },
 			methods: {
 				add: method(Type.Number(), Type.Number()),
-				who: method(Type.Null(), Type.Unknown()),
+				who: method(undefined, Type.Unknown()),
 			},
 		},
 	},
 });
 
-/** Serves Counter and records the principal of every record it creates. */
+/** Serves Counter and records the principal of every object it creates. */
 function serveCounter(host: Host, principals: unknown[] = []) {
 	host.serve(Counter, (_input, principal, self) => {
 		principals.push(principal);
-		const state = self.state({ count: cell(Type.Object({ n: Type.Number() }), { n: 0 }) });
+		const count = self.state("count", Type.Object({ n: Type.Number() }), { n: 0 });
 		return {
-			kind: "main",
-			count: state.count,
+			variant: "main",
+			count,
 			add: (delta, ctx) => {
-				state.count.change(ctx, (draft) => {
+				count.change(ctx, (draft) => {
 					draft.n += delta;
 				});
-				return state.count.value.n;
+				return count.value.n;
 			},
 			who: () => principal,
 		};
@@ -71,8 +72,8 @@ describe("links: calls and state across hosts", () => {
 		const result = await worker.root(async (ctx) => {
 			const counter = ctx.get(Counter, { name: "c" }, { at: "server" });
 			await counter.ready;
-			assert.equal(counter.kind, "main");
-			return [await counter.add(2, ctx), await counter.who(null, ctx)];
+			assert.equal(counter.variant, "main");
+			return [await counter.add(2, ctx), await counter.who(ctx)];
 		});
 		assert.deepEqual(result, [2, { worker: "session:S1" }]);
 		assert.deepEqual(principals, [{ worker: "session:S1" }]);
@@ -151,14 +152,14 @@ function cluster(options: { pingInterval?: number; pingTimeout?: number } = {}):
 				upstreamOptions: options,
 				onError: () => {},
 			});
-			const handle = { host, up, reconnect: () => {} };
-			handle.reconnect = () => {
+			const ref = { host, up, reconnect: () => {} };
+			ref.reconnect = () => {
 				const [nextDown, nextUp] = memoryLinkPair();
 				server.accept(nextDown, { principal });
-				handle.up = nextUp;
+				ref.up = nextUp;
 				host.connect(nextUp);
 			};
-			return handle;
+			return ref;
 		},
 	};
 	server.route("session:", {
@@ -167,22 +168,20 @@ function cluster(options: { pingInterval?: number; pingTimeout?: number } = {}):
 			const [down, up] = memoryLinkPair();
 			const worker = createHost({ name, upstream: up, upstreamOptions: options, onError: () => {} });
 			worker.serve(Counter, (input, principal, self) => {
-				self.resources({
-					probe: resource({
-						rev: 1,
-						open: () => void log.push(`open ${input.name}`),
-						close: () => void log.push(`close ${input.name}`),
-					}),
+				self.resource("probe", {
+					version: 1,
+					open: () => void log.push(`open ${input.name}`),
+					close: () => void log.push(`close ${input.name}`),
 				});
-				const counter = self.state({ count: cell(Type.Object({ n: Type.Number() }), { n: 0 }) });
+				const count = self.state("count", Type.Object({ n: Type.Number() }), { n: 0 });
 				return {
-					kind: "main",
-					count: counter.count,
+					variant: "main",
+					count,
 					add: (delta: number, ctx: Ctx) => {
-						counter.count.change(ctx, (draft) => {
+						count.change(ctx, (draft) => {
 							draft.n += delta;
 						});
-						return counter.count.value.n;
+						return count.value.n;
 					},
 					who: () => principal,
 				};
@@ -201,7 +200,7 @@ describe("links: relay, stamping, lifetime", () => {
 		const browser = c.browser(guest);
 		const counter = browser.host.get(Counter, { name: "a" }, { at: "session:S1" });
 		assert.equal(await counter.add(3), 3);
-		assert.deepEqual(await counter.who(null), guest);
+		assert.deepEqual(await counter.who(), guest);
 		const values: unknown[] = [];
 		counter.count.subscribe((value) => values.push(value));
 		await counter.add(1);
@@ -216,7 +215,7 @@ describe("links: relay, stamping, lifetime", () => {
 		c.server.accept(down, { principal: guest });
 		const frames: Frame[] = [];
 		raw.receive((frame) => frames.push(frame));
-		raw.send({ t: "hello", name: "raw", kind: "client", epoch: 0 });
+		raw.send({ t: "hello", protocol: PROTOCOL_VERSION, name: "raw", kind: "client", codeVersion: 0 });
 		raw.send({
 			t: "hold",
 			id: 1,
@@ -316,10 +315,10 @@ describe("links: relay, stamping, lifetime", () => {
 		const CounterV2 = remote("t.counter", {
 			version: 2,
 			input: Type.Object({ name: Type.String() }),
-			variants: { main: { methods: { inc: method(Type.Null(), Type.Number()) } } },
+			variants: { main: { methods: { inc: method(undefined, Type.Number()) } } },
 		});
 		const { server, worker } = serverWithWorker();
-		server.serve(CounterV2, () => ({ kind: "main", inc: () => 1 }));
+		server.serve(CounterV2, () => ({ variant: "main", inc: () => 1 }));
 		await assert.rejects(worker.get(Counter, { name: "x" }, { at: "server" }).ready, (error) =>
 			isChordError(error, "contract_mismatch"),
 		);
@@ -337,13 +336,13 @@ describe("links: relay, stamping, lifetime", () => {
 		const counter = browser.host.get(Counter, { name: "a" }, { at: "session:S1" });
 		await counter.add(1);
 		await c.server.invalidatePrincipal({ guest: "g1" });
-		// The relay under the old principal is closed at once; the worker disposes its record after.
+		// The relay under the old principal is closed at once; the worker disposes its object after.
 		for (let i = 0; i < 20 && counter.status !== "gone"; i++) await tick();
 		assert.equal(counter.status, "gone");
 		for (let i = 0; i < 20 && !c.log.includes("close a"); i++) await tick();
 		assert.ok(c.log.includes("close a"));
 		const again = browser.host.get(Counter, { name: "a" }, { at: "session:S1" });
-		assert.deepEqual(await again.who(null), { guest: "g1", revision: 2 });
+		assert.deepEqual(await again.who(), { guest: "g1", revision: 2 });
 	});
 
 	it("after a reconnect, state subscribers get a reset and calls work again", async () => {
@@ -360,7 +359,7 @@ describe("links: relay, stamping, lifetime", () => {
 		browser.reconnect();
 		assert.equal(await counter.add(1), 1);
 		await tick();
-		// The old hold was released with the link, so the worker made a fresh record; the reset carries its value.
+		// The old hold was released with the link, so the worker made a fresh object; the reset carries its value.
 		assert.deepEqual(counter.count.value, { n: 1 });
 		assert.ok(events.filter((type) => type === "reset").length >= 2);
 	});
@@ -380,6 +379,114 @@ const Big = remote("t.big", {
 /** About 160,000 characters of JSON: above PACK_THRESHOLD. */
 const large = (tag: string) => Array.from({ length: 40 }, (_, i) => `${tag}${i}:${"x".repeat(4000)}`);
 
+describe("links: methods without arguments or result", () => {
+	it("travel without args and without a value, and resolve to the result or undefined", async () => {
+		const Tool = remote("t.tool", {
+			version: 1,
+			input: Type.Object({}),
+			variants: {
+				main: { methods: { ping: method(), count: method(undefined, Type.Number()), note: method(Type.String()) } },
+			},
+		});
+		const server = createHost({ name: "server", onError: () => {} });
+		const notes: string[] = [];
+		server.serve(Tool, () => ({
+			variant: "main",
+			ping: () => {},
+			count: () => 2,
+			note: (text) => {
+				notes.push(text);
+				return "dropped" as never;
+			},
+		}));
+		const [down, up] = memoryLinkPair();
+		server.accept(down, { principal: { guest: "g" } });
+		const sent: Frame[] = [];
+		const send = up.send.bind(up);
+		up.send = (frame) => {
+			sent.push(frame);
+			return send(frame);
+		};
+		const browser = createHost({ name: "browser", kind: "client", upstream: up, onError: () => {} });
+		const tool = browser.get(Tool, {}, { at: "server" });
+		await tool.ready;
+		assert.equal(await tool.ping(), undefined);
+		assert.equal(await tool.count(), 2);
+		assert.equal(await tool.note("hi"), undefined);
+		assert.deepEqual(notes, ["hi"]);
+		const calls = sent.filter((frame) => frame.t === "call");
+		assert.deepEqual(
+			calls.map((frame) => (frame.t === "call" ? "args" in frame && frame.args !== undefined : undefined)),
+			[false, false, true],
+		);
+	});
+});
+
+describe("links: protocol version", () => {
+	const mismatches = () => {
+		const seen: { local: number; peer: number | undefined }[] = [];
+		return {
+			seen,
+			onProtocolMismatch: (versions: { local: number; peer: number | undefined }) => seen.push(versions),
+		};
+	};
+
+	it("a peer without a protocol version (an old client) is told and dropped; nothing it sends is served", async () => {
+		const server = createHost({ name: "server", onError: () => {} });
+		serveCounter(server);
+		const accepted = mismatches();
+		const [down, raw] = memoryLinkPair();
+		server.accept(down, { principal: { guest: "g" }, onProtocolMismatch: accepted.onProtocolMismatch });
+		const frames: Frame[] = [];
+		let closed: string | undefined;
+		raw.receive((frame) => frames.push(frame));
+		raw.onClose((reason) => {
+			closed = reason;
+		});
+		raw.send({ t: "hello", name: "old", kind: "client", codeVersion: 0 });
+		raw.send({ t: "hold", id: 1, at: "server", token: Counter.description, input: { name: "c" } });
+		await tick();
+		assert.deepEqual(accepted.seen, [{ local: PROTOCOL_VERSION, peer: 1 }]);
+		assert.equal(closed, `protocol-version ${PROTOCOL_VERSION}`);
+		assert.equal(down.closed, true);
+		assert(!frames.some((frame) => frame.t === "shape"), "the old client's hold was not served");
+	});
+
+	it("a client learns that its server speaks another version, and stops", async () => {
+		const client = mismatches();
+		const [down, up] = memoryLinkPair();
+		const browser = createHost({ name: "browser", kind: "client", onError: () => {} });
+		browser.connect(up, { onProtocolMismatch: client.onProtocolMismatch });
+		// A newer server: its hello announces the next version, and it closes the link the same way Chord does.
+		down.send({ t: "hello", protocol: PROTOCOL_VERSION + 1, name: "server", kind: "host", codeVersion: 1 });
+		await tick();
+		assert.deepEqual(client.seen, [{ local: PROTOCOL_VERSION, peer: PROTOCOL_VERSION + 1 }]);
+		assert.equal(up.closed, true);
+
+		// Told by the peer (it noticed first): the close reason carries its version.
+		const told = mismatches();
+		const [down2, up2] = memoryLinkPair();
+		const other = createHost({ name: "browser", kind: "client", onError: () => {} });
+		other.connect(up2, { onProtocolMismatch: told.onProtocolMismatch });
+		down2.close(`protocol-version ${PROTOCOL_VERSION + 1}`);
+		await tick();
+		assert.deepEqual(told.seen, [{ local: PROTOCOL_VERSION, peer: PROTOCOL_VERSION + 1 }]);
+	});
+
+	it("peers of the same version talk; an ordinary close is no mismatch", async () => {
+		const both = mismatches();
+		const server = createHost({ name: "server", onError: () => {} });
+		const [down, up] = memoryLinkPair();
+		server.accept(down, { principal: { guest: "g" }, onProtocolMismatch: both.onProtocolMismatch });
+		const browser = createHost({ name: "browser", kind: "client", onError: () => {} });
+		browser.connect(up, { onProtocolMismatch: both.onProtocolMismatch });
+		await tick();
+		up.close("bye");
+		await tick();
+		assert.deepEqual(both.seen, []);
+	});
+});
+
 describe("links: packed payloads", () => {
 	it("large args, results and snapshots cross a relay deflated and arrive intact", async () => {
 		const server = createHost({ name: "server", onError: () => {} });
@@ -389,8 +496,8 @@ describe("links: packed payloads", () => {
 				const [down, up] = memoryLinkPair();
 				const worker = createHost({ name, upstream: up, onError: () => {} });
 				worker.serve(Big, (_input, _principal, self) => {
-					const state = self.state({ notes: cell(Type.Array(Type.String()), large("a")) });
-					return { kind: "main", notes: state.notes, echo: (notes: string[]) => notes };
+					const notesState = self.state("notes", Type.Array(Type.String()), large("a"));
+					return { variant: "main", notes: notesState, echo: (notes: string[]) => notes };
 				});
 				return down;
 			},
@@ -430,5 +537,34 @@ describe("links: packed payloads", () => {
 		const relayed = forwarded[0];
 		assert(relayed?.t === "result" && relayed.value instanceof Packed);
 		assert.deepEqual(relayed.value.bytes, packed.value.bytes);
+	});
+});
+
+describe("links: IPC", () => {
+	it("a write that fails after the peer process exited (EPIPE) ends the link instead of raising an unhandled error", async () => {
+		// Node reports such a failure asynchronously: to the send callback, or else as an `error` event nobody handles.
+		const sent: unknown[] = [];
+		const channel: IpcChannel = {
+			connected: true,
+			send: (message, callback) => {
+				sent.push(message);
+				const error = Object.assign(new Error("write EPIPE"), { code: "EPIPE" });
+				if (callback === undefined) throw new Error("an IPC send without a callback cannot report EPIPE");
+				process.nextTick(() => callback(error));
+				return false;
+			},
+			on: () => undefined,
+			off: () => undefined,
+		};
+		const link = ipcLink(channel);
+		const reasons: string[] = [];
+		link.onClose((reason) => reasons.push(reason));
+		link.send({ t: "ping", n: 1 });
+		await tick();
+		assert.equal(link.closed, true);
+		assert.deepEqual(reasons, ["ipc send failed: EPIPE"]);
+		assert.equal(sent.length, 1);
+		link.send({ t: "ping", n: 2 });
+		assert.equal(sent.length, 1, "a closed link sends nothing more");
 	});
 });

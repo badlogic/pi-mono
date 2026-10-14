@@ -11,8 +11,15 @@ import { CHORD_ERROR_CODES, ChordError } from "./errors.ts";
 //   child → parent: vote
 //
 // Each frame is declared once, as the schema every received frame is checked against (`isFrame`); the types are derived
-// from it. Payloads (hold inputs, call args, results, snapshots) stay `unknown`: they are validated where they are used,
-// against the contract. State ops are checked op by op by the delta decoder.
+// from it. Payloads (hold inputs, call args, results, snapshots) stay `unknown`: they are validated where they are
+// used, against the contract. State ops are checked op by op by the delta decoder.
+
+/**
+ * The link protocol version, announced in `hello`. Peers of different versions do not talk: the side that notices
+ * closes the link with reason `protocol-version <its version>`, so the other side learns it too
+ * (`LinkOptions.onProtocolMismatch`).
+ */
+export const PROTOCOL_VERSION = 2;
 
 const Id = Type.Integer({ minimum: 1 });
 const Name = Type.String({ minLength: 1 });
@@ -20,7 +27,7 @@ const Reload = Type.Integer({ minimum: 1 });
 /** Arrays a sender may pass as readonly. */
 const List = <T extends TSchema>(item: T) => Type.Immutable(Type.Array(item));
 
-const RootRefSchema = Type.Object({ rootId: Name, epoch: Type.Integer({ minimum: 1 }) });
+const RootRefSchema = Type.Object({ rootId: Name, codeVersion: Type.Integer({ minimum: 1 }) });
 export type RootRef = Static<typeof RootRefSchema>;
 
 const WireErrorSchema = Type.Object({
@@ -39,7 +46,7 @@ export type WireReloadOptions = Static<typeof WireReloadOptionsSchema>;
 
 /** A child's prepared reload, sent with its vote (same fields as `ReloadReport`, without children). */
 const WireReloadReportSchema = Type.Object({
-	epoch: Type.Integer(),
+	codeVersion: Type.Integer(),
 	previous: Type.Integer(),
 	changed: List(Type.String()),
 	removed: List(Type.String()),
@@ -51,9 +58,11 @@ export type WireReloadReport = Static<typeof WireReloadReportSchema>;
 const FrameSchema = Type.Union([
 	Type.Object({
 		t: Type.Literal("hello"),
+		/** The link protocol version (`PROTOCOL_VERSION`; absent: 1). Peers of another version close the link. */
+		protocol: Type.Optional(Type.Integer({ minimum: 1 })),
 		name: Name,
 		kind: Type.Union([Type.Literal("host"), Type.Literal("client")]),
-		epoch: Type.Integer({ minimum: 0 }),
+		codeVersion: Type.Integer({ minimum: 0 }),
 		/** The sender acknowledges what it receives (`ack`). Flow control applies only when both hellos say so. */
 		acks: Type.Optional(Type.Boolean()),
 	}),
@@ -76,10 +85,10 @@ const FrameSchema = Type.Union([
 	Type.Object({
 		t: Type.Literal("shape"),
 		id: Id,
-		kind: Type.Optional(Type.String()),
+		variant: Type.Optional(Type.String()),
 		members: List(Type.String()),
 		contract: Type.String(),
-		epoch: Type.Integer(),
+		codeVersion: Type.Integer(),
 	}),
 	Type.Object({ t: Type.Literal("gone"), id: Id, error: WireErrorSchema }),
 	Type.Object({
@@ -87,7 +96,7 @@ const FrameSchema = Type.Union([
 		id: Id,
 		hold: Id,
 		member: Name,
-		args: Type.Unknown(),
+		args: Type.Optional(Type.Unknown()),
 		/** Absent: the receiving host starts a root (browsers never carry roots). */
 		root: Type.Optional(RootRefSchema),
 	}),
@@ -111,14 +120,15 @@ const FrameSchema = Type.Union([
 	}),
 	Type.Object({ t: Type.Literal("ping"), n: Type.Integer() }),
 	Type.Object({ t: Type.Literal("pong"), n: Type.Integer() }),
+	/** Ends the link (consumed by the link itself). `reason: "protocol-version <n>"`: the sender speaks version n. */
 	Type.Object({ t: Type.Literal("bye"), reason: Type.Optional(Type.String()) }),
-	/** The root ended at its origin: its leases on records end (sent on every link the root's calls used). */
+	/** The root ended at its origin: its leases on objects end (sent on every link the root's calls used). */
 	Type.Object({ t: Type.Literal("root_end"), rootId: Name }),
 	Type.Object({ t: Type.Literal("invalidate"), pattern: Type.Record(Type.String(), Type.Unknown()) }),
 	Type.Object({
 		t: Type.Literal("prepare"),
 		reload: Reload,
-		epoch: Type.Integer({ minimum: 1 }),
+		codeVersion: Type.Integer({ minimum: 1 }),
 		plugins: List(Type.String()),
 		options: WireReloadOptionsSchema,
 	}),
@@ -129,8 +139,8 @@ const FrameSchema = Type.Union([
 		report: Type.Optional(WireReloadReportSchema),
 	}),
 	Type.Object({ t: Type.Literal("commit"), reload: Reload }),
-	/** The parent dropped `epoch`: roots of it may still come from there no longer. */
-	Type.Object({ t: Type.Literal("retire"), epoch: Type.Integer({ minimum: 1 }) }),
+	/** The parent dropped `codeVersion`: roots of it may still come from there no longer. */
+	Type.Object({ t: Type.Literal("retire"), codeVersion: Type.Integer({ minimum: 1 }) }),
 	Type.Object({ t: Type.Literal("abort"), reload: Reload }),
 ]);
 export type Frame = Static<typeof FrameSchema>;

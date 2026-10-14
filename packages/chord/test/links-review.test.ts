@@ -4,7 +4,6 @@ import { Type } from "typebox";
 import { describe, it } from "vitest";
 import {
 	type Ctx,
-	cell,
 	createHost,
 	type Facet,
 	type FacetLoader,
@@ -12,11 +11,12 @@ import {
 	type Host,
 	isChordError,
 	type Link,
+	local,
 	memoryLinkPair,
 	method,
+	PROTOCOL_VERSION,
 	type Principal,
 	remote,
-	resource,
 } from "../src/index.ts";
 
 const tick = () => new Promise<void>((resolve) => setImmediate(resolve));
@@ -72,8 +72,8 @@ const Counter = remote("t.counter", {
 			state: { count: Type.Object({ n: Type.Number() }) },
 			methods: {
 				add: method(Type.Number(), Type.Number()),
-				who: method(Type.Null(), Type.Unknown()),
-				slow: method(Type.Null(), Type.Null()),
+				who: method(undefined, Type.Unknown()),
+				slow: method(),
 			},
 		},
 	},
@@ -102,7 +102,7 @@ function cluster() {
 			server.accept(down, { principal });
 			const frames: Frame[] = [];
 			raw.receive((frame) => frames.push(frame));
-			raw.send({ t: "hello", name: "raw", kind: "client", epoch: 0 });
+			raw.send({ t: "hello", protocol: PROTOCOL_VERSION, name: "raw", kind: "client", codeVersion: 0 });
 			return { raw, frames };
 		},
 	};
@@ -117,28 +117,25 @@ function cluster() {
 			const worker = createHost({ name, upstream: up, onError: () => {} });
 			worker.serve(Counter, (input, principal, self) => {
 				principals.push(principal);
-				self.resources({
-					probe: resource({
-						rev: 1,
-						open: () => void log.push(`open ${input.name}`),
-						close: () => void log.push(`close ${input.name}`),
-					}),
+				self.resource("probe", {
+					version: 1,
+					open: () => void log.push(`open ${input.name}`),
+					close: () => void log.push(`close ${input.name}`),
 				});
-				const counter = self.state({ count: cell(Type.Object({ n: Type.Number() }), { n: 0 }) });
+				const count = self.state("count", Type.Object({ n: Type.Number() }), { n: 0 });
 				return {
-					kind: "main",
-					count: counter.count,
+					variant: "main",
+					count,
 					add: (delta: number, ctx: Ctx) => {
-						counter.count.change(ctx, (draft) => {
+						count.change(ctx, (draft) => {
 							draft.n += delta;
 						});
-						return counter.count.value.n;
+						return count.value.n;
 					},
 					who: () => principal,
-					slow: async (_args: null, ctx: Ctx) => {
+					slow: async (ctx: Ctx) => {
 						ctx.signal.addEventListener("abort", () => log.push("slow aborted"));
 						await state.slowGate.promise;
-						return null;
 					},
 				};
 			});
@@ -154,7 +151,7 @@ const internals = (host: Host) =>
 		connections: Set<{
 			role: string;
 			peer: { kind: string; name?: string };
-			relayedHolds: Map<number, unknown>;
+			relayedRefs: Map<number, unknown>;
 			relayedSubs: Map<number, unknown>;
 			relayedCalls: Map<number, unknown>;
 		}>;
@@ -167,7 +164,7 @@ describe("links review: identity and stamping", () => {
 		const [down, raw] = memoryLinkPair();
 		c.server.accept(down, { principal: { guest: "g" } });
 		raw.receive(() => {});
-		raw.send({ t: "hello", name: "session:S9", kind: "host", epoch: 1 });
+		raw.send({ t: "hello", name: "session:S9", kind: "host", codeVersion: 1 });
 		await until(() => raw.closed);
 		// A host link must have a name and its hello must match it.
 		assert.throws(() => c.server.accept(memoryLinkPair()[0], { principal: {}, kind: "host" }), /needs its name/);
@@ -178,19 +175,15 @@ describe("links review: identity and stamping", () => {
 		const Echo = remote("t.echo", {
 			version: 1,
 			input: Type.Object({}),
-			variants: { main: { methods: { root: method(Type.Null(), Type.String()) } } },
+			variants: { main: { methods: { root: method(undefined, Type.String()) } } },
 		});
 		const facet = (version: number): Facet => ({
 			name: "echo",
 			setup: (api) =>
-				api.serve(
-					Echo,
-					(_input, _principal, self) => {
-						self.state({ n: cell(Type.Number(), 0) });
-						return { kind: "main", root: (_args: null, ctx: Ctx) => ctx.rootId };
-					},
-					{ state: { version } },
-				),
+				api.serve(Echo, (_input, _principal, self) => {
+					self.state("n", Type.Number(), 0, { version });
+					return { variant: "main", root: (ctx: Ctx) => ctx.rootId };
+				}),
 		});
 		server.install(facet(1));
 		const [down, up] = memoryLinkPair();
@@ -199,7 +192,7 @@ describe("links review: identity and stamping", () => {
 		const go = latch();
 		let rootId = "";
 		const pinned = worker.root(async (ctx) => {
-			rootId = (await ctx.get(Echo, {}, { at: "server" }).root(null, ctx)) as string;
+			rootId = (await ctx.get(Echo, {}, { at: "server" }).root(ctx)) as string;
 			await go.promise;
 		});
 		await until(() => rootId !== "");
@@ -207,7 +200,7 @@ describe("links review: identity and stamping", () => {
 		const [clientDown, raw] = memoryLinkPair();
 		server.accept(clientDown, { principal: { guest: "g" } });
 		raw.receive(() => {});
-		raw.send({ t: "hello", name: "raw", kind: "client", epoch: 0 });
+		raw.send({ t: "hello", protocol: PROTOCOL_VERSION, name: "raw", kind: "client", codeVersion: 0 });
 		raw.send({ t: "root_end", rootId });
 		await sleep(10);
 		await assert.rejects(server.reload([facet(2)], { gateDeadline: 40 }), (error) => {
@@ -219,7 +212,7 @@ describe("links review: identity and stamping", () => {
 		await pinned;
 	});
 
-	it("#2 a revocation while the route is still resolving closes the relay; no worker record is made", async () => {
+	it("#2 a revocation while the route is still resolving closes the relay; no worker object is made", async () => {
 		const c = cluster();
 		const gate = latch();
 		c.resolveGate = gate.promise;
@@ -232,7 +225,7 @@ describe("links review: identity and stamping", () => {
 		await sleep(10);
 		assert.deepEqual(c.principals, []);
 		const again = browser.host.get(Counter, { name: "a" }, { at: "session:S1" });
-		assert.deepEqual(await again.who(null), { guest: "g", revision: 2 });
+		assert.deepEqual(await again.who(), { guest: "g", revision: 2 });
 	});
 
 	it("#10 malformed frames and duplicate ids close the link", async () => {
@@ -254,7 +247,7 @@ describe("links review: relay ownership", () => {
 		const browser = c.browser({ guest: "g" });
 		const counter = browser.host.get(Counter, { name: "a" }, { at: "session:S1" });
 		await counter.ready;
-		void counter.slow(null).catch(() => {});
+		void counter.slow().catch(() => {});
 		await sleep(10);
 		browser.up.close();
 		await until(() => c.log.includes("slow aborted"));
@@ -303,7 +296,7 @@ describe("links review: relay ownership", () => {
 		const down = [...internals(c.server).connections].find((connection) => connection.peer.name === "session:S1")!;
 		assert.equal(down.relayedSubs.size, 1);
 		browser.up.close();
-		await until(() => down.relayedHolds.size === 0 && down.relayedSubs.size === 0);
+		await until(() => down.relayedRefs.size === 0 && down.relayedSubs.size === 0);
 		await until(() => c.log.includes("close a"));
 	});
 
@@ -337,8 +330,8 @@ describe("links review: relay ownership", () => {
 		server.serve(
 			DocV2,
 			(_input, _principal, self) => ({
-				kind: "main",
-				view: self.state({ view: cell(Type.Object({ body: Type.String() }), { body: "hi" }) }).view,
+				variant: "main",
+				view: self.state("view", Type.Object({ body: Type.String() }), { body: "hi" }),
 			}),
 			{
 				accepts: {
@@ -349,7 +342,7 @@ describe("links review: relay ownership", () => {
 						};
 						const map = (value: { body: string }) => ({ text: value.body });
 						return {
-							kind: "main",
+							variant: "main",
 							view: {
 								get value() {
 									return map(view.value);
@@ -383,7 +376,7 @@ describe("links review: cross-host reload", () => {
 	});
 	const greeterFacet = (greeting: string): Facet => ({
 		name: "greeter",
-		setup: (api) => api.serve(Greeter, () => ({ kind: "main", greet: (name: string) => `${greeting} ${name}` })),
+		setup: (api) => api.serve(Greeter, () => ({ variant: "main", greet: (name: string) => `${greeting} ${name}` })),
 	});
 
 	function setup(options: { slowLoad?: Promise<void> } = {}) {
@@ -430,14 +423,14 @@ describe("links review: cross-host reload", () => {
 		await assert.rejects(reload);
 		gate.open();
 		await until(() => !internals(worker).reloading);
-		assert.equal(worker.epoch, 1);
+		assert.equal(worker.codeVersion, 1);
 	});
 
 	it("#4 tasks the commit starts cannot reach a child before the child's commit", async () => {
 		const { server, modules } = setup();
 		await tick();
 		const results: unknown[] = [];
-		const Caller = remote("t.caller", { version: 1, input: Type.Object({}), variants: { main: {} } });
+		const Caller = local("t.caller", { version: 1, input: Type.Object({}) });
 		const callerFacet = (active: boolean): Facet => ({
 			name: "caller",
 			setup: (api) =>
@@ -446,17 +439,15 @@ describe("links review: cross-host reload", () => {
 					(_input, _principal, self) => {
 						const greeter = self.get(Greeter, {}, { at: "session:S1" });
 						if (active) {
-							self.tasks({
-								call: async (ctx) => {
-									results.push(
-										await greeter.greet("t", ctx).catch((error: unknown) => (error as { code: string }).code),
-									);
-								},
+							self.task(async (ctx) => {
+								results.push(
+									await greeter.greet("t", ctx).catch((error: unknown) => (error as { code: string }).code),
+								);
 							});
 						}
-						return { kind: "main" };
+						return {};
 					},
-					{ eager: true },
+					{ lifetime: "host" },
 				),
 		});
 		server.install(callerFacet(false));
@@ -475,12 +466,12 @@ describe("links review: cross-host reload", () => {
 		link.closeOn = (frame) => frame.t === "commit";
 		await server.reload([], { remote: { "session:": ["greeter"] } });
 		await until(() => !internals(worker).reloading);
-		assert.notEqual(worker.epoch, server.epoch);
+		assert.notEqual(worker.codeVersion, server.codeVersion);
 		const next = connect();
 		worker.connect(next.up);
 		const greeter = server.get(Greeter, {}, { at: "session:S1" });
 		assert.equal(await greeter.greet("x"), "v2 x");
-		assert.equal(worker.epoch, server.epoch);
+		assert.equal(worker.codeVersion, server.codeVersion);
 	});
 
 	it("#6 a server root that bounces through a worker and back ends normally (no leaked lease)", async () => {
@@ -489,38 +480,33 @@ describe("links review: cross-host reload", () => {
 		const Echo = remote("t.echo2", {
 			version: 1,
 			input: Type.Object({}),
-			variants: { main: { methods: { ping: method(Type.Null(), Type.Null()) } } },
+			variants: { main: { methods: { ping: method() } } },
 		});
 		const Bouncer = remote("t.bouncer", {
 			version: 1,
 			input: Type.Object({}),
-			variants: { main: { methods: { bounce: method(Type.Null(), Type.Null()) } } },
+			variants: { main: { methods: { bounce: method() } } },
 		});
 		const echoFacet = (version: number): Facet => ({
 			name: "echo",
 			setup: (api) =>
-				api.serve(
-					Echo,
-					(_input, _principal, self) => {
-						self.state({ n: cell(Type.Number(), 0) });
-						return { kind: "main", ping: () => null };
-					},
-					{ state: { version } },
-				),
+				api.serve(Echo, (_input, _principal, self) => {
+					self.state("n", Type.Number(), 0, { version });
+					return { variant: "main", ping: () => {} };
+				}),
 		});
 		server.install(echoFacet(1));
-		// Keeps the Echo record the bounced call reaches (it acts as the worker's principal) alive, so the reload gate
+		// Keeps the Echo object the bounced call reaches (it acts as the worker's principal) alive, so the reload gate
 		// must decide about the bounced root's lease.
 		const echo = server.get(Echo, {}, { principal: { worker: "w" } });
 		await echo.ready;
 		worker.serve(Bouncer, () => ({
-			kind: "main",
-			bounce: async (_args: null, ctx: Ctx) => {
-				await ctx.get(Echo, {}, { at: "server" }).ping(null, ctx);
-				return null;
+			variant: "main",
+			bounce: async (ctx: Ctx) => {
+				await ctx.get(Echo, {}, { at: "server" }).ping(ctx);
 			},
 		}));
-		await server.root((ctx) => server.get(Bouncer, {}, { at: "session:S1" }).bounce(null, ctx));
+		await server.root((ctx) => server.get(Bouncer, {}, { at: "session:S1" }).bounce(ctx));
 		await sleep(10);
 		await server.reload([echoFacet(2)], { gateDeadline: 200 });
 	});

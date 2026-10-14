@@ -5,33 +5,21 @@ export {
 	type Accepts,
 	type Adapter,
 	type AnyContract,
-	type BehaviorOf,
 	bind,
 	coverage,
 	type Description,
-	type Handle,
+	type ImplementationOf,
 	type InputOf,
 	type LocalContract,
 	local,
 	type MembersOf,
 	method,
 	opaque,
+	type Ref,
 	type RemoteContract,
 	remote,
 } from "./contract.ts";
-export {
-	type CellDecl,
-	cell,
-	type DerivationDecl,
-	derivation,
-	type ListenerDecl,
-	listener,
-	type Resource,
-	type ResourceDecl,
-	type ResourceSpec,
-	resource,
-	type Subscribable,
-} from "./declare.ts";
+export type { EventOf, Resource, ResourceDeclaration, Subscribable, ValueOf } from "./declare.ts";
 export type { Draft } from "./delta/index.ts";
 export { ChordError, type ChordErrorCode, forbidden, invalid, isChordError } from "./errors.ts";
 export type { PrincipalMatch, Route } from "./host.ts";
@@ -61,7 +49,7 @@ export {
 	type WebSocketLinkOptions,
 	webSocketLink,
 } from "./link.ts";
-export type { Factory, Self, ServeOptions } from "./record.ts";
+export type { Factory, Lifetime, Self, ServeOptions, StateOptions } from "./object.ts";
 export { defineRegistry, type Registry, type RegistryTable, type RegistryView } from "./registry.ts";
 export type { ReloadOptions, ReloadReport } from "./reload.ts";
 export {
@@ -75,6 +63,6 @@ export {
 	type ReplicatedStateSourceOptions,
 	replicatedState,
 } from "./state.ts";
-export type { Ctx, GetOptions, HandleStatus, Principal, Readable, Shape, StateEvent } from "./types.ts";
+export type { Ctx, GetOptions, Principal, Readable, RefStatus, Shape, StateEvent } from "./types.ts";
 export { acceptWebSockets, type WebSocketAcceptOptions, type WebSocketServerLike } from "./websocket.ts";
-export type { Frame } from "./wire.ts";
+export { type Frame, PROTOCOL_VERSION } from "./wire.ts";

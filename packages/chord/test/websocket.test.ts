@@ -5,7 +5,6 @@ import { describe, it } from "vitest";
 import { WebSocketServer } from "ws";
 import {
 	acceptWebSockets,
-	cell,
 	createHost,
 	inflateMessage,
 	isChordError,
@@ -21,7 +20,7 @@ const Board = remote("t.board", {
 	variants: {
 		main: {
 			state: { notes: Type.Array(Type.String()) },
-			methods: { add: method(Type.String(), Type.Null()), who: method(Type.Null(), Type.Unknown()) },
+			methods: { add: method(Type.String()), who: method(undefined, Type.Unknown()) },
 		},
 	},
 });
@@ -30,15 +29,14 @@ describe("WebSocket links", () => {
 	it("serves a browser-style client over a real socket, stamped by the authenticator", async () => {
 		const server = createHost({ name: "server", onError: () => {} });
 		server.serve(Board, (_input, principal, self) => {
-			const state = self.state({ notes: cell(Type.Array(Type.String()), []) });
+			const notes = self.state("notes", Type.Array(Type.String()), []);
 			return {
-				kind: "main",
-				notes: state.notes,
+				variant: "main",
+				notes,
 				add: (text, ctx) => {
-					state.notes.change(ctx, (draft) => {
+					notes.change(ctx, (draft) => {
 						draft.push(text);
 					});
-					return null;
 				},
 				who: () => principal,
 			};
@@ -67,7 +65,7 @@ describe("WebSocket links", () => {
 			const seen: unknown[] = [];
 			board.notes.subscribe((value) => seen.push(value));
 			await board.add("hello");
-			assert.deepEqual(await board.who(null), { guest: "web" });
+			assert.deepEqual(await board.who(), { guest: "web" });
 			for (let i = 0; i < 50 && board.notes.value?.length !== 1; i++) await new Promise((r) => setTimeout(r, 5));
 			assert.deepEqual(board.notes.value, ["hello"]);
 			assert.deepEqual(seen.at(-1), ["hello"]);
@@ -106,8 +104,8 @@ describe("WebSocket links: packed payloads", () => {
 		const notes = Array.from({ length: 40 }, (_, i) => `${i}:${"x".repeat(4000)}`);
 		const server = createHost({ name: "server", onError: () => {} });
 		server.serve(Board, (_input, _principal, self) => {
-			const state = self.state({ notes: cell(Type.Array(Type.String()), notes) });
-			return { kind: "main", notes: state.notes, add: () => null, who: () => notes };
+			const state = self.state("notes", Type.Array(Type.String()), notes);
+			return { variant: "main", notes: state, add: () => {}, who: () => notes };
 		});
 		const wss = new WebSocketServer({ port: 0, host: "127.0.0.1" });
 		await new Promise<void>((resolve) => wss.once("listening", () => resolve()));
@@ -126,7 +124,7 @@ describe("WebSocket links: packed payloads", () => {
 				onError: () => {},
 			});
 			const board = browser.get(Board, {}, { at: "server" });
-			assert.deepEqual(await board.who(null), notes);
+			assert.deepEqual(await board.who(), notes);
 			board.notes.subscribe(() => {});
 			for (let i = 0; i < 100 && board.notes.value === undefined; i++) await new Promise((r) => setTimeout(r, 5));
 			assert.deepEqual(board.notes.value, notes);

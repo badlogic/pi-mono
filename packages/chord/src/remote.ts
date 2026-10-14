@@ -1,18 +1,18 @@
 import { Value } from "typebox/value";
-import type { AnyContract } from "./contract.ts";
+import { type AnyContract, takesNoArgs } from "./contract.ts";
 import { applyImmutable, type Decoder, decoder } from "./delta/index.ts";
 import { ChordError } from "./errors.ts";
 import {
 	CtxImpl,
-	HANDLE_BASE,
-	type Hold,
-	type HoldOwner,
-	holdsByProxy,
 	notifyStatus,
+	REF_BASE,
+	type RefCore,
+	type RefOwner,
 	raceSignal,
+	refsByProxy,
 	type StatusListener,
-} from "./record.ts";
-import type { Ctx, HandleStatus, Principal, Readable, Shape, StateEvent } from "./types.ts";
+} from "./object.ts";
+import type { Ctx, Principal, Readable, RefStatus, Shape, StateEvent } from "./types.ts";
 import { fromWireError, type RootRef, type WireError } from "./wire.ts";
 
 const noop = (): void => {};
@@ -24,29 +24,29 @@ export interface StateSink {
 	error?: WireError;
 }
 
-/** What a remote handle needs from the link it is bound to (implemented by Connection). */
+/** What a remote reference needs from the link it is bound to (implemented by Connection). */
 export interface RemoteChannel {
-	hold(handle: RemoteHandle): number;
+	hold(ref: RemoteRef): number;
 	release(id: number): void;
 	call(hold: number, member: string, args: unknown, root: RootRef | undefined, signal: AbortSignal): Promise<unknown>;
 	sub(hold: number, member: string, sink: (frame: StateSink) => void): number;
 	unsub(id: number): void;
 }
 
-/** What a remote handle needs from its host. */
+/** What a remote reference needs from its host. */
 export interface RemoteHost {
 	readonly inFactory: number;
 	report(error: unknown): void;
 	root<T>(fn: (ctx: Ctx) => T | Promise<T>, options?: { signal?: AbortSignal }): Promise<T>;
-	forgetRemote(handle: RemoteHandle): void;
+	forgetRemote(ref: RemoteRef): void;
 }
 
 /**
- * A state member of a remote handle: hydrated while subscribed (snapshot, then decoded ops); `undefined` before.
+ * A state member of a remote reference: hydrated while subscribed (snapshot, then decoded ops); `undefined` before.
  * Re-subscribing after a reconnect delivers the new snapshot as a reset.
  */
 class RemoteReadable implements Readable<unknown> {
-	readonly #handle: RemoteHandle;
+	readonly #ref: RemoteRef;
 	readonly #name: string;
 	readonly #values = new Set<(value: unknown) => void>();
 	readonly #events = new Set<(event: StateEvent<unknown>) => void>();
@@ -54,8 +54,8 @@ class RemoteReadable implements Readable<unknown> {
 	#decoder: Decoder = decoder();
 	#value: unknown;
 
-	constructor(handle: RemoteHandle, name: string) {
-		this.#handle = handle;
+	constructor(ref: RemoteRef, name: string) {
+		this.#ref = ref;
 		this.#name = name;
 	}
 
@@ -77,12 +77,13 @@ class RemoteReadable implements Readable<unknown> {
 		return () => this.#remove(this.#events, listener);
 	}
 
-	/** Subscribes upstream while someone listens and the handle is bound; drops a subscription on an old link. */
+	/** Subscribes upstream while someone listens and the reference is bound; drops a subscription on an old link. */
 	bind(): void {
 		const listening = this.#values.size + this.#events.size > 0;
-		// Nobody listens: the value would go stale, so forget it. The next subscriber sees `undefined`, then the snapshot.
+		// Nobody listens: the value would go stale, so forget it. The next subscriber sees `undefined`, then the
+		// snapshot.
 		if (!listening) this.#value = undefined;
-		const binding = listening ? this.#handle.binding : undefined;
+		const binding = listening ? this.#ref.binding : undefined;
 		if (binding !== undefined && this.#sub?.channel === binding.channel) return;
 		if (this.#sub !== undefined) {
 			if (this.#sub.channel !== binding?.channel || binding === undefined) this.#sub.channel.unsub(this.#sub.id);
@@ -108,7 +109,7 @@ class RemoteReadable implements Readable<unknown> {
 
 	#receive(frame: StateSink): void {
 		if (frame.error !== undefined) {
-			this.#handle.host.report(fromWireError(frame.error));
+			this.#ref.host.report(fromWireError(frame.error));
 			return;
 		}
 		let event: StateEvent<unknown>;
@@ -136,31 +137,31 @@ class RemoteReadable implements Readable<unknown> {
 		try {
 			fn();
 		} catch (error) {
-			this.#handle.host.report(error);
+			this.#ref.host.report(error);
 		}
 	}
 }
 
-/** A hold on an object on another host, bound to a link. Late-bound like a local handle. */
-export class RemoteHandle implements Hold {
-	readonly record = undefined;
+/** A reference on an object on another host, bound to a link. Late-bound like a local reference. */
+export class RemoteRef implements RefCore {
+	readonly object = undefined;
 	readonly host: RemoteHost;
 	readonly contract: AnyContract;
 	readonly at: string;
 	readonly input: unknown;
 	/** Forwarded principal (omitted for the host's own principal). */
 	readonly principal: Principal | undefined;
-	readonly owner: HoldOwner;
+	readonly owner: RefOwner;
 	readonly address: string;
 	readonly proxy: object;
 	readonly ready: Promise<void>;
-	status: HandleStatus = "loading";
+	status: RefStatus = "loading";
 	error: unknown;
 	shape: Shape | undefined;
 	binding: { readonly channel: RemoteChannel; readonly id: number } | undefined;
 	readonly shapeListeners = new Set<(shape: Shape) => void>();
 	readonly #readables = new Map<string, RemoteReadable>();
-	readonly #callers = new Map<string, (args: unknown, ctx?: Ctx) => Promise<unknown>>();
+	readonly #callers = new Map<string, (...given: unknown[]) => Promise<unknown>>();
 	#settleReady: { resolve: () => void; reject: (error: unknown) => void } | undefined;
 	#live: { promise: Promise<void>; resolve: () => void; reject: (error: unknown) => void };
 
@@ -171,7 +172,7 @@ export class RemoteHandle implements Hold {
 			at: string;
 			input: unknown;
 			principal: Principal | undefined;
-			owner: HoldOwner;
+			owner: RefOwner;
 			address: string;
 		},
 	) {
@@ -189,7 +190,7 @@ export class RemoteHandle implements Hold {
 		this.#live = this.#newLive();
 		this.proxy = new Proxy(this, {
 			get: (target, property) => {
-				if (HANDLE_BASE.has(property)) {
+				if (REF_BASE.has(property)) {
 					const value: unknown = Reflect.get(target, property, target);
 					return typeof value === "function" ? value.bind(target) : value;
 				}
@@ -197,11 +198,11 @@ export class RemoteHandle implements Hold {
 				return target.member(property);
 			},
 		});
-		holdsByProxy.set(this.proxy, this);
+		refsByProxy.set(this.proxy, this);
 	}
 
-	get kind(): string | undefined {
-		return this.shape?.kind;
+	get variant(): string | undefined {
+		return this.shape?.variant;
 	}
 
 	onShape(listener: (shape: Shape) => void): () => void {
@@ -224,7 +225,7 @@ export class RemoteHandle implements Hold {
 		if (this.status === "released" || this.status === "gone") return;
 		this.status = "released";
 		this.#statusChanged();
-		const error = new ChordError("released", `handle ${this.address} released`);
+		const error = new ChordError("released", `reference ${this.address} released`);
 		this.#settleReady?.reject(error);
 		this.#live.reject(error);
 		for (const readable of this.#readables.values()) readable.stop();
@@ -302,10 +303,13 @@ export class RemoteHandle implements Hold {
 		return undefined;
 	}
 
-	#caller(name: string): (args: unknown, ctx?: Ctx) => Promise<unknown> {
+	#caller(name: string): (...given: unknown[]) => Promise<unknown> {
 		let caller = this.#callers.get(name);
 		if (caller === undefined) {
-			caller = (args, ctx) => {
+			const noArgs = takesNoArgs(this.contract, name);
+			caller = (...given) => {
+				// A method without arguments is called as `ref.name(ctx)`.
+				const [args, ctx] = (noArgs ? [undefined, given[0]] : given) as [unknown, Ctx | undefined];
 				if (this.host.inFactory > 0)
 					throw new ChordError("not_ready", `${this.address}.${name} called inside a factory`);
 				if (ctx instanceof CtxImpl) {
@@ -328,19 +332,32 @@ export class RemoteHandle implements Hold {
 	async #call(name: string, args: unknown, ctx: Ctx): Promise<unknown> {
 		for (;;) {
 			if (this.status === "released" || this.status === "gone") {
-				throw this.status === "gone" ? this.error : new ChordError("released", `handle ${this.address} released`);
+				throw this.status === "gone"
+					? this.error
+					: new ChordError("released", `reference ${this.address} released`);
 			}
 			if (this.status === "loading") await raceSignal(this.#live.promise, ctx.signal);
 			const binding = this.binding;
 			if (binding === undefined) continue;
-			const kind = this.shape?.kind;
-			if (kind === undefined || this.contract.description.variants[kind]?.[name]?.kind !== "method") {
-				throw new ChordError("not_in_variant", `${this.address}: ${name} is not a method of variant ${kind}`);
+			const variant = this.shape?.variant;
+			if (variant === undefined || this.contract.description.variants[variant]?.[name]?.kind !== "method") {
+				throw new ChordError("not_in_variant", `${this.address}: ${name} is not a method of variant ${variant}`);
 			}
 			// Send only what the consumer's own schema knows (the additive rule's premise; see RecordImpl.call).
-			const description = this.contract.description.variants[kind]?.[name];
-			const sent = description?.kind === "method" ? Value.Clean(description.args, Value.Clone(args)) : args;
-			return binding.channel.call(binding.id, name, sent, { rootId: ctx.rootId, epoch: ctx.epoch }, ctx.signal);
+			const description = this.contract.description.variants[variant]?.[name];
+			const sent =
+				description?.kind !== "method"
+					? args
+					: description.args === undefined
+						? undefined
+						: Value.Clean(description.args, Value.Clone(args));
+			return binding.channel.call(
+				binding.id,
+				name,
+				sent,
+				{ rootId: ctx.rootId, codeVersion: ctx.codeVersion },
+				ctx.signal,
+			);
 		}
 	}
 

@@ -3,23 +3,25 @@ import { Type } from "typebox";
 import { describe, it } from "vitest";
 import {
 	type Ctx,
-	cell,
 	createHost,
 	defineRegistry,
-	derivation,
+	type Facet,
 	forbidden,
-	type Handle,
 	type Host,
 	isChordError,
-	listener,
 	local,
 	method,
+	opaque,
+	type Ref,
 	remote,
-	resource,
 } from "../src/index.ts";
 
 const tick = () => new Promise<void>((resolve) => setImmediate(resolve));
 const quiet = (errors: unknown[] = []) => createHost({ onError: (error) => errors.push(error) });
+async function until(check: () => boolean): Promise<void> {
+	for (let attempt = 0; attempt < 200 && !check(); attempt++) await tick();
+	assert.ok(check(), "condition not reached");
+}
 
 const Counter = local("t.counter", {
 	version: 1,
@@ -35,27 +37,25 @@ function serveCounter(host: Host, log: string[] = [], options: { linger?: number
 		Counter,
 		({ name }, _principal, self) => {
 			log.push(`factory ${name}`);
-			const state = self.state({ count: cell(Type.Object({ n: Type.Number() }), { n: 0 }) });
-			const res = self.resources({
-				conn: resource({
-					rev: 1,
-					open: async () => {
-						log.push(`open ${name}`);
-						return { name };
-					},
-					close: () => {
-						log.push(`close ${name}`);
-					},
-				}),
+			const count = self.state("count", Type.Object({ n: Type.Number() }), { n: 0 });
+			const conn = self.resource("conn", {
+				version: 1,
+				open: async () => {
+					log.push(`open ${name}`);
+					return { name };
+				},
+				close: () => {
+					log.push(`close ${name}`);
+				},
 			});
 			return {
-				count: state.count,
-				conn: res.conn,
+				count,
+				conn,
 				add: (delta: number, ctx) => {
-					state.count.change(ctx, (draft) => {
+					count.change(ctx, (draft) => {
 						draft.n += delta;
 					});
-					return state.count.value.n;
+					return count.value.n;
 				},
 			};
 		},
@@ -68,22 +68,22 @@ describe("host: activation and lifetime", () => {
 		const host = quiet();
 		const log: string[] = [];
 		serveCounter(host, log);
-		const handle = host.get(Counter, { name: "a" });
-		assert.equal(handle.status, "loading");
-		assert.equal(handle.count.value, undefined);
-		const pending = handle.add(2);
-		await handle.ready;
-		assert.equal(handle.status, "live");
+		const ref = host.get(Counter, { name: "a" });
+		assert.equal(ref.status, "loading");
+		assert.equal(ref.count.value, undefined);
+		const pending = ref.add(2);
+		await ref.ready;
+		assert.equal(ref.status, "live");
 		assert.equal(await pending, 2);
-		assert.deepEqual(handle.count.value, { n: 2 });
-		handle.release();
-		assert.equal(handle.status, "released");
-		await assert.rejects(handle.add(1), (error) => isChordError(error, "released"));
+		assert.deepEqual(ref.count.value, { n: 2 });
+		ref.release();
+		assert.equal(ref.status, "released");
+		await assert.rejects(ref.add(1), (error) => isChordError(error, "released"));
 		await tick();
 		assert.deepEqual(log, ["factory a", "open a", "close a"]);
 	});
 
-	it("coalesces concurrent gets and keeps the record while held", async () => {
+	it("coalesces concurrent gets and keeps the object while held", async () => {
 		const host = quiet();
 		const log: string[] = [];
 		serveCounter(host, log);
@@ -120,24 +120,22 @@ describe("host: activation and lifetime", () => {
 		let release = () => {};
 		const Slow = local("t.slow", { version: 1, input: Type.Object({}) });
 		host.serve(Slow, (_input, _principal, self) => {
-			self.resources({
-				r: resource({
-					rev: 1,
-					open: ({ signal }) =>
-						new Promise<string>((resolve) => {
-							release = () => resolve("r");
-							signal.addEventListener("abort", () => log.push("abort seen"));
-						}),
-					close: () => {
-						log.push("closed");
-					},
-				}),
+			self.resource("r", {
+				version: 1,
+				open: ({ signal }) =>
+					new Promise<string>((resolve) => {
+						release = () => resolve("r");
+						signal.addEventListener("abort", () => log.push("abort seen"));
+					}),
+				close: () => {
+					log.push("closed");
+				},
 			});
 			return {};
 		});
-		const handle = host.get(Slow, {});
+		const ref = host.get(Slow, {});
 		await tick();
-		handle.release();
+		ref.release();
 		await tick();
 		release();
 		await tick();
@@ -156,14 +154,12 @@ describe("host: activation and lifetime", () => {
 		const Leaf = local("t.leaf", { version: 1, input: Type.Object({}) });
 		const Parent = local("t.parent", { version: 1, input: Type.Object({}) });
 		host.serve(Leaf, (_input, _principal, self) => {
-			self.resources({
-				r: resource({
-					rev: 1,
-					open: () => {
-						if (fail) throw new Error("boom");
-						return 1;
-					},
-				}),
+			self.resource("r", {
+				version: 1,
+				open: () => {
+					if (fail) throw new Error("boom");
+					return 1;
+				},
 			});
 			return {};
 		});
@@ -187,16 +183,14 @@ describe("host: activation and lifetime", () => {
 		const Bad = local("t.bad", { version: 1, input: Type.Object({ async: Type.Boolean() }) });
 		let leafLive = 0;
 		host.serve(Leaf, (_input, _principal, self) => {
-			self.resources({
-				r: resource({
-					rev: 1,
-					open: () => {
-						leafLive++;
-					},
-					close: () => {
-						leafLive--;
-					},
-				}),
+			self.resource("r", {
+				version: 1,
+				open: () => {
+					leafLive++;
+				},
+				close: () => {
+					leafLive--;
+				},
 			});
 			return {};
 		});
@@ -216,8 +210,8 @@ describe("host: activation and lifetime", () => {
 		const host = quiet();
 		const Dup = local("t.dup", { version: 1, input: Type.Object({}) });
 		host.serve(Dup, (_input, _principal, self) => {
-			self.state({ a: cell(Type.Object({}), {}) });
-			self.state({ a: cell(Type.Object({}), {}) });
+			self.state("a", Type.Object({}), {});
+			self.state("a", Type.Object({}), {});
 			return {};
 		});
 		await assert.rejects(host.get(Dup, {}).ready, /duplicate state name a/);
@@ -244,33 +238,29 @@ describe("host: activation and lifetime", () => {
 		const log: string[] = [];
 		const Multi = local("t.multi", { version: 1, input: Type.Object({}) });
 		host.serve(Multi, (_input, _principal, self) => {
-			const first = self.resources({
-				a: resource({ rev: 1, open: () => "a", close: () => void log.push("close a") }),
+			const a = self.resource("a", { version: 1, open: () => "a", close: () => void log.push("close a") });
+			self.resource("b", {
+				version: 1,
+				deps: [a],
+				open: () => "b",
+				close: () => {
+					log.push("close b");
+					throw new Error("b failed");
+				},
 			});
-			self.resources({
-				b: resource({
-					rev: 1,
-					deps: [first.a],
-					open: () => "b",
-					close: () => {
-						log.push("close b");
-						throw new Error("b failed");
-					},
-				}),
-				c: resource({
-					rev: 1,
-					open: () => "c",
-					close: () => {
-						log.push("close c");
-						throw new Error("c failed");
-					},
-				}),
+			self.resource("c", {
+				version: 1,
+				open: () => "c",
+				close: () => {
+					log.push("close c");
+					throw new Error("c failed");
+				},
 			});
 			return {};
 		});
-		const handle = host.get(Multi, {});
-		await handle.ready;
-		handle.release();
+		const ref = host.get(Multi, {});
+		await ref.ready;
+		ref.release();
 		await tick();
 		await tick();
 		assert.equal(log.at(-1), "close a");
@@ -293,6 +283,164 @@ describe("host: activation and lifetime", () => {
 	});
 });
 
+describe("host: declarations and methods", () => {
+	it("refuses a second declaration of one name per kind; kinds have their own names", async () => {
+		const host = quiet();
+		const Twice = local("t.twice", { version: 1, input: Type.Object({ kind: Type.String() }) });
+		host.serve(Twice, ({ kind }, _principal, self) => {
+			const open = { version: 1, open: () => null };
+			self.state("x", Type.Number(), 0);
+			self.resource("x", open);
+			self.on("x", self.state("y", Type.Number(), 0), () => {});
+			if (kind === "state") self.state("x", Type.Number(), 1);
+			if (kind === "resource") self.resource("x", open);
+			if (kind === "listener") self.on("x", self.state("z", Type.Number(), 0), () => {});
+			return {};
+		});
+		await host.get(Twice, { kind: "none" }).ready;
+		for (const kind of ["state", "resource", "listener"]) {
+			await assert.rejects(
+				host.get(Twice, { kind }).ready,
+				(error) =>
+					isChordError(error, "invalid") &&
+					error.reason === "duplicate" &&
+					error.message.includes(`${kind} name x`),
+			);
+		}
+	});
+
+	it("methods without arguments are called with ctx alone; void methods resolve to undefined", async () => {
+		const host = quiet();
+		const Tool = local("t.tool", {
+			version: 1,
+			input: Type.Object({}),
+			members: {
+				ping: method(),
+				count: method(undefined, Type.Number()),
+				note: method(Type.String()),
+			},
+		});
+		const seen: unknown[] = [];
+		host.serve(Tool, () => ({
+			ping: (ctx) => {
+				seen.push(typeof ctx.rootId);
+				return "ignored" as never;
+			},
+			count: () => 3,
+			note: (text, ctx) => {
+				seen.push(text, typeof ctx.rootId);
+			},
+		}));
+		const tool = host.get(Tool, {});
+		await tool.ready;
+		assert.equal(await tool.ping(), undefined);
+		assert.equal(await host.root((ctx) => tool.count(ctx)), 3);
+		assert.equal(await tool.note("hi"), undefined);
+		assert.deepEqual(seen, ["string", "hi", "string"]);
+	});
+
+	it("a listener on state gets the current value at start and again after a reload replaced its derivation", async () => {
+		const host = quiet();
+		const Doubled = local("t.doubled", {
+			version: 1,
+			input: Type.Object({}),
+			members: { set: method(Type.Number()) },
+		});
+		const seen: number[] = [];
+		const facet = (label: string): Facet => ({
+			name: "doubled",
+			setup: (api) =>
+				api.serve(
+					Doubled,
+					(_input, _principal, self) => {
+						const n = self.state("n", Type.Number(), 1);
+						const doubled = self.derive([n], (value) => value * 2);
+						self.on("doubled", doubled, (value) => {
+							seen.push(value);
+							void label;
+						});
+						return {
+							set: (value, ctx) => {
+								n.replace(ctx, value);
+							},
+						};
+					},
+					{ lifetime: "host" },
+				),
+		});
+		await host.install(facet("v1"));
+		await until(() => seen.length === 1);
+		await host.root((ctx) => host.get(Doubled, {}).set(5, ctx));
+		await until(() => seen.length === 2);
+		assert.deepEqual(seen, [2, 10]);
+		// The reload makes a new derivation: the listener subscribes again and gets its current value once.
+		await host.reload([facet("v2")]);
+		await until(() => seen.length === 3);
+		await tick();
+		assert.deepEqual(seen, [2, 10, 10]);
+	});
+});
+
+describe("host: lifetime", () => {
+	const Store = local("t.store", {
+		version: 1,
+		input: Type.Object({ scope: Type.Optional(Type.String({ default: "all" })) }),
+		members: { seen: opaque<unknown>("t.seen@1") },
+	});
+
+	it('serve refuses a lifetime "host" the type cannot have', () => {
+		const host = quiet();
+		const Remote = remote("t.remote-store", { version: 1, input: Type.Object({}), variants: { main: {} } });
+		assert.throws(
+			() => host.serve(Remote, () => ({ variant: "main" }), { lifetime: "host" } as never),
+			/needs a local type/,
+		);
+		const Keyed = local("t.keyed", { version: 1, input: Type.Object({ id: Type.String() }) });
+		assert.throws(() => host.serve(Keyed, () => ({}), { lifetime: "host" }), /input that accepts \{\}/);
+		assert.throws(
+			() => host.serve(Store, () => ({ seen: null }), { lifetime: "host", linger: 10 }),
+			/does not linger/,
+		);
+		assert.throws(
+			() => host.serve(Store, () => ({ seen: null }), { lifetime: "forever" } as never),
+			/unknown lifetime/,
+		);
+	});
+
+	it("every get reaches the one object, created at serve for the host principal; another input is invalid", async () => {
+		const host = createHost({ principalKey: (principal) => JSON.stringify(principal), onError: () => {} });
+		const created: unknown[] = [];
+		host.serve(
+			Store,
+			(input, principal) => {
+				created.push({ input, principal });
+				return { seen: principal };
+			},
+			{ lifetime: "host" },
+		);
+		await host.ready();
+		assert.equal(created.length, 1, "created when served, before anyone asked");
+		const guest = host.get(Store, {}, { principal: { guest: "g" } });
+		const defaults = host.get(Store, { scope: "all" });
+		await Promise.all([guest.ready, defaults.ready]);
+		assert.equal(created.length, 1, "the same object for every principal and the default input");
+		assert.deepEqual(guest.seen, created[0] && (created[0] as { principal: unknown }).principal);
+		assert.throws(
+			() => host.get(Store, { scope: "other" }),
+			(error) => isChordError(error, "invalid"),
+		);
+		// References do not change its lifetime: released by everyone else, it stays until the host closes.
+		guest.release();
+		defaults.release();
+		await tick();
+		const again = host.get(Store, {});
+		await again.ready;
+		assert.equal(created.length, 1);
+		await host.close();
+		assert.equal(again.status, "gone");
+	});
+});
+
 describe("host: principals, variants and disposal", () => {
 	const Doc = remote("t.doc", {
 		version: 1,
@@ -309,20 +457,20 @@ describe("host: principals, variants and disposal", () => {
 	function serveDoc(host: Host, principals: unknown[] = []) {
 		host.serve(Doc, (_input, principal, self) => {
 			principals.push(principal);
-			const state = self.state({ view: cell(Type.Object({ text: Type.String() }), { text: "" }) });
-			if ((principal as { role?: string }).role !== "editor") return { kind: "viewer", view: state.view };
+			const view = self.state("view", Type.Object({ text: Type.String() }), { text: "" });
+			if ((principal as { role?: string }).role !== "editor") return { variant: "viewer", view };
 			return {
-				kind: "editor",
-				view: state.view,
+				variant: "editor",
+				view,
 				edit: ({ text }, ctx) => {
-					state.view.replace(ctx, { text });
+					view.replace(ctx, { text });
 					return text === "bad" ? ({ ok: "no" } as never) : { ok: true };
 				},
 			};
 		});
 	}
 
-	it("keeps records per principal key and enforces variants", async () => {
+	it("keeps objects per principal key and enforces variants", async () => {
 		const host = createHost({ principalKey: (principal) => (principal as { user: string }).user, onError: () => {} });
 		const principals: unknown[] = [];
 		serveDoc(host, principals);
@@ -330,7 +478,7 @@ describe("host: principals, variants and disposal", () => {
 		const editor = host.get(Doc, { id: "1" }, { principal: { user: "e", role: "editor" } });
 		await Promise.all([viewer.ready, editor.ready]);
 		assert.equal(principals.length, 2);
-		assert.equal(viewer.kind, "viewer");
+		assert.equal(viewer.variant, "viewer");
 		assert.deepEqual(viewer.shape?.members, ["view"]);
 		await assert.rejects(viewer.edit({ text: "x" }), (error) => isChordError(error, "not_in_variant"));
 		assert.deepEqual(await editor.edit({ text: "x" }), { ok: true });
@@ -352,32 +500,32 @@ describe("host: principals, variants and disposal", () => {
 		);
 	});
 
-	it("forced disposal makes handles gone and aborts in-flight calls", async () => {
+	it("forced disposal makes references gone and aborts in-flight calls", async () => {
 		const host = quiet();
 		let seenAbort = false;
 		const Slow = local("t.inflight", {
 			version: 1,
 			input: Type.Object({}),
-			members: { wait: method(Type.Null(), Type.Null()) },
+			members: { wait: method() },
 		});
 		host.serve(Slow, () => ({
-			wait: (_args: null, ctx) =>
-				new Promise<null>((resolve) =>
+			wait: (ctx) =>
+				new Promise<void>((resolve) =>
 					ctx.signal.addEventListener("abort", () => {
 						seenAbort = true;
-						resolve(null);
+						resolve();
 					}),
 				),
 		}));
-		const handle = host.get(Slow, {}, { principal: { user: "u" } });
-		await handle.ready;
-		const call = handle.wait(null);
+		const ref = host.get(Slow, {}, { principal: { user: "u" } });
+		await ref.ready;
+		const call = ref.wait();
 		await tick();
 		await host.invalidatePrincipal((principal) => (principal as { user: string }).user === "u");
-		assert.equal(handle.status, "gone");
+		assert.equal(ref.status, "gone");
 		await call;
 		assert.ok(seenAbort);
-		await assert.rejects(handle.wait(null), (error) => isChordError(error, "gone"));
+		await assert.rejects(ref.wait(), (error) => isChordError(error, "gone"));
 		const fresh = host.get(Slow, {}, { principal: { user: "u" } });
 		await fresh.ready;
 		assert.equal(fresh.status, "live");
@@ -386,9 +534,9 @@ describe("host: principals, variants and disposal", () => {
 	it("state members are late-bound readables: values, then snapshot/reset/ops events", async () => {
 		const host = quiet();
 		serveDoc(host);
-		const editor = host.get(Doc, { id: "3" }, { principal: { role: "editor" } }) as Handle<typeof Doc>;
+		const editor = host.get(Doc, { id: "3" }, { principal: { role: "editor" } }) as Ref<typeof Doc>;
 		const shapes: unknown[] = [];
-		editor.onShape((shape) => shapes.push(shape.kind));
+		editor.onShape((shape) => shapes.push(shape.variant));
 		const events: unknown[] = [];
 		const values: unknown[] = [];
 		editor.view.events((event) => events.push(event.type === "ops" ? ["ops", event.ops] : [event.type, event.value]));
@@ -408,7 +556,7 @@ describe("host: principals, variants and disposal", () => {
 describe("host: registries", () => {
 	const Routes = defineRegistry<string>("t.routes");
 
-	it("only eager records register; tables follow registration order", async () => {
+	it('only objects of lifetime "host" register; tables follow registration order', async () => {
 		const host = quiet();
 		const RoutesA = local("t.routes-a", { version: 1, input: Type.Object({}) });
 		const RoutesB = local("t.routes-b", { version: 1, input: Type.Object({}) });
@@ -418,7 +566,7 @@ describe("host: registries", () => {
 				self.register(Routes, { "GET /a": "a", "GET /c": "c" });
 				return {};
 			},
-			{ eager: true },
+			{ lifetime: "host" },
 		);
 		host.serve(
 			RoutesB,
@@ -426,7 +574,7 @@ describe("host: registries", () => {
 				self.register(Routes, { "GET /b": "b" });
 				return {};
 			},
-			{ eager: true },
+			{ lifetime: "host" },
 		);
 		const tables: string[][] = [];
 		host.registry(Routes).subscribe((table) => tables.push([...table.keys()]));
@@ -441,7 +589,7 @@ describe("host: registries", () => {
 			self.register(Routes, { x: "x" });
 			return {};
 		});
-		await assert.rejects(host.get(Lazy, {}).ready, /only eager/);
+		await assert.rejects(host.get(Lazy, {}).ready, /only objects of lifetime "host" may register/);
 	});
 
 	it("rejects conflicting registrations", async () => {
@@ -454,7 +602,7 @@ describe("host: registries", () => {
 					self.register(Routes, { same: name });
 					return {};
 				},
-				{ eager: true },
+				{ lifetime: "host" },
 			);
 		}
 		await tick();
@@ -467,7 +615,7 @@ describe("host: composition", () => {
 	const Source = local("t.source", {
 		version: 1,
 		input: Type.Object({}),
-		members: { n: Type.Number(), set: method(Type.Number(), Type.Null()) },
+		members: { n: Type.Number(), set: method(Type.Number()) },
 	});
 	const Mirror = local("t.mirror", {
 		version: 1,
@@ -475,24 +623,23 @@ describe("host: composition", () => {
 		members: { copy: Type.Number(), doubled: Type.Number() },
 	});
 
-	it("handle state members are sources for listeners and derivations", async () => {
+	it("reference state members are sources for listeners and derivations", async () => {
 		const host = quiet();
 		host.serve(Source, (_input, _principal, self) => {
-			const state = self.state({ n: cell(Type.Number(), 1) });
+			const n = self.state("n", Type.Number(), 1);
 			return {
-				n: state.n,
+				n,
 				set: (value: number, ctx: Ctx) => {
-					state.n.replace(ctx, value);
-					return null;
+					n.replace(ctx, value);
 				},
 			};
 		});
 		host.serve(Mirror, (_input, _principal, self) => {
 			const source = self.get(Source, {});
-			const state = self.state({ copy: cell(Type.Number(), 0) });
-			self.listen({ follow: listener(source.n, (value, ctx) => state.copy.replace(ctx, value ?? 0)) });
-			const derived = self.derive({ doubled: derivation([source.n], (n) => (n ?? 0) * 2) });
-			return { copy: state.copy, doubled: derived.doubled };
+			const copy = self.state("copy", Type.Number(), 0);
+			self.on("follow", source.n, (value, ctx) => copy.replace(ctx, value ?? 0));
+			const doubled = self.derive([source.n], (n) => (n ?? 0) * 2);
+			return { copy, doubled };
 		});
 		const mirror = host.get(Mirror, {});
 		await mirror.ready;
@@ -511,30 +658,30 @@ describe("host: composition", () => {
 		const Who = local("t.who", {
 			version: 1,
 			input: Type.Object({}),
-			members: { ping: method(Type.Null(), Type.Null()) },
+			members: { ping: method() },
 		});
 		const Front = local("t.front", {
 			version: 1,
 			input: Type.Object({}),
-			members: { relay: method(Type.Null(), Type.Null()) },
+			members: { relay: method() },
 		});
 		host.serve(Who, (_input, principal) => {
 			seen.push(principal);
-			return { ping: () => null };
+			return { ping: () => {} };
 		});
 		host.serve(Front, (_input, principal) => {
 			seen.push(principal);
-			return { relay: (_args: null, ctx: Ctx) => ctx.get(Who, {}).ping(null, ctx) };
+			return { relay: (ctx: Ctx) => ctx.get(Who, {}).ping(ctx) };
 		});
-		await host.root((ctx) => ctx.get(Front, {}).relay(null, ctx), { principal: { user: "guest" } });
+		await host.root((ctx) => ctx.get(Front, {}).relay(ctx), { principal: { user: "guest" } });
 		assert.deepEqual(seen, [{ user: "guest" }, { host: true }]);
 	});
 
-	it("calling a handle inside a factory throws not_ready", async () => {
+	it("calling a reference inside a factory throws not_ready", async () => {
 		const host = quiet();
 		host.serve(Source, (_input, _principal, self) => ({
-			n: self.state({ n: cell(Type.Number(), 0) }).n,
-			set: () => null,
+			n: self.state("n", Type.Number(), 0),
+			set: () => {},
 		}));
 		const Eager = local("t.eager-call", { version: 1, input: Type.Object({}) });
 		host.serve(Eager, (_input, _principal, self) => {

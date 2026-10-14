@@ -10,7 +10,6 @@ import {
 	local,
 	memoryLinkPair,
 	remote,
-	resource,
 } from "../src/index.ts";
 
 const tick = () => new Promise<void>((resolve) => setImmediate(resolve));
@@ -33,19 +32,17 @@ describe("host: eager readiness", () => {
 					serve(
 						Eager,
 						(_input, _principal, self) => {
-							self.resources({
-								r: resource({
-									rev: 1,
-									open: () =>
-										new Promise<void>((resolve) => {
-											opened = resolve;
-										}),
-								}),
+							self.resource("r", {
+								version: 1,
+								open: () =>
+									new Promise<void>((resolve) => {
+										opened = resolve;
+									}),
 							});
 							self.register(entries, { eager: "live" });
 							return {};
 						},
-						{ eager: true },
+						{ lifetime: "host" },
 					);
 					serve(Lazy, () => {
 						lazyRuns++;
@@ -87,17 +84,15 @@ describe("host: eager readiness", () => {
 								if (failure === "factory") throw cause;
 								if (failure === "dependency") self.get(Lazy, {});
 								if (failure === "resource")
-									self.resources({
-										r: resource({
-											rev: 1,
-											open: () => {
-												throw cause;
-											},
-										}),
+									self.resource("r", {
+										version: 1,
+										open: () => {
+											throw cause;
+										},
 									});
 								return {};
 							},
-							{ eager: true },
+							{ lifetime: "host" },
 						);
 					},
 				};
@@ -128,7 +123,7 @@ describe("host: eager readiness", () => {
 								self.get(Lazy, {});
 								return {};
 							},
-							{ eager: true },
+							{ lifetime: "host" },
 						),
 				},
 				{ name: "provider", setup: ({ serve }) => serve(Lazy, () => ({})) },
@@ -153,7 +148,7 @@ describe("host: eager readiness", () => {
 									self.get(Lazy, {});
 									return {};
 								},
-								{ eager: true },
+								{ lifetime: "host" },
 							),
 					},
 				]),
@@ -164,18 +159,18 @@ describe("host: eager readiness", () => {
 		}
 	});
 
-	it("ready includes direct eager serves and their configured inputs, but not later serves", async () => {
+	it("ready includes direct host serves, but not later serves", async () => {
 		const host = createHost({ onError: () => {} });
-		const WithInput = local("ready.input", { version: 1, input: Type.Object({ id: Type.String() }) });
-		let input: unknown;
+		const First = local("ready.first", { version: 1, input: Type.Object({}) });
+		let created = 0;
 		try {
 			host.serve(
-				WithInput,
-				(value) => {
-					input = value;
+				First,
+				() => {
+					created++;
 					return {};
 				},
-				{ eager: { input: { id: "bootstrap" } } },
+				{ lifetime: "host" },
 			);
 			const first = host.ready();
 			host.serve(
@@ -183,10 +178,10 @@ describe("host: eager readiness", () => {
 				() => {
 					throw forbidden("later");
 				},
-				{ eager: true },
+				{ lifetime: "host" },
 			);
 			await first;
-			assert.deepEqual(input, { id: "bootstrap" });
+			assert.equal(created, 1);
 			await assert.rejects(host.ready(), /later/);
 		} finally {
 			await host.close();
@@ -199,7 +194,7 @@ describe("host: eager readiness", () => {
 			const [parent, upstream] = memoryLinkPair();
 			const worker = createHost({ name: "worker", upstream, onError: unexpectedError });
 			const Status = remote("ready.status", { version: 1, input: Type.Object({}), variants: { default: {} } });
-			server.serve(Status, () => ({ kind: "default" }));
+			server.serve(Status, () => ({ variant: "default" }));
 			let bootstrap = false;
 			let reported = false;
 			const facet = {
@@ -211,31 +206,29 @@ describe("host: eager readiness", () => {
 							bootstrap = true;
 							return {};
 						},
-						{ eager: true },
+						{ lifetime: "host" },
 					);
 					serve(
 						Eager,
 						(_input, _principal, self) => {
 							const status = self.get(Status, {}, { at: "server" });
-							self.resources({
-								r: resource({
-									rev: 1,
-									deps: [status],
-									open: () => {
-										reported = true;
-									},
-								}),
+							self.resource("r", {
+								version: 1,
+								deps: [status],
+								open: () => {
+									reported = true;
+								},
 							});
 							return {};
 						},
-						{ eager: true },
+						{ lifetime: "host" },
 					);
 				},
 			};
 			try {
 				await (operation === "install"
-					? worker.install(facet, { awaitEager: false })
-					: worker.load([facet], { awaitEager: false }));
+					? worker.install(facet, { awaitHostObjects: false })
+					: worker.load([facet], { awaitHostObjects: false }));
 				await worker.get(Lazy, {}).ready;
 				assert.equal(bootstrap, true);
 				let settled = false;

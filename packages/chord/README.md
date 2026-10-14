@@ -2,8 +2,8 @@
 
 Chord builds applications out of **objects** that live in several processes (a server, workers, browser tabs) and can be **hot reloaded** while they run.
 
-- An **object** is state plus code at an address. It is created on demand and lives while someone holds it.
-- Everyone gets a **handle**, never the object. Handles work the same locally and across processes, and survive reloads.
+- An **object** is state plus code at an address. It is created on demand and lives while someone references it.
+- Everyone gets a **reference**, never the object. References work the same locally and across processes, and survive reloads.
 - Every object knows its **principal**: an owner and a guest get different objects, with different methods.
 - **State** is observable JSON. Remote viewers get a snapshot followed by deltas.
 - **Hot reload** swaps code while it runs. Work in flight finishes on the code it started with, state is kept, and incompatible changes migrate at a safe point.
@@ -14,7 +14,7 @@ Contracts are runtime values described with [TypeBox](https://github.com/sinclai
 
 | Import | Contents | Runs in |
 |--------|----------|---------|
-| `@earendil-works/chord` | Contracts (`local`, `remote`, `method`, `opaque`), declarations (`cell`, `derivation`, `listener`, `resource`), hosts (`createHost`, `defineFacet`, `defineRegistry`), links (`memoryLinkPair`, `ipcLink`, `webSocketLink`, `acceptWebSockets`), errors (`ChordError`, `isChordError`, `forbidden`, `invalid`). Also the shared base: `Context`, `JsonValue`, `JsonRepresentation`, `Draft`, `copyJson`, `isJsonValue`, and `replicatedState` with its types. | Node and browsers |
+| `@earendil-works/chord` | Contracts (`local`, `remote`, `method`, `opaque`), declarations (through the factory's `self`: `state`, `derive`, `resource`, `on`, `task`), hosts (`createHost`, `defineFacet`, `defineRegistry`), links (`memoryLinkPair`, `ipcLink`, `webSocketLink`, `acceptWebSockets`), errors (`ChordError`, `isChordError`, `forbidden`, `invalid`). Also the shared base: `Context`, `JsonValue`, `JsonRepresentation`, `Draft`, `copyJson`, `isJsonValue`, and `replicatedState` with its types. | Node and browsers |
 | `@earendil-works/chord/node` | Child host processes: `createHostManager`, `forkDriver`, `childControl`, `processLock`; the facet module loader `nodeLoader`. | Node |
 | `@earendil-works/chord/context` | Explicit cancellation and invocation values: `BACKGROUND_CONTEXT`, `withCancel`, `withAbortSignal`, `withoutAbortSignal`, `withContextValue`, `awaitWithContext`. | Node and browsers |
 | `@earendil-works/chord/delta` | The transactional JSON tracker, structural diff, immutable apply, and the wire encoder/decoder for operation batches. | Node and browsers |
@@ -23,7 +23,7 @@ Contracts are runtime values described with [TypeBox](https://github.com/sinclai
 
 ```ts
 import { Type } from "typebox";
-import { cell, createHost, method, remote } from "@earendil-works/chord";
+import { createHost, method, remote } from "@earendil-works/chord";
 
 // contract.ts: shared by provider and consumers
 export const Counter = remote("demo.counter", {
@@ -32,7 +32,7 @@ export const Counter = remote("demo.counter", {
 	variants: {
 		default: {
 			state: { count: Type.Number() },
-			methods: { increment: method(Type.Object({ by: Type.Number() }), Type.Null()) },
+			methods: { increment: method(Type.Object({ by: Type.Number() })) },
 		},
 	},
 });
@@ -40,19 +40,18 @@ export const Counter = remote("demo.counter", {
 const host = createHost({ name: "server", principalKey: (p) => p.kind });
 
 host.serve(Counter, ({ name }, _principal, self) => {
-	const state = self.state({ count: cell(Type.Number(), 0) });
+	const count = self.state("count", Type.Number(), 0);
 	return {
-		kind: "default",
-		count: state.count,
+		variant: "default",
+		count,
 		increment: async ({ by }, ctx) => {
-			state.count.change(ctx, (n) => n + by);
-			return null;
+			count.change(ctx, (n) => n + by);
 		},
 	};
 });
 
 await host.root(async (ctx) => {
-	const clicks = ctx.get(Counter, { name: "clicks" }); // a handle; held until this root ends
+	const clicks = ctx.get(Counter, { name: "clicks" }); // a reference; released when this root ends
 	clicks.count.subscribe((n) => console.log("count", n));
 	await clicks.increment({ by: 2 }, ctx); // logs 0, then 2
 });
@@ -112,7 +111,7 @@ status.change(context, (draft) => {
 ```
 
 A successful `change()` publishes exactly one atomic revision. If its callback
-throws, the original value and sequence remain unchanged. Draft handles become
+throws, the original value and sequence remain unchanged. Draft references become
 unusable when the callback returns. The tracker emits string append and
 front-truncate operations, array splices and permutations, sets, and deletes; large
 edit sets may fold into a complete replacement.

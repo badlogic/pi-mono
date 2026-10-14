@@ -5,7 +5,6 @@ import { Type } from "typebox";
 import { describe, it } from "vitest";
 import {
 	type Ctx,
-	cell,
 	createHost,
 	type Frame,
 	type Host,
@@ -13,6 +12,7 @@ import {
 	type Link,
 	memoryLinkPair,
 	method,
+	PROTOCOL_VERSION,
 	remote,
 } from "../src/index.ts";
 
@@ -66,32 +66,32 @@ const Counter = remote("t.flow-counter", {
 	variants: {
 		main: {
 			state: { count: Type.Object({ n: Type.Number() }) },
-			methods: { add: method(Type.Number(), Type.Number()), wait: method(Type.Null(), Type.Null()) },
+			methods: { add: method(Type.Number(), Type.Number()), wait: method() },
 		},
 	},
 });
 
 let release = () => {};
 const waiting = () =>
-	new Promise<null>((resolve) => {
+	new Promise<void>((resolve) => {
 		const previous = release;
 		release = () => {
 			previous();
-			resolve(null);
+			resolve();
 		};
 	});
 
 function serveCounter(host: Host): void {
 	host.serve(Counter, (_input, _principal, self) => {
-		const state = self.state({ count: cell(Type.Object({ n: Type.Number() }), { n: 0 }) });
+		const count = self.state("count", Type.Object({ n: Type.Number() }), { n: 0 });
 		return {
-			kind: "main",
-			count: state.count,
+			variant: "main",
+			count,
 			add: (delta: number, ctx: Ctx) => {
-				state.count.change(ctx, (draft) => {
+				count.change(ctx, (draft) => {
 					draft.n += delta;
 				});
-				return state.count.value.n;
+				return count.value.n;
 			},
 			wait: waiting,
 		};
@@ -228,7 +228,7 @@ describe("link flow control", () => {
 		server.accept(down, { principal: { user: "u" }, window: 1 });
 		const frames: Frame[] = [];
 		raw.receive((frame) => frames.push(frame));
-		raw.send({ t: "hello", name: "raw", kind: "client", epoch: 0 });
+		raw.send({ t: "hello", protocol: PROTOCOL_VERSION, name: "raw", kind: "client", codeVersion: 0 });
 		raw.send({ t: "hold", id: 1, at: "server", token: Counter.description, input: {} });
 		raw.send({ t: "sub", id: 2, hold: 1, member: "count" });
 		for (let i = 0; i < 5; i++) raw.send({ t: "call", id: 3 + i, hold: 1, member: "add", args: 1 });
@@ -245,7 +245,7 @@ describe("link flow control", () => {
 		const [down, raw] = memoryLinkPair();
 		server.accept(down, { principal: { user: "u" } });
 		raw.receive(() => {});
-		raw.send({ t: "hello", name: "raw", kind: "client", epoch: 0, acks: true });
+		raw.send({ t: "hello", name: "raw", kind: "client", codeVersion: 0, acks: true });
 		raw.send({ t: "ack", n: 99 });
 		await until(() => raw.closed);
 		await server.close();
@@ -262,8 +262,8 @@ describe("link call limit", () => {
 		const counter = host.get(Counter, {}, { at: "server" });
 		await counter.ready;
 		release = () => {};
-		const first = counter.wait(null);
-		const second = counter.wait(null);
+		const first = counter.wait();
+		const second = counter.wait();
 		await assert.rejects(
 			counter.add(1),
 			(error) => isChordError(error, "unavailable") && error.reason === "too_many_calls",

@@ -23,7 +23,7 @@ if (mode === "fatal") {
 	});
 	const init = (await control.init) as { greeting: string };
 	host.serve(Echo, () => ({
-		kind: "main",
+		variant: "main",
 		echo: (text: string) => `${init.greeting} ${text} from ${process.pid}`,
 		pid: () => process.pid,
 	}));

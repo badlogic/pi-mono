@@ -2,6 +2,19 @@
 
 ## [Unreleased]
 
+### Breaking Changes
+
+- Worker-backed results and `close()` now settle after requesting shutdown, not after worker exit. Hosts that require actual exit must track `onWorkerStarted(exited)` or retain capacity through `acquireWorker()`'s release callback
+
+### Added
+
+- Added `CodemodeSandbox`'s `onWorkerStarted(exited)` callback so hosts can count a worker against concurrency limits until it actually exits, independently of its script result
+- Added `CodemodeSandbox`'s `acquireWorker()` hook to reserve shared capacity before starting a worker and release it only on actual exit or constructor failure
+
+### Fixed
+
+- Fixed aborts, timeouts, and `close()` waiting for worker termination on Bun while a non-interruptible built-in runs; shutdown now requests termination without waiting for exit ([#10748](https://github.com/earendil-works/pi/issues/10748))
+
 ## [1.2.0] - 2026-10-12
 
 ### Breaking Changes

@@ -122,7 +122,7 @@ export async function processLock(name: string): Promise<() => Promise<void>> {
 		});
 }
 
-/** sun_path holds 104 bytes on macOS and the BSDs, including the terminating NUL. */
+/** sun_path references 104 bytes on macOS and the BSDs, including the terminating NUL. */
 const MAX_SOCKET_PATH_BYTES = 103;
 
 /**
@@ -157,6 +157,9 @@ function accepting(address: string): Promise<boolean> {
 }
 
 const LOCK_ENV = "CHORD2_LOCK";
+
+/** A control message to a peer process that is gone: dropped (its exit or `disconnect` is reported separately). */
+const ignoreSendError = (): void => {};
 
 export function forkDriver(options: ForkDriverOptions): Driver {
 	return {
@@ -203,7 +206,8 @@ export function forkDriver(options: ForkDriverOptions): Driver {
 				if (control !== undefined) for (const listener of listeners) listener(control);
 			});
 			const send = (message: ControlMessage): void => {
-				if (child.connected) child.send({ chord2control: message });
+				// A child that exited before the channel reported it fails the write (EPIPE): its exit is what counts.
+				if (child.connected) child.send({ chord2control: message }, ignoreSendError);
 			};
 			if (options.init !== undefined) send({ type: "init", value: options.init });
 			return {
@@ -400,7 +404,8 @@ export function childControl(channel: NodeJS.Process = process): {
 	onShutdown(handler: () => void | Promise<void>): void;
 } {
 	const send = (message: ControlMessage): void => {
-		if (channel.connected) channel.send?.({ chord2control: message });
+		// A parent that is gone fails the write (EPIPE); the `disconnect` that follows is how a child notices.
+		if (channel.connected) channel.send?.({ chord2control: message }, undefined, undefined, ignoreSendError);
 	};
 	let resolveInit: (value: unknown) => void = () => {};
 	const init = new Promise<unknown>((resolve) => {
