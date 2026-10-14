@@ -3095,6 +3095,20 @@ async function generateModels() {
 	];
 	allModels.push(...antLingModels);
 
+	allModels.push({
+		id: "Beam-1.0-501B-A23B",
+		name: "Reflection Beam 1.0 501B-A23B",
+		api: "openai-completions",
+		baseUrl: "https://api.reflection.ai/openai/v1",
+		provider: "reflection",
+		reasoning: true,
+		thinkingLevelMap: { off: null, minimal: null, xhigh: "xhigh", max: "max" },
+		input: ["text"],
+		cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+		contextWindow: 262144,
+		maxTokens: 131072,
+	});
+
 	for (const candidate of allModels) {
 		if (
 			candidate.api === "openai-completions" &&

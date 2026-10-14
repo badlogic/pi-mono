@@ -1,7 +1,14 @@
 import { Type } from "typebox";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { convertMessages } from "../src/api/openai-completions.ts";
-import { getModel, normalizeContext, stream, streamSimple } from "../src/compat.ts";
+import {
+	clampThinkingLevel,
+	getModel,
+	getSupportedThinkingLevels,
+	normalizeContext,
+	stream,
+	streamSimple,
+} from "../src/compat.ts";
 import type { AssistantMessage, Model, SimpleStreamOptions, Tool, ToolResultMessage } from "../src/types.ts";
 
 const mockState = vi.hoisted(() => ({
@@ -1914,6 +1921,19 @@ describe("openai-completions tool_choice", () => {
 		expect(params.store).toBeUndefined();
 		expect(params.prompt_cache_key).toBeUndefined();
 		expect(params.prompt_cache_retention).toBeUndefined();
+	});
+
+	it("maps Reflection AI thinking levels to accepted reasoning efforts", async () => {
+		const model = getModel("reflection", "Beam-1.0-501B-A23B")!;
+
+		expect(getSupportedThinkingLevels(model)).toEqual(["low", "medium", "high", "xhigh", "max"]);
+		expect(clampThinkingLevel(model, "off")).toBe("low");
+		expect(clampThinkingLevel(model, "minimal")).toBe("low");
+
+		for (const level of ["low", "medium", "high", "xhigh", "max"] as const) {
+			const params = await captureSimpleParams(model, level);
+			expect(params.reasoning_effort).toBe(level);
+		}
 	});
 
 	it("omits Ant Ling reasoning for unmapped direct reasoning efforts and non-reasoning models", async () => {

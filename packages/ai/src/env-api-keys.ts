@@ -114,6 +114,7 @@ function getApiKeyEnvVars(provider: string): readonly string[] | undefined {
 		"opencode-go": "OPENCODE_API_KEY",
 		"kimi-coding": "KIMI_API_KEY",
 		meta: "META_API_KEY",
+		reflection: "REFLECTION_API_KEY",
 		"cloudflare-workers-ai": "CLOUDFLARE_API_KEY",
 		"cloudflare-ai-gateway": "CLOUDFLARE_API_KEY",
 		xiaomi: "XIAOMI_API_KEY",

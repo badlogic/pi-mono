@@ -54,6 +54,7 @@ This table covers providers with a single primary API-key variable. Providers th
 | Baseten | `BASETEN_API_KEY` |
 | Kimi For Coding | `KIMI_API_KEY` |
 | Meta | `META_API_KEY` |
+| Reflection AI | `REFLECTION_API_KEY` |
 | MiniMax | `MINIMAX_API_KEY` |
 | MiniMax (China) | `MINIMAX_CN_API_KEY` |
 | Moonshot AI (Global and China) | `MOONSHOT_API_KEY` |

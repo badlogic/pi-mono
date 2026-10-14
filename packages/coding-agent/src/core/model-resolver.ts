@@ -50,6 +50,7 @@ export const defaultModelPerProvider: Partial<Record<KnownProvider, string>> = {
 	"opencode-go": "kimi-k3",
 	"kimi-coding": "kimi-for-coding",
 	meta: "muse-spark-1.3",
+	reflection: "Beam-1.0-501B-A23B",
 	"cloudflare-workers-ai": "@cf/moonshotai/kimi-k2.6",
 	"cloudflare-ai-gateway": "workers-ai/@cf/moonshotai/kimi-k2.6",
 	"qwen-token-plan": "qwen3.7-max",
