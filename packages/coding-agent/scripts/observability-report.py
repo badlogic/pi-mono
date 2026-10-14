@@ -53,7 +53,7 @@ def latest_metric_values(snapshots: list[dict[str, Any]]) -> dict[tuple[str, tup
     if not snapshots:
         return totals
     for metric in snapshots[-1]["metrics"]:
-        if metric.get("type") != "SUM" and metric.get("type") != "sum":
+        if str(metric.get("type")).upper() not in ("SUM", "3"):
             continue
         for point in metric["dataPoints"]:
             attributes = tuple(sorted((str(k), str(v)) for k, v in point.get("attributes", {}).items()))

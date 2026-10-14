@@ -1,8 +1,15 @@
 import { appendFileSync, mkdirSync } from "node:fs";
 import { join } from "node:path";
 import { type ExportResult, ExportResultCode } from "@opentelemetry/core";
-import type { PushMetricExporter, ResourceMetrics } from "@opentelemetry/sdk-metrics";
+import { DataPointType, type PushMetricExporter, type ResourceMetrics } from "@opentelemetry/sdk-metrics";
 import type { ReadableSpan, SpanExporter } from "@opentelemetry/sdk-trace-base";
+
+const DATA_POINT_TYPE_NAMES: Record<number, string> = {
+	[DataPointType.HISTOGRAM]: "HISTOGRAM",
+	[DataPointType.EXPONENTIAL_HISTOGRAM]: "EXPONENTIAL_HISTOGRAM",
+	[DataPointType.GAUGE]: "GAUGE",
+	[DataPointType.SUM]: "SUM",
+};
 
 /** Converts an OpenTelemetry HrTime `[seconds, nanoseconds]` to a decimal nanosecond string without losing precision. */
 function hrTimeToNano(time: readonly [number, number]): string {
@@ -99,7 +106,7 @@ export class JsonlMetricExporter implements PushMetricExporter {
 						name: metric.descriptor.name,
 						unit: metric.descriptor.unit,
 						description: metric.descriptor.description,
-						type: metric.dataPointType,
+						type: DATA_POINT_TYPE_NAMES[metric.dataPointType] ?? String(metric.dataPointType),
 						dataPoints: metric.dataPoints.map((point) => ({
 							attributes: point.attributes,
 							value: point.value,
