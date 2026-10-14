@@ -49,7 +49,16 @@ export {
 	type WebSocketLinkOptions,
 	webSocketLink,
 } from "./link.ts";
-export type { Factory, Lifetime, Self, ServeOptions, StateOptions } from "./object.ts";
+export type {
+	Factory,
+	HostServeOptions,
+	Lifetime,
+	ReferencedServeOptions,
+	Self,
+	ServeOptions,
+	ServeOptionsFor,
+	StateOptions,
+} from "./object.ts";
 export { defineRegistry, type Registry, type RegistryTable, type RegistryView } from "./registry.ts";
 export type { ReloadOptions, ReloadReport } from "./reload.ts";
 export {

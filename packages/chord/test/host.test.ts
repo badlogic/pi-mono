@@ -388,23 +388,27 @@ describe("host: lifetime", () => {
 		members: { seen: opaque<unknown>("t.seen@1") },
 	});
 
-	it('serve refuses a lifetime "host" the type cannot have', () => {
+	it('serve refuses a lifetime "host" the type cannot have, at compile time and at runtime', () => {
 		const host = quiet();
 		const Remote = remote("t.remote-store", { version: 1, input: Type.Object({}), variants: { main: {} } });
-		assert.throws(
-			() => host.serve(Remote, () => ({ variant: "main" }), { lifetime: "host" } as never),
-			/needs a local type/,
-		);
 		const Keyed = local("t.keyed", { version: 1, input: Type.Object({ id: Type.String() }) });
-		assert.throws(() => host.serve(Keyed, () => ({}), { lifetime: "host" }), /input that accepts \{\}/);
-		assert.throws(
-			() => host.serve(Store, () => ({ seen: null }), { lifetime: "host", linger: 10 }),
-			/does not linger/,
-		);
-		assert.throws(
-			() => host.serve(Store, () => ({ seen: null }), { lifetime: "forever" } as never),
-			/unknown lifetime/,
-		);
+		// Each refused call is also a type error; the runtime check is the backstop for untyped callers.
+		const refused: [() => void, RegExp][] = [
+			// @ts-expect-error: a remote type is never of lifetime "host"
+			[() => host.serve(Remote, () => ({ variant: "main" }), { lifetime: "host" }), /needs a local type/],
+			// @ts-expect-error: the one object has the empty input, and `id` is required
+			[() => host.serve(Keyed, () => ({}), { lifetime: "host" }), /input that accepts \{\}/],
+			// @ts-expect-error: an object of lifetime "host" does not linger
+			[() => host.serve(Store, () => ({ seen: null }), { lifetime: "host", linger: 10 }), /does not linger/],
+			// @ts-expect-error: no such lifetime
+			[() => host.serve(Store, () => ({ seen: null }), { lifetime: "forever" }), /unknown lifetime/],
+		];
+		for (const [serve, error] of refused) assert.throws(serve, error);
+		// Allowed: a local type whose input has only optional fields, and any type with the default lifetime.
+		const Optional = local("t.optional", { version: 1, input: Type.Object({ id: Type.Optional(Type.String()) }) });
+		host.serve(Optional, () => ({}), { lifetime: "host" });
+		host.serve(Keyed, () => ({}), { lifetime: "referenced", linger: 10 });
+		host.serve(Remote, () => ({ variant: "main" }), { linger: 10 });
 	});
 
 	it("every get reaches the one object, created at serve for the host principal; another input is invalid", async () => {

@@ -487,7 +487,8 @@ host.serve(Index, indexFactory, { lifetime: "host" });              // one objec
 **`lifetime: "host"`** is for local types with an empty input (or only defaults): the type has exactly one object,
 created for the host principal when its facet loads. Every `get` reaches that object, whoever asks; a `get` with
 another input is invalid. References others hold do not change its lifetime, and it cannot `linger`. Only such
-objects may register into registries.
+objects may register into registries. TypeScript refuses `lifetime: "host"` for a remote type, for an input with a
+required field and together with `linger`; `serve` checks the same at runtime, for callers without types.
 
 ## Registries
 

@@ -9,6 +9,7 @@ import {
 	type ImplementationOf,
 	type InputOf,
 	LOCAL_VARIANT,
+	type LocalContract,
 	type MemberDescription,
 	type Ref,
 	takesNoArgs,
@@ -24,20 +25,41 @@ const noop = (): void => {};
 
 // ─── Services ────────────────────────────────────────────────────────────────
 
-export interface ServeOptions {
-	/**
-	 * How long objects of the type live. `"referenced"` (default): created at the first `get` of an address, disposed
-	 * after the last reference is released (plus `linger`). `"host"`: one object, created when its facet loads (loading
-	 * waits until it is live) and kept until the host closes or a reload removes its facet. Only local types with an
-	 * empty input may have it; every `get` reaches that one object, created for the host principal. Only such objects
-	 * may register into registries.
-	 */
-	readonly lifetime?: Lifetime;
-	/** Milliseconds an object stays alive after its last reference is released (`lifetime: "referenced"` only). */
+/**
+ * `serve` options. `lifetime` says how long objects of the type live. `"referenced"` (default): created at the first
+ * `get` of an address, disposed after the last reference is released (plus `linger`). `"host"`: one object, created when
+ * its facet loads (loading waits until it is live) and kept until the host closes or a reload removes its facet. Only
+ * local types whose input accepts `{}` may have it (`ServeOptionsFor` checks that at compile time, `serve` again at
+ * runtime); every `get` reaches that one object, created for the host principal. Only such objects may register into
+ * registries.
+ */
+export type ServeOptions = ReferencedServeOptions | HostServeOptions;
+
+export interface ReferencedServeOptions {
+	readonly lifetime?: "referenced";
+	/** Milliseconds an object stays alive after its last reference is released. */
 	readonly linger?: number;
 	/** Adapters for consumers built against older contract versions. */
 	readonly accepts?: Accepts;
 }
+
+export interface HostServeOptions {
+	readonly lifetime: "host";
+	/** An object of lifetime `"host"` lives as long as the host: it does not linger. */
+	readonly linger?: undefined;
+	/** Adapters for consumers built against older contract versions. */
+	readonly accepts?: Accepts;
+}
+
+/**
+ * The options `serve` accepts for `C`: `lifetime: "host"` only for a local type whose input has no required fields
+ * (the type's one object has the empty input).
+ */
+export type ServeOptionsFor<C extends AnyContract> = C extends LocalContract
+	? Record<never, never> extends InputOf<C>
+		? ServeOptions
+		: ReferencedServeOptions
+	: ReferencedServeOptions;
 
 export type Lifetime = "referenced" | "host";
 

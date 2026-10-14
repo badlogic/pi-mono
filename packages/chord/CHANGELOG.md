@@ -13,6 +13,7 @@
 - A derivation is new at every reload (computed at the commit) instead of kept with its function replaced. A listener whose state source a reload replaced subscribes again and gets the current value again: listeners on state must reconcile. Listeners on state subscribe when they activate, so they get the value current then
 - `method(args?, result?)`: without arguments a method is called `ref.name(ctx?)` and implemented `(ctx) => …`; without a result it is void (callers get `undefined`). Descriptions record both by leaving `args`/`result` out (fingerprints of such methods change), `call` frames omit `args` and `result` frames `value` for them. Coverage requires both sides to agree on arguments; a void consumer accepts a result
 - `FacetApi` has a `signal` (below): code that builds a `FacetApi` by hand, for example to wrap `serve`, must pass it on
+- `serve(type, factory, { lifetime: "host" })` compiles only for a local type whose input has no required fields, and without `linger`; `serve` still refuses the rest at runtime. `ServeOptions` is a union of `ReferencedServeOptions` and `HostServeOptions`, and `serve` takes `ServeOptionsFor<C>`
 
 ### Added
 

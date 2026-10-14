@@ -24,6 +24,7 @@ import {
 	RefImpl,
 	type RefOwner,
 	type ServeOptions,
+	type ServeOptionsFor,
 	type Service,
 } from "./object.ts";
 import { enqueue } from "./publish.ts";
@@ -42,8 +43,16 @@ export const hostPrincipal: Principal = Object.freeze({ host: true });
  * keeps literal `variant`s in factory returns.
  */
 export interface Serve {
-	<D extends RemoteDef>(type: RemoteContract<D>, factory: Factory<RemoteContract<D>>, options?: ServeOptions): void;
-	<D extends LocalDef>(type: LocalContract<D>, factory: Factory<LocalContract<D>>, options?: ServeOptions): void;
+	<D extends RemoteDef>(
+		type: RemoteContract<D>,
+		factory: Factory<RemoteContract<D>>,
+		options?: ServeOptionsFor<RemoteContract<D>>,
+	): void;
+	<D extends LocalDef>(
+		type: LocalContract<D>,
+		factory: Factory<LocalContract<D>>,
+		options?: ServeOptionsFor<LocalContract<D>>,
+	): void;
 }
 
 type AnyServe = (type: AnyContract, factory: Factory<AnyContract>, options?: ServeOptions) => void;

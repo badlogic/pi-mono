@@ -137,7 +137,8 @@ Inside the factory, placeholders must not be used (`resource.value` throws `not_
 | `"referenced"` (default) | at the first `get` of its address | after the last reference is released, plus `linger` | allowed (default 0) |
 | `"host"` | when its facet loads (or at `serve`); loading waits until it is live | when the host closes, or a reload removes its facet | refused |
 
-- `"host"` is refused at `serve` for remote types, for an input that does not accept `{}`, and together with `linger`.
+- `"host"` is refused at `serve` for remote types, for an input that does not accept `{}`, and together with `linger`;
+  the types (`ServeOptionsFor`) refuse the same at compile time, where such an input is one with a required field.
   The type has exactly one object: the empty input (defaults applied), created for the host principal. Every `get`
   reaches it, whatever its principal (the factory sees the host principal); a `get` with another input is
   `invalid/input`. Other references do not change its lifetime: the host keeps its own until it closes.
