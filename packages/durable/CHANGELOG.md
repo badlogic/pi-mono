@@ -4,6 +4,7 @@
 
 ### Fixed
 
+- The system baseline written after a compaction now leads the model context when the kept history includes an assistant message, as does a first baseline written after earlier answers, instead of following the new input; Anthropic and OpenAI Codex requests sent it as a mid-conversation system message without an initial prompt or tool set. Other system messages after an assistant message stay in place ([#10904](https://github.com/earendil-works/pi/issues/10904)).
 - `toBase64`, used by `read` and the Photon image processor, no longer takes about 140 MB of heap to encode a 3 MiB image, which exceeded the 128 MB memory limit of a Cloudflare Durable Object; it now builds a binary string 8 KiB at a time and encodes it with `btoa` ([#10923](https://github.com/earendil-works/pi/issues/10923)).
 
 ## [1.2.0] - 2026-10-12

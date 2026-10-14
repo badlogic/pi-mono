@@ -281,13 +281,25 @@ Context derivation:
    fork cut or at an interrupted tail. Drop tool results with no preceding call.
 9. Exclude model-less entries and assistant messages with `aborted`, `error`, or
    `deferred` stop reasons from future provider requests.
-10. Move a system message that only user messages precede to the front. A
-    run's input is committed before generation renders the system prompt, so a
-    transcript, or the range after a compaction or reset, otherwise starts with
-    the input. Providers treat only a leading system message as the initial
-    prompt and tool set; without one, a later tool change rewrites the
-    request's tool list and invalidates the whole prompt cache. Stored entries
-    and `contributions` keep the committed order.
+10. Move the first system message to the front when only user messages
+    precede it, or when it is the baseline's: the first `pi.system` entry after
+    `H`, unless an edit targets it. Generation writes it with every section and
+    tool in effect before the first request after a compaction or reset, and
+    omits the retained `pi.system` entries. Without `H`, the first `pi.system`
+    entry is the baseline unless an earlier entry carries a system message, in
+    its messages or an edit's replacement, even one an edit omits later: only
+    then did generation write it with every section and tool in effect, before
+    the first request or once an agent without any gets one. A run's input
+    is committed before generation renders the system prompt, so the context
+    otherwise starts with the input, or with the kept history, assistant
+    messages included. Providers treat only a leading system message as the
+    initial prompt and tool set; without one, a later tool change rewrites the
+    request's tool list and invalidates the whole prompt cache. Only the first
+    system message moves, so replay gives the same sections and tools. Any other
+    system message with an assistant message before it stays in place, since
+    moving it would change what it means; a retained system message of another
+    kind ahead of the baseline therefore keeps the baseline from leading.
+    Stored entries and `contributions` keep the committed order.
 
 Views carry raw active entries. UI reduction and model-context reduction are
 separate consumers. Older stored history is available through the owning
