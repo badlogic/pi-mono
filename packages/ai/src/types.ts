@@ -441,6 +441,11 @@ export interface ToolCall {
 	thoughtSignature?: string; // Google-specific: opaque signature for reusing thought context
 	/** OpenAI Responses namespace for calls to dynamically loaded or namespaced tools. */
 	namespace?: string;
+	/**
+	 * Set when the model's complete arguments text was not a valid JSON object. `arguments` is then `{}`.
+	 * Describes the problem and includes the text the model sent; tool argument validation fails with it.
+	 */
+	argumentsError?: string;
 }
 
 export interface Usage {
