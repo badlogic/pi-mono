@@ -6,6 +6,8 @@ import {
 	createHost,
 	type Frame,
 	type Host,
+	type IpcChannel,
+	ipcLink,
 	isChordError,
 	memoryLinkPair,
 	method,
@@ -535,5 +537,34 @@ describe("links: packed payloads", () => {
 		const relayed = forwarded[0];
 		assert(relayed?.t === "result" && relayed.value instanceof Packed);
 		assert.deepEqual(relayed.value.bytes, packed.value.bytes);
+	});
+});
+
+describe("links: IPC", () => {
+	it("a write that fails after the peer process exited (EPIPE) ends the link instead of raising an unhandled error", async () => {
+		// Node reports such a failure asynchronously: to the send callback, or else as an `error` event nobody handles.
+		const sent: unknown[] = [];
+		const channel: IpcChannel = {
+			connected: true,
+			send: (message, callback) => {
+				sent.push(message);
+				const error = Object.assign(new Error("write EPIPE"), { code: "EPIPE" });
+				if (callback === undefined) throw new Error("an IPC send without a callback cannot report EPIPE");
+				process.nextTick(() => callback(error));
+				return false;
+			},
+			on: () => undefined,
+			off: () => undefined,
+		};
+		const link = ipcLink(channel);
+		const reasons: string[] = [];
+		link.onClose((reason) => reasons.push(reason));
+		link.send({ t: "ping", n: 1 });
+		await tick();
+		assert.equal(link.closed, true);
+		assert.deepEqual(reasons, ["ipc send failed: EPIPE"]);
+		assert.equal(sent.length, 1);
+		link.send({ t: "ping", n: 2 });
+		assert.equal(sent.length, 1, "a closed link sends nothing more");
 	});
 });
