@@ -13,6 +13,8 @@ import { createToolNameMatcher } from "./mcp-servers.ts";
 import { convertToLlm } from "./messages.ts";
 import { findInitialModel } from "./model-resolver.ts";
 import { ModelRuntime } from "./model-runtime.ts";
+import { readObservabilityConfig } from "./observability/config.ts";
+import { createSessionObserver } from "./observability/session-observer.ts";
 import { mergeProviderAttributionHeaders } from "./provider-attribution.ts";
 import type { ResourceLoader } from "./resource-loader.ts";
 import { DefaultResourceLoader } from "./resource-loader.ts";
@@ -476,6 +478,14 @@ export async function createAgentSession(options: CreateAgentSessionOptions = {}
 		extensionRunnerRef,
 		sessionStartEvent: options.sessionStartEvent,
 	});
+
+	const observability = readObservabilityConfig(process.env, agentDir);
+	if (observability.enabled) {
+		const observer = createSessionObserver(session, observability);
+		process.once("beforeExit", () => {
+			void observer.dispose();
+		});
+	}
 
 	const extensionsResult = resourceLoader.getExtensions();
 

@@ -6,6 +6,8 @@
 
 - Changing the thinking level mid-session on OpenAI GPT-6 models (API key) now keeps the prompt cache ([#10853](https://github.com/earendil-works/pi/issues/10853))
 
+- Added opt-in local observability: set `PI_OBSERVABILITY=1` to write OpenTelemetry spans (`session.run`, `turn`, `llm.request`, `tool.<name>`, `compaction`) and metric snapshots as JSONL under `~/.pi/agent/telemetry` (override with `PI_OBSERVABILITY_DIR`). Prompt, tool argument, and tool result text stay out unless `PI_OBSERVABILITY_CONTENT` is `redacted` or `full`. `scripts/observability-report.py` summarizes the output.
+
 ### Fixed
 
 - Pinned internal Pi dependencies to exact release versions to prevent fresh installs from mixing incompatible packages ([#10865](https://github.com/earendil-works/pi/issues/10865))
