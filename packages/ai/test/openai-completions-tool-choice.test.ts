@@ -1106,12 +1106,12 @@ describe("openai-completions tool_choice", () => {
 		]);
 
 		expect(response.content).toHaveLength(6);
-		expect(response.content[0]).toEqual({ type: "text", text: "answer 1 answer 2\n" });
-		expect(response.content[1]).toEqual({
+		expect(response.content[0]).toEqual({
 			type: "thinking",
 			thinking: "think 1 think 2",
 			thinkingSignature: "reasoning_content",
 		});
+		expect(response.content[1]).toEqual({ type: "text", text: "answer 1 answer 2\n" });
 		const readCall = response.content[2];
 		const grepCall = response.content[3];
 		const listCall = response.content[4];
