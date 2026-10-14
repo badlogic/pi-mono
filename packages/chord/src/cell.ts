@@ -59,6 +59,28 @@ class Fanout<T> {
 	}
 }
 
+/**
+ * Whether a state source has its value (entry 8): a remote reference's member before its first snapshot has none, and
+ * neither has anything derived from or forwarding it. Sources without this symbol always have their value.
+ */
+export const HYDRATION: unique symbol = Symbol("chord.hydration");
+
+export interface Hydration {
+	readonly hydrated: boolean;
+	/** Resolves once hydrated; rejects if the source ends first. */
+	whenHydrated(): Promise<void>;
+}
+
+/** The hydration of a readable, or undefined for a source that always has its value. */
+export function hydrationOf(value: unknown): Hydration | undefined {
+	if (value === null || typeof value !== "object") return undefined;
+	return (value as { readonly [HYDRATION]?: Hydration })[HYDRATION];
+}
+
+/** The hydrations of `sources` that are not hydrated yet. */
+export const unhydrated = (sources: Iterable<unknown>): Hydration[] =>
+	[...sources].map(hydrationOf).filter((hydration): hydration is Hydration => hydration?.hydrated === false);
+
 /** An object-owned state source (cell or derivation). Writes recompute dependents atomically. */
 export abstract class Source<T> implements Readable<T> {
 	readonly key: string;
@@ -313,6 +335,16 @@ export class Derived<T> extends Source<T> {
 
 	get value(): T {
 		return this.#value;
+	}
+
+	/** Hydrated once every source is (a derivation over a remote member waits for its snapshot). */
+	get [HYDRATION](): Hydration | undefined {
+		const pending = unhydrated(this.sources);
+		if (pending.length === 0) return undefined;
+		return {
+			hydrated: false,
+			whenHydrated: () => Promise.all(pending.map((hydration) => hydration.whenHydrated())).then(() => {}),
+		};
 	}
 
 	/**

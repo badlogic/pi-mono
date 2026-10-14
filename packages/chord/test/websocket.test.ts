@@ -65,7 +65,7 @@ describe("WebSocket links", () => {
 			});
 		try {
 			const browser = open("ok");
-			const board = browser.get(Board, {});
+			const board = browser.hold(Board, {});
 			const seen: unknown[] = [];
 			board.notes.subscribe((value) => seen.push(value));
 			await board.add("hello");
@@ -86,7 +86,7 @@ describe("WebSocket links", () => {
 				onError: () => {},
 			});
 			await assert.rejects(
-				impostor.root((ctx) => impostor.get(Board, {}).add("x", ctx), {
+				impostor.root((ctx) => impostor.hold(Board, {}).add("x", ctx), {
 					signal: AbortSignal.timeout(150),
 				}),
 				(error) => isChordError(error, "aborted"),
@@ -94,7 +94,7 @@ describe("WebSocket links", () => {
 			await impostor.close();
 
 			const refused = open("bad");
-			const denied = refused.get(Board, {});
+			const denied = refused.hold(Board, {});
 			// The server closes unauthenticated sockets; calls wait for a reconnect until their ctx gives up.
 			await assert.rejects(
 				refused.root((ctx) => denied.add("x", ctx), { signal: AbortSignal.timeout(100) }),
@@ -132,7 +132,7 @@ describe("WebSocket links: packed payloads", () => {
 				upstream: { link: webSocketLink(socket as unknown as WebSocketLike), principal: { kind: "server" } },
 				onError: () => {},
 			});
-			const board = browser.get(Board, {});
+			const board = browser.hold(Board, {});
 			assert.deepEqual(await board.who(), notes);
 			board.notes.subscribe(() => {});
 			for (let i = 0; i < 100 && board.notes.value === undefined; i++) await new Promise((r) => setTimeout(r, 5));
@@ -141,7 +141,7 @@ describe("WebSocket links: packed payloads", () => {
 			// A text-only transport (the TUI launcher) turns a packed message back into its text frame.
 			const frames = binary.map((message) => JSON.parse(inflateMessage(message)) as Record<string, unknown>);
 			assert(frames.some((frame) => frame.t === "result" && JSON.stringify(frame.value) === JSON.stringify(notes)));
-			assert(frames.some((frame) => frame.t === "state" && JSON.stringify(frame.snap) === JSON.stringify(notes)));
+			assert(frames.some((frame) => frame.t === "state" && JSON.stringify(frame.value) === JSON.stringify(notes)));
 			await browser.close();
 
 			// A client's binary message is a protocol error: the server closes the socket.

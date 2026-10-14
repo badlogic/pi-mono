@@ -65,7 +65,7 @@ host.serve(Counter, ({ name }, _principal, self) => {
 });
 
 await host.root(async (ctx) => {
-	const clicks = ctx.get(Counter, { name: "clicks" });  // a reference; released when this root ends
+	const clicks = await ctx.get(Counter, { name: "clicks" });  // ready, with its state; released when this root ends
 	clicks.count.subscribe((n) => console.log("count", n));
 	await clicks.increment({ by: 2 }, ctx);  // logs 0, then 2
 });
@@ -274,7 +274,8 @@ host.serve(Chat, ({ session, conversation }, principal, self) => {
 ```
 
 **Rules:**
-- Inside the factory, never use what you declared: `db.value` throws `not_ready`, and calling a reference throws. Use them in methods, listeners, tasks and `init`.
+- Inside the factory, never use what you declared: `db.value` and `index.someState.value` throw `not_ready`, and calling a reference throws. Use them in methods, listeners, tasks and `init`.
+- **The object goes live only with its references ready**: live, and (for a remote reference) every state member of its variant hydrated. The same holds for state it forwards or derives from a remote reference it holds some other way: it goes live once that state has its value. A reference that is not ready after the host's `readyTimeout` (default 60 s) fails the activation with `unavailable/ready_timeout`; a reference cycle across hosts ends that way instead of hanging.
 - **Concurrent `get`s** of one address share one activation, so the database opens once.
 - **Failure propagates:** if `openSqlite` throws, `Index` fails, `Chat` fails with that cause, and every waiting `get` rejects. The next `get` tries again.
 - **Abandoned activations:** if everyone releases before activation finishes, the result is disposed.
@@ -290,7 +291,7 @@ when abandoning startup. `install` registers synchronously, so setup/registratio
 
 `await host.ready()` waits for the host objects present when called, including direct
 `host.serve(..., { lifetime: "host" })` and previously deferred loads. It is an activation barrier, not a continuous health check, a wait for tasks to
-finish, or a remote-state hydration barrier. Later installations require another readiness wait.
+finish. Later installations require another readiness wait.
 
 A worker may need to open its local Harness and announce control readiness **before** the parent accepts its link.
 A host object reporting to the server's SessionStatus cannot become live before that acceptance. Awaiting the
@@ -299,8 +300,7 @@ whole load before announcing control readiness would deadlock. Defer the whole b
 ```ts
 // Connect the upstream link first; its outgoing references can queue until the parent accepts it.
 await worker.load(workerFacets, { awaitHostObjects: false });  // also supported by install
-const harness = worker.get(Harness, {});
-await harness.ready;                                  // local bootstrap only; no upstream dependency
+const harness = await worker.get(Harness, {});        // local bootstrap only; no upstream dependency
 announceControlReady();                               // parent can now accept the worker link
 await worker.ready();                                 // every host object live, including upstream references
 harness.release();
@@ -310,7 +310,8 @@ harness.release();
 automatic classification of upstream dependencies. Choose a local bootstrap reference with no upstream dependency,
 connect before loading upstream consumers, and let the parent admit the link before the full barrier. Control
 readiness means admission is possible, not that every host object is live. Keep worker bootstrap counted as busy
-until the full barrier settles, and report a later failure through the worker's fatal/startup-error path.
+until the full barrier settles, and report a later failure through the worker's fatal/startup-error path. Never await a
+reference whose object needs the parent (a remote one, or a local one that holds one) before the parent admits the link.
 
 To hand out a native object a resource opens (a local type's `opaque` member), expose the resource. References read its value once the object is live, and `undefined` before:
 
@@ -320,8 +321,7 @@ host.serve(Harness, (_, _host, self) => {
 	return { harness: self.expose(durable) };  // contract member: harness: opaque<DurableHarness>("pi.durable-harness@1")
 });
 
-const harness = ctx.get(Harness, {});
-await harness.ready;
+const harness = await ctx.get(Harness, {});
 harness.harness.resume();  // the DurableHarness itself
 ```
 
@@ -381,9 +381,8 @@ host.serve(Chat, ({ session, conversation }, principal, self) => {
 ```
 
 ```ts
-const chat = ctx.get(Chat, { session: "S1", conversation: 1 });  // on session:S1
-await chat.ready;
-if (chat.variant === "participant") showComposer(chat.send);
+const chat = await ctx.get(Chat, { session: "S1", conversation: 1 });  // on session:S1
+if (chat.variant === "participant") showComposer(chat.send);  // narrows: `send` exists only there
 else showReadOnly();
 ```
 
@@ -396,24 +395,34 @@ Local types have no variants. Their only callers are inside the host, acting as 
 
 ## References
 
+| Where | API | Released |
+| --- | --- | --- |
+| a factory | `self.get(Type, input)`: synchronous; the object goes live after it is ready | with the object (or its replaced declaration) |
+| a call | `await ctx.get(Type, input, { state? })` | when the call settles |
+| outside Chord | `await host.get(Type, input, { signal?, state? })` | `ref.release()` |
+| a UI runtime | `host.hold(Type, input)`: synchronous, possibly `loading` | `ref.release()` |
+
 ```ts
-const chat = ctx.get(Chat, input);
+const chat = await ctx.get(Chat, input);  // ready: live, every state member of its variant hydrated
 chat.status;  // "loading" | "live" | "released" | "gone"
-await chat.ready;  // live, or rejects with the activation error
-chat.variant;  // the current variant
-chat.shape;  // { variant, members, contract, codeVersion }
+chat.variant;  // the current variant; a multi-variant reference narrows on it
+chat.shape;  // { variant, members, contract }
 const send = chat.send;  // a stable function: always dispatches to the current code
-chat.view.value;  // undefined until hydrated (remote: while someone subscribes)
+chat.view.value;  // the current value, typed T
 chat.view.subscribe((v) => render(v));
 chat.onStatus((status, error) => { if (status === "gone") reconnect(error); });
 chat.release();
 ```
 
+- **A reference you hold is usable:** an awaited `get` resolves once the object is live and every state member of its variant has its first snapshot, local or remote. It rejects with the activation error (`forbidden`, unreachable, …), with `aborted` (a `ctx.get` whose ctx is aborted or whose call settles first; `host.get`'s `signal`), or with `unavailable/ready_timeout` after the host's `readyTimeout`. Only that reference is released then.
+- **A held reference stays subscribed** to the state of its variant, with or without listeners, until it is released. After a link loss the last values stay readable while it re-holds (status `loading`).
+- **Reading state before the first hydration throws `not_ready`** (a `hold` that is still loading, a member read inside a factory). A member outside the current variant throws `not_in_variant`; an ended reference throws its end (`released`, or the `gone` error). A listener added before the hydration gets its snapshot then.
+- **`state: false`** gives a method-only reference: it receives no state (unless another reference to the same object wants it) and is ready once its object is live.
 - **Calls on a `loading` reference wait** until it's live, respecting `ctx` cancellation and a deadline.
 - A member missing from the current variant rejects with `not_in_variant`.
 - After `release()`, every member rejects with `released`.
 - **`gone`** means the object was forced away while referenced: revocation, archive, its host dying. Call `get` again, or show "unavailable". `onStatus` reports every status change (`live`, `loading` while a link reconnects, `released`, `gone` with the error), so a UI needn't poll.
-- **A remote state member is hydrated only while subscribed.** When its last subscriber leaves, its `value` goes back to `undefined`, so a later subscriber never sees a stale value: it gets `undefined`, then the current snapshot.
+- **References to one remote object share one binding** per host and key (type, normalized input, principal key, contract fingerprint): one hold over the link, one stream per state member, calls over the same hold. Each reference keeps its own status, observers and `release`. With `createHost({ linger: { types: { [typeName]: ms }, cap } })`, a binding whose last reference is released stays held (and hydrated) for `ms`, at most `cap` (default 4) at a time, so taking the reference again costs nothing on the link.
 - **Return values are values.** Anything long-lived you want to share is an object you reach with `get`.
 
 ## State
@@ -440,9 +449,9 @@ view.replace(ctx, rebuilt, { diff: true });              // always diff
 - A `change` is atomic: one revision, or nothing if the callback throws.
 - `change` only touches the paths you mutate, so fields your code doesn't know about survive. Use `replace` only where your code owns the whole value.
 - Values are immutable. Never mutate what you read or receive.
-- Remote subscribers get a snapshot, then deltas. After a reconnect or a reload they get a `reset` snapshot, and nothing is replayed.
+- Remote references get a snapshot of each state member of their variant, then deltas. After a reconnect or a reload they get a `reset` snapshot, and nothing is replayed.
 - `replace` sends a structural diff when the new value shares containers with the old one (a new revision of the same state), and a single replacement otherwise. `{ diff: true | false }` forces either. The value is the same either way.
-- An implementation may expose another object's state member as its own: `return { variant: "viewer", view: conversation.view }`. It reads `undefined` only while that object is loading, which never happens once this object is live.
+- An implementation may expose another object's state member as its own: `return { variant: "viewer", view: conversation.view }`. The object goes live only once that member has its value, local or remote.
 
 **A cell whose first value comes from a source** declares `{ init }` instead of an initial value:
 
@@ -477,7 +486,7 @@ Every method gets `(args, ctx)`, or `(ctx)` when it takes no arguments. Pass `ct
 ```ts
 send: async (input, ctx) => {
 	ctx.signal.throwIfAborted();
-	const uploads = ctx.get(Uploads, {});  // a reference owned by this call; released when it settles
+	const uploads = await ctx.get(Uploads, {});  // a reference owned by this call; released when it settles
 	const files = await uploads.resolve({ ids: input.uploads }, ctx);
 	return c.submit({ ...input, files }, author, ctx);
 },
@@ -607,7 +616,7 @@ The facet's `setup` argument is its host, scoped to what a plugin needs: `serve`
 export default defineFacet((host) => {
 	host.serve(Sessions, sessionsFactory);
 	tools.register("rename_session", (args) =>
-		host.root((ctx) => ctx.get(Sessions, {}).rename(args, ctx)),
+		host.root(async (ctx) => (await ctx.get(Sessions, {})).rename(args, ctx)),
 	);
 });
 ```
@@ -721,7 +730,7 @@ const worker = createHost<Principal>({
 });
 
 // anywhere
-const chat = ctx.get(Chat, { session: "S1", conversation: 1 });  // browser → server → worker session:S1
+const chat = await ctx.get(Chat, { session: "S1", conversation: 1 });  // browser → server → worker session:S1
 const sessions = self.get(Sessions, {});  // `hostNamed("server")`: worker → server, acting as worker{S1}
 ```
 
@@ -731,7 +740,8 @@ const sessions = self.get(Sessions, {});  // `hostNamed("server")`: worker → s
   - a forwarded principal is accepted only from the parent link;
   - calls an object makes itself act as its host;
   - links ping, and a dead link releases everything held through it.
-- **Slow peers:** a peer acknowledges what it processed. While a window (`window`, default 256 KiB) of frames is unacknowledged, state waits and is coalesced per subscription; calls and results are never held back. So under load a result can arrive before the state change it caused: wait for the state you need instead of assuming it is there when the call returns.
+- **Client origins:** a hold that comes from a browser carries an opaque id of its connection (`origin`), forwarded by the server when it relays the hold, so a worker can tell its clients apart. A client cannot set it. A disconnect releases that client's holds at once.
+- **Slow peers:** a peer acknowledges what it processed. While a window (`window`, default 256 KiB) of frames is unacknowledged, state waits and is coalesced per member's stream; calls, results and the first snapshots of a new reference are never held back, so a `get` does not wait behind other references' state. Waiting ops are capped per link (`pendingCap`, default four windows): beyond, the oldest streams are replaced by their current value. So under load a result can arrive before the state change it caused: wait for the state you need instead of assuming it is there when the call returns.
 - **Reloads across hosts:** the server coordinates prepare and commit for every host.
 - **Workers that start behind** (spawned after a reload) are caught up to the server's code version before anything is routed to them. Calls their roots make to the server meanwhile run in the server's current code version instead of failing `superseded`.
 - **Protocol version:** both ends announce the link protocol version in their hello. A peer of another version is not
@@ -777,7 +787,7 @@ A reload changing the guard: Durable phases already running keep the old snapsho
 | --- | --- |
 | `forbidden` | The factory or a method refused this principal |
 | `invalid` | Input, arguments or a result failed validation |
-| `not_ready` | A declared resource or reference was used inside a factory |
+| `not_ready` | A declared resource or reference was used inside a factory, or state read before its reference's first hydration |
 | `not_in_variant` | The member doesn't exist in the variant you have |
 | `released` | The reference was released |
 | `gone` | The object was forced away while referenced. Call `get` again. |
@@ -785,7 +795,7 @@ A reload changing the guard: Durable phases already running keep the old snapsho
 | `upgrade_conflict` | An old root reached an object migrated meanwhile. Retry as a new root. |
 | `superseded` | The root's code version is no longer available on this host. Retry. |
 | `upgrade_required` | A browser's contract is outdated. Reload its web facets. |
-| `unavailable` | The target host can't be reached or started |
+| `unavailable` | The target host can't be reached or started; reason `ready_timeout`: a reference was not ready within `readyTimeout` |
 | `aborted` | The call's `ctx` was cancelled |
 
 ## Rules of thumb

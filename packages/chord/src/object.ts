@@ -1,6 +1,17 @@
 import type { Static, TSchema } from "typebox";
 import { Value } from "typebox/value";
-import { Cell, Derived, isSource, notReady, type Sources, type SourceValues } from "./cell.ts";
+import {
+	Cell,
+	Derived,
+	HYDRATION,
+	type Hydration,
+	hydrationOf,
+	isSource,
+	notReady,
+	type Sources,
+	type SourceValues,
+	unhydrated,
+} from "./cell.ts";
 import {
 	type Accepts,
 	type Adapter,
@@ -376,6 +387,11 @@ export interface HostCore {
 	disposed(object: ObjectImpl): void;
 	/** Milliseconds a reload waits for aborted tasks to finish before starting their replacements. */
 	readonly taskStopDeadline: number;
+	/**
+	 * Milliseconds an activation or a reload's prepare waits for its references to be ready and hydrated before it fails
+	 * (`unavailable/ready_timeout`; a reference cycle across hosts never resolves).
+	 */
+	readonly readyTimeout: number;
 	checkRegistrations(object: ObjectImpl, decls: Decls): void;
 	/** Rebuilds the current registry tables from live objects (plus `including`, which is finishing activation). */
 	registriesChanged(including?: ObjectImpl): void;
@@ -393,6 +409,8 @@ export class CtxImpl implements Ctx {
 	readonly holder: boolean;
 	readonly #refs: RefCore[] = [];
 	readonly #release: () => void;
+	/** Aborted when the ctx closes: awaited `get`s give up. */
+	readonly #closing = new AbortController();
 	#closed = false;
 
 	/** True after the call or root that received this ctx settled: it may no longer start work. */
@@ -434,10 +452,11 @@ export class CtxImpl implements Ctx {
 		this.holder = fields.holder ?? false;
 	}
 
-	get<C extends AnyContract>(type: C, input: InputOf<C>, options?: GetOptions): Ref<C> {
+	async get<C extends AnyContract>(type: C, input: InputOf<C>, options?: GetOptions): Promise<Ref<C>> {
 		this.check(this.host);
 		const ref = this.host.acquire(type, input, { principal: this.principal, ...options }, "call");
 		this.#refs.push(ref);
+		await awaitReady(ref, [this.signal, this.#closing.signal], this.host.readyTimeout);
 		return ref.proxy as Ref<C>;
 	}
 
@@ -456,6 +475,7 @@ export class CtxImpl implements Ctx {
 
 	close(): void {
 		this.#closed = true;
+		this.#closing.abort(new ChordError("aborted", "ctx expired: its call already settled", { reason: "expired" }));
 		this.#release();
 		for (const ref of this.#refs.splice(0)) ref.release();
 	}
@@ -486,6 +506,38 @@ export function linkedSignal(sources: readonly AbortSignal[]): { readonly signal
 		detach.push(() => source.removeEventListener("abort", forward));
 	}
 	return { signal: controller.signal, release };
+}
+
+/**
+ * Waits until `ref` is ready, at most `ms` and until a signal aborts; on failure the reference is released (only it: a
+ * binding other references share stays) and the error is rethrown: the activation error, `aborted`, or
+ * `unavailable/ready_timeout`.
+ */
+export async function awaitReady(ref: RefCore, signals: readonly AbortSignal[], ms: number): Promise<void> {
+	const timeout = new AbortController();
+	const timer = Number.isFinite(ms)
+		? setTimeout(
+				() =>
+					timeout.abort(
+						new ChordError("unavailable", `${ref.address} was not ready after ${ms} ms`, {
+							reason: "ready_timeout",
+						}),
+					),
+				ms,
+			)
+		: undefined;
+	(timer as { unref?: () => void } | undefined)?.unref?.();
+	const linked = linkedSignal([...signals, timeout.signal]);
+	try {
+		await raceSignal(ref.ready, linked.signal);
+	} catch (error) {
+		ref.release();
+		const reason: unknown = linked.signal.reason;
+		throw reason instanceof ChordError && reason.reason === "ready_timeout" ? reason : error;
+	} finally {
+		clearTimeout(timer);
+		linked.release();
+	}
 }
 
 export async function raceSignal<T>(promise: Promise<T>, signal: AbortSignal): Promise<T> {
@@ -559,18 +611,21 @@ export const refOf = (value: unknown): RefCore | undefined =>
 
 /**
  * A reference's state member: a stable readable that follows whatever source the current implementation exposes under
- * that name. `undefined` until the reference is live (or while the variant lacks the member). Rebinding (reload,
- * variant) delivers a reset. Upstream is subscribed only while someone listens.
+ * that name. Reading throws `not_ready` until the reference is live, `not_in_variant` while the variant lacks the
+ * member. A listener added before the member is readable gets its snapshot then. Rebinding (reload, variant) delivers a
+ * reset. Upstream is subscribed only while someone listens.
  */
 class MemberReadable implements Readable<unknown> {
 	readonly #ref: RefImpl;
 	readonly #name: string;
 	readonly #values = new Set<(value: unknown) => void>();
 	readonly #events = new Set<(event: StateEvent<unknown>) => void>();
+	/** Event listeners that have not had their snapshot yet (added while the member was not readable). */
+	readonly #unseen = new Set<(event: StateEvent<unknown>) => void>();
 	#source: Readable<unknown> | undefined;
 	#upstream = noop;
 	/** The value listeners last saw; a first upstream snapshot equal to it is not re-announced. */
-	#seen: unknown;
+	#seen: { readonly value: unknown } | undefined;
 
 	constructor(ref: RefImpl, name: string) {
 		this.#ref = ref;
@@ -578,23 +633,58 @@ class MemberReadable implements Readable<unknown> {
 	}
 
 	get value(): unknown {
-		return this.#current()?.value;
+		const ref = this.#ref;
+		if (ref.status === "released" || ref.status === "gone") throw ref.terminalError();
+		if (ref.status !== "live") throw notReady(`${ref.address}.${this.#name}`);
+		const view = ref.currentView();
+		if (view === undefined) throw notReady(`${ref.address}.${this.#name}`);
+		const source = this.#current();
+		if (source === undefined) {
+			throw new ChordError(
+				"not_in_variant",
+				`${ref.address}: ${this.#name} is not a state member of variant ${variantOf(view) ?? "(local)"}`,
+			);
+		}
+		return source.value;
+	}
+
+	/** Not hydrated while the reference is not live, or while its source (a forwarded remote member) is not. */
+	get [HYDRATION](): Hydration | undefined {
+		const ref = this.#ref;
+		if (ref.status === "live") return hydrationOf(this.#current());
+		return {
+			hydrated: false,
+			whenHydrated: async () => {
+				await ref.ready;
+				await hydrationOf(this.#current())?.whenHydrated();
+			},
+		};
 	}
 
 	subscribe(listener: (value: unknown) => void): () => void {
 		this.#values.add(listener);
-		this.#seen = this.value;
-		this.#safe(() => listener(this.#seen));
+		const source = this.#readable();
+		if (source !== undefined) {
+			this.#seen = { value: source.value };
+			this.#safe(() => listener(source.value));
+		}
 		this.bind();
 		return () => this.#remove(this.#values, listener);
 	}
 
 	events(listener: (event: StateEvent<unknown>) => void): () => void {
 		this.#events.add(listener);
-		this.#seen = this.value;
-		this.#safe(() => listener({ type: "snap", value: this.#seen }));
+		const source = this.#readable();
+		if (source !== undefined) {
+			const value = source.value;
+			this.#seen = { value };
+			this.#safe(() => listener({ type: "snap", value }));
+		} else this.#unseen.add(listener);
 		this.bind();
-		return () => this.#remove(this.#events, listener);
+		return () => {
+			this.#unseen.delete(listener);
+			this.#remove(this.#events, listener);
+		};
 	}
 
 	/** (Re)subscribes upstream to the current source; a changed source is announced as a reset. */
@@ -609,14 +699,22 @@ class MemberReadable implements Readable<unknown> {
 		this.#upstream = source.events((event) => {
 			const isFirst = first;
 			first = false;
-			if (isFirst && event.value === this.#seen) return;
-			this.#seen = event.value;
+			if (isFirst && this.#unseen.size === 0 && this.#seen !== undefined && event.value === this.#seen.value) return;
+			this.#seen = { value: event.value };
 			const translated: StateEvent<unknown> = isFirst ? { type: "reset", value: event.value } : event;
 			const events = [...this.#events];
 			const values = [...this.#values];
+			const unseen = new Set(this.#unseen);
+			this.#unseen.clear();
 			// Queued: a rebind during a commit must not run observers before the commit completes.
 			enqueue(() => {
-				for (const listener of events) if (this.#events.has(listener)) this.#safe(() => listener(translated));
+				for (const listener of events) {
+					if (!this.#events.has(listener)) continue;
+					const delivered: StateEvent<unknown> = unseen.has(listener)
+						? { type: "snap", value: event.value }
+						: translated;
+					this.#safe(() => listener(delivered));
+				}
 				for (const listener of values) if (this.#values.has(listener)) this.#safe(() => listener(event.value));
 			});
 		});
@@ -625,6 +723,7 @@ class MemberReadable implements Readable<unknown> {
 	stop(): void {
 		this.#values.clear();
 		this.#events.clear();
+		this.#unseen.clear();
 		this.bind();
 	}
 
@@ -634,6 +733,12 @@ class MemberReadable implements Readable<unknown> {
 		const value = view[this.#name];
 		// Cells and derivations, or any readable an `accepts` adapter maps them to.
 		return isSource(value) || isReadableLike(value) ? (value as Readable<unknown>) : undefined;
+	}
+
+	/** The current source if its value can be read now (live, in the variant, hydrated). */
+	#readable(): Readable<unknown> | undefined {
+		const source = this.#current();
+		return source === undefined || hydrationOf(source)?.hydrated === false ? undefined : source;
 	}
 
 	#remove<T>(set: Set<T>, listener: T): void {
@@ -707,7 +812,6 @@ export class RefImpl {
 			variant: variantOf(view),
 			members: Object.keys(view).filter((key) => key !== "variant"),
 			contract: installed.service.contract.fingerprint,
-			codeVersion: installed.codeVersion,
 		};
 	}
 
@@ -1000,6 +1104,8 @@ export class ObjectImpl {
 		try {
 			await this.open(run.created.resources, run.created.refs, signal);
 			if (signal.aborted) throw abandoned();
+			await this.waitHydrated(run);
+			if (signal.aborted) throw abandoned();
 			await this.initCells(run, signal);
 			if (signal.aborted) throw abandoned();
 			this.host.checkRegistrations(this, run.decls);
@@ -1101,9 +1207,56 @@ export class ObjectImpl {
 			}
 			return promise;
 		};
-		const results = await Promise.allSettled([...resources.map(openOne), ...refs.map((ref) => ref.ready)]);
+		const ready = this.withinReadyTimeout(Promise.all(refs.map((ref) => ref.ready)), () =>
+			refs.filter((ref) => ref.status === "loading").map((ref) => ref.address),
+		);
+		const results = await Promise.allSettled([...resources.map(openOne), ready]);
 		const failure = results.find((result) => result.status === "rejected");
 		if (failure !== undefined) throw failure.reason;
+	}
+
+	/**
+	 * Waits until the state sources a run exposes or derives from have their values: a local object goes live only with
+	 * its state, also where it forwards or derives from a remote reference's member.
+	 */
+	async waitHydrated(run: Run): Promise<void> {
+		const exposed = Object.entries(run.implementation ?? {});
+		const pending = unhydrated([...run.created.derives, ...exposed.map(([, value]) => value)]);
+		if (pending.length === 0) return;
+		await this.withinReadyTimeout(Promise.all(pending.map((hydration) => hydration.whenHydrated())), () => [
+			...exposed
+				.filter(([, value]) => hydrationOf(value)?.hydrated === false)
+				.map(([name]) => `${this.address}.${name}`),
+			...run.created.derives
+				.filter((derived) => hydrationOf(derived) !== undefined)
+				.map((derived) => `derive ${derived.key}`),
+		]);
+	}
+
+	/** `work` within the host's `readyTimeout`; a timeout names what is still awaited. */
+	async withinReadyTimeout<T>(work: Promise<T>, waiting: () => readonly string[]): Promise<T> {
+		const ms = this.host.readyTimeout;
+		if (!Number.isFinite(ms)) return work;
+		let timer: ReturnType<typeof setTimeout> | undefined;
+		const timeout = new Promise<never>((_, reject) => {
+			timer = setTimeout(() => {
+				const list = waiting();
+				reject(
+					new ChordError(
+						"unavailable",
+						`${this.address} was not ready after ${ms} ms${list.length === 0 ? "" : `, waiting on ${list.join(", ")}`} (a reference cycle across hosts?)`,
+						{ reason: "ready_timeout" },
+					),
+				);
+			}, ms);
+			(timer as { unref?: () => void }).unref?.();
+		});
+		timeout.catch(noop);
+		try {
+			return await Promise.race([work, timeout]);
+		} finally {
+			clearTimeout(timer);
+		}
 	}
 
 	/**

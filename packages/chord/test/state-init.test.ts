@@ -67,7 +67,7 @@ describe("state init", () => {
 				},
 			};
 		});
-		const ref = host.get(Notes, {});
+		const ref = host.hold(Notes, {});
 		const seen: unknown[] = [];
 		ref.notes.subscribe((value) => seen.push(value));
 		// A call made while init runs waits until the object is live, then reads the loaded value.
@@ -94,7 +94,7 @@ describe("state init", () => {
 			notes.value;
 			return { notes, count, has: () => false, add: () => {} };
 		});
-		await assert.rejects(host.get(Notes, {}).ready, (error) => isChordError(error) && error.code === "not_ready");
+		await assert.rejects(host.hold(Notes, {}).ready, (error) => isChordError(error) && error.code === "not_ready");
 	});
 
 	it("a throwing or invalid init fails the activation and closes its resources; the next get tries again", async () => {
@@ -109,13 +109,13 @@ describe("state init", () => {
 			const count = self.derive([notes], (list) => list.length);
 			return { notes, count, has: () => false, add: () => {} };
 		});
-		await assert.rejects(host.get(Notes, {}).ready, /db down/);
+		await assert.rejects(host.hold(Notes, {}).ready, /db down/);
 		assert.deepEqual(closed, ["db"]);
 		result = () => [1];
-		await assert.rejects(host.get(Notes, {}).ready, (error) => isChordError(error) && error.code === "invalid");
+		await assert.rejects(host.hold(Notes, {}).ready, (error) => isChordError(error) && error.code === "invalid");
 		assert.deepEqual(closed, ["db", "db"]);
 		result = () => ["ok"];
-		const ref = host.get(Notes, {});
+		const ref = host.hold(Notes, {});
 		await ref.ready;
 		assert.deepEqual(ref.notes.value, ["ok"]);
 	});
@@ -129,11 +129,13 @@ describe("state init", () => {
 		});
 		host.serve(Source, () => ({ all: () => ["from source"] }));
 		host.serve(Notes, (_input, _principal, self) => {
-			const notes = self.state("notes", NotesSchema, { init: (ctx: Ctx) => ctx.get(Source, {}).all(ctx) });
+			const notes = self.state("notes", NotesSchema, {
+				init: async (ctx: Ctx) => (await ctx.get(Source, {})).all(ctx),
+			});
 			const count = self.derive([notes], (list) => list.length);
 			return { notes, count, has: () => false, add: () => {} };
 		});
-		const ref = host.get(Notes, {});
+		const ref = host.hold(Notes, {});
 		await ref.ready;
 		assert.deepEqual(ref.notes.value, ["from source"]);
 	});
@@ -184,7 +186,7 @@ describe("state init", () => {
 			const host = createHost({ self: { kind: "host" }, onError: () => {} });
 			const inits: string[] = [];
 			await host.install(facet({ inits }));
-			const ref = host.get(Notes, {});
+			const ref = host.hold(Notes, {});
 			await ref.ready;
 			await host.root((ctx) => ref.add("written", ctx));
 			await host.reload([facet({ inits, extra: () => ["x", "y"] })]);
@@ -198,7 +200,7 @@ describe("state init", () => {
 			const host = createHost({ self: { kind: "host" }, onError: () => {} });
 			const inits: string[] = [];
 			await host.install(facet({ inits }));
-			const ref = host.get(Notes, {});
+			const ref = host.hold(Notes, {});
 			await ref.ready;
 			await assert.rejects(
 				host.reload([
@@ -219,7 +221,7 @@ describe("state init", () => {
 			const host = createHost({ self: { kind: "host" }, onError: () => {} });
 			const inits: string[] = [];
 			await host.install(facet({ inits }));
-			const ref = host.get(Notes, {});
+			const ref = host.hold(Notes, {});
 			await ref.ready;
 			const report = await host.reload([facet({ inits, countVersion: 2, extra: () => ["x"] })]);
 			assert.equal(report.gated.length, 1);

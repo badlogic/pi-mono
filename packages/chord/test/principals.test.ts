@@ -47,7 +47,7 @@ describe("principals", () => {
 			});
 		});
 		await host.install({ name: "who", ...facet });
-		const guest = host.get(Who, {}, { principal: { kind: "guest", id: "g1" } });
+		const guest = host.hold(Who, {}, { principal: { kind: "guest", id: "g1" } });
 		assert.equal(
 			await host.root((ctx) => guest.who(ctx), { principal: { kind: "guest", id: "g1" } }),
 			"guest g1, called by host",
@@ -60,7 +60,7 @@ describe("principals", () => {
 			void plain;
 		});
 		// @ts-expect-error: not a principal of this app
-		host.get(Who, {}, { principal: { kind: "stranger" } });
+		host.hold(Who, {}, { principal: { kind: "stranger" } });
 		// @ts-expect-error: a pattern names fields of the app's principals
 		void host.invalidatePrincipal({ kind: "guest", name: "g1" }).catch(() => {});
 		await host.close();
@@ -73,8 +73,8 @@ describe("principals", () => {
 			created++;
 			return { who: () => "one" };
 		});
-		const own = host.get(Who, {});
-		const equal = host.get(Who, {}, { principal: { kind: "host" } });
+		const own = host.hold(Who, {});
+		const equal = host.hold(Who, {}, { principal: { kind: "host" } });
 		await Promise.all([own.ready, equal.ready]);
 		assert.equal(created, 1);
 		// Never disposed as a matching principal: it is the host's own.
@@ -108,13 +108,13 @@ describe("principals", () => {
 			self: { kind: "host" },
 			upstream: { link: browserUp, principal: { kind: "server" } },
 		});
-		assert.equal(await server.get(Echo, {}).who(), "server");
+		assert.equal(await server.hold(Echo, {}).who(), "server");
 		server.route("worker", {
 			authorize: () => true,
 			resolve: async () => down,
 			principal: () => ({ kind: "host" }),
 		});
-		assert.equal(await browser.get(Echo, {}).who(), "guest:g1");
+		assert.equal(await browser.hold(Echo, {}).who(), "guest:g1");
 		await browser.close();
 		await worker.close();
 		await server.close();

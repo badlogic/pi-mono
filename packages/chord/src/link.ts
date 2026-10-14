@@ -131,13 +131,12 @@ export function unpack(value: unknown): unknown {
 	return JSON.parse(zlib.inflateRawSync(value.bytes).toString("utf8"));
 }
 
-type PayloadField = "args" | "value" | "snap" | "reset";
-const PAYLOAD_FIELDS: ReadonlySet<string> = new Set<PayloadField>(["args", "value", "snap", "reset"]);
+type PayloadField = "args" | "value";
+const PAYLOAD_FIELDS: ReadonlySet<string> = new Set<PayloadField>(["args", "value"]);
 
 function payloadField(frame: Frame): PayloadField | undefined {
 	if (frame.t === "call") return frame.args === undefined ? undefined : "args";
-	if (frame.t === "result") return frame.value === undefined ? undefined : "value";
-	if (frame.t === "state") return frame.snap !== undefined ? "snap" : frame.reset !== undefined ? "reset" : undefined;
+	if (frame.t === "result" || frame.t === "state") return frame.value === undefined ? undefined : "value";
 	return undefined;
 }
 

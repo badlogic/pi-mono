@@ -17,6 +17,7 @@ import {
 import { ChordError, invalid, runAll } from "./errors.ts";
 import type { Link } from "./link.ts";
 import {
+	awaitReady,
 	CtxImpl,
 	type Decls,
 	type Factory,
@@ -34,7 +35,7 @@ import {
 import { enqueue } from "./publish.ts";
 import type { Registry, RegistryTable, RegistryView } from "./registry.ts";
 import { type ReloadOptions, type ReloadReport, runReload } from "./reload.ts";
-import { RemoteRef } from "./remote.ts";
+import { RemoteBinding, RemoteRef } from "./remote.ts";
 import { canonicalIdentity, canonicalJson, deepEqual, normalize } from "./schema.ts";
 import type { Ctx, GetOptions } from "./types.ts";
 import type { Frame } from "./wire.ts";
@@ -129,6 +130,18 @@ export interface HostOptions<P = unknown> {
 	 * (reported). Default 5000.
 	 */
 	readonly taskStopDeadline?: number;
+	/**
+	 * Milliseconds an activation (or a reload's prepare) waits for its references to be ready and hydrated, and an
+	 * awaited `get` for its reference, before failing with `unavailable/ready_timeout`. Default 60000.
+	 */
+	readonly readyTimeout?: number;
+	/**
+	 * Consumer-side linger of remote references: when the last reference to a remote object is released, its binding
+	 * stays held, and hydrated, for `types[typeName]` milliseconds, so a reference taken again meanwhile costs nothing
+	 * on the link. At most `cap` bindings (default 4) linger; beyond, the least recently released go first. Types not
+	 * listed do not linger. (The provider's own `serve(…, { linger })` keeps its object after the last reference.)
+	 */
+	readonly linger?: { readonly types?: Readonly<Record<string, number>>; readonly cap?: number };
 	/** Needed for `load`/`reload` with modules; `nodeLoader` from loader.ts in Node. */
 	readonly loader?: FacetLoader;
 	/** `client` (browser): never a reload participant, never carries roots or code versions. Default `host`. */
@@ -187,7 +200,21 @@ export interface Host<P = unknown> {
 	load(plugins: readonly PluginRef<P>[], options?: LoadOptions): Promise<void>;
 	/** Awaits the host objects present at call time, including those started by `serve` or deferred loads. */
 	ready(): Promise<void>;
-	get<C extends AnyContract>(type: C, input: InputOf<C>, options?: GetOptions<P>): Ref<C>;
+	/**
+	 * A reference held until `release()`. Resolves once it is ready: live, with every state member of its variant
+	 * (unless `state: false`). Rejects with the activation error, `aborted` (`signal`), or `unavailable/ready_timeout`
+	 * after `readyTimeout`; the reference is released then.
+	 */
+	get<C extends AnyContract>(
+		type: C,
+		input: InputOf<C>,
+		options?: GetOptions<P> & { readonly signal?: AbortSignal },
+	): Promise<Ref<C>>;
+	/**
+	 * The same reference, synchronously, possibly still `loading`: for UI runtimes that render its status (hooks, a
+	 * TUI watch). Its state members throw `not_ready` until it is live.
+	 */
+	hold<C extends AnyContract>(type: C, input: InputOf<C>, options?: GetOptions<P>): Ref<C>;
 	root<T>(fn: (ctx: Ctx<P>) => T | Promise<T>, options?: RootOptions<P>): Promise<T>;
 	registry<V>(registry: Registry<V>): RegistryView<V>;
 	/**
@@ -239,8 +266,13 @@ export class HostImpl implements Host, HostCore {
 	readonly kind: "host" | "client";
 	readonly connections = new Set<Connection>();
 	upstream: Connection | undefined;
-	/** Remote references this host references (re-held after an upstream reconnect). */
-	readonly remotes = new Set<RemoteRef>();
+	/** Shared bindings of this host's remote references, by key (re-held after an upstream reconnect). */
+	readonly bindings = new Map<string, RemoteBinding>();
+	/** Bindings without references that linger, least recently released first. */
+	readonly #lingering = new Map<string, RemoteBinding>();
+	readonly #lingerTypes: Readonly<Record<string, number>>;
+	readonly #lingerCap: number;
+	#originSeq = 0;
 	readonly #routes = new Map<string, Route>();
 	readonly #childReloads = new ChildReloads(this);
 	/** Child facet modules by host-name prefix, from every committed cluster reload (for reconciling children). */
@@ -266,6 +298,7 @@ export class HostImpl implements Host, HostCore {
 	gating: ReadonlySet<string> | undefined;
 	reloading = false;
 	readonly taskStopDeadline: number;
+	readonly readyTimeout: number;
 	readonly #principalKey: (principal: unknown) => string;
 	/** `principalKey(self)`: an equal principal is the host's own, whatever object carries it. */
 	readonly #selfKey: string;
@@ -296,6 +329,9 @@ export class HostImpl implements Host, HostCore {
 		this.#onError = options.onError ?? ((error) => console.error("chord:", error));
 		this.#loader = options.loader;
 		this.taskStopDeadline = options.taskStopDeadline ?? 5000;
+		this.readyTimeout = options.readyTimeout ?? 60_000;
+		this.#lingerTypes = options.linger?.types ?? {};
+		this.#lingerCap = options.linger?.cap ?? 4;
 		this.current = {
 			id: this.#codeVersionSeq,
 			services: new Map(),
@@ -458,8 +494,7 @@ export class HostImpl implements Host, HostCore {
 
 	addressOf(type: AnyContract, input: unknown, principal: unknown, candidate = false): string {
 		const elsewhere = this.#elsewhere(type, input);
-		if (elsewhere !== undefined)
-			return remoteAddress(type, elsewhere.input, this.isSelf(principal) ? undefined : principal);
+		if (elsewhere !== undefined) return this.#remoteKey(type, elsewhere.input, principal);
 		const service = this.#bindingService(type.name, candidate);
 		if (service === undefined) throw unknownType(type.name, this.name);
 		return this.#locate(service, input, principal).address;
@@ -490,8 +525,20 @@ export class HostImpl implements Host, HostCore {
 				throw invalid("input", `${name} has lifetime "host": its one object has the empty input`);
 			principal = this.principal;
 		}
-		const key = this.isSelf(principal) ? "host" : `p:${this.#principalKey(principal)}`;
-		return { address: `${name}\u0000${identity}\u0000${key}`, normalized, principal };
+		return { address: `${name}\u0000${identity}\u0000${this.#principalPart(principal)}`, normalized, principal };
+	}
+
+	#principalPart(principal: unknown): string {
+		return this.isSelf(principal) ? "host" : `p:${this.#principalKey(principal)}`;
+	}
+
+	/**
+	 * The key of a remote binding: type, input identity (fields equal to their defaults omitted, as for local objects),
+	 * principal key and the consumer's contract fingerprint. No host name: the type and the input decide where it lives.
+	 */
+	#remoteKey(type: AnyContract, normalized: unknown, principal: unknown): string {
+		const identity = canonicalIdentity(type.input, normalized);
+		return `@${type.name}\u0000${identity}\u0000${this.#principalPart(principal)}\u0000${type.fingerprint}`;
 	}
 
 	acquire(
@@ -851,7 +898,17 @@ export class HostImpl implements Host, HostCore {
 
 	// ─── public API ───
 
-	get<C extends AnyContract>(type: C, input: InputOf<C>, options?: GetOptions): Ref<C> {
+	async get<C extends AnyContract>(
+		type: C,
+		input: InputOf<C>,
+		options?: GetOptions & { readonly signal?: AbortSignal },
+	): Promise<Ref<C>> {
+		const ref = this.acquire(type, input, options, "external");
+		await awaitReady(ref, options?.signal === undefined ? [] : [options.signal], this.readyTimeout);
+		return ref.proxy as Ref<C>;
+	}
+
+	hold<C extends AnyContract>(type: C, input: InputOf<C>, options?: GetOptions): Ref<C> {
 		return this.acquire(type, input, options, "external").proxy as Ref<C>;
 	}
 
@@ -888,6 +945,8 @@ export class HostImpl implements Host, HostCore {
 			role: "downstream",
 			principal: options.principal,
 			peer: { kind, name: kind === "host" ? options.name : undefined },
+			// Holds over a client link carry its id as their origin (also when relayed), so hosts can tell clients apart.
+			...(kind === "client" ? { originId: `${this.#incarnation}:${++this.#originSeq}` } : {}),
 		});
 	}
 
@@ -902,8 +961,9 @@ export class HostImpl implements Host, HostCore {
 			peer: { kind: "host", name: undefined },
 		});
 		this.upstream = connection;
-		// Remote references that lost their link re-hold over the new one; state subscribers get a reset.
-		for (const ref of this.remotes) if (ref.binding === undefined) connection.hold(ref);
+		// Bindings that lost their link re-hold over the new one (`again`: they keep their values meanwhile).
+		for (const binding of this.bindings.values())
+			if (binding.hold === undefined && !binding.ended) connection.hold(binding, binding.applied);
 	}
 
 	#addConnection(link: Link, config: ConstructorParameters<typeof Connection>[2]): Connection {
@@ -986,8 +1046,28 @@ export class HostImpl implements Host, HostCore {
 		}
 	}
 
-	forgetRemote(ref: RemoteRef): void {
-		this.remotes.delete(ref);
+	/** The last reference to `binding` was released: it lingers if its type does (`HostOptions.linger`), else closes. */
+	bindingIdle(binding: RemoteBinding): void {
+		const ms = Object.hasOwn(this.#lingerTypes, binding.contract.name)
+			? this.#lingerTypes[binding.contract.name]!
+			: 0;
+		// A binding that never had a shape has nothing worth keeping.
+		if (ms <= 0 || binding.ended || !binding.applied || this.#lingerCap <= 0) {
+			binding.close();
+			return;
+		}
+		binding.lingerTimer = setTimeout(() => binding.close(), ms);
+		(binding.lingerTimer as { unref?: () => void }).unref?.();
+		this.#lingering.set(binding.key, binding);
+		for (const oldest of this.#lingering.values()) {
+			if (this.#lingering.size <= this.#lingerCap) break;
+			oldest.close();
+		}
+	}
+
+	forgetBinding(binding: RemoteBinding): void {
+		if (this.bindings.get(binding.key) === binding) this.bindings.delete(binding.key);
+		if (this.#lingering.get(binding.key) === binding) this.#lingering.delete(binding.key);
 	}
 
 	/** A downstream host connection by its configured name (never by what a peer announced). */
@@ -1001,7 +1081,10 @@ export class HostImpl implements Host, HostCore {
 		);
 	}
 
-	/** A reference to an object on host `at`; `input` is normalized with `type` (the hold carries it so). */
+	/**
+	 * A reference to an object on host `at`: a view onto the binding for its key, created (and held) if there is none.
+	 * `input` is normalized with `type` (the hold carries it so).
+	 */
 	#acquireRemote(
 		type: AnyContract,
 		at: string,
@@ -1011,32 +1094,38 @@ export class HostImpl implements Host, HostCore {
 	): RefCore {
 		const principal =
 			options?.principal === undefined || this.isSelf(options.principal) ? undefined : options.principal;
-		const ref = new RemoteRef(this, {
-			contract: type,
-			at,
-			input,
-			principal,
-			owner,
-			address: remoteAddress(type, input, principal),
-		});
-		this.remotes.add(ref);
+		const key = this.#remoteKey(type, input, principal ?? this.principal);
+		let binding = this.bindings.get(key);
+		const fresh = binding === undefined || binding.ended;
+		if (binding === undefined || binding.ended) {
+			binding = new RemoteBinding(this, { key, contract: type, at, input, principal });
+			this.bindings.set(key, binding);
+		}
+		const ref = new RemoteRef(binding, owner, options?.state !== false);
+		this.#lingering.delete(key);
+		binding.addView(ref);
+		if (fresh) this.#hold(binding);
+		return ref;
+	}
+
+	/** Holds `binding` over the link to its host: the parent's, a child's, or one a route resolves. */
+	#hold(binding: RemoteBinding): void {
 		const bindWhenSynced = (connection: Promise<Connection>): void => {
 			connection.then(
 				(target) => {
-					if (ref.status === "loading" && ref.binding === undefined) target.hold(ref);
+					if (!binding.ended && binding.hold === undefined) target.hold(binding, false);
 				},
-				(error: unknown) => ref.gone(error),
+				(error: unknown) => binding.gone(error),
 			);
 		};
-		const direct = this.#childNamed(at);
-		if (this.upstream !== undefined) this.upstream.hold(ref);
+		const direct = this.#childNamed(binding.at);
+		if (this.upstream !== undefined) this.upstream.hold(binding, false);
 		else if (direct !== undefined) bindWhenSynced(direct.whenSynced().then(() => direct));
 		else {
-			const route = this.#routeFor(at);
-			if (route === undefined) ref.gone(new ChordError("unavailable", `no route to ${at}`));
-			else bindWhenSynced(this.#resolve(route, at, principal ?? this.principal));
+			const route = this.#routeFor(binding.at);
+			if (route === undefined) binding.gone(new ChordError("unavailable", `no route to ${binding.at}`));
+			else bindWhenSynced(this.#resolve(route, binding.at, binding.principal ?? this.principal));
 		}
-		return ref;
 	}
 
 	#routeFor(hostName: string): Route | undefined {
@@ -1140,6 +1229,7 @@ export class HostImpl implements Host, HostCore {
 	 * references, local or remote), then closes the links.
 	 */
 	async close(): Promise<void> {
+		for (const binding of [...this.#lingering.values()]) binding.close();
 		this.hostObjects.clear();
 		for (const name of [...this.#facetRuns.keys()]) this.facetRunChanged(name, undefined);
 		const reason = new ChordError("gone", `host ${this.name} closed`);
@@ -1191,11 +1281,6 @@ const matchesPattern = (pattern: Readonly<Record<string, unknown>>, principal: u
 	principal !== null &&
 	typeof principal === "object" &&
 	Object.entries(pattern).every(([key, value]) => deepEqual((principal as Record<string, unknown>)[key], value));
-
-/** Address of a remote reference, as the consumer sees it (the provider normalizes the input). */
-/** A remote object's address here: no host name, since the type and its input decide where it lives. */
-const remoteAddress = (type: AnyContract, input: unknown, principal: unknown | undefined): string =>
-	`@${type.name}\u0000${canonicalJson(input)}\u0000${principal === undefined ? "host" : canonicalJson(principal)}`;
 
 const unknownType = (type: string, host: string): ChordError =>
 	new ChordError("unavailable", `${type} is not served by ${host}`, { reason: "unknown_type" });

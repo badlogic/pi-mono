@@ -66,7 +66,7 @@ describe("review: reload commit", () => {
 				}),
 		});
 		host.install(facet("v1", false));
-		const refs = ["a", "b", "c"].map((id) => host.get(Item, { id }));
+		const refs = ["a", "b", "c"].map((id) => host.hold(Item, { id }));
 		await Promise.all(refs.map((ref) => ref.ready));
 		const codeVersion = host.codeVersion;
 		await assert.rejects(host.reload([facet("v2", true)]), /subscribe fails/);
@@ -102,7 +102,7 @@ describe("review: reload commit", () => {
 					{ linger: 60_000 },
 				),
 		});
-		const first = host.get(V1, {});
+		const first = host.hold(V1, {});
 		await first.ready;
 		first.release();
 		await host.reload([
@@ -124,7 +124,7 @@ describe("review: reload commit", () => {
 					),
 			},
 		]);
-		const second = host.get(V2, {});
+		const second = host.hold(V2, {});
 		const values: unknown[] = [];
 		second.count.subscribe((value) => values.push(value));
 		await second.ready;
@@ -135,7 +135,7 @@ describe("review: reload commit", () => {
 	it("#1 a commit that still fails midway fails the host terminally (no half-published code version serving work)", async () => {
 		const host = createHost({ self: { kind: "host" }, onError: () => {} });
 		host.install({ name: "item", setup: (api) => api.serve(Item, () => ({ version: () => "v1" })) });
-		const ref = host.get(Item, { id: "a" });
+		const ref = host.hold(Item, { id: "a" });
 		await ref.ready;
 		// Everything fallible runs in prepare now, so break an install step directly (white box).
 		const objects = (host as unknown as { objects: Map<string, { startTasks(): void }> }).objects;
@@ -169,8 +169,8 @@ describe("review: reload commit", () => {
 			},
 		});
 		host.install(facet("v1"));
-		const item = host.get(Item, { id: "a" });
-		const other = host.get(Other, {});
+		const item = host.hold(Item, { id: "a" });
+		const other = host.hold(Other, {});
 		await Promise.all([item.ready, other.ready]);
 		const seen: Promise<string>[] = [];
 		item.onShape(() => seen.push(other.version()));
@@ -203,7 +203,7 @@ describe("review: leases, invocations, activation", () => {
 					return { count };
 				}),
 		});
-		const ref = host.get(Store, {});
+		const ref = host.hold(Store, {});
 		await ref.ready;
 		events.emit(1);
 		await tick();
@@ -259,7 +259,7 @@ describe("review: leases, invocations, activation", () => {
 				},
 			};
 		});
-		const released = host.get(Worker, { id: "r" });
+		const released = host.hold(Worker, { id: "r" });
 		const call = released.work();
 		await ticks();
 		released.release();
@@ -271,7 +271,7 @@ describe("review: leases, invocations, activation", () => {
 
 		go = latch();
 		log.length = 0;
-		const forced = host.get(Worker, { id: "f" }, { principal: { user: "u" } });
+		const forced = host.hold(Worker, { id: "f" }, { principal: { user: "u" } });
 		const forcedCall = forced.work();
 		await ticks();
 		const invalidated = host.invalidatePrincipal((principal) => (principal as { user?: string }).user === "u");
@@ -329,11 +329,11 @@ describe("review: leases, invocations, activation", () => {
 			self.on("drop", count, () => ref?.release());
 			return { count };
 		});
-		ref = host.get(Store, {});
+		ref = host.hold(Store, {});
 		await ref.ready.catch(() => {});
 		await ticks(20);
 		assert.deepEqual(log, ["open", "close"]);
-		const again = host.get(Store, {});
+		const again = host.hold(Store, {});
 		ref = undefined;
 		await again.ready;
 		assert.equal(runs, 2);
@@ -360,7 +360,7 @@ describe("review: prepare isolation and contracts", () => {
 				}),
 		});
 		host.install(facet(false));
-		const ref = host.get(Db, {});
+		const ref = host.hold(Db, {});
 		await ref.ready;
 		await assert.rejects(host.reload([facet(true)]), (error) => isChordError(error, "not_ready"));
 		assert.equal(native.mutated, false);
@@ -372,7 +372,7 @@ describe("review: prepare isolation and contracts", () => {
 		const log: string[] = [];
 		const Fresh = local("t.fresh", { version: 1, input: Type.Object({}) });
 		host.install({ name: "item", setup: (api) => api.serve(Item, () => ({ version: () => "v1" })) });
-		await Promise.all(["a", "b"].map((id) => host.get(Item, { id }).ready));
+		await Promise.all(["a", "b"].map((id) => host.hold(Item, { id }).ready));
 		const plugins = (fail: boolean): Facet[] => [
 			{
 				name: "fresh",
@@ -431,7 +431,7 @@ describe("review: prepare isolation and contracts", () => {
 				});
 			},
 		});
-		const consumer = host.get(Consumer, {});
+		const consumer = host.hold(Consumer, {});
 		assert.equal(await consumer.ask(), "old");
 		await host.reload([
 			{
@@ -475,7 +475,7 @@ describe("review: prepare isolation and contracts", () => {
 					}),
 			});
 			host.install(facet(1));
-			const ref = host.get(Db, {});
+			const ref = host.hold(Db, {});
 			await ref.ready;
 			// The failing close aborts the reload at the gate; the old resource must not stay closed.
 			await assert.rejects(host.reload([facet(2)]), /close fails/);
@@ -517,7 +517,7 @@ describe("review: prepare isolation and contracts", () => {
 			},
 		});
 		host.install(facet(true));
-		const ref = host.get(Item, { id: "a" });
+		const ref = host.hold(Item, { id: "a" });
 		await ref.ready;
 		const go = latch();
 		const pinned = host.root(async (ctx) => {
@@ -580,7 +580,7 @@ describe("review: prepare isolation and contracts", () => {
 			},
 		});
 		host.serve(Strict, () => ({ variant: "main", echo: (args) => args }));
-		const ref = host.get(Strict, {});
+		const ref = host.hold(Strict, {});
 		assert.deepEqual(await ref.echo({ a: "x", junk: 1 } as never), { a: "x" });
 	});
 });
@@ -611,9 +611,9 @@ describe("review: ctx races", () => {
 			});
 			return {};
 		});
-		const runner = host.get(Runner, {});
+		const runner = host.hold(Runner, {});
 		await runner.ready;
-		const target = host.get(Target, {});
+		const target = host.hold(Target, {});
 		await target.ready;
 		runner.release();
 		await ticks();
@@ -627,7 +627,7 @@ describe("review: ctx races", () => {
 		const host = createHost({ self: { kind: "host" }, onError: () => {} });
 		const other = createHost({ self: { kind: "host" }, onError: () => {} });
 		host.serve(Target, () => ({ hit: () => {} }));
-		const target = host.get(Target, {});
+		const target = host.hold(Target, {});
 		await target.ready;
 		const expired = await host.root((ctx) => ctx);
 		await assert.rejects(

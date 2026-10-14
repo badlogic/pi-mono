@@ -69,7 +69,7 @@ describe("host manager (real child processes)", () => {
 		assert.equal(manager.status, "running");
 		const server = createHost({ self: { kind: "host" }, name: "server", onError: () => {} });
 		server.accept(instance.link, { principal: { worker: "w1" }, kind: "host", name: "w1" });
-		const echo = server.get(Echo, {});
+		const echo = server.hold(Echo, {});
 		assert.equal(await echo.echo("x"), `hi x from ${instance.pid}`);
 		assert.equal(await manager.start(), instance);
 		await manager.stop();

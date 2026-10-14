@@ -129,7 +129,7 @@ describe("host: eager readiness", () => {
 				},
 				{ name: "provider", setup: ({ serve }) => serve(Lazy, () => ({})) },
 			]);
-			assert.equal(host.get(Eager, {}).status, "live");
+			assert.equal(host.hold(Eager, {}).status, "live");
 		} finally {
 			await host.close();
 		}
@@ -240,7 +240,7 @@ describe("host: eager readiness", () => {
 				await (operation === "install"
 					? worker.install(facet, { awaitHostObjects: false })
 					: worker.load([facet], { awaitHostObjects: false }));
-				await worker.get(Lazy, {}).ready;
+				await worker.hold(Lazy, {}).ready;
 				assert.equal(bootstrap, true);
 				let settled = false;
 				const ready = worker.ready().then(() => {

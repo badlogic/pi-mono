@@ -156,7 +156,7 @@ it("02: first contract, factory, reference and root", { timeout: 5000 }, async (
 	const host = createHost({ self: "server" });
 	host.serve(TodoLabel, ({ list }) => ({ label: () => `Todos for ${list}` }));
 	const result = await host.root(async (ctx) => {
-		const todos = ctx.get(TodoLabel, { list: "family" });
+		const todos = await ctx.get(TodoLabel, { list: "family" });
 		return todos.label(ctx);
 	});
 	assert.equal(result, "Todos for family");
@@ -169,8 +169,7 @@ it("03: cells publish values and derivations", { timeout: 5000 }, async () => {
 	// example:03-call
 	const host = createHost({ self: "server", dev: true });
 	host.serve(TodoStore, todoFactory);
-	const todos = host.get(TodoStore, { list: "family" });
-	await todos.ready;
+	const todos = await host.get(TodoStore, { list: "family" });
 	const counts: (number | undefined)[] = [];
 	const stop = todos.openCount.subscribe((value) => counts.push(value));
 	await host.root(async (ctx) => {
@@ -232,9 +231,8 @@ it("04: holds, asynchronous resources and release", { timeout: 5000 }, async () 
 	);
 	// end-example:04-saving
 	// example:04-call
-	const saved = host.get(SavedTodos, { list: "family" });
-	const database = host.get(Database, {});
-	await saved.ready;
+	const saved = await host.get(SavedTodos, { list: "family" });
+	const database = await host.get(Database, {});
 	await host.root((ctx) => saved.add({ text: "Buy milk" }, ctx));
 	assert.deepEqual(database.db!.saved, ["Buy milk"]);
 	assert.equal(opens, 1);
@@ -255,13 +253,13 @@ it("05: principals select views of one shared store", { timeout: 5000 }, async (
 	const host = createHost<Principal>({ name: "server", self: "server", principalKey: (principal) => principal });
 	host.serve(TodoStore, todoFactory);
 	serveViews(host);
-	const owner = host.get(Todos, { list: "family" }, { principal: "owner" });
-	const guest = host.get(Todos, { list: "family" }, { principal: "guest" });
-	await Promise.all([owner.ready, guest.ready]);
-	assert.equal(owner.variant, "editor");
+	const owner = await host.get(Todos, { list: "family" }, { principal: "owner" });
+	const guest = await host.get(Todos, { list: "family" }, { principal: "guest" });
+	assert.ok(owner.variant === "editor"); // narrows the reference to the editor variant
 	assert.equal(guest.variant, "viewer");
 	await host.root((ctx) => owner.add({ text: "Buy milk" }, ctx), { principal: "owner" });
 	assert.deepEqual(guest.rows.value, [{ text: "Buy milk", done: false }]);
+	// @ts-expect-error A viewer has no add: TypeScript refuses it, and so does the provider.
 	await assert.rejects(guest.add({ text: "Not allowed" }), (error) => isChordError(error, "not_in_variant"));
 	await assert.rejects(owner.add({ text: " " }), (error) => isChordError(error, "invalid"));
 	// end-example:05-call
@@ -283,23 +281,21 @@ it("06: remote methods and live state over a memory link", { timeout: 5000 }, as
 		kind: "client",
 		upstream: { link: up, principal: "server" },
 	});
-	const todos = browser.get(Todos, { list: "family" });
-	const hydrated = Promise.withResolvers<void>();
+	const todos = await browser.get(Todos, { list: "family" });
+	assert.ok(todos.variant === "editor");
+	assert.deepEqual(todos.rows.value, []);
 	const updated = Promise.withResolvers<void>();
 	const stop = todos.rows.subscribe((rows) => {
-		if (rows !== undefined) hydrated.resolve();
-		if (rows?.length === 1) updated.resolve();
+		if (rows.length === 1) updated.resolve();
 	});
-	await todos.ready;
-	await hydrated.promise;
-	assert.deepEqual(todos.rows.value, []);
 	await browser.root((ctx) => todos.add({ text: "Buy milk" }, ctx));
 	await updated.promise;
 	assert.deepEqual(todos.rows.value, [{ text: "Buy milk", done: false }]);
 	// Deliberately bypass TypeScript to simulate a malformed caller.
 	await assert.rejects(todos.add({ text: 123 } as never), (error) => isChordError(error, "invalid"));
 	stop();
-	assert.equal(todos.rows.value, undefined);
+	// A held reference keeps its state without listeners.
+	assert.deepEqual(todos.rows.value, [{ text: "Buy milk", done: false }]);
 	todos.release();
 	// end-example:06
 });
@@ -336,8 +332,7 @@ it("07: listeners react and tasks start fresh calls", { timeout: 5000 }, async (
 		});
 		return { seen };
 	});
-	const activity = host.get(Activity, {});
-	await activity.ready;
+	const activity = await host.get(Activity, {});
 	await Promise.all([seeded.promise, observed.promise]);
 	assert.equal(activity.seen.value, 1);
 	activity.release();
@@ -367,7 +362,7 @@ it("08: plugins contribute registry entries and expose callbacks", { timeout: 50
 						self.register(Actions, {
 							addSample: async (ctx) => {
 								await todos.add({ text: "Try plugins" }, ctx);
-								return todos.openCount.value!;
+								return todos.openCount.value;
 							},
 						});
 						return {};
@@ -401,7 +396,7 @@ it("09: compatible reload, migration and an old-contract adapter", { timeout: 50
 			})),
 	});
 	await host.load([facet("Original")]);
-	const todos = host.get(TodoStore, { list: "family" });
+	const todos = await host.get(TodoStore, { list: "family" });
 	await todos.add({ text: "Buy milk" });
 	const entered = Promise.withResolvers<void>();
 	const resume = Promise.withResolvers<void>();
@@ -470,7 +465,7 @@ it("09: compatible reload, migration and an old-contract adapter", { timeout: 50
 		},
 	]);
 	assert.equal(await todos.label(), "Todos for family");
-	const newer = host.get(RenamedStore, { list: "family" });
+	const newer = await host.get(RenamedStore, { list: "family" });
 	assert.equal(await newer.heading(), "Todos for family");
 	assert.equal(todos.rows.value?.[0]?.text, "BUY MILK");
 	// end-example:09-contract
@@ -495,7 +490,8 @@ it("10: stub a provider with a fake facet and check error codes", { timeout: 500
 	};
 	await host.load([fake]);
 	serveViews(host);
-	const owner = host.get(Todos, { list: "family" }, { principal: "owner" });
+	const owner = await host.get(Todos, { list: "family" }, { principal: "owner" });
+	assert.ok(owner.variant === "editor");
 	await owner.add({ text: "Test delegation" });
 	assert.deepEqual(received, ["Test delegation"]);
 	await assert.rejects(owner.add({ text: "" }), (error) => isChordError(error, "invalid"));
@@ -510,10 +506,9 @@ it("11: short roots release temporary holds", { timeout: 5000 }, async () => {
 	// example:11
 	const host = createHost({ self: "server" });
 	host.serve(TodoStore, todoFactory);
-	const screen = host.get(TodoStore, { list: "family" });
-	await screen.ready;
+	const screen = await host.get(TodoStore, { list: "family" });
 	await host.root(async (ctx) => {
-		const temporary = ctx.get(TodoStore, { list: "family" });
+		const temporary = await ctx.get(TodoStore, { list: "family" });
 		await temporary.add({ text: "Keep roots short" }, ctx);
 	}); // The temporary reference is released here; screen still holds the store.
 	assert.equal(screen.openCount.value, 1);
