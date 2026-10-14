@@ -2,7 +2,7 @@ import { Marked, type Token, Tokenizer, type TokenizerExtension, type Tokens } f
 import { renderLatex } from "../latex.ts";
 import { getCapabilities, hyperlink, isImageLine } from "../terminal-image.ts";
 import type { Component } from "../tui.ts";
-import { applyBackgroundToLine, flattenLines, visibleWidth, wrapTextWithAnsi } from "../utils.ts";
+import { applyBackgroundToLine, cjkPunctuationRegex, flattenLines, visibleWidth, wrapTextWithAnsi } from "../utils.ts";
 
 const STRICT_STRIKETHROUGH_REGEX = /^(~~)(?=[^\s~])((?:\\.|[^\\])*?(?:\\.|[^\s~\\]))\1(?=[^~]|$)/;
 
@@ -11,9 +11,9 @@ class MarkdownTokenizer extends Tokenizer {
 		const token = super.url(src);
 		if (!token) return undefined;
 
-		// Bare URLs stop at Chinese punctuation; explicit links and angle autolinks
+		// Bare URLs stop at CJK punctuation; explicit links and angle autolinks
 		// use separate tokenizers and can still contain these characters.
-		const punctuationIndex = token.raw.search(/[。，；：！？、“”‘’（）【】《》「」『』]/);
+		const punctuationIndex = token.raw.search(cjkPunctuationRegex);
 		return punctuationIndex < 0 ? token : super.url(token.raw.slice(0, punctuationIndex));
 	}
 

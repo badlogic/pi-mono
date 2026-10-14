@@ -1590,9 +1590,9 @@ bar`,
 			resetCapabilitiesCache();
 		});
 
-		it("should stop bare URLs at Chinese punctuation and preserve the following text", () => {
+		it("should stop bare URLs at CJK punctuation and preserve the following text", () => {
 			setCapabilities({ images: null, trueColor: false, hyperlinks: true });
-			for (const punctuation of "。，；：！？、“”‘’（）【】《》「」『』") {
+			for (const punctuation of "。，；：！？、“”‘’（）【】《》「」『』…—·・〈〉［］｛｝．｡｢｣､･") {
 				for (const url of ["https://example.com", "https://example.com/中文?q=搜索#片段", "www.example.com"]) {
 					const source = `${url}${punctuation}后面的中文`;
 					const output = new Markdown(source, 0, 0, defaultMarkdownTheme).render(160).join("");
@@ -1606,15 +1606,19 @@ bar`,
 
 		it("should preserve Chinese characters without punctuation in bare URLs", () => {
 			setCapabilities({ images: null, trueColor: false, hyperlinks: true });
-			for (const url of ["https://example.com紧接着中文", "https://example.com/中文?q=搜索#片段"]) {
+			for (const url of [
+				"https://example.com紧接着中文",
+				"https://example.com/中文?q=搜索#片段",
+				"https://example.com/テストー한글",
+			]) {
 				const output = new Markdown(url, 0, 0, defaultMarkdownTheme).render(160).join("");
 				assert.ok(output.includes(`\x1b]8;;${url}\x1b\\`));
 			}
 		});
 
-		it("should preserve Chinese punctuation in explicit links and angle autolinks", () => {
+		it("should preserve CJK punctuation in explicit links and angle autolinks", () => {
 			setCapabilities({ images: null, trueColor: false, hyperlinks: true });
-			const url = "https://example.com/中文，路径。";
+			const url = "https://example.com/中文，路径·テスト・한글…—。";
 			for (const source of [`[文档](${url})`, `<${url}>`]) {
 				const output = new Markdown(source, 0, 0, defaultMarkdownTheme).render(160).join("");
 				assert.ok(output.includes(`\x1b]8;;${url}\x1b\\`), source);
