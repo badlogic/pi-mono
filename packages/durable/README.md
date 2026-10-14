@@ -662,9 +662,11 @@ const usage = await harness.usage(context); // { models: { "openai/gpt-6-sol": U
 | JSONL | `openNodeJsonlStorage(directory, context)` from `@earendil-works/pi-durable/storage/jsonl/node` | Append-only files in one directory. Pass `{ fsync: true }` to flush before each commit marker. Keeps the whole history in memory too, so memory grows with it; use SQLite for long-running agents. |
 | Cloudflare Durable Object | `openDurableObjectSqliteStorage(ctx.storage)` from `@earendil-works/pi-durable/storage/sqlite/cloudflare` | The SQLite storage of one SQLite-backed Durable Object; commits are its storage transactions. |
 
-SQLite storage can namespace its tables and indexes when sharing a database:
-`SqliteStorage.open(database, { prefix: "pi_" })`. A prefix must be a SQLite identifier and cannot begin with
-`sqlite_`; adapters may reserve additional prefixes. Changing the prefix does not migrate existing data.
+SQLite storage can namespace its tables and indexes when sharing a database: pass `{ prefix: "pi_" }` to
+`SqliteStorage.open(database, options)`, `openNodeSqliteStorage(path, options)`, or
+`openDurableObjectSqliteStorage(ctx.storage, options)`. Storage renders the prefixed names into its SQL, so adapters
+need no support. A prefix must be a SQLite identifier and cannot begin with `sqlite_`; a host may reserve more, such
+as `_cf_` in Durable Objects. Changing the prefix does not migrate existing data.
 
 One process owns a storage at a time; there is no cross-process locking. The portable SQLite and JSONL cores (`/storage/sqlite`, `/storage/jsonl`) run without Node APIs, for example on Bun or in Cloudflare Durable Objects, given an asynchronous `SqliteDatabase` facade or a `FileSystem` from `@earendil-works/pi-durable/env`.
 

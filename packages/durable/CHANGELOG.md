@@ -4,7 +4,7 @@
 
 ### Added
 
-- `SqliteStorage.open(database, { prefix })` can namespace every table and index; `openDurableObjectSqliteStorage()` exposes it for Cloudflare Durable Objects that share SQLite with host tables.
+- `SqliteStorage.open(database, { prefix })` can namespace every table and index; `openNodeSqliteStorage()` and `openDurableObjectSqliteStorage()` forward it, for databases shared with host tables.
 
 ### Changed
 

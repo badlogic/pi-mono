@@ -134,12 +134,14 @@ describe("Durable Object SQLite adapter", () => {
 		await Promise.all([first.close(BACKGROUND_CONTEXT), second.close(BACKGROUND_CONTEXT)]);
 	});
 
-	it("rejects invalid and reserved prefixes", () => {
-		const storage = durableObjectStorage();
-		expect(() => openDurableObjectSqliteStorage(storage, { prefix: "" })).toThrow("Invalid");
-		expect(() => openDurableObjectSqliteStorage(storage, { prefix: "bad-prefix" })).toThrow("Invalid");
-		expect(() => openDurableObjectSqliteStorage(storage, { prefix: "_cf_pi_" })).toThrow("reserved");
-		expect(() => openDurableObjectSqliteStorage(storage, { prefix: "sqlite_pi_" })).toThrow("reserved");
+	it("rejects invalid and reserved prefixes", async () => {
+		await expect(openDurableObjectSqliteStorage(durableObjectStorage(), { prefix: "" })).rejects.toThrow("Invalid");
+		await expect(openDurableObjectSqliteStorage(durableObjectStorage(), { prefix: "bad-prefix" })).rejects.toThrow(
+			"Invalid",
+		);
+		await expect(openDurableObjectSqliteStorage(durableObjectStorage(), { prefix: "sqlite_pi_" })).rejects.toThrow(
+			"reserved",
+		);
 	});
 
 	it("binds and returns BLOB values as Uint8Array", async () => {

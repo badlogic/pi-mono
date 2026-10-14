@@ -1,5 +1,4 @@
 import type { SqliteDatabase, SqliteExecutor, SqliteValue } from "./database.ts";
-import { validateSqliteSchemaPrefix } from "./schema.ts";
 import { SqliteStorage, type SqliteStorageOptions } from "./storage.ts";
 
 /** Values a Durable Object SQL binding accepts and returns. */
@@ -23,9 +22,6 @@ export type DurableObjectSqliteStorage = {
 	};
 	transaction<T>(closure: () => Promise<T>): Promise<T>;
 };
-
-/** SQLite storage options. Durable Objects additionally reserve prefixes beginning with `_cf_`. */
-export type DurableObjectSqliteStorageOptions = SqliteStorageOptions;
 
 /** Runs synchronous operations immediately when idle and holds queued calls behind a transaction. */
 class SerialQueue {
@@ -186,13 +182,7 @@ export class DurableObjectSqliteDatabase extends DurableObjectSqliteExecutor imp
 /** Open durable storage on a SQLite-backed Durable Object's `ctx.storage`, optionally under a table prefix. */
 export function openDurableObjectSqliteStorage(
 	storage: DurableObjectSqliteStorage,
-	options: DurableObjectSqliteStorageOptions = {},
+	options: SqliteStorageOptions = {},
 ): Promise<SqliteStorage> {
-	if (options.prefix !== undefined) {
-		validateSqliteSchemaPrefix(options.prefix);
-		if (options.prefix.toLowerCase().startsWith("_cf_")) {
-			throw new Error(`Durable Object SQLite prefix ${JSON.stringify(options.prefix)} is reserved`);
-		}
-	}
 	return SqliteStorage.open(new DurableObjectSqliteDatabase(storage), options);
 }
