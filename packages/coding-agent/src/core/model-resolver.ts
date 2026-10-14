@@ -99,9 +99,30 @@ export type ModelReferenceResult =
 			thinkingLevel?: ThinkingLevel;
 			warning?: string;
 	  }
-	| { status: "not-found" };
+	| {
+			status: "not-found";
+			/** Set when a provider is explicit or named by a `provider/` prefix, for building a custom model id. */
+			target?: ModelReferenceTarget;
+	  };
+
+export interface ModelReferenceTarget {
+	provider: string;
+	providerModels: [Model<Api>, ...Model<Api>[]];
+	/** Text after the provider prefix as typed, including any `:<suffix>`. */
+	modelText: string;
+	/** `modelText` without a valid thinking suffix (unless `thinkingSuffix` is `none`). */
+	modelId: string;
+	thinkingLevel?: ThinkingLevel;
+}
 
 type ResolvedOrAmbiguous = Exclude<ModelReferenceResult, { status: "not-found" }>;
+
+function splitThinkingSuffix(text: string): { base: string; thinkingLevel: ThinkingLevel } | undefined {
+	const colonIndex = text.lastIndexOf(":");
+	const suffix = text.substring(colonIndex + 1);
+	if (colonIndex === -1 || !isValidThinkingLevel(suffix)) return undefined;
+	return { base: text.substring(0, colonIndex), thinkingLevel: suffix };
+}
 
 function splitProviderPrefix(
 	text: string,
@@ -129,7 +150,24 @@ export function resolveModelReference(
 	if (!text) return { status: "not-found" };
 	const constraint = request.provider?.toLowerCase();
 	const pool = constraint ? models.filter((model) => model.provider.toLowerCase() === constraint) : models;
-	return resolveText(text, request, pool, usable);
+	const result = resolveText(text, request, pool, usable);
+	if (result.status !== "not-found") return result;
+
+	const split = splitProviderPrefix(text, pool);
+	const anchor = constraint ? pool[0] : pool.find((model) => model.provider === split?.provider);
+	if (!anchor) return result;
+	const modelText = split?.modelText ?? text;
+	const suffix = request.thinkingSuffix === "none" ? undefined : splitThinkingSuffix(modelText);
+	return {
+		status: "not-found",
+		target: {
+			provider: anchor.provider,
+			providerModels: [anchor, ...pool.filter((model) => model.provider === anchor.provider && model !== anchor)],
+			modelText,
+			modelId: suffix?.base ?? modelText,
+			thinkingLevel: suffix?.thinkingLevel,
+		},
+	};
 }
 
 /** Exact `provider/id` or bare id lookup without thinking suffixes or fuzzy matching. */
@@ -159,21 +197,21 @@ function resolveText(
 		if (fuzzy) return fuzzy;
 	}
 
-	const colonIndex = text.lastIndexOf(":");
-	if (colonIndex === -1 || request.thinkingSuffix === "none") return { status: "not-found" };
-	const prefix = text.substring(0, colonIndex);
-	const suffix = text.substring(colonIndex + 1);
-
-	if (isValidThinkingLevel(suffix)) {
-		const inner = resolveText(prefix, request, pool, usable);
+	if (request.thinkingSuffix === "none") return { status: "not-found" };
+	const thinking = splitThinkingSuffix(text);
+	if (thinking) {
+		const inner = resolveText(thinking.base, request, pool, usable);
 		if (inner.status === "not-found") return inner;
 		// Only use this thinking level if no warning from inner recursion
-		return { ...inner, thinkingLevel: inner.warning ? undefined : suffix };
+		return { ...inner, thinkingLevel: inner.warning ? undefined : thinking.thinkingLevel };
 	}
-	// Keep the suffix as part of the id and fail, rather than resolve a different model
+	// Keep an invalid suffix as part of the id and fail, rather than resolve a different model
 	if (request.thinkingSuffix === "strict") return { status: "not-found" };
+	const colonIndex = text.lastIndexOf(":");
+	if (colonIndex === -1) return { status: "not-found" };
 
-	const inner = resolveText(prefix, request, pool, usable);
+	const suffix = text.substring(colonIndex + 1);
+	const inner = resolveText(text.substring(0, colonIndex), request, pool, usable);
 	if (inner.status === "not-found") return inner;
 	return {
 		...inner,
@@ -255,12 +293,8 @@ function isAlias(id: string): boolean {
 	return id.endsWith("-latest") || !/-\d{8}$/.test(id);
 }
 
-function buildFallbackModel(provider: string, modelId: string, availableModels: Model<Api>[]): Model<Api> {
-	const providerModels = availableModels.filter((m) => m.provider === provider);
-	if (providerModels.length === 0)
-		throw new Error(`Cannot build a custom model for provider "${provider}" without models`);
-
-	const defaultId = defaultModelPerProvider[provider as KnownProvider];
+function buildFallbackModel(providerModels: [Model<Api>, ...Model<Api>[]], modelId: string): Model<Api> {
+	const defaultId = defaultModelPerProvider[providerModels[0].provider as KnownProvider];
 	const baseModel = defaultId
 		? (providerModels.find((m) => m.id === defaultId) ?? providerModels[0])
 		: providerModels[0];
@@ -317,16 +351,9 @@ export function resolveModelScopeFromModels(
 		// Check if pattern contains glob characters
 		if (pattern.includes("*") || pattern.includes("?") || pattern.includes("[")) {
 			// Extract optional thinking level suffix (e.g., "provider/*:high")
-			const colonIdx = pattern.lastIndexOf(":");
-			let globPattern = pattern;
-			let thinkingLevel: ThinkingLevel | undefined;
-			if (colonIdx !== -1) {
-				const suffix = pattern.substring(colonIdx + 1);
-				if (isValidThinkingLevel(suffix)) {
-					thinkingLevel = suffix;
-					globPattern = pattern.substring(0, colonIdx);
-				}
-			}
+			const thinking = splitThinkingSuffix(pattern);
+			const globPattern = thinking?.base ?? pattern;
+			const thinkingLevel = thinking?.thinkingLevel;
 
 			// Ids such as `bracketed-model[1m]` are not globs
 			const exact = resolveModelReference(
@@ -477,16 +504,7 @@ export function resolveCliModel(options: {
 		};
 	}
 
-	const target = provider
-		? {
-				provider,
-				modelText:
-					splitProviderPrefix(
-						cliModel,
-						models.filter((m) => m.provider === provider),
-					)?.modelText ?? cliModel,
-			}
-		: splitProviderPrefix(cliModel, models);
+	const { target } = result;
 	if (!target) {
 		return {
 			model: undefined,
@@ -495,21 +513,12 @@ export function resolveCliModel(options: {
 		};
 	}
 
-	// Parse thinking level suffix from the pattern before building the fallback model,
-	// but only when --thinking is not explicitly provided.
+	// Use the thinking level suffix only when --thinking is not explicitly provided; otherwise it
+	// stays part of the custom model id.
 	// e.g. "zai-org/GLM-5.1-FP8:high" → modelId="zai-org/GLM-5.1-FP8", fallbackThinking="high"
-	let modelId = target.modelText;
-	let fallbackThinking: ThinkingLevel | undefined;
-	if (!cliThinking) {
-		const lastColon = modelId.lastIndexOf(":");
-		const suffix = modelId.substring(lastColon + 1);
-		if (lastColon !== -1 && isValidThinkingLevel(suffix)) {
-			modelId = modelId.substring(0, lastColon);
-			fallbackThinking = suffix;
-		}
-	}
-
-	const fallbackModel = buildFallbackModel(target.provider, modelId, models);
+	const modelId = cliThinking ? target.modelText : target.modelId;
+	const fallbackThinking = cliThinking ? undefined : target.thinkingLevel;
+	const fallbackModel = buildFallbackModel(target.providerModels, modelId);
 	const requestedThinking = cliThinking ?? fallbackThinking;
 	return {
 		model: requestedThinking && requestedThinking !== "off" ? { ...fallbackModel, reasoning: true } : fallbackModel,
