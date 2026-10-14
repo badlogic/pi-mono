@@ -103,7 +103,7 @@ describe("contracts", () => {
 			() => bind(v2, undefined, chatV1),
 			(error) => isChordError(error, "contract_mismatch"),
 		);
-		const adapter = (current: Record<string, unknown>) => ({ kind: "viewer", view: current.body });
+		const adapter = (current: Record<string, unknown>) => ({ variant: "viewer", view: current.body });
 		assert.equal(bind(v2, { 1: adapter }, chatV1), adapter);
 	});
 

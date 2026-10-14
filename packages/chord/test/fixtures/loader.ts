@@ -44,12 +44,12 @@ try {
 	writeGreeting("v1");
 	const host = createHost({ loader: nodeLoader, onError: () => {} });
 	await host.load([`${dir}facet.ts`]);
-	const handle = host.get(Hello, {});
-	assert.equal(await handle.greet("x"), "v1 x");
+	const ref = host.get(Hello, {});
+	assert.equal(await ref.greet("x"), "v1 x");
 	writeGreeting("v2");
 	const report = await host.reload([`${dir}facet.ts`]);
 	assert.deepEqual(report.changed, ["t.hello"]);
-	assert.equal(await handle.greet("x"), "v2 x");
+	assert.equal(await ref.greet("x"), "v2 x");
 	await host.close();
 
 	// A facet listed first that imports a later facet's directory shares that facet's copy of the module.

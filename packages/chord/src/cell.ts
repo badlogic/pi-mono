@@ -10,7 +10,7 @@ export interface SourceOptions {
 	readonly report: (error: unknown) => void;
 }
 
-/** Checks that `ctx` may write a record's cells now; throws otherwise. */
+/** Checks that `ctx` may write an object's cells now; throws otherwise. */
 export type WriteGuard = (ctx: Ctx) => void;
 
 let sequence = 0;
@@ -59,7 +59,7 @@ class Fanout<T> {
 	}
 }
 
-/** A record-owned state source (cell or derivation). Writes recompute dependents atomically. */
+/** An object-owned state source (cell or derivation). Writes recompute dependents atomically. */
 export abstract class Source<T> implements Readable<T> {
 	readonly key: string;
 	readonly seq = ++sequence;
@@ -269,8 +269,8 @@ const isReadable = (value: unknown): value is Readable<unknown> =>
 	"value" in value;
 
 /**
- * A synchronous derivation. Sources are record cells/derivations (recomputed atomically with the write) or other
- * readables such as handle state members (recomputed when they publish). Subscribers receive diffs.
+ * A synchronous derivation. Sources are object cells/derivations (recomputed atomically with the write) or other
+ * readables such as reference state members (recomputed when they publish). Subscribers receive diffs.
  */
 export class Derived<T> extends Source<T> {
 	readonly sources: readonly Readable<unknown>[];

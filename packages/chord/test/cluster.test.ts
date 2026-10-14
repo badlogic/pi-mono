@@ -49,7 +49,7 @@ function greeterFacet(greeting: string, options: { fail?: boolean } = {}): Facet
 				if (options.fail) throw new Error("worker factory fails");
 				const state = self.state({ count: cell(Type.Object({ n: Type.Number() }), { n: 0 }) });
 				return {
-					kind: "main",
+					variant: "main",
 					count: state.count,
 					greet: (name: string, ctx: Ctx) => {
 						state.count.change(ctx, (draft) => {
@@ -75,7 +75,7 @@ function setup() {
 }
 
 describe("cross-host reload", () => {
-	it("prepares every host, commits the server first, then the workers; epochs stay in step", async () => {
+	it("prepares every host, commits the server first, then the workers; code versions stay in step", async () => {
 		const { server, worker, modules } = setup();
 		await tick();
 		const greeter = server.get(Greeter, {}, { at: "session:S1" });
@@ -88,20 +88,20 @@ describe("cross-host reload", () => {
 		});
 		await tick();
 		const shapes: number[] = [];
-		greeter.onShape((shape) => shapes.push(shape.epoch));
+		greeter.onShape((shape) => shapes.push(shape.codeVersion));
 		modules.set("greeter", greeterFacet("v2"));
 		const report = await server.reload([], { remote: { "session:": ["greeter"] } });
 		// No waiting: the commit frame precedes this call on the FIFO link, so the worker has committed when it arrives.
 		assert.equal(await greeter.greet("b"), "v2 b");
-		assert.equal(server.epoch, report.epoch);
-		assert.equal(worker.epoch, report.epoch);
+		assert.equal(server.codeVersion, report.codeVersion);
+		assert.equal(worker.codeVersion, report.codeVersion);
 		go.open();
 		assert.equal(await pinned, "v1 p");
-		assert.deepEqual(shapes, [report.epoch]);
-		// The server retires the old epoch once its last old root ended, then tells the worker.
-		for (let i = 0; i < 20 && worker.previousEpoch !== undefined; i++) await tick();
-		assert.equal(server.previousEpoch, undefined);
-		assert.equal(worker.previousEpoch, undefined);
+		assert.deepEqual(shapes, [report.codeVersion]);
+		// The server retires the old code version once its last old root ended, then tells the worker.
+		for (let i = 0; i < 20 && worker.previousCodeVersion !== undefined; i++) await tick();
+		assert.equal(server.previousCodeVersion, undefined);
+		assert.equal(worker.previousCodeVersion, undefined);
 	});
 
 	it("a failing vote aborts every host; the error keeps its code and names the host", async () => {
@@ -109,14 +109,14 @@ describe("cross-host reload", () => {
 		await tick();
 		const greeter = server.get(Greeter, {}, { at: "session:S1" });
 		await greeter.greet("a");
-		const before = [server.epoch, worker.epoch];
+		const before = [server.codeVersion, worker.codeVersion];
 		modules.set("greeter", greeterFacet("v2", { fail: true }));
 		await assert.rejects(server.reload([], { remote: { "session:": ["greeter"] } }), (error) => {
 			assert.ok(isChordError(error, "unavailable"));
 			assert.match(error.message, /session:S1: .*worker factory fails/);
 			return true;
 		});
-		assert.deepEqual([server.epoch, worker.epoch], before);
+		assert.deepEqual([server.codeVersion, worker.codeVersion], before);
 		assert.equal(await greeter.greet("x"), "v1 x");
 	});
 
@@ -130,7 +130,7 @@ describe("cross-host reload", () => {
 			await go.promise;
 		});
 		await tick();
-		const before = [server.epoch, worker.epoch];
+		const before = [server.codeVersion, worker.codeVersion];
 		const bumped: Facet = {
 			name: "greeter",
 			setup: (api) =>
@@ -145,7 +145,7 @@ describe("cross-host reload", () => {
 			assert.match(error.message, /session:S1: .*blocking roots: server#\w+:\d+/);
 			return true;
 		});
-		assert.deepEqual([server.epoch, worker.epoch], before);
+		assert.deepEqual([server.codeVersion, worker.codeVersion], before);
 		go.open();
 		await blocker;
 		assert.equal(await greeter.greet("x"), "v1 x");
@@ -185,7 +185,7 @@ describe("cross-host reload", () => {
 		cold.connect(up);
 		for (let i = 0; i < 20 && old.status !== "gone"; i++) await tick();
 		assert.equal(old.status, "gone");
-		assert.equal(cold.epoch, server.epoch);
+		assert.equal(cold.codeVersion, server.codeVersion);
 		// Close this loader-less child before the addition; it tested only the removal reconciliation.
 		await cold.close();
 		modules.set("greeter", greeterFacet("v2"));
@@ -220,16 +220,16 @@ describe("cross-host reload", () => {
 		const viewer = browser.get(Greeter, {}, { at: "session:S1" });
 		assert.equal(await viewer.greet("a"), "v1 a");
 		const shapes: number[] = [];
-		viewer.onShape((shape) => shapes.push(shape.epoch));
+		viewer.onShape((shape) => shapes.push(shape.codeVersion));
 		modules.set("greeter", greeterFacet("v2"));
 		const report = await server.reload([], { remote: { "session:": ["greeter"] } });
 		for (let i = 0; i < 20 && shapes.length === 0; i++) await tick();
-		assert.deepEqual(shapes, [report.epoch]);
+		assert.deepEqual(shapes, [report.codeVersion]);
 		assert.equal(await viewer.greet("b"), "v2 b");
 
 		modules.set("greeter", {
 			name: "greeter",
-			setup: (api) => api.serve(GreeterV2, () => ({ kind: "main", hello: (name: string) => `hi ${name}` })),
+			setup: (api) => api.serve(GreeterV2, () => ({ variant: "main", hello: (name: string) => `hi ${name}` })),
 		});
 		await server.reload([], { remote: { "session:": ["greeter"] } });
 		for (let i = 0; i < 20 && viewer.status !== "gone"; i++) await tick();
@@ -259,18 +259,18 @@ describe("cross-host reload", () => {
 						}),
 					});
 					const state = self.state({ count: cell(Type.Object({ n: Type.Number() }), { n: 0 }) });
-					return { kind: "main", count: state.count, greet: (name: string) => `slow ${name}` };
+					return { variant: "main", count: state.count, greet: (name: string) => `slow ${name}` };
 				}),
 		};
 		modules.set("greeter", slow);
-		const epoch = worker.epoch;
+		const codeVersion = worker.codeVersion;
 		await assert.rejects(server.reload([], { remote: { "session:": ["greeter"] }, voteDeadline: 50 }), (error) =>
 			isChordError(error, "aborted"),
 		);
 		go.open();
 		for (let i = 0; i < 50 && !log.includes("closed"); i++) await tick();
 		assert.deepEqual(log, ["opened", "closed"]);
-		assert.equal(worker.epoch, epoch);
+		assert.equal(worker.codeVersion, codeVersion);
 		modules.set("greeter", greeterFacet("v3"));
 		await server.reload([], { remote: { "session:": ["greeter"] } });
 		assert.equal(await greeter.greet("b"), "v3 b");

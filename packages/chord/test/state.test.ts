@@ -75,25 +75,25 @@ describe("state cells", () => {
 	it("publishes snapshots then exact ops; derivations follow", async () => {
 		const host = createHost({ onError: () => {} });
 		serveList(host);
-		const handle = host.get(List, {});
+		const ref = host.get(List, {});
 		const events: StateEvent<unknown>[] = [];
 		const labels: StateEvent<unknown>[] = [];
-		handle.list.events((event) => events.push(event));
-		handle.labels.events((event) => labels.push(event));
-		await handle.push({ id: 1, label: "a" });
+		ref.list.events((event) => events.push(event));
+		ref.labels.events((event) => labels.push(event));
+		await ref.push({ id: 1, label: "a" });
 		// Subscribed while loading: an empty snapshot, the hydrated value as a reset, then exact ops.
 		assert.deepEqual(events[0], { type: "snap", value: undefined });
 		assert.deepEqual(events[1], { type: "reset", value: { items: [], count: 0 } });
 		const ops = events[2]?.type === "ops" ? events[2].ops.map((op) => JSON.stringify(op)).sort() : [];
 		assert.deepEqual(ops, ['["p",["items"],0,0,[{"id":1,"label":"a"}]]', '["s",["count"],1]']);
 		assert.deepEqual(events[2]?.value, { items: [{ id: 1, label: "a" }], count: 1 });
-		assert.deepEqual(handle.labels.value, ["a"]);
+		assert.deepEqual(ref.labels.value, ["a"]);
 		assert.deepEqual(
 			labels.map((event) => event.type),
 			["snap", "reset", "ops"],
 		);
-		await handle.set({ items: [], count: 0 });
-		assert.deepEqual(handle.labels.value, []);
+		await ref.set({ items: [], count: 0 });
+		assert.deepEqual(ref.labels.value, []);
 	});
 
 	it("supports primitive cells and value-returning changes", async () => {
@@ -113,14 +113,14 @@ describe("state cells", () => {
 				},
 			};
 		});
-		const handle = host.get(Counter, {});
+		const ref = host.get(Counter, {});
 		const values: unknown[] = [];
-		await handle.ready;
+		await ref.ready;
 		const events: StateEvent<unknown>[] = [];
-		handle.n.events((event) => events.push(event));
-		handle.n.subscribe((value) => values.push(value));
-		assert.equal(await handle.inc(null), 1);
-		assert.equal(await handle.inc(null), 2);
+		ref.n.events((event) => events.push(event));
+		ref.n.subscribe((value) => values.push(value));
+		assert.equal(await ref.inc(null), 1);
+		assert.equal(await ref.inc(null), 2);
 		assert.deepEqual(values, [0, 1, 2]);
 		assert.deepEqual(events, [
 			{ type: "snap", value: 0 },
@@ -164,12 +164,12 @@ describe("state cells", () => {
 
 		const dev = createHost({ dev: true, onError: () => {} });
 		serveList(dev);
-		const handle = dev.get(List, {});
+		const ref = dev.get(List, {});
 		await assert.rejects(
-			handle.set({ items: [], count: "x" } as never),
+			ref.set({ items: [], count: "x" } as never),
 			(error) => isChordError(error, "invalid") && error.reason === "state",
 		);
-		assert.deepEqual(handle.list.value, { items: [], count: 0 });
+		assert.deepEqual(ref.list.value, { items: [], count: 0 });
 	});
 
 	it("rejects writes from inside a factory and placeholder use before activation", async () => {
@@ -225,14 +225,14 @@ describe("state cells", () => {
 			});
 			return { seen: state.seen };
 		});
-		const handle = host.get(Watcher, {});
-		await handle.ready;
+		const ref = host.get(Watcher, {});
+		await ref.ready;
 		events.emit(2);
 		events.emit(3);
 		await tick();
-		assert.deepEqual(handle.seen.value, { sum: 5 });
+		assert.deepEqual(ref.seen.value, { sum: 5 });
 		assert.equal(roots.size, 2);
-		handle.release();
+		ref.release();
 		await tick();
 		await tick();
 		assert.equal(events.size, 0);
@@ -264,20 +264,20 @@ describe("state cells", () => {
 				},
 			};
 		});
-		const handle = host.get(Echo, {});
-		await handle.ready;
+		const ref = host.get(Echo, {});
+		await ref.ready;
 		const values: unknown[] = [];
 		let replica: unknown;
-		handle.n.events((event) => {
+		ref.n.events((event) => {
 			replica = event.type === "ops" ? applyImmutable(replica, event.ops) : event.value;
 			values.push(replica);
 		});
 		const doubled: unknown[] = [];
-		handle.d.subscribe((value) => doubled.push(value));
-		await handle.set(1);
+		ref.d.subscribe((value) => doubled.push(value));
+		await ref.set(1);
 		await new Promise<void>((resolve) => setImmediate(resolve));
 		assert.deepEqual(values, [0, 1, 2]);
-		assert.equal(handle.d.value, 4);
+		assert.equal(ref.d.value, 4);
 		assert.deepEqual(doubled, [0, 2, 4]);
 	});
 });

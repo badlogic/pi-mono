@@ -122,7 +122,7 @@ export async function processLock(name: string): Promise<() => Promise<void>> {
 		});
 }
 
-/** sun_path holds 104 bytes on macOS and the BSDs, including the terminating NUL. */
+/** sun_path references 104 bytes on macOS and the BSDs, including the terminating NUL. */
 const MAX_SOCKET_PATH_BYTES = 103;
 
 /**

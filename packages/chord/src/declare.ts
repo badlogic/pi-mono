@@ -17,7 +17,7 @@ export interface CellDecl<T> {
 	readonly initial: T;
 }
 
-export interface ResourceSpec<T> {
+export interface ResourceDeclaration<T> {
 	/** Bump to replace the resource at the next reload. */
 	readonly rev: number;
 	/** Holds or resources that must be live/open first. A change replaces the resource. */
@@ -30,7 +30,7 @@ export interface ResourceSpec<T> {
 
 export interface ResourceDecl<T> {
 	readonly [DECL]: "resource";
-	readonly spec: ResourceSpec<T>;
+	readonly spec: ResourceDeclaration<T>;
 }
 
 export interface Resource<T> {
@@ -59,14 +59,14 @@ export const cell = <S extends TSchema>(schema: S, initial: Static<S>): CellDecl
 	initial,
 });
 
-export const resource = <T>(spec: ResourceSpec<T>): ResourceDecl<T> => ({ [DECL]: "resource", spec });
+export const resource = <T>(spec: ResourceDeclaration<T>): ResourceDecl<T> => ({ [DECL]: "resource", spec });
 
 type ValueOf<S> = S extends Resource<infer T> ? T : S;
 type EventOf<S> = S extends Resource<infer T> ? EventOf<T> : S extends Subscribable<infer E> ? E : never;
 
 /**
- * Reacts to a source once the record is live. `listener(source, fn)` subscribes to the source itself: a readable
- * (cell, derivation, handle state member: called with each value, starting with the current one), an event source,
+ * Reacts to a source once the object is live. `listener(source, fn)` subscribes to the source itself: a readable
+ * (cell, derivation, reference state member: called with each value, starting with the current one), an event source,
  * or a resource whose value is one. `listener(source, select, fn)` subscribes to `select(value)`, where value is the
  * opened resource for a resource source. Each event runs `fn` in a fresh root.
  */

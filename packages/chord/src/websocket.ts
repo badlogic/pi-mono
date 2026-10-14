@@ -8,7 +8,7 @@ export interface WebSocketServerLike<Request> {
 	on(event: "connection", listener: (socket: WebSocketLike, request: Request) => void): unknown;
 }
 
-/** WebSocket peers are always accepted as clients: no roots, no epochs, no reload votes, not addressable. */
+/** WebSocket peers are always accepted as clients: no roots, no code versions, no reload votes, not addressable. */
 export interface WebSocketAcceptOptions<Request> extends Omit<AcceptOptions, "principal" | "kind" | "name"> {
 	/** The authenticator: the principal of the connecting client, or undefined to refuse it. */
 	principal(request: Request): Principal | undefined | Promise<Principal | undefined>;

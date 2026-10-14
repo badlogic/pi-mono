@@ -10,6 +10,7 @@ import {
 	isChordError,
 	memoryLinkPair,
 	method,
+	PROTOCOL_VERSION,
 	type Principal,
 	remote,
 	resource,
@@ -34,13 +35,13 @@ const Counter = remote("t.counter", {
 	},
 });
 
-/** Serves Counter and records the principal of every record it creates. */
+/** Serves Counter and objects the principal of every object it creates. */
 function serveCounter(host: Host, principals: unknown[] = []) {
 	host.serve(Counter, (_input, principal, self) => {
 		principals.push(principal);
 		const state = self.state({ count: cell(Type.Object({ n: Type.Number() }), { n: 0 }) });
 		return {
-			kind: "main",
+			variant: "main",
 			count: state.count,
 			add: (delta, ctx) => {
 				state.count.change(ctx, (draft) => {
@@ -71,7 +72,7 @@ describe("links: calls and state across hosts", () => {
 		const result = await worker.root(async (ctx) => {
 			const counter = ctx.get(Counter, { name: "c" }, { at: "server" });
 			await counter.ready;
-			assert.equal(counter.kind, "main");
+			assert.equal(counter.variant, "main");
 			return [await counter.add(2, ctx), await counter.who(null, ctx)];
 		});
 		assert.deepEqual(result, [2, { worker: "session:S1" }]);
@@ -151,14 +152,14 @@ function cluster(options: { pingInterval?: number; pingTimeout?: number } = {}):
 				upstreamOptions: options,
 				onError: () => {},
 			});
-			const handle = { host, up, reconnect: () => {} };
-			handle.reconnect = () => {
+			const ref = { host, up, reconnect: () => {} };
+			ref.reconnect = () => {
 				const [nextDown, nextUp] = memoryLinkPair();
 				server.accept(nextDown, { principal });
-				handle.up = nextUp;
+				ref.up = nextUp;
 				host.connect(nextUp);
 			};
-			return handle;
+			return ref;
 		},
 	};
 	server.route("session:", {
@@ -176,7 +177,7 @@ function cluster(options: { pingInterval?: number; pingTimeout?: number } = {}):
 				});
 				const counter = self.state({ count: cell(Type.Object({ n: Type.Number() }), { n: 0 }) });
 				return {
-					kind: "main",
+					variant: "main",
 					count: counter.count,
 					add: (delta: number, ctx: Ctx) => {
 						counter.count.change(ctx, (draft) => {
@@ -216,7 +217,7 @@ describe("links: relay, stamping, lifetime", () => {
 		c.server.accept(down, { principal: guest });
 		const frames: Frame[] = [];
 		raw.receive((frame) => frames.push(frame));
-		raw.send({ t: "hello", name: "raw", kind: "client", epoch: 0 });
+		raw.send({ t: "hello", protocol: PROTOCOL_VERSION, name: "raw", kind: "client", codeVersion: 0 });
 		raw.send({
 			t: "hold",
 			id: 1,
@@ -319,7 +320,7 @@ describe("links: relay, stamping, lifetime", () => {
 			variants: { main: { methods: { inc: method(Type.Null(), Type.Number()) } } },
 		});
 		const { server, worker } = serverWithWorker();
-		server.serve(CounterV2, () => ({ kind: "main", inc: () => 1 }));
+		server.serve(CounterV2, () => ({ variant: "main", inc: () => 1 }));
 		await assert.rejects(worker.get(Counter, { name: "x" }, { at: "server" }).ready, (error) =>
 			isChordError(error, "contract_mismatch"),
 		);
@@ -337,7 +338,7 @@ describe("links: relay, stamping, lifetime", () => {
 		const counter = browser.host.get(Counter, { name: "a" }, { at: "session:S1" });
 		await counter.add(1);
 		await c.server.invalidatePrincipal({ guest: "g1" });
-		// The relay under the old principal is closed at once; the worker disposes its record after.
+		// The relay under the old principal is closed at once; the worker disposes its object after.
 		for (let i = 0; i < 20 && counter.status !== "gone"; i++) await tick();
 		assert.equal(counter.status, "gone");
 		for (let i = 0; i < 20 && !c.log.includes("close a"); i++) await tick();
@@ -360,7 +361,7 @@ describe("links: relay, stamping, lifetime", () => {
 		browser.reconnect();
 		assert.equal(await counter.add(1), 1);
 		await tick();
-		// The old hold was released with the link, so the worker made a fresh record; the reset carries its value.
+		// The old hold was released with the link, so the worker made a fresh object; the reset carries its value.
 		assert.deepEqual(counter.count.value, { n: 1 });
 		assert.ok(events.filter((type) => type === "reset").length >= 2);
 	});
@@ -380,6 +381,71 @@ const Big = remote("t.big", {
 /** About 160,000 characters of JSON: above PACK_THRESHOLD. */
 const large = (tag: string) => Array.from({ length: 40 }, (_, i) => `${tag}${i}:${"x".repeat(4000)}`);
 
+describe("links: protocol version", () => {
+	const mismatches = () => {
+		const seen: { local: number; peer: number | undefined }[] = [];
+		return {
+			seen,
+			onProtocolMismatch: (versions: { local: number; peer: number | undefined }) => seen.push(versions),
+		};
+	};
+
+	it("a peer without a protocol version (an old client) is told and dropped; nothing it sends is served", async () => {
+		const server = createHost({ name: "server", onError: () => {} });
+		serveCounter(server);
+		const accepted = mismatches();
+		const [down, raw] = memoryLinkPair();
+		server.accept(down, { principal: { guest: "g" }, onProtocolMismatch: accepted.onProtocolMismatch });
+		const frames: Frame[] = [];
+		let closed: string | undefined;
+		raw.receive((frame) => frames.push(frame));
+		raw.onClose((reason) => {
+			closed = reason;
+		});
+		raw.send({ t: "hello", name: "old", kind: "client", codeVersion: 0 });
+		raw.send({ t: "hold", id: 1, at: "server", token: Counter.description, input: { name: "c" } });
+		await tick();
+		assert.deepEqual(accepted.seen, [{ local: PROTOCOL_VERSION, peer: 1 }]);
+		assert.equal(closed, `protocol-version ${PROTOCOL_VERSION}`);
+		assert.equal(down.closed, true);
+		assert(!frames.some((frame) => frame.t === "shape"), "the old client's hold was not served");
+	});
+
+	it("a client learns that its server speaks another version, and stops", async () => {
+		const client = mismatches();
+		const [down, up] = memoryLinkPair();
+		const browser = createHost({ name: "browser", kind: "client", onError: () => {} });
+		browser.connect(up, { onProtocolMismatch: client.onProtocolMismatch });
+		// A newer server: its hello announces the next version, and it closes the link the same way Chord does.
+		down.send({ t: "hello", protocol: PROTOCOL_VERSION + 1, name: "server", kind: "host", codeVersion: 1 });
+		await tick();
+		assert.deepEqual(client.seen, [{ local: PROTOCOL_VERSION, peer: PROTOCOL_VERSION + 1 }]);
+		assert.equal(up.closed, true);
+
+		// Told by the peer (it noticed first): the close reason carries its version.
+		const told = mismatches();
+		const [down2, up2] = memoryLinkPair();
+		const other = createHost({ name: "browser", kind: "client", onError: () => {} });
+		other.connect(up2, { onProtocolMismatch: told.onProtocolMismatch });
+		down2.close(`protocol-version ${PROTOCOL_VERSION + 1}`);
+		await tick();
+		assert.deepEqual(told.seen, [{ local: PROTOCOL_VERSION, peer: PROTOCOL_VERSION + 1 }]);
+	});
+
+	it("peers of the same version talk; an ordinary close is no mismatch", async () => {
+		const both = mismatches();
+		const server = createHost({ name: "server", onError: () => {} });
+		const [down, up] = memoryLinkPair();
+		server.accept(down, { principal: { guest: "g" }, onProtocolMismatch: both.onProtocolMismatch });
+		const browser = createHost({ name: "browser", kind: "client", onError: () => {} });
+		browser.connect(up, { onProtocolMismatch: both.onProtocolMismatch });
+		await tick();
+		up.close("bye");
+		await tick();
+		assert.deepEqual(both.seen, []);
+	});
+});
+
 describe("links: packed payloads", () => {
 	it("large args, results and snapshots cross a relay deflated and arrive intact", async () => {
 		const server = createHost({ name: "server", onError: () => {} });
@@ -390,7 +456,7 @@ describe("links: packed payloads", () => {
 				const worker = createHost({ name, upstream: up, onError: () => {} });
 				worker.serve(Big, (_input, _principal, self) => {
 					const state = self.state({ notes: cell(Type.Array(Type.String()), large("a")) });
-					return { kind: "main", notes: state.notes, echo: (notes: string[]) => notes };
+					return { variant: "main", notes: state.notes, echo: (notes: string[]) => notes };
 				});
 				return down;
 			},

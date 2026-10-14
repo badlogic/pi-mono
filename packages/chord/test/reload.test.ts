@@ -42,7 +42,7 @@ interface GreeterSpec {
 	readonly schema?: typeof CountV1 | ReturnType<typeof Type.Object>;
 	readonly initial?: object;
 	readonly bump?: (draft: Record<string, number>) => void;
-	readonly options?: ServeOptions<typeof Greeter>;
+	readonly options?: ServeOptions;
 	readonly extra?: (self: Self, input: { id?: string }) => void;
 }
 
@@ -87,27 +87,27 @@ describe("reload", () => {
 	it("compatible reload: no gate, pinned roots keep old code, state preserved, previous retires", async () => {
 		const host = quiet();
 		host.install(greeterFacet({ greeting: "hello" }));
-		const handle = host.get(Greeter, {});
-		assert.equal(await handle.greet("a"), "hello a");
+		const ref = host.get(Greeter, {});
+		assert.equal(await ref.greet("a"), "hello a");
 		const go = latch();
 		const pinned = host.root(async (ctx) => {
-			const first = await handle.greet("p", ctx);
+			const first = await ref.greet("p", ctx);
 			await go.promise;
-			return [first, await handle.greet("p", ctx)];
+			return [first, await ref.greet("p", ctx)];
 		});
 		await tick();
 		const shapes: number[] = [];
-		handle.onShape((shape) => shapes.push(shape.epoch));
+		ref.onShape((shape) => shapes.push(shape.codeVersion));
 		const report = await host.reload([greeterFacet({ greeting: "hi" })]);
 		assert.deepEqual(report.gated, []);
 		assert.equal(report.prepared.length, 1);
-		assert.equal(await handle.greet("b"), "hi b");
-		assert.deepEqual(shapes, [report.epoch]);
-		assert.equal(host.previousEpoch, report.previous);
+		assert.equal(await ref.greet("b"), "hi b");
+		assert.deepEqual(shapes, [report.codeVersion]);
+		assert.equal(host.previousCodeVersion, report.previous);
 		go.open();
 		assert.deepEqual(await pinned, ["hello p", "hello p"]);
-		assert.equal(host.previousEpoch, undefined);
-		assert.deepEqual(handle.count.value, { n: 4 });
+		assert.equal(host.previousCodeVersion, undefined);
+		assert.deepEqual(ref.count.value, { n: 4 });
 	});
 
 	it("prepare runs in recording mode: writes throw and a failing factory leaves everything unchanged", async () => {
@@ -144,13 +144,13 @@ describe("reload", () => {
 				if (input.id === "b") throw new Error("b fails");
 			},
 		});
-		const epoch = host.epoch;
+		const codeVersion = host.codeVersion;
 		await assert.rejects(
 			host.reload([failing]),
 			// A plain error from the new factory surfaces as `unavailable`; the message says the reload aborted.
 			(error) => isChordError(error, "unavailable") && /reload aborted.*b fails/.test(error.message),
 		);
-		assert.equal(host.epoch, epoch);
+		assert.equal(host.codeVersion, codeVersion);
 		assert.deepEqual(log, ["open a", "close a"]);
 		assert.equal(await a.greet("x"), "hello x");
 	});
@@ -176,16 +176,16 @@ describe("reload", () => {
 	it("state bump: gate, migrate(old, fromVersion) into the new schema, reset to watchers, old roots upgrade_conflict", async () => {
 		const host = quiet();
 		host.install(greeterFacet({ greeting: "hello" }));
-		const handle = host.get(Greeter, {});
-		await handle.greet("a");
-		await handle.greet("a");
+		const ref = host.get(Greeter, {});
+		await ref.greet("a");
+		await ref.greet("a");
 		const events: StateEvent<unknown>[] = [];
-		handle.count.events((event) => events.push(event));
+		ref.count.events((event) => events.push(event));
 		const go = latch();
-		// Started before the reload, never touched the record: rejected after the commit.
+		// Started before the reload, never touched the object: rejected after the commit.
 		const late = host.root(async (ctx) => {
 			await go.promise;
-			return handle.greet("late", ctx);
+			return ref.greet("late", ctx);
 		});
 		const froms: number[] = [];
 		const v2 = greeterFacet({
@@ -211,8 +211,8 @@ describe("reload", () => {
 		assert.equal(report.gated.length, 1);
 		assert.deepEqual(froms, [1]);
 		assert.deepEqual(events.at(-1), { type: "reset", value: { total: 2 } });
-		assert.equal(await handle.greet("b"), "hi b");
-		assert.deepEqual(handle.count.value, { total: 3 });
+		assert.equal(await ref.greet("b"), "hi b");
+		assert.deepEqual(ref.count.value, { total: 3 });
 		go.open();
 		await assert.rejects(late, (error) => isChordError(error, "upgrade_conflict") && error.retryable);
 	});
@@ -220,19 +220,19 @@ describe("reload", () => {
 	it("gate: late old roots get upgrade_conflict, grandfathered roots re-enter, then commit", async () => {
 		const host = quiet();
 		host.install(greeterFacet({ greeting: "hello" }));
-		const handle = host.get(Greeter, {});
-		await handle.ready;
+		const ref = host.get(Greeter, {});
+		await ref.ready;
 		const go = latch();
 		const grandfathered = host.root(async (ctx) => {
-			await handle.greet("g", ctx);
+			await ref.greet("g", ctx);
 			await go.promise;
-			return handle.greet("g", ctx);
+			return ref.greet("g", ctx);
 		});
 		await tick();
 		const reload = host.reload([greeterFacet({ greeting: "hi", options: { state: { version: 2 } } })]);
 		await until(async () => {
 			try {
-				await handle.greet("probe");
+				await ref.greet("probe");
 				return false;
 			} catch (error) {
 				return isChordError(error, "upgrade_conflict");
@@ -242,7 +242,7 @@ describe("reload", () => {
 		assert.equal(await grandfathered, "hello g");
 		const report = await reload;
 		assert.equal(report.gated.length, 1);
-		assert.equal(await handle.greet("n"), "hi n");
+		assert.equal(await ref.greet("n"), "hi n");
 	});
 
 	it("gate deadline: reload aborts, reports blocking roots, nothing changes", async () => {
@@ -268,11 +268,11 @@ describe("reload", () => {
 				),
 		});
 		host.install(facet("hello", 1));
-		const handle = host.get(Greeter, {});
-		await handle.ready;
+		const ref = host.get(Greeter, {});
+		await ref.ready;
 		const go = latch();
 		const blocker = host.root(async (ctx) => {
-			await handle.greet("b", ctx);
+			await ref.greet("b", ctx);
 			await go.promise;
 		});
 		await tick();
@@ -281,7 +281,7 @@ describe("reload", () => {
 			assert.match(error.message, /blocking roots: host#\w+:\d+/);
 			return true;
 		});
-		assert.equal(await handle.greet("x"), "hello x");
+		assert.equal(await ref.greet("x"), "hello x");
 		await tick();
 		assert.deepEqual(log, ["start hello", "stop hello", "start hello"]);
 		go.open();
@@ -316,39 +316,39 @@ describe("reload", () => {
 				}),
 		});
 		host.install(facet(1));
-		const handle = host.get(Greeter, {});
-		assert.equal(await handle.greet("x"), "1 x");
+		const ref = host.get(Greeter, {});
+		assert.equal(await ref.greet("x"), "1 x");
 		log.length = 0;
 		const report = await host.reload([facet(2)]);
 		assert.equal(report.gated.length, 1);
-		assert.equal(await handle.greet("x"), "2 x");
+		assert.equal(await ref.greet("x"), "2 x");
 		await tick();
 		assert.deepEqual(log, ["open cache 2", "close lock 1", "open lock 2", "close cache 1"]);
 	});
 
-	it("two-version rule: the next reload retires the previous epoch; its roots get superseded", async () => {
+	it("two-version rule: the next reload retires the previous code version; its roots get superseded", async () => {
 		const host = quiet();
 		host.install(greeterFacet({ greeting: "v1" }));
-		const handle = host.get(Greeter, {});
-		await handle.ready;
-		const first = host.epoch;
+		const ref = host.get(Greeter, {});
+		await ref.ready;
+		const first = host.codeVersion;
 		const go = latch();
 		const pinned = host.root(async (ctx) => {
-			await handle.greet("p", ctx);
+			await ref.greet("p", ctx);
 			await go.promise;
-			return handle.greet("p", ctx);
+			return ref.greet("p", ctx);
 		});
 		await tick();
 		await host.reload([greeterFacet({ greeting: "v2" })]);
-		assert.equal(host.previousEpoch, first);
+		assert.equal(host.previousCodeVersion, first);
 		await host.reload([greeterFacet({ greeting: "v3" })], { retireDeadline: 20 });
 		go.open();
 		await assert.rejects(pinned, (error) => isChordError(error, "superseded") && error.retryable);
 		await assert.rejects(
-			host.root(() => 1, { epoch: first }),
+			host.root(() => 1, { codeVersion: first }),
 			(error) => isChordError(error, "superseded"),
 		);
-		assert.equal(await handle.greet("n"), "v3 n");
+		assert.equal(await ref.greet("n"), "v3 n");
 	});
 
 	it("checks contracts at reload: forgotten bumps, live consumers, accepts adapters", async () => {
@@ -370,28 +370,28 @@ describe("reload", () => {
 		const host = quiet();
 		host.install({
 			name: "doc",
-			setup: (api) => api.serve(DocV1, () => ({ kind: "main", read: () => ({ text: "v1" }) })),
+			setup: (api) => api.serve(DocV1, () => ({ variant: "main", read: () => ({ text: "v1" }) })),
 		});
 		const consumer = host.get(DocV1, {});
 		assert.deepEqual(await consumer.read(null), { text: "v1" });
 
 		const broken: Facet = {
 			name: "doc",
-			setup: (api) => api.serve(DocBroken, () => ({ kind: "main", read: () => ({ text: 1 }) })),
+			setup: (api) => api.serve(DocBroken, () => ({ variant: "main", read: () => ({ text: 1 }) })),
 		};
 		await assert.rejects(host.reload([broken]), /without a version bump/);
 
 		const fetch = () => ({ body: "v2" });
-		const v2: Facet = { name: "doc", setup: (api) => api.serve(DocV2, () => ({ kind: "main", fetch })) };
+		const v2: Facet = { name: "doc", setup: (api) => api.serve(DocV2, () => ({ variant: "main", fetch })) };
 		await assert.rejects(host.reload([v2]), (error) => isChordError(error, "contract_mismatch"));
 
 		const adapted: Facet = {
 			name: "doc",
 			setup: (api) =>
-				api.serve(DocV2, () => ({ kind: "main", fetch }), {
+				api.serve(DocV2, () => ({ variant: "main", fetch }), {
 					accepts: {
 						1: (current) => ({
-							kind: "main",
+							variant: "main",
 							read: () => ({ text: `${(current.fetch as typeof fetch)().body} via adapter` }),
 						}),
 					},
@@ -447,19 +447,19 @@ describe("reload", () => {
 				}),
 		});
 		host.install(facet(1));
-		const handle = host.get(Sum, {});
-		await handle.ready;
+		const ref = host.get(Sum, {});
+		await ref.ready;
 		emit(1);
 		await tick();
 		await host.reload([facet(10)]);
 		assert.equal(listeners.size, 1);
 		emit(1);
 		await tick();
-		assert.deepEqual(handle.sum.value, { v: 11 });
+		assert.deepEqual(ref.sum.value, { v: 11 });
 		assert.deepEqual(log, ["start 1", "start 10", "stop 1"]);
 	});
 
-	it("keeps registry tables per epoch", async () => {
+	it("keeps registry tables per code version", async () => {
 		const host = quiet();
 		const Routes = defineRegistry<string>("t.reload-routes");
 		const Router = local("t.router", { version: 1, input: Type.Object({}) });
@@ -472,14 +472,14 @@ describe("reload", () => {
 						self.register(Routes, { "GET /": value });
 						return {};
 					},
-					{ eager: true },
+					{ lifetime: "host" },
 				),
 		});
 		host.install(facet("one"));
 		await tick();
 		await tick();
 		const seen: [string | undefined, number][] = [];
-		host.registry(Routes).subscribe((table, epoch) => seen.push([table.get("GET /"), epoch]));
+		host.registry(Routes).subscribe((table, codeVersion) => seen.push([table.get("GET /"), codeVersion]));
 		const go = latch();
 		const pinned = host.root(async (ctx) => {
 			await go.promise;
@@ -491,15 +491,15 @@ describe("reload", () => {
 		assert.equal(await pinned, "one");
 		assert.deepEqual(seen, [
 			["one", report.previous],
-			["two", report.epoch],
+			["two", report.codeVersion],
 		]);
 	});
 
 	it("a reload can add a type together with a consumer that holds it", async () => {
 		const host = quiet();
 		host.install(greeterFacet({ greeting: "hello" }));
-		const handle = host.get(Greeter, {});
-		await handle.ready;
+		const ref = host.get(Greeter, {});
+		await ref.ready;
 		const Clock = local("t.clock", {
 			version: 1,
 			input: Type.Object({}),
@@ -519,34 +519,34 @@ describe("reload", () => {
 					};
 				}),
 		});
-		const epoch = host.epoch;
+		const codeVersion = host.codeVersion;
 		await assert.rejects(host.reload([clockFacet, consumer(true)]), /consumer fails/);
-		assert.equal(host.epoch, epoch);
-		assert.equal(await handle.greet("x"), "hello x");
+		assert.equal(host.codeVersion, codeVersion);
+		assert.equal(await ref.greet("x"), "hello x");
 		await host.reload([clockFacet, consumer(false)]);
-		assert.equal(await handle.greet("x"), "42 x");
+		assert.equal(await ref.greet("x"), "42 x");
 	});
 
-	it("the gate rejects new records of a changed type; after commit they get the new code", async () => {
+	it("the gate rejects new objects of a changed type; after commit they get the new code", async () => {
 		const host = quiet();
 		host.install(greeterFacet({ greeting: "hello" }));
-		const handle = host.get(Greeter, {});
-		await handle.ready;
+		const ref = host.get(Greeter, {});
+		await ref.ready;
 		const go = latch();
 		const grandfathered = host.root(async (ctx) => {
-			await handle.greet("g", ctx);
+			await ref.greet("g", ctx);
 			await go.promise;
 		});
 		const later = latch();
 		const pinned = host.root(async (ctx) => {
 			await later.promise;
-			return handle.greet("old", ctx);
+			return ref.greet("old", ctx);
 		});
 		await tick();
 		const reload = host.reload([greeterFacet({ greeting: "hi", options: { state: { version: 2 } } })]);
 		await until(async () => {
 			try {
-				await handle.greet("probe");
+				await ref.greet("probe");
 				return false;
 			} catch (error) {
 				return isChordError(error, "upgrade_conflict");
@@ -560,8 +560,8 @@ describe("reload", () => {
 		await grandfathered;
 		await reload;
 		assert.equal(await host.get(Greeter, { id: "late" }).greet("l"), "hi l");
-		// The previous epoch is still retained (pinned root), but the gated record dropped its old behavior.
-		assert.notEqual(host.previousEpoch, undefined);
+		// The previous code version is still retained (pinned root), but the gated object dropped its old implementation.
+		assert.notEqual(host.previousCodeVersion, undefined);
 		later.open();
 		await assert.rejects(pinned, (error) => isChordError(error, "upgrade_conflict"));
 	});

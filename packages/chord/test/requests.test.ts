@@ -56,7 +56,7 @@ describe("application requests", () => {
 		server.serve(Conv, (_input, _principal, self) => {
 			const state = self.state({ view: cell(View, { text: "" }) });
 			return {
-				kind: "main",
+				variant: "main",
 				view: state.view,
 				set: (text, ctx) => {
 					state.view.replace(ctx, { text });
@@ -64,10 +64,10 @@ describe("application requests", () => {
 				},
 			};
 		});
-		// No derivation, no cast: the handle member is the behavior member.
+		// No derivation, no cast: the reference member is the implementation member.
 		server.serve(Chat, (_input, _principal, self) => {
 			const conv = self.get(Conv, {});
-			return { kind: "viewer", view: conv.view };
+			return { variant: "viewer", view: conv.view };
 		});
 		const chat = server.get(Chat, {});
 		const values: unknown[] = [];
@@ -108,7 +108,7 @@ describe("application requests", () => {
 						self.register(Config, { greeting: value });
 						return {};
 					},
-					{ eager: true },
+					{ lifetime: "host" },
 				);
 				api.serve(Reader, () => ({
 					read: (_args: null, ctx: Ctx) => api.registry(Config).get("greeting", ctx) ?? "",
@@ -166,15 +166,15 @@ describe("application requests", () => {
 		});
 		const host = createHost({ onError: () => {} });
 		host.install(facet("v1"));
-		const handle = host.get(Watcher, {});
-		await handle.ready;
+		const ref = host.get(Watcher, {});
+		await ref.ready;
 		emit("a");
 		await host.reload([facet("v2")]);
 		await host.reload([facet("v3")]);
 		emit("b");
 		await sleep(5);
 		assert.equal(subscribers, 1);
-		assert.deepEqual(handle.seen.value, ["v1:a", "v3:b"]);
+		assert.deepEqual(ref.seen.value, ["v1:a", "v3:b"]);
 	});
 
 	it("#3 a changed select resubscribes", async () => {
@@ -223,66 +223,67 @@ describe("application requests", () => {
 				},
 			};
 		});
-		const handle = host.get(Mirror, {});
-		await handle.ready;
+		const ref = host.get(Mirror, {});
+		await ref.ready;
 		const events: StateEvent<unknown>[] = [];
 		let replica: unknown;
-		handle.doc.events((event) => {
+		ref.doc.events((event) => {
 			replica = event.type === "ops" ? applyImmutable(replica, event.ops) : event.value;
 			events.push(event);
 		});
 		const opsOf = (event: StateEvent<unknown> | undefined) => (event?.type === "ops" ? event.ops : []);
-		const current = handle.doc.value as { entries: string[]; status: string };
+		const current = ref.doc.value as { entries: string[]; status: string };
 		// A new revision reusing `entries`: a diff.
-		await handle.set({ entries: current.entries, status: "running" });
+		await ref.set({ entries: current.entries, status: "running" });
 		assert.deepEqual(opsOf(events.at(-1)), [["s", ["status"], "running"]]);
 		// Unrelated containers: one replacement op.
-		await handle.set({ entries: ["a", "b", "c"], status: "running" });
+		await ref.set({ entries: ["a", "b", "c"], status: "running" });
 		assert.equal(opsOf(events.at(-1))[0]?.[0], "r");
 		// Forced either way.
 		lastOptions = { diff: true };
-		await handle.set({ entries: ["a", "b", "c", "d"], status: "running" });
+		await ref.set({ entries: ["a", "b", "c", "d"], status: "running" });
 		assert.notEqual(opsOf(events.at(-1))[0]?.[0], "r");
 		lastOptions = { diff: false };
-		const shared = handle.doc.value as { entries: string[] };
-		await handle.set({ entries: shared.entries, status: "done" });
+		const shared = ref.doc.value as { entries: string[] };
+		await ref.set({ entries: shared.entries, status: "done" });
 		assert.equal(opsOf(events.at(-1))[0]?.[0], "r");
 		await tick();
-		assert.deepEqual(replica, handle.doc.value);
+		assert.deepEqual(replica, ref.doc.value);
 	});
 
-	it("#5 roots of a child that connected behind the server are admitted in the server's epoch", async () => {
+	it("#5 roots of a child that connected behind the server are admitted in the server's code version", async () => {
 		const Echo = remote("t.echo", {
 			version: 1,
 			input: Type.Object({}),
-			variants: { main: { methods: { epoch: method(Type.Null(), Type.Number()) } } },
+			variants: { main: { methods: { codeVersion: method(Type.Null(), Type.Number()) } } },
 		});
 		const server = createHost({ name: "server", onError: () => {} });
 		const echoFacet: Facet = {
 			name: "echo",
-			setup: (api) => api.serve(Echo, () => ({ kind: "main", epoch: (_args: null, ctx: Ctx) => ctx.epoch })),
+			setup: (api) =>
+				api.serve(Echo, () => ({ variant: "main", codeVersion: (_args: null, ctx: Ctx) => ctx.codeVersion })),
 		};
 		server.install(echoFacet);
 		await server.reload([echoFacet]);
-		assert.equal(server.epoch, 2);
-		assert.equal(server.previousEpoch, undefined);
+		assert.equal(server.codeVersion, 2);
+		assert.equal(server.previousCodeVersion, undefined);
 		const loader: FacetLoader = async () => [];
 		const worker = createHost({ name: "session:S1", loader, onError: () => {} });
 		const go = latch();
-		// A worker root of epoch 1 (an eager object's listener, say) calls the server after connecting.
+		// A worker root of code version 1 (an eager object's listener, say) calls the server after connecting.
 		const call = worker.root(async (ctx) => {
 			await go.promise;
-			return ctx.get(Echo, {}, { at: "server" }).epoch(null, ctx);
+			return ctx.get(Echo, {}, { at: "server" }).codeVersion(null, ctx);
 		});
 		const [down, up] = memoryLinkPair();
 		server.accept(down, { principal: { worker: "S1" }, kind: "host", name: "session:S1" });
 		worker.connect(up);
 		go.open();
 		assert.equal(await call, 2);
-		await until(() => worker.epoch === 2);
-		// Unknown epochs from in-step peers stay superseded.
+		await until(() => worker.codeVersion === 2);
+		// Unknown code versions from in-step peers stay superseded.
 		await assert.rejects(
-			server.root(() => 0, { epoch: 1 }),
+			server.root(() => 0, { codeVersion: 1 }),
 			(error) => isChordError(error, "superseded"),
 		);
 	});
@@ -308,18 +309,18 @@ describe("application requests", () => {
 			});
 			return { db: self.expose(res.db) };
 		});
-		const handle = host.get(Store, {});
-		assert.equal(handle.db, undefined);
+		const ref = host.get(Store, {});
+		assert.equal(ref.db, undefined);
 		gate.open();
-		await handle.ready;
-		assert.equal(handle.db, native);
+		await ref.ready;
+		assert.equal(ref.db, native);
 
 		const Other = local("t.other", { version: 1, input: Type.Object({}) });
 		host.serve(Other, (_input, _principal, self) => {
 			self.expose({ key: "x", value: 1 });
 			return {};
 		});
-		await assert.rejects(host.get(Other, {}).ready, /expose takes a resource declared by this record/);
+		await assert.rejects(host.get(Other, {}).ready, /expose takes a resource declared by this object/);
 	});
 
 	it("#7 a cluster reload reports what each child prepared", async () => {
@@ -330,7 +331,7 @@ describe("application requests", () => {
 		});
 		const greeter = (text: string): Facet => ({
 			name: "greeter",
-			setup: (api) => api.serve(Greeter, () => ({ kind: "main", greet: (name: string) => `${text} ${name}` })),
+			setup: (api) => api.serve(Greeter, () => ({ variant: "main", greet: (name: string) => `${text} ${name}` })),
 		});
 		const modules = new Map([["greeter", greeter("v1")]]);
 		const loader: FacetLoader = async (names) => names.map((name) => modules.get(String(name))!);
@@ -340,15 +341,15 @@ describe("application requests", () => {
 		const worker = createHost({ name: "session:S1", upstream: up, loader, onError: () => {} });
 		worker.install(greeter("v1"));
 		await tick();
-		const handle = server.get(Greeter, {}, { at: "session:S1" });
-		assert.equal(await handle.greet("a"), "v1 a");
+		const ref = server.get(Greeter, {}, { at: "session:S1" });
+		assert.equal(await ref.greet("a"), "v1 a");
 		modules.set("greeter", greeter("v2"));
 		const report = await server.reload([], { remote: { "session:": ["greeter"] } });
 		assert.deepEqual(report.changed, []);
 		const child = report.children?.["session:S1"];
 		assert.deepEqual(child?.changed, ["t.greeter"]);
 		assert.equal(child?.prepared.length, 1);
-		assert.equal(child?.epoch, report.epoch);
+		assert.equal(child?.codeVersion, report.codeVersion);
 	});
 
 	it("#8 a remote state member forgets its value when nobody listens; the next subscriber sees the fresh value", async () => {
@@ -361,7 +362,7 @@ describe("application requests", () => {
 		server.serve(Counter, (_input, _principal, self) => {
 			const state = self.state({ n: cell(Type.Number(), 0) });
 			return {
-				kind: "main",
+				variant: "main",
 				n: state.n,
 				set: (value, ctx) => {
 					state.n.replace(ctx, value);
@@ -386,10 +387,10 @@ describe("application requests", () => {
 		again();
 	});
 
-	it("#9 handles report status changes: live, loading while a link reconnects, gone, released", async () => {
+	it("#9 references report status changes: live, loading while a link reconnects, gone, released", async () => {
 		const Thing = remote("t.thing9", { version: 1, input: Type.Object({}), variants: { main: {} } });
 		const server = createHost({ name: "server", onError: () => {} });
-		server.serve(Thing, () => ({ kind: "main" }));
+		server.serve(Thing, () => ({ variant: "main" }));
 		const localThing = server.get(Thing, {}, { principal: { user: "u" } });
 		const localStatus: unknown[] = [];
 		localThing.onStatus((status, error) =>
@@ -428,7 +429,7 @@ describe("application requests", () => {
 		});
 		const server = createHost({ name: "server", onError: () => {} });
 		server.serve(Remote, () => ({
-			kind: "main",
+			variant: "main",
 			note: (text) => {
 				log.push(`server: ${text}`);
 				return null;
@@ -452,7 +453,7 @@ describe("application requests", () => {
 				});
 				return { tracker: self.expose(res.tracker) };
 			},
-			{ eager: true },
+			{ lifetime: "host" },
 		);
 		await sleep(5);
 		worker.serve(Chat, (_input, _principal, self) => {

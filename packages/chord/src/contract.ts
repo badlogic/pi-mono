@@ -1,7 +1,7 @@
 import { type Static, type TSchema, Type } from "typebox";
 import { ChordError } from "./errors.ts";
 import { canonicalJson, fits, hash64 } from "./schema.ts";
-import type { Ctx, Exposed, HandleBase, Readable, StateSource } from "./types.ts";
+import type { Ctx, Exposed, Readable, RefBase, StateSource } from "./types.ts";
 
 const MEMBER = Symbol("chord.member");
 
@@ -50,7 +50,7 @@ export interface LocalDef {
 	readonly members?: Readonly<Record<string, LocalMember>>;
 }
 
-// A description travels as a hold's contract token (wire.ts), so it is declared once, as the schema that validates it.
+// A description travels as a reference's contract token (wire.ts), so it is declared once, as the schema that validates it.
 // `TSchema` is an empty interface: any object is one, which is all a peer's schema is checked for here.
 const SchemaObject = Type.Unsafe<TSchema>(Type.Object({}));
 
@@ -93,9 +93,9 @@ export interface LocalContract<D extends LocalDef = LocalDef> extends ContractBa
 
 export type AnyContract = RemoteContract | LocalContract;
 
-/** Names a handle uses itself; members may not use them. */
+/** Names a reference uses itself; members may not use them. */
 export const RESERVED_MEMBERS: ReadonlySet<string> = new Set([
-	"kind",
+	"variant",
 	"status",
 	"ready",
 	"shape",
@@ -208,7 +208,7 @@ export function coverage(provider: Description, consumer: Description): string |
 	return undefined;
 }
 
-/** Maps the provider's current behavior to the view a consumer of an older contract version expects. */
+/** Maps the provider's current implementation to the view a consumer of an older contract version expects. */
 export type Adapter = (current: Record<string, unknown>) => Record<string, unknown>;
 export type Accepts = Readonly<Record<number, Adapter>>;
 
@@ -243,30 +243,30 @@ type StateOf<V> = V extends { readonly state: infer S extends Readonly<Record<st
 type StaticOf<S> = S extends TSchema ? Static<S> : never;
 type MethodsOf<V> = V extends { readonly methods: infer M extends Readonly<Record<string, MethodSpec>> } ? M : Empty;
 
-export type Implementation<M> = M extends MethodSpec<infer A, infer R>
+export type MethodImplementation<M> = M extends MethodSpec<infer A, infer R>
 	? (args: Static<A>, ctx: Ctx) => Static<R> | Promise<Static<R>>
 	: never;
 export type Call<M> = M extends MethodSpec<infer A, infer R>
 	? (args: Static<A>, ctx?: Ctx) => Promise<Static<R>>
 	: never;
 
-type VariantBehavior<K, V> = { readonly kind: K } & {
+type VariantImplementation<K, V> = { readonly variant: K } & {
 	readonly [S in keyof StateOf<V>]: StateSource<StaticOf<StateOf<V>[S]>>;
 } & {
-	readonly [M in keyof MethodsOf<V>]: Implementation<MethodsOf<V>[M]>;
+	readonly [M in keyof MethodsOf<V>]: MethodImplementation<MethodsOf<V>[M]>;
 };
-type VariantHandle<V> = { readonly [S in keyof StateOf<V>]: Readable<StaticOf<StateOf<V>[S]> | undefined> } & {
+type VariantRef<V> = { readonly [S in keyof StateOf<V>]: Readable<StaticOf<StateOf<V>[S]> | undefined> } & {
 	readonly [M in keyof MethodsOf<V>]: Call<MethodsOf<V>[M]>;
 };
 
-type LocalBehaviorMember<M> = M extends MethodSpec
-	? Implementation<M>
+type LocalImplementationMember<M> = M extends MethodSpec
+	? MethodImplementation<M>
 	: M extends OpaqueSpec<infer T>
 		? T | Exposed<T>
 		: M extends TSchema
 			? StateSource<Static<M>>
 			: never;
-type LocalHandleMember<M> = M extends MethodSpec
+type LocalRefMember<M> = M extends MethodSpec
 	? Call<M>
 	: M extends OpaqueSpec<infer T>
 		? T | undefined
@@ -280,17 +280,20 @@ type LocalMembers<D> = D extends { readonly members: infer M extends Readonly<Re
 export type InputOf<C> = C extends { readonly def: { readonly input: infer I extends TSchema } } ? Static<I> : never;
 
 /** What a factory returns for contract C. */
-export type BehaviorOf<C> = C extends RemoteContract<infer D>
-	? { [K in keyof D["variants"]]: VariantBehavior<K, D["variants"][K]> }[keyof D["variants"]]
+export type ImplementationOf<C> = C extends RemoteContract<infer D>
+	? { [K in keyof D["variants"]]: VariantImplementation<K, D["variants"][K]> }[keyof D["variants"]]
 	: C extends LocalContract<infer D>
-		? { readonly [K in keyof LocalMembers<D>]: LocalBehaviorMember<LocalMembers<D>[K]> } & Record<string, unknown>
+		? { readonly [K in keyof LocalMembers<D>]: LocalImplementationMember<LocalMembers<D>[K]> } & Record<
+				string,
+				unknown
+			>
 		: never;
 
-/** Late-bound members a handle exposes for contract C (all variants merged). */
+/** Late-bound members a reference exposes for contract C (all variants merged). */
 export type MembersOf<C> = C extends RemoteContract<infer D>
-	? UnionToIntersection<{ [K in keyof D["variants"]]: VariantHandle<D["variants"][K]> }[keyof D["variants"]]>
+	? UnionToIntersection<{ [K in keyof D["variants"]]: VariantRef<D["variants"][K]> }[keyof D["variants"]]>
 	: C extends LocalContract<infer D>
-		? { readonly [K in keyof LocalMembers<D>]: LocalHandleMember<LocalMembers<D>[K]> }
+		? { readonly [K in keyof LocalMembers<D>]: LocalRefMember<LocalMembers<D>[K]> }
 		: never;
 
-export type Handle<C extends AnyContract = AnyContract> = HandleBase<C> & MembersOf<C>;
+export type Ref<C extends AnyContract = AnyContract> = RefBase<C> & MembersOf<C>;

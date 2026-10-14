@@ -8,12 +8,13 @@ import {
 	defineRegistry,
 	derivation,
 	forbidden,
-	type Handle,
 	type Host,
 	isChordError,
 	listener,
 	local,
 	method,
+	opaque,
+	type Ref,
 	remote,
 	resource,
 } from "../src/index.ts";
@@ -68,22 +69,22 @@ describe("host: activation and lifetime", () => {
 		const host = quiet();
 		const log: string[] = [];
 		serveCounter(host, log);
-		const handle = host.get(Counter, { name: "a" });
-		assert.equal(handle.status, "loading");
-		assert.equal(handle.count.value, undefined);
-		const pending = handle.add(2);
-		await handle.ready;
-		assert.equal(handle.status, "live");
+		const ref = host.get(Counter, { name: "a" });
+		assert.equal(ref.status, "loading");
+		assert.equal(ref.count.value, undefined);
+		const pending = ref.add(2);
+		await ref.ready;
+		assert.equal(ref.status, "live");
 		assert.equal(await pending, 2);
-		assert.deepEqual(handle.count.value, { n: 2 });
-		handle.release();
-		assert.equal(handle.status, "released");
-		await assert.rejects(handle.add(1), (error) => isChordError(error, "released"));
+		assert.deepEqual(ref.count.value, { n: 2 });
+		ref.release();
+		assert.equal(ref.status, "released");
+		await assert.rejects(ref.add(1), (error) => isChordError(error, "released"));
 		await tick();
 		assert.deepEqual(log, ["factory a", "open a", "close a"]);
 	});
 
-	it("coalesces concurrent gets and keeps the record while held", async () => {
+	it("coalesces concurrent gets and keeps the object while held", async () => {
 		const host = quiet();
 		const log: string[] = [];
 		serveCounter(host, log);
@@ -135,9 +136,9 @@ describe("host: activation and lifetime", () => {
 			});
 			return {};
 		});
-		const handle = host.get(Slow, {});
+		const ref = host.get(Slow, {});
 		await tick();
-		handle.release();
+		ref.release();
 		await tick();
 		release();
 		await tick();
@@ -268,9 +269,9 @@ describe("host: activation and lifetime", () => {
 			});
 			return {};
 		});
-		const handle = host.get(Multi, {});
-		await handle.ready;
-		handle.release();
+		const ref = host.get(Multi, {});
+		await ref.ready;
+		ref.release();
 		await tick();
 		await tick();
 		assert.equal(log.at(-1), "close a");
@@ -293,6 +294,66 @@ describe("host: activation and lifetime", () => {
 	});
 });
 
+describe("host: lifetime", () => {
+	const Store = local("t.store", {
+		version: 1,
+		input: Type.Object({ scope: Type.Optional(Type.String({ default: "all" })) }),
+		members: { seen: opaque<unknown>("t.seen@1") },
+	});
+
+	it('serve refuses a lifetime "host" the type cannot have', () => {
+		const host = quiet();
+		const Remote = remote("t.remote-store", { version: 1, input: Type.Object({}), variants: { main: {} } });
+		assert.throws(
+			() => host.serve(Remote, () => ({ variant: "main" }), { lifetime: "host" } as never),
+			/needs a local type/,
+		);
+		const Keyed = local("t.keyed", { version: 1, input: Type.Object({ id: Type.String() }) });
+		assert.throws(() => host.serve(Keyed, () => ({}), { lifetime: "host" }), /input that accepts \{\}/);
+		assert.throws(
+			() => host.serve(Store, () => ({ seen: null }), { lifetime: "host", linger: 10 }),
+			/does not linger/,
+		);
+		assert.throws(
+			() => host.serve(Store, () => ({ seen: null }), { lifetime: "forever" } as never),
+			/unknown lifetime/,
+		);
+	});
+
+	it("every get reaches the one object, created at serve for the host principal; another input is invalid", async () => {
+		const host = createHost({ principalKey: (principal) => JSON.stringify(principal), onError: () => {} });
+		const created: unknown[] = [];
+		host.serve(
+			Store,
+			(input, principal) => {
+				created.push({ input, principal });
+				return { seen: principal };
+			},
+			{ lifetime: "host" },
+		);
+		await host.ready();
+		assert.equal(created.length, 1, "created when served, before anyone asked");
+		const guest = host.get(Store, {}, { principal: { guest: "g" } });
+		const defaults = host.get(Store, { scope: "all" });
+		await Promise.all([guest.ready, defaults.ready]);
+		assert.equal(created.length, 1, "the same object for every principal and the default input");
+		assert.deepEqual(guest.seen, created[0] && (created[0] as { principal: unknown }).principal);
+		assert.throws(
+			() => host.get(Store, { scope: "other" }),
+			(error) => isChordError(error, "invalid"),
+		);
+		// References do not change its lifetime: released by everyone else, it stays until the host closes.
+		guest.release();
+		defaults.release();
+		await tick();
+		const again = host.get(Store, {});
+		await again.ready;
+		assert.equal(created.length, 1);
+		await host.close();
+		assert.equal(again.status, "gone");
+	});
+});
+
 describe("host: principals, variants and disposal", () => {
 	const Doc = remote("t.doc", {
 		version: 1,
@@ -310,9 +371,9 @@ describe("host: principals, variants and disposal", () => {
 		host.serve(Doc, (_input, principal, self) => {
 			principals.push(principal);
 			const state = self.state({ view: cell(Type.Object({ text: Type.String() }), { text: "" }) });
-			if ((principal as { role?: string }).role !== "editor") return { kind: "viewer", view: state.view };
+			if ((principal as { role?: string }).role !== "editor") return { variant: "viewer", view: state.view };
 			return {
-				kind: "editor",
+				variant: "editor",
 				view: state.view,
 				edit: ({ text }, ctx) => {
 					state.view.replace(ctx, { text });
@@ -322,7 +383,7 @@ describe("host: principals, variants and disposal", () => {
 		});
 	}
 
-	it("keeps records per principal key and enforces variants", async () => {
+	it("keeps objects per principal key and enforces variants", async () => {
 		const host = createHost({ principalKey: (principal) => (principal as { user: string }).user, onError: () => {} });
 		const principals: unknown[] = [];
 		serveDoc(host, principals);
@@ -330,7 +391,7 @@ describe("host: principals, variants and disposal", () => {
 		const editor = host.get(Doc, { id: "1" }, { principal: { user: "e", role: "editor" } });
 		await Promise.all([viewer.ready, editor.ready]);
 		assert.equal(principals.length, 2);
-		assert.equal(viewer.kind, "viewer");
+		assert.equal(viewer.variant, "viewer");
 		assert.deepEqual(viewer.shape?.members, ["view"]);
 		await assert.rejects(viewer.edit({ text: "x" }), (error) => isChordError(error, "not_in_variant"));
 		assert.deepEqual(await editor.edit({ text: "x" }), { ok: true });
@@ -352,7 +413,7 @@ describe("host: principals, variants and disposal", () => {
 		);
 	});
 
-	it("forced disposal makes handles gone and aborts in-flight calls", async () => {
+	it("forced disposal makes references gone and aborts in-flight calls", async () => {
 		const host = quiet();
 		let seenAbort = false;
 		const Slow = local("t.inflight", {
@@ -369,15 +430,15 @@ describe("host: principals, variants and disposal", () => {
 					}),
 				),
 		}));
-		const handle = host.get(Slow, {}, { principal: { user: "u" } });
-		await handle.ready;
-		const call = handle.wait(null);
+		const ref = host.get(Slow, {}, { principal: { user: "u" } });
+		await ref.ready;
+		const call = ref.wait(null);
 		await tick();
 		await host.invalidatePrincipal((principal) => (principal as { user: string }).user === "u");
-		assert.equal(handle.status, "gone");
+		assert.equal(ref.status, "gone");
 		await call;
 		assert.ok(seenAbort);
-		await assert.rejects(handle.wait(null), (error) => isChordError(error, "gone"));
+		await assert.rejects(ref.wait(null), (error) => isChordError(error, "gone"));
 		const fresh = host.get(Slow, {}, { principal: { user: "u" } });
 		await fresh.ready;
 		assert.equal(fresh.status, "live");
@@ -386,9 +447,9 @@ describe("host: principals, variants and disposal", () => {
 	it("state members are late-bound readables: values, then snapshot/reset/ops events", async () => {
 		const host = quiet();
 		serveDoc(host);
-		const editor = host.get(Doc, { id: "3" }, { principal: { role: "editor" } }) as Handle<typeof Doc>;
+		const editor = host.get(Doc, { id: "3" }, { principal: { role: "editor" } }) as Ref<typeof Doc>;
 		const shapes: unknown[] = [];
-		editor.onShape((shape) => shapes.push(shape.kind));
+		editor.onShape((shape) => shapes.push(shape.variant));
 		const events: unknown[] = [];
 		const values: unknown[] = [];
 		editor.view.events((event) => events.push(event.type === "ops" ? ["ops", event.ops] : [event.type, event.value]));
@@ -408,7 +469,7 @@ describe("host: principals, variants and disposal", () => {
 describe("host: registries", () => {
 	const Routes = defineRegistry<string>("t.routes");
 
-	it("only eager records register; tables follow registration order", async () => {
+	it('only objects of lifetime "host" register; tables follow registration order', async () => {
 		const host = quiet();
 		const RoutesA = local("t.routes-a", { version: 1, input: Type.Object({}) });
 		const RoutesB = local("t.routes-b", { version: 1, input: Type.Object({}) });
@@ -418,7 +479,7 @@ describe("host: registries", () => {
 				self.register(Routes, { "GET /a": "a", "GET /c": "c" });
 				return {};
 			},
-			{ eager: true },
+			{ lifetime: "host" },
 		);
 		host.serve(
 			RoutesB,
@@ -426,7 +487,7 @@ describe("host: registries", () => {
 				self.register(Routes, { "GET /b": "b" });
 				return {};
 			},
-			{ eager: true },
+			{ lifetime: "host" },
 		);
 		const tables: string[][] = [];
 		host.registry(Routes).subscribe((table) => tables.push([...table.keys()]));
@@ -441,7 +502,7 @@ describe("host: registries", () => {
 			self.register(Routes, { x: "x" });
 			return {};
 		});
-		await assert.rejects(host.get(Lazy, {}).ready, /only eager/);
+		await assert.rejects(host.get(Lazy, {}).ready, /only objects of lifetime "host" may register/);
 	});
 
 	it("rejects conflicting registrations", async () => {
@@ -454,7 +515,7 @@ describe("host: registries", () => {
 					self.register(Routes, { same: name });
 					return {};
 				},
-				{ eager: true },
+				{ lifetime: "host" },
 			);
 		}
 		await tick();
@@ -475,7 +536,7 @@ describe("host: composition", () => {
 		members: { copy: Type.Number(), doubled: Type.Number() },
 	});
 
-	it("handle state members are sources for listeners and derivations", async () => {
+	it("reference state members are sources for listeners and derivations", async () => {
 		const host = quiet();
 		host.serve(Source, (_input, _principal, self) => {
 			const state = self.state({ n: cell(Type.Number(), 1) });
@@ -530,7 +591,7 @@ describe("host: composition", () => {
 		assert.deepEqual(seen, [{ user: "guest" }, { host: true }]);
 	});
 
-	it("calling a handle inside a factory throws not_ready", async () => {
+	it("calling a reference inside a factory throws not_ready", async () => {
 		const host = quiet();
 		host.serve(Source, (_input, _principal, self) => ({
 			n: self.state({ n: cell(Type.Number(), 0) }).n,

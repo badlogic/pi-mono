@@ -13,6 +13,7 @@ import {
 	type Link,
 	memoryLinkPair,
 	method,
+	PROTOCOL_VERSION,
 	remote,
 } from "../src/index.ts";
 
@@ -22,7 +23,7 @@ async function until(check: () => boolean, attempts = 200): Promise<void> {
 	assert.ok(check(), "condition not reached");
 }
 
-/** A client's end of a link that can hold back its acknowledgements, and records what it receives. */
+/** A client's end of a link that can hold back its acknowledgements, and objects what it receives. */
 class AckGate implements Link {
 	readonly inner: Link;
 	readonly received: Frame[] = [];
@@ -85,7 +86,7 @@ function serveCounter(host: Host): void {
 	host.serve(Counter, (_input, _principal, self) => {
 		const state = self.state({ count: cell(Type.Object({ n: Type.Number() }), { n: 0 }) });
 		return {
-			kind: "main",
+			variant: "main",
 			count: state.count,
 			add: (delta: number, ctx: Ctx) => {
 				state.count.change(ctx, (draft) => {
@@ -228,7 +229,7 @@ describe("link flow control", () => {
 		server.accept(down, { principal: { user: "u" }, window: 1 });
 		const frames: Frame[] = [];
 		raw.receive((frame) => frames.push(frame));
-		raw.send({ t: "hello", name: "raw", kind: "client", epoch: 0 });
+		raw.send({ t: "hello", protocol: PROTOCOL_VERSION, name: "raw", kind: "client", codeVersion: 0 });
 		raw.send({ t: "hold", id: 1, at: "server", token: Counter.description, input: {} });
 		raw.send({ t: "sub", id: 2, hold: 1, member: "count" });
 		for (let i = 0; i < 5; i++) raw.send({ t: "call", id: 3 + i, hold: 1, member: "add", args: 1 });
@@ -245,7 +246,7 @@ describe("link flow control", () => {
 		const [down, raw] = memoryLinkPair();
 		server.accept(down, { principal: { user: "u" } });
 		raw.receive(() => {});
-		raw.send({ t: "hello", name: "raw", kind: "client", epoch: 0, acks: true });
+		raw.send({ t: "hello", name: "raw", kind: "client", codeVersion: 0, acks: true });
 		raw.send({ t: "ack", n: 99 });
 		await until(() => raw.closed);
 		await server.close();

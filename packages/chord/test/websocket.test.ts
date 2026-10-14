@@ -32,7 +32,7 @@ describe("WebSocket links", () => {
 		server.serve(Board, (_input, principal, self) => {
 			const state = self.state({ notes: cell(Type.Array(Type.String()), []) });
 			return {
-				kind: "main",
+				variant: "main",
 				notes: state.notes,
 				add: (text, ctx) => {
 					state.notes.change(ctx, (draft) => {
@@ -107,7 +107,7 @@ describe("WebSocket links: packed payloads", () => {
 		const server = createHost({ name: "server", onError: () => {} });
 		server.serve(Board, (_input, _principal, self) => {
 			const state = self.state({ notes: cell(Type.Array(Type.String()), notes) });
-			return { kind: "main", notes: state.notes, add: () => null, who: () => notes };
+			return { variant: "main", notes: state.notes, add: () => null, who: () => notes };
 		});
 		const wss = new WebSocketServer({ port: 0, host: "127.0.0.1" });
 		await new Promise<void>((resolve) => wss.once("listening", () => resolve()));
