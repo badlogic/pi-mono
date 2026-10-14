@@ -12,6 +12,7 @@
 - Fixed Anthropic requests failing with a 400 when an error tool result contains images; the images are now replaced with a text note ([#10794](https://github.com/earendil-works/pi/issues/10794))
 - Fixed OpenCode Go Gemini models failing with a 404 by moving OpenCode Zen and OpenCode Go to the `opencode.ai/inference` endpoints, and added Google Generative AI support to the OpenCode Go provider
 - Fixed OpenCode Go MiniMax M2.7 failing with "Model does not support this protocol" by using the Anthropic Messages API
+- Fixed automatic retry not triggering for gateway `Unable to forward upstream stream` errors ([#10920](https://github.com/earendil-works/pi/issues/10920))
 
 ## [1.2.0] - 2026-10-12
 
