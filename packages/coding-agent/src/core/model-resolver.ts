@@ -288,7 +288,7 @@ function buildFallbackModel(provider: string, modelId: string, availableModels: 
 
 export interface ModelScopeDiagnostic {
 	type: "warning";
-	code: "no-match" | "invalid-thinking-level";
+	code: "no-match" | "invalid-thinking-level" | "ambiguous";
 	message: string;
 	pattern: string;
 }
@@ -304,7 +304,7 @@ export interface ResolveModelScopeResult {
  * Glob patterns (`*`, `?`, `[`) add every match; an exact model reference is tried first so ids
  * containing `[` are not read as globs. Other patterns use model reference resolution. A pattern
  * matching the same model on several providers adds all of them, since every model in `models` is
- * usable.
+ * usable, and reports an `ambiguous` warning so the user can choose one with `provider/id`.
  */
 export function resolveModelScopeFromModels(
 	patterns: string[],
@@ -319,6 +319,15 @@ export function resolveModelScopeFromModels(
 	};
 	const noMatch = (pattern: string) =>
 		diagnostics.push({ type: "warning", code: "no-match", message: `No models match pattern "${pattern}"`, pattern });
+	const ambiguous = (pattern: string, candidates: readonly Model<Api>[]) => {
+		const providers = [...new Set(candidates.map((m) => m.provider))].sort((a, b) => a.localeCompare(b));
+		diagnostics.push({
+			type: "warning",
+			code: "ambiguous",
+			message: `Pattern "${pattern}" matches several providers: ${providers.join(", ")}. Use provider/id to choose one.`,
+			pattern,
+		});
+	};
 
 	for (const pattern of patterns) {
 		if (pattern.includes("*") || pattern.includes("?") || pattern.includes("[")) {
@@ -341,8 +350,10 @@ export function resolveModelScopeFromModels(
 			);
 			let matches: readonly Model<Api>[] = [];
 			if (exact.status === "resolved") matches = [exact.model];
-			else if (exact.status === "ambiguous") matches = exact.candidates;
-			else {
+			else if (exact.status === "ambiguous") {
+				matches = exact.candidates;
+				ambiguous(pattern, matches);
+			} else {
 				// Match against "provider/modelId" or the model ID, so "*sonnet*" works without a provider
 				matches = models.filter(
 					(m) =>
@@ -367,6 +378,7 @@ export function resolveModelScopeFromModels(
 		if (result.warning) {
 			diagnostics.push({ type: "warning", code: "invalid-thinking-level", message: result.warning, pattern });
 		}
+		if (result.status === "ambiguous") ambiguous(pattern, result.candidates);
 		const matches = result.status === "resolved" ? [result.model] : result.candidates;
 		for (const model of matches) add(model, result.thinkingLevel);
 	}

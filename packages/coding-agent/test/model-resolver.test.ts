@@ -385,7 +385,7 @@ describe("resolveModelScopeWithDiagnostics", () => {
 		}
 	});
 
-	test("adds every provider for a pattern matching the same id on several providers", async () => {
+	test("adds every provider for a pattern matching the same id on several providers, with a warning", async () => {
 		const registry = {
 			getAvailable: () => [
 				...allModels,
@@ -409,7 +409,14 @@ describe("resolveModelScopeWithDiagnostics", () => {
 				]),
 			);
 			expect(result.scopedModels).toHaveLength(2);
-			expect(result.diagnostics).toEqual([]);
+			expect(result.diagnostics).toEqual([
+				{
+					type: "warning",
+					code: "ambiguous",
+					message: `Pattern "${pattern}" matches several providers: azure, openai. Use provider/id to choose one.`,
+					pattern,
+				},
+			]);
 		}
 	});
 
