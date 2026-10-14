@@ -61,6 +61,12 @@ export interface FacetApi {
 	root<T>(fn: (ctx: Ctx) => T | Promise<T>, options?: RootOptions): Promise<T>;
 	/** The facet's host's registry view (`get(key, ctx)` reads the table of `ctx.codeVersion`). */
 	registry<V>(registry: Registry<V>): RegistryView<V>;
+	/**
+	 * Aborted when this run of the facet is no longer installed: a reload that replaced or removed it committed, the reload
+	 * that loaded it aborted, or the host closed. While a reload prepares, the installed and the candidate run are both
+	 * live.
+	 */
+	readonly signal: AbortSignal;
 }
 
 /** What a facet module exports (default export): the code that serves its types on one host kind. */
@@ -96,6 +102,11 @@ export interface HostOptions {
 	readonly dev?: boolean;
 	/** Errors from background work (disposal, listeners, tasks). Defaults to console.error. */
 	readonly onError?: (error: unknown) => void;
+	/**
+	 * Milliseconds a reload waits for an object's aborted tasks to finish before it starts their replacements anyway
+	 * (reported). Default 5000.
+	 */
+	readonly taskStopDeadline?: number;
 	/** Needed for `load`/`reload` with modules; `nodeLoader` from loader.ts in Node. */
 	readonly loader?: FacetLoader;
 	/** `client` (browser): never a reload participant, never carries roots or code versions. Default `host`. */
@@ -168,6 +179,8 @@ export interface CodeVersionState {
 	tables: ReadonlyMap<string, RegistryTable<unknown>>;
 	/** Running roots with the number of their calls running here. */
 	readonly roots: Map<string, number>;
+	/** Aborts every root of this code version (forced retirement). */
+	readonly abort: AbortController;
 }
 
 const EMPTY_TABLE: RegistryTable<never> = new Map<string, never>();
@@ -216,8 +229,16 @@ export class HostImpl implements Host, HostCore {
 	/** Types behind a reload gate: new objects of these types are rejected `upgrade_conflict` until commit/abort. */
 	gating: ReadonlySet<string> | undefined;
 	reloading = false;
-	retired: () => void = () => {};
+	readonly taskStopDeadline: number;
 	readonly #principalKey: (principal: Principal) => string;
+	/** Called when a root ends, the parent allows a retirement, or the previous code version retires. */
+	readonly #retirementWatchers = new Set<() => void>();
+	/** Child hosts whose hello arrived while a reload ran: synced or reconciled once it ends. */
+	readonly #deferredHellos = new Map<Connection, number>();
+	/** Resolved when the running reload ends. */
+	readonly #reloadWaiters: (() => void)[] = [];
+	/** Aborted when the installed run of a facet (by name) is replaced, removed, or the host closes. */
+	readonly #facetRuns = new Map<string, AbortController>();
 	readonly #onError: (error: unknown) => void;
 	readonly #loader: FacetLoader | undefined;
 	readonly #dying = new Map<string, ObjectImpl>();
@@ -233,7 +254,14 @@ export class HostImpl implements Host, HostCore {
 		this.#principalKey = options.principalKey ?? canonicalJson;
 		this.#onError = options.onError ?? ((error) => console.error("chord:", error));
 		this.#loader = options.loader;
-		this.current = { id: this.#codeVersionSeq, services: new Map(), tables: new Map(), roots: new Map() };
+		this.taskStopDeadline = options.taskStopDeadline ?? 5000;
+		this.current = {
+			id: this.#codeVersionSeq,
+			services: new Map(),
+			tables: new Map(),
+			roots: new Map(),
+			abort: new AbortController(),
+		};
 		this.codeVersions.set(this.current.id, this.current);
 		this.kind = options.kind ?? "host";
 		if (options.upstream !== undefined) this.connect(options.upstream, options.upstreamOptions);
@@ -271,14 +299,24 @@ export class HostImpl implements Host, HostCore {
 		if (this.reloading) throw new Error("host.install during a reload");
 		if (this.facets.has(facet.name)) throw new Error(`facet ${facet.name} is already installed; use reload()`);
 		const added: Service[] = [];
-		facet.setup(
-			this.facetApi(((type, factory, options = {}) => {
-				const service = makeService(type, factory, options, facet.name);
-				this.serveInto(this.current.services, service);
-				added.push(service);
-			}) satisfies AnyServe as Serve),
-		);
+		const run = new AbortController();
+		try {
+			facet.setup(
+				this.facetApi(
+					((type, factory, options = {}) => {
+						const service = makeService(type, factory, options, facet.name);
+						this.serveInto(this.current.services, service);
+						added.push(service);
+					}) satisfies AnyServe as Serve,
+					run.signal,
+				),
+			);
+		} catch (error) {
+			run.abort(error);
+			throw error;
+		}
 		this.facets.set(facet.name, facet);
+		this.facetRunChanged(facet.name, run);
 		const refs = added.filter(hostLifetime).map((service) => this.startHostObject(service));
 		return options.awaitHostObjects === false ? Promise.resolve() : this.#hostObjectsReady(refs);
 	}
@@ -312,13 +350,22 @@ export class HostImpl implements Host, HostCore {
 		return plugins.map((ref) => (isFacet(ref) ? ref : loaded.shift()!));
 	}
 
-	facetApi(serve: Serve): FacetApi {
+	facetApi(serve: Serve, signal: AbortSignal): FacetApi {
 		return {
 			serve,
 			name: this.name,
 			root: (fn, options) => this.root(fn, options),
 			registry: (registry) => this.registry(registry),
+			signal,
 		};
+	}
+
+	/** The installed run of facet `name` is now `run` (or none): the run it replaces is aborted. */
+	facetRunChanged(name: string, run: AbortController | undefined): void {
+		const replaced = this.#facetRuns.get(name);
+		if (run === undefined) this.#facetRuns.delete(name);
+		else this.#facetRuns.set(name, run);
+		if (replaced !== run) replaced?.abort(new ChordError("gone", `facet ${name} was replaced or removed`));
 	}
 
 	serveInto(services: Map<string, Service>, service: Service): void {
@@ -427,6 +474,10 @@ export class HostImpl implements Host, HostCore {
 		if (object.status === "disposing") this.#dying.set(object.address, object);
 	}
 
+	disposed(object: ObjectImpl): void {
+		if (this.#dying.get(object.address) === object) this.#dying.delete(object.address);
+	}
+
 	touch(rootId: string, object: ObjectImpl): void {
 		let touched = this.#touches.get(rootId);
 		if (touched === undefined) {
@@ -472,7 +523,9 @@ export class HostImpl implements Host, HostCore {
 		}
 		codeVersion.roots.set(rootId, (codeVersion.roots.get(rootId) ?? 0) + 1);
 		const ctx = new CtxImpl(this, {
-			signal: options.signal ?? new AbortController().signal,
+			// Forced retirement aborts what still runs on a code version before closing what only it used.
+			signals:
+				options.signal === undefined ? [codeVersion.abort.signal] : [options.signal, codeVersion.abort.signal],
 			rootId,
 			codeVersion: codeVersion.id,
 			principal: options.principal ?? this.principal,
@@ -487,6 +540,7 @@ export class HostImpl implements Host, HostCore {
 				codeVersion.roots.delete(rootId);
 				if (!this.#foreign.has(rootId)) this.endRoot(rootId);
 				this.maybeRetire();
+				this.#retirementChanged();
 			}
 		}
 	}
@@ -529,15 +583,40 @@ export class HostImpl implements Host, HostCore {
 	 * it: roots span hosts, and an old root on the server may still call in.
 	 */
 	maybeRetire(): void {
+		if (this.retirable()) this.retire();
+	}
+
+	/** The previous code version has no roots left here and, on a child host, the parent has retired it. */
+	retirable(): boolean {
 		const previous = this.previous;
-		if (previous === undefined || previous.roots.size > 0) return;
-		if (this.kind !== "client" && this.upstream !== undefined && previous.id > this.#retireAllowed) return;
-		this.retire();
+		if (previous === undefined || previous.roots.size > 0) return false;
+		return this.kind === "client" || this.upstream === undefined || previous.id <= this.#retireAllowed;
 	}
 
 	allowRetire(codeVersion: number): void {
 		this.#retireAllowed = Math.max(this.#retireAllowed, codeVersion);
 		this.maybeRetire();
+		this.#retirementChanged();
+	}
+
+	/** Calls `watcher` whenever a root ends, the parent allows a retirement, or a code version retires. */
+	watchRetirement(watcher: () => void): () => void {
+		this.#retirementWatchers.add(watcher);
+		return () => this.#retirementWatchers.delete(watcher);
+	}
+
+	#retirementChanged(): void {
+		for (const watcher of [...this.#retirementWatchers]) watcher();
+	}
+
+	/**
+	 * Tells a child that is now in step which code versions this host retired before: every id below the oldest one it
+	 * retains (ids only grow). Without it, a child reconciled after those retirements would never hear a `retire` frame for
+	 * its own previous code version and would wait for the retire deadline at every reload.
+	 */
+	announceRetired(connection: Connection): void {
+		const retired = (this.previous ?? this.current).id - 1;
+		if (retired > 0) connection.send({ t: "retire", codeVersion: retired });
 	}
 
 	/** Drops the previous code version: its implementations and the declarations only it used. */
@@ -551,7 +630,7 @@ export class HostImpl implements Host, HostCore {
 			if (connection.role === "downstream" && connection.peer?.kind === "host")
 				connection.send({ t: "retire", codeVersion: previous.id });
 		}
-		this.retired();
+		this.#retirementChanged();
 	}
 
 	/**
@@ -769,10 +848,6 @@ export class HostImpl implements Host, HostCore {
 	 * refused.
 	 */
 	peerHello(connection: Connection, codeVersion: number): void {
-		if (codeVersion === this.current.id) {
-			connection.markSynced(codeVersion);
-			return;
-		}
 		if (codeVersion > this.current.id) {
 			this.report(
 				new ChordError(
@@ -783,6 +858,20 @@ export class HostImpl implements Host, HostCore {
 			connection.link.close("code version ahead of parent");
 			return;
 		}
+		if (this.reloading) {
+			// Not a participant of the running reload (participants are fixed when it starts): in step now, it would miss
+			// the commit. Decided when the reload ends. A child already behind is fenced now, so the calls its roots make
+			// meanwhile are admitted in this host's code version (never relabeled) instead of being `superseded`.
+			connection.peerCodeVersion = codeVersion;
+			if (codeVersion < this.current.id) connection.fencedCodeVersions.add(codeVersion);
+			this.#deferredHellos.set(connection, codeVersion);
+			return;
+		}
+		if (codeVersion === this.current.id) {
+			connection.markSynced(codeVersion);
+			this.announceRetired(connection);
+			return;
+		}
 		connection.peerCodeVersion = codeVersion;
 		connection.fencedCodeVersions.add(codeVersion);
 		reconcileChild(this, connection).catch((error: unknown) => {
@@ -791,8 +880,25 @@ export class HostImpl implements Host, HostCore {
 		});
 	}
 
+	/** The host's reload slot was freed: children that said hello meanwhile are synced or reconciled now. */
+	reloadEnded(): void {
+		this.reloading = false;
+		const deferred = [...this.#deferredHellos];
+		this.#deferredHellos.clear();
+		for (const [connection, codeVersion] of deferred) if (connection.open) this.peerHello(connection, codeVersion);
+		for (const resolve of this.#reloadWaiters.splice(0)) resolve();
+		this.maybeRetire();
+	}
+
+	/** Resolves once no reload runs on this host. */
+	whenReloadEnded(): Promise<void> {
+		if (!this.reloading) return Promise.resolve();
+		return new Promise((resolve) => this.#reloadWaiters.push(resolve));
+	}
+
 	connectionClosed(connection: Connection): void {
 		this.connections.delete(connection);
+		this.#deferredHellos.delete(connection);
 		// Foreign roots that came over this link will never announce their end over it.
 		for (const [rootId, links] of [...this.#foreign])
 			if (links.has(connection)) this.foreignRootEnded(rootId, connection);
@@ -949,6 +1055,7 @@ export class HostImpl implements Host, HostCore {
 	 */
 	async close(): Promise<void> {
 		this.hostObjects.clear();
+		for (const name of [...this.#facetRuns.keys()]) this.facetRunChanged(name, undefined);
 		const reason = new ChordError("gone", `host ${this.name} closed`);
 		try {
 			await disposeHoldersFirst([...this.objects.values()], reason, "host close: disposal failed");

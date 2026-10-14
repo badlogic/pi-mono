@@ -67,8 +67,6 @@ interface Candidate {
 	staged: StagedListeners | undefined;
 }
 
-const noop = (): void => {};
-
 /**
  * Computes the new derivation functions over the candidate values and validates every prospective value (migrated
  * cells and derivations) against every schema that will apply after the commit: the cell's new schema and the new
@@ -132,14 +130,33 @@ export async function beginReload(
 	try {
 		return new Reload(host, await host.resolve(plugins), options, codeVersion);
 	} catch (error) {
-		host.reloading = false;
+		host.reloadEnded();
 		throw reloadError(error);
 	}
 }
 
 export function endReload(host: HostImpl): void {
-	host.reloading = false;
-	host.maybeRetire();
+	host.reloadEnded();
+}
+
+/** Most milliseconds a forced retirement waits for aborted roots to settle before it closes what they used. */
+const ABORTED_ROOTS_GRACE = 1000;
+
+/** Resolves true once `ready()` holds (checked whenever retirement-relevant state changes), false after `ms`. */
+function until(host: HostImpl, ready: () => boolean, ms: number): Promise<boolean> {
+	if (ready()) return Promise.resolve(true);
+	return new Promise<boolean>((resolve) => {
+		const timer = setTimeout(() => {
+			stop();
+			resolve(false);
+		}, ms);
+		const stop = host.watchRetirement(() => {
+			if (!ready()) return;
+			clearTimeout(timer);
+			stop();
+			resolve(true);
+		});
+	});
 }
 
 /** One reload on one host: `prepare` (load, prepare, gate), then `commit` or `rollback`. */
@@ -160,6 +177,8 @@ export class Reload {
 	rolledBack = false;
 	/** Objects of types this reload adds, with their staged listeners: their runtime starts at commit. */
 	readonly deferred = new Map<ObjectImpl, StagedListeners>();
+	/** This reload's run of each facet it loads (`FacetApi.signal`): installed at commit, aborted at rollback. */
+	readonly facetRuns = new Map<string, AbortController>();
 
 	constructor(host: HostImpl, facets: readonly Facet[], options: ReloadOptions, codeVersion?: number) {
 		this.host = host;
@@ -223,20 +242,23 @@ export class Reload {
 		}
 	}
 
+	/**
+	 * Retires the previous code version before loading the next one (a host keeps two). Waits until its roots ended and,
+	 * on a child host, its parent retired it too (`retire` frame), at most `retireDeadline`. Past the deadline it is
+	 * retired anyway: its remaining roots are aborted first and get a short grace to stop, so they see cancellation
+	 * before the resources only that code version used are closed; their next call is `superseded`.
+	 */
 	async waitForRetirement(): Promise<void> {
 		const host = this.host;
-		if (host.previous === undefined) return;
-		if (host.previous.roots.size > 0) {
-			let timer: ReturnType<typeof setTimeout> | undefined;
-			await new Promise<void>((resolve) => {
-				host.retired = resolve;
-				timer = setTimeout(resolve, this.options.retireDeadline ?? 5000);
-			});
-			clearTimeout(timer);
-			host.retired = noop;
+		const previous = host.previous;
+		if (previous === undefined) return;
+		const deadline = this.options.retireDeadline ?? 5000;
+		const gone = (): boolean => host.previous !== previous;
+		if (!(await until(host, () => gone() || host.retirable(), deadline)) && !gone()) {
+			previous.abort.abort(new ChordError("superseded", `code version ${previous.id} was retired`));
+			await until(host, () => gone() || previous.roots.size === 0, Math.min(deadline, ABORTED_ROOTS_GRACE));
 		}
-		// Roots of the dropped code version still running get `superseded` on their next call.
-		host.retire();
+		if (!gone()) host.retire();
 	}
 
 	/** Builds the candidate service table: unchanged services plus everything the given facets serve. */
@@ -245,9 +267,14 @@ export class Reload {
 		const current = this.host.current.services;
 		this.services = new Map([...current].filter(([, service]) => !replaced.has(service.facet)));
 		for (const facet of this.facets) {
+			const run = new AbortController();
+			this.facetRuns.set(facet.name, run);
 			facet.setup(
-				this.host.facetApi(((type: AnyContract, factory: Factory<AnyContract>, options: ServeOptions = {}) =>
-					this.host.serveInto(this.services, makeService(type, factory, options, facet.name))) as Serve),
+				this.host.facetApi(
+					((type: AnyContract, factory: Factory<AnyContract>, options: ServeOptions = {}) =>
+						this.host.serveInto(this.services, makeService(type, factory, options, facet.name))) as Serve,
+					run.signal,
+				),
 			);
 		}
 		for (const [name, service] of this.services) if (current.get(name) !== service) this.changed.add(name);
@@ -257,6 +284,7 @@ export class Reload {
 			services: this.services,
 			tables: new Map(),
 			roots: new Map(),
+			abort: new AbortController(),
 		};
 	}
 
@@ -474,6 +502,7 @@ export class Reload {
 		if (this.rolledBack) return;
 		this.rolledBack = true;
 		this.abort.abort(new ChordError("aborted", "reload aborted"));
+		for (const run of this.facetRuns.values()) run.abort(new ChordError("aborted", "reload aborted"));
 		const report = (error: unknown): void => this.host.report(error);
 		for (const candidate of this.candidates.values()) candidate.staged?.discard();
 		for (const staged of this.deferred.values()) staged.discard();
@@ -496,7 +525,7 @@ export class Reload {
 		for (const { object } of this.gated) {
 			if (object.gate === undefined) continue;
 			object.openGate();
-			for (const name of object.decls.tasks.keys()) object.startTask(name, this.host.current.id);
+			object.startTasks();
 		}
 		// Objects of types this reload would have added lose their code.
 		const reason = new ChordError("gone", "reload aborted; type not served");
@@ -579,6 +608,9 @@ export class Reload {
 		for (const name of this.removed) host.hostObjects.delete(name);
 		for (const facet of this.facets) host.facets.set(facet.name, facet);
 		for (const name of this.options.remove ?? []) host.facets.delete(name);
+		// The replaced and removed runs' signals abort after the install, like other observers.
+		for (const [name, run] of this.facetRuns) this.#starts.push(() => host.facetRunChanged(name, run));
+		for (const name of this.options.remove ?? []) this.#starts.push(() => host.facetRunChanged(name, undefined));
 		host.gating = undefined;
 		for (const [name, service] of this.services) {
 			if (hostLifetime(service) && this.changed.has(name) && host.hostObjects.get(name)?.object?.status !== "live") {
@@ -613,6 +645,8 @@ export class Reload {
 		}
 		object.decls = run.decls;
 		object.service = service;
+		// Kept resources close with the new code's `close`; replaced ones keep their own (closed at retirement).
+		for (const [resource, declaration] of run.decls.adopted) resource.adopt(declaration);
 		object.implementations.set(codeVersion, {
 			codeVersion,
 			service,

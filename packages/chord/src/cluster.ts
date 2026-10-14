@@ -41,40 +41,45 @@ export async function runClusterReload(
 	plugins: readonly PluginRef[],
 	options: ReloadOptions,
 ): Promise<ReloadReport> {
-	// Fenced children (behind, being reconciled) are not participants; they reconcile to the new code version
-	// afterwards.
-	const participants = [...host.connections].filter(
+	// Participants are the children in step now. Fenced children (behind, being reconciled) reconcile to the new code
+	// version afterwards; a child whose hello arrives while the reload runs is synced or reconciled once it ends
+	// (`HostImpl.peerHello`).
+	const synced = [...host.connections].filter(
 		(connection) =>
 			connection.role === "downstream" && connection.peer.kind === "host" && connection.open && connection.synced,
 	);
 	const codeVersion = host.peekNextCodeVersion();
 	const reload = await beginReload(host, plugins, options, codeVersion);
-	const id = ++reloadSeq;
-	const deadline = options.voteDeadline ?? (options.gateDeadline ?? 5000) + (options.retireDeadline ?? 5000) + 5000;
-	const votes = participants.map((connection) => {
-		const name = connection.name ?? "child";
-		const vote = awaitVote(connection, id, deadline);
-		connection.send({
-			t: "prepare",
-			reload: id,
-			codeVersion,
-			plugins: modulesFor(options.remote, name),
-			options: {
-				remove: modulesFor(options.remoteRemove, name),
-				gateDeadline: options.gateDeadline,
-				retireDeadline: options.retireDeadline,
-			},
-		});
-		return vote.then(
-			(report) => [name, report as ReloadReport | undefined] as const,
-			(error: unknown) => {
-				const cause = reloadError(error);
-				throw new ChordError(cause.code, `${name}: ${cause.message}`, { cause, reason: cause.reason });
-			},
-		);
-	});
-	let local = false;
 	try {
+		// Retire first: its `retire` frames reach every child before `prepare` (FIFO), so a child never retires a code
+		// version this host still runs roots of.
+		await reload.waitForRetirement();
+		const participants = synced.filter((connection) => connection.open);
+		const id = ++reloadSeq;
+		const deadline = options.voteDeadline ?? (options.gateDeadline ?? 5000) + (options.retireDeadline ?? 5000) + 5000;
+		const votes = participants.map((connection) => {
+			const name = connection.name ?? "child";
+			const vote = awaitVote(connection, id, deadline);
+			connection.send({
+				t: "prepare",
+				reload: id,
+				codeVersion,
+				plugins: modulesFor(options.remote, name),
+				options: {
+					remove: modulesFor(options.remoteRemove, name),
+					gateDeadline: options.gateDeadline,
+					retireDeadline: options.retireDeadline,
+				},
+			});
+			return vote.then(
+				(report) => [name, report as ReloadReport | undefined] as const,
+				(error: unknown) => {
+					const cause = reloadError(error);
+					throw new ChordError(cause.code, `${name}: ${cause.message}`, { cause, reason: cause.reason });
+				},
+			);
+		});
+		let local = false;
 		const results = await Promise.allSettled([
 			reload.prepare().then(() => {
 				local = true;
@@ -117,12 +122,21 @@ export async function runClusterReload(
  */
 export async function reconcileChild(host: HostImpl, connection: Connection): Promise<void> {
 	for (;;) {
-		const codeVersion = host.current.id;
 		if (!connection.open) return;
+		// Not during a reload of this host: the child is not one of its participants, so whatever it would be synced to
+		// now may be superseded by that reload's commit. Recheck once it ended.
+		if (host.reloading) {
+			await host.whenReloadEnded();
+			continue;
+		}
+		const codeVersion = host.current.id;
 		if (connection.peerCodeVersion === codeVersion) {
 			connection.markSynced(codeVersion);
+			host.announceRetired(connection);
 			return;
 		}
+		// Before `prepare`: the child's prepare first retires its previous code version, which waits for this permission.
+		host.announceRetired(connection);
 		const id = ++reloadSeq;
 		const vote = awaitVote(connection, id, 30_000);
 		connection.send({

@@ -791,7 +791,8 @@ export class Connection implements RemoteChannel {
 							served.relay,
 							frame,
 							{ rootId: ctx.rootId, codeVersion: ctx.codeVersion },
-							controller.signal,
+							// The root's signal: a cancel from the origin and the root's code version retiring both reach it.
+							ctx.signal,
 							this.host,
 						);
 		const result =
@@ -1004,6 +1005,7 @@ async function relayCall(
 	const abortError = (): ChordError => new ChordError("aborted", "call cancelled", { cause: signal.reason });
 	if (signal.aborted) throw abortError();
 	let onAbort = (): void => {};
+	let onCancel = (): void => {};
 	const aborted = new Promise<never>((_, reject) => {
 		onAbort = () => reject(abortError());
 		signal.addEventListener("abort", onAbort, { once: true });
@@ -1014,12 +1016,14 @@ async function relayCall(
 		if (relay.closed) throw new ChordError("gone", "relayed hold closed");
 		return await new Promise<unknown>((resolve, reject) => {
 			const call = new RelayCall(relay, frame.id, down.nextId(), { resolve, reject });
-			signal.addEventListener("abort", () => call.cancel(abortError(), true), { once: true });
+			onCancel = () => call.cancel(abortError(), true);
+			signal.addEventListener("abort", onCancel, { once: true });
 			host.rootSent(root.rootId, down);
 			down.send({ t: "call", id: call.downId, hold: relay.downId, member: frame.member, args: frame.args, root });
 		});
 	} finally {
 		signal.removeEventListener("abort", onAbort);
+		signal.removeEventListener("abort", onCancel);
 	}
 }
 

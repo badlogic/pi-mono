@@ -192,7 +192,7 @@ host.serve(StatusStore, ({ session }, _host, self) => {
 | `self.get(Type, input, { at? })` | a reference to another object; its identity is the address | kept if declared again, otherwise released |
 | `self.resource(name, { version, deps?, exclusive?, open, close? })` | a connection, watch, socket, port | kept; reopened only if `version`, `deps` or `exclusive` change |
 | `self.on(name, source, handler)` or `self.on(name, source, select, handler)` | reacts to state or to an event source | the same subscription, with the new handler, as long as the source and `select` are unchanged |
-| `self.task(async (ctx) => ...)` | long-running background work | the old run is aborted through `ctx.signal`, and the new code starts |
+| `self.task(async (ctx) => ...)` | long-running background work | the old run is aborted through `ctx.signal`; the new code starts once it finished (at most `taskStopDeadline`, default 5 s) |
 | `self.derive(sources, fn)` | live projection of state; `fn` is synchronous | a new derivation, computed when the reload commits |
 | `self.register(Registry, { key: value })` | an entry in a registry | replaced at commit |
 | `self.expose(resource)` | a member backed by a resource (local types) | follows the resource |
@@ -554,7 +554,7 @@ await host.load([
 
 Built-in plugins are trusted code from this repository and load directly from source.
 
-The facet's `setup` argument is its host, scoped to what a plugin needs: `serve`, `name`, `root(fn)` and `registry(R)`. Code that is not a Chord method, listener or task (Durable tools and hooks, callbacks of native libraries) keeps it to start roots and read registries, instead of reaching for a process-global host:
+The facet's `setup` argument is its host, scoped to what a plugin needs: `serve`, `name`, `root(fn)`, `registry(R)` and `signal`, which aborts once this run of the facet is no longer installed (a reload replaced or removed it, or the reload that loaded it aborted). Code that is not a Chord method, listener or task (Durable tools and hooks, callbacks of native libraries) keeps it to start roots and read registries, instead of reaching for a process-global host:
 
 ```ts
 export default defineFacet((host) => {
@@ -577,7 +577,7 @@ await host.reload([new URL("../plugins/chat/worker.ts", import.meta.url)]);  // 
 2. **Prepare:** run the new factories over the existing objects, without side effects. Cell writes throw, listeners and tasks don't start, registrations are collected, and changed resources are opened next to the old ones. Contracts are checked against every live consumer. Any failure leaves everything as it was.
 3. **Gate:** only if a cell's version was raised or an exclusive resource changes.
 4. **Commit:** in one synchronous step, install the new code, swap registry tables, restart tasks, rebind listeners, and send `reset` and shape updates to subscribers.
-5. **Retire:** old code keeps running the roots it started. Once they end, it's dropped, along with whatever it alone declared.
+5. **Retire:** old code keeps running the roots it started. Once they end, it's dropped, along with whatever it alone declared. If they are still running when the next reload starts, that reload waits up to `retireDeadline`, then aborts them (their `ctx.signal`) before it closes what only the old code used.
 
 ### Compatible changes: no waiting
 
@@ -625,9 +625,11 @@ const db = self.resource("db", { version: 2, open: () => openSqlite(path, { wal:
 const port = self.resource("port", { version: 1, exclusive: true, open: () => listen(8787), close: (s) => s.close() });
 ```
 
-- A reload doesn't touch a resource unless its `version`, `deps` or `exclusive` change. The version is required: a
-  native value has no schema to detect a change.
-- A changed resource opens next to the old one during prepare.
+- A reload keeps a resource's open value unless its `version`, `deps` or `exclusive` change: `open` doesn't run
+  again. The version is required: a native value has no schema to detect a change. The kept resource still takes the
+  new code's declaration at the commit, so a later `close` is the new one.
+- A changed resource opens next to the old one during prepare. The old one is closed with its own `close` once the
+  old code retires.
 - An `exclusive` resource can't exist twice, so it's swapped at the gate: close the old one, open the new one, and reopen the old one if that fails.
 
 ### Contract changes

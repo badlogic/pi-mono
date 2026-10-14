@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { Type } from "typebox";
-import { describe, it } from "vitest";
+import { describe, it, onTestFinished, vi } from "vitest";
 import {
 	type Ctx,
 	createHost,
@@ -379,6 +379,146 @@ describe("reload", () => {
 		assert.equal(await ref.greet("n"), "v3 n");
 	});
 
+	it("forced retirement aborts the leftover roots before it closes the resources only their code used", async () => {
+		const host = quiet();
+		const log: string[] = [];
+		const hold = latch();
+		const facet = (version: number): Facet => ({
+			name: "greeter",
+			setup: (api) =>
+				api.serve(Greeter, (_input, _principal, self) => {
+					const conn = self.resource("conn", {
+						version,
+						open: () => ({ version }),
+						close: () => void log.push(`close ${version}`),
+					});
+					const count = self.state("count", CountV1, { n: 0 });
+					return {
+						count,
+						greet: async (name: string, ctx: Ctx) => {
+							if (name === "hold") {
+								await hold.promise;
+								return `held on ${conn.value.version}, aborted ${ctx.signal.aborted}`;
+							}
+							if (name !== "wait") return name;
+							await new Promise<void>((resolve) => ctx.signal.addEventListener("abort", () => resolve()));
+							// Still open: the abort comes first, then the grace, then the close.
+							log.push(`aborted, conn ${conn.value.version}`);
+							return name;
+						},
+					};
+				}),
+		});
+		host.install(facet(1));
+		const ref = host.get(Greeter, {});
+		await ref.ready;
+		const old = host.root((ctx) => ref.greet("wait", ctx));
+		await tick();
+		await host.reload([facet(2)]);
+		// A root of the code version that becomes the previous one: forced retirement of the older one leaves it alone.
+		const current = host.root((ctx) => ref.greet("hold", ctx));
+		await tick();
+		await host.reload([facet(3)], { retireDeadline: 20 });
+		assert.equal(await old, "wait");
+		for (let i = 0; i < 50 && !log.includes("close 1"); i++) await tick();
+		assert.deepEqual(log, ["aborted, conn 1", "close 1"]);
+		hold.open();
+		assert.equal(await current, "held on 2, aborted false");
+		assert.equal(await ref.greet("x"), "x");
+	});
+
+	it("a kept resource closes with the newest declaration's close", async () => {
+		const host = quiet();
+		const log: string[] = [];
+		const facet = (label: string): Facet => ({
+			name: "greeter",
+			setup: (api) =>
+				api.serve(Greeter, (_input, _principal, self) => {
+					self.resource("conn", { version: 1, open: () => ({}), close: () => void log.push(`close by ${label}`) });
+					const count = self.state("count", CountV1, { n: 0 });
+					return { count, greet: (name: string) => `${label} ${name}` };
+				}),
+		});
+		host.install(facet("a"));
+		const ref = host.get(Greeter, {});
+		await ref.ready;
+		await host.reload([facet("b")]);
+		await host.reload([facet("c")]);
+		assert.equal(await ref.greet("x"), "c x");
+		assert.deepEqual(log, [], "kept, not reopened");
+		ref.release();
+		for (let i = 0; i < 10 && log.length === 0; i++) await tick();
+		assert.deepEqual(log, ["close by c"]);
+	});
+
+	it("a task that ignores its abort delays its replacement at most taskStopDeadline (reported)", async () => {
+		vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+		onTestFinished(() => {
+			vi.useRealTimers();
+		});
+		const errors: unknown[] = [];
+		const host = createHost({ onError: (error) => errors.push(error), taskStopDeadline: 30 });
+		const log: string[] = [];
+		const stuck = latch();
+		const facet = (label: string): Facet => ({
+			name: "greeter",
+			setup: (api) =>
+				api.serve(Greeter, (_input, _principal, self) => {
+					self.task(async () => {
+						log.push(`start ${label}`);
+						if (label === "a") await stuck.promise; // ignores ctx.signal
+					});
+					const count = self.state("count", CountV1, { n: 0 });
+					return { count, greet: (name: string) => name };
+				}),
+		});
+		host.install(facet("a"));
+		const ref = host.get(Greeter, {});
+		await ref.ready;
+		await host.reload([facet("b")]);
+		await vi.advanceTimersByTimeAsync(29);
+		await tick();
+		assert.deepEqual(log, ["start a"], "waits for the old run");
+		assert.equal(errors.length, 0);
+		await vi.advanceTimersByTimeAsync(1);
+		await tick();
+		assert.deepEqual(log, ["start a", "start b"]);
+		assert.ok(
+			errors.some((error) => isChordError(error, "aborted") && /still running after 30 ms/.test(error.message)),
+		);
+		stuck.open();
+	});
+
+	it("a facet's signal aborts when its run is replaced or removed, when its reload aborts, and when the host closes", async () => {
+		const host = quiet();
+		const signals = new Map<string, AbortSignal>();
+		const facet = (label: string, fail = false): Facet => ({
+			name: "greeter",
+			setup: (api) => {
+				signals.set(label, api.signal);
+				api.serve(Greeter, (_input, _principal, self) => {
+					if (fail) throw new Error("broken");
+					const count = self.state("count", CountV1, { n: 0 });
+					return { count, greet: (name: string) => name };
+				});
+			},
+		});
+		const other: Facet = { name: "other", setup: (api) => void signals.set("other", api.signal) };
+		host.install(facet("a"));
+		host.install(other);
+		await host.get(Greeter, {}).ready;
+		await assert.rejects(host.reload([facet("b", true)]));
+		assert.equal(signals.get("b")?.aborted, true, "the aborted reload's run");
+		assert.equal(signals.get("a")?.aborted, false, "still installed");
+		await host.reload([facet("c")]);
+		assert.equal(signals.get("a")?.aborted, true, "replaced");
+		assert.equal(signals.get("c")?.aborted, false);
+		await host.reload([], { remove: ["other"] });
+		assert.equal(signals.get("other")?.aborted, true, "removed");
+		await host.close();
+		assert.equal(signals.get("c")?.aborted, true, "host closed");
+	});
+
 	it("checks contracts at reload: forgotten bumps, live consumers, accepts adapters", async () => {
 		const DocV1 = remote("t.rdoc", {
 			version: 1,
@@ -481,7 +621,8 @@ describe("reload", () => {
 		emit(1);
 		await tick();
 		assert.deepEqual(ref.sum.value, { v: 11 });
-		assert.deepEqual(log, ["start 1", "start 10", "stop 1"]);
+		// The replacement starts once the aborted run finished.
+		assert.deepEqual(log, ["start 1", "stop 1", "start 10"]);
 	});
 
 	it("keeps registry tables per code version", async () => {

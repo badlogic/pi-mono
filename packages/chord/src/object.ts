@@ -164,7 +164,8 @@ class ExposedImpl {
 
 export class ResourceImpl<T = unknown> implements Resource<T> {
 	readonly key: string;
-	readonly spec: ResourceDeclaration<T>;
+	/** The declaration of the factory run whose code is current: a kept resource adopts the new one at commit. */
+	spec: ResourceDeclaration<T>;
 	readonly deps: readonly (RefCore | ResourceImpl)[];
 	/** `unavailable`: a close/reopen failed during a reload rollback; the value is gone for good. */
 	state: "closed" | "opening" | "open" | "unavailable" = "closed";
@@ -225,6 +226,14 @@ export class ResourceImpl<T = unknown> implements Resource<T> {
 		this.state = "unavailable";
 		this.#value = undefined;
 	}
+
+	/**
+	 * A reload kept this resource (same version, deps and exclusivity): its later `close` is the new declaration's, and
+	 * the old declaration (with the old code it closes over) is no longer referenced.
+	 */
+	adopt(spec: ResourceDeclaration<T>): void {
+		this.spec = spec;
+	}
 }
 
 /**
@@ -265,6 +274,8 @@ export class Decls {
 	readonly cellMigrations = new Map<string, (old: unknown, from: number) => unknown>();
 	readonly refs = new Map<string, RefCore>();
 	readonly resources = new Map<string, ResourceImpl>();
+	/** Resources this run kept from the previous one, with this run's declarations (adopted at commit). */
+	readonly adopted = new Map<ResourceImpl, ResourceDeclaration<unknown>>();
 	readonly listeners = new Map<string, ListenerDecl>();
 	/** By position (`#0`, `#1`, …): tasks have no names. */
 	readonly tasks = new Map<string, TaskFn>();
@@ -318,6 +329,10 @@ export interface HostCore {
 	root<T>(fn: (ctx: Ctx) => T | Promise<T>, options?: { codeVersion?: number; signal?: AbortSignal }): Promise<T>;
 	touch(rootId: string, object: ObjectImpl): void;
 	forget(object: ObjectImpl): void;
+	/** The object finished its disposal. */
+	disposed(object: ObjectImpl): void;
+	/** Milliseconds a reload waits for aborted tasks to finish before starting their replacements. */
+	readonly taskStopDeadline: number;
 	checkRegistrations(object: ObjectImpl, decls: Decls): void;
 	/** Rebuilds the current registry tables from live objects (plus `including`, which is finishing activation). */
 	registriesChanged(including?: ObjectImpl): void;
@@ -334,6 +349,7 @@ export class CtxImpl implements Ctx {
 	/** Code holders (tasks): every call they make starts a fresh root. */
 	readonly holder: boolean;
 	readonly #refs: RefCore[] = [];
+	readonly #release: () => void;
 	#closed = false;
 
 	/** True after the call or root that received this ctx settled: it may no longer start work. */
@@ -345,15 +361,30 @@ export class CtxImpl implements Ctx {
 	check(host: HostCore): void {
 		if (this.host !== host) throw invalid("foreign_ctx", "ctx belongs to another host");
 		if (this.#closed) throw new ChordError("aborted", "ctx expired: its call already settled", { reason: "expired" });
-		if (this.signal.aborted) throw new ChordError("aborted", "ctx aborted", { cause: this.signal.reason });
+		if (this.signal.aborted) {
+			const reason: unknown = this.signal.reason;
+			// A forced retirement aborted the root: its code version is gone, so the next call is `superseded` (retryable).
+			if (reason instanceof ChordError && reason.code === "superseded")
+				throw new ChordError("superseded", reason.message, { cause: reason });
+			throw new ChordError("aborted", "ctx aborted", { cause: reason });
+		}
 	}
 
+	/** `signals`: the ctx is aborted with the first of them; it stops following them when it closes. */
 	constructor(
 		host: HostCore,
-		fields: { signal: AbortSignal; rootId: string; codeVersion: number; principal: Principal; holder?: boolean },
+		fields: {
+			signals: readonly AbortSignal[];
+			rootId: string;
+			codeVersion: number;
+			principal: Principal;
+			holder?: boolean;
+		},
 	) {
 		this.host = host;
-		this.signal = fields.signal;
+		const linked = linkedSignal(fields.signals);
+		this.signal = linked.signal;
+		this.#release = linked.release;
 		this.rootId = fields.rootId;
 		this.codeVersion = fields.codeVersion;
 		this.principal = fields.principal;
@@ -373,7 +404,7 @@ export class CtxImpl implements Ctx {
 	 */
 	child(object: ObjectImpl): CtxImpl {
 		return new CtxImpl(this.host, {
-			signal: AbortSignal.any([this.signal, object.callAbort.signal]),
+			signals: [this.signal, object.callAbort.signal],
 			rootId: this.rootId,
 			codeVersion: this.codeVersion,
 			principal: this.host.principal,
@@ -382,8 +413,36 @@ export class CtxImpl implements Ctx {
 
 	close(): void {
 		this.#closed = true;
+		this.#release();
 		for (const ref of this.#refs.splice(0)) ref.release();
 	}
+}
+
+/**
+ * A signal aborted with the first of `sources` to abort, until `release()`. Not `AbortSignal.any`: Node keeps a
+ * dependant of a long-lived source (an object's or a code version's) reachable while it has abort listeners, so every
+ * call or task context would keep its listeners, and the code they close over, alive as long as the source.
+ */
+export function linkedSignal(sources: readonly AbortSignal[]): { readonly signal: AbortSignal; release(): void } {
+	const controller = new AbortController();
+	const detach: (() => void)[] = [];
+	const release = (): void => {
+		for (const remove of detach.splice(0)) remove();
+	};
+	for (const source of sources) {
+		if (source.aborted) {
+			release();
+			controller.abort(source.reason);
+			break;
+		}
+		const forward = (): void => {
+			release();
+			controller.abort(source.reason);
+		};
+		source.addEventListener("abort", forward, { once: true });
+		detach.push(() => source.removeEventListener("abort", forward));
+	}
+	return { signal: controller.signal, release };
 }
 
 export async function raceSignal<T>(promise: Promise<T>, signal: AbortSignal): Promise<T> {
@@ -562,7 +621,8 @@ export class RefImpl {
 	/** Internal: notified when the reference becomes gone (links forward it). */
 	readonly goneListeners = new Set<(error: unknown) => void>();
 	readonly readables = new Map<string, MemberReadable>();
-	readonly bindings = new Map<Service, Adapter | undefined>();
+	/** Weak: a retired code version's service (and the factory code it holds) must not be kept alive by its consumers. */
+	readonly bindings = new WeakMap<Service, Adapter | undefined>();
 	readonly views = new WeakMap<Record<string, unknown>, Record<string, unknown>>();
 	readonly callers = new Map<string, (...given: unknown[]) => Promise<unknown>>();
 
@@ -845,7 +905,10 @@ export class ObjectImpl {
 	readonly #subscriptions = new Map<string, Subscription>();
 	readonly #invocations = new Set<Promise<unknown>>();
 	#tasks = new Map<string, RunningTask>();
-	readonly #stopped: Promise<void>[] = [];
+	/** Aborted task runs that have not finished yet. */
+	readonly #stopped = new Set<Promise<void>>();
+	/** Bumped by every start and stop of the tasks: a delayed start that is no longer the latest is dropped. */
+	#taskRuns = 0;
 	#linger: ReturnType<typeof setTimeout> | undefined;
 	#disposal: Promise<void> | undefined;
 
@@ -934,7 +997,7 @@ export class ObjectImpl {
 			this.implementations.clear();
 			this.decls = new Decls();
 			if (registered) this.host.registriesChanged();
-			await Promise.allSettled([...this.#invocations, ...this.#stopped.splice(0)]);
+			await Promise.allSettled([...this.#invocations, ...this.#stopped]);
 			await this.unwind(run).catch((cleanup: unknown) => this.host.report(cleanup));
 			throw error;
 		} finally {
@@ -1124,8 +1187,39 @@ export class ObjectImpl {
 		this.startTasks();
 	}
 
+	/**
+	 * Starts the tasks of the current declarations. Runs aborted by `stopTasks` (a reload, a gate) may still be finishing:
+	 * their replacements start once they all finished, or after `taskStopDeadline` (reported), so the old and the new run
+	 * of a task never work side by side. A later start or stop, or the object leaving `live`, cancels a delayed start.
+	 */
 	startTasks(): void {
-		for (const key of this.decls.tasks.keys()) this.startTask(key, this.host.currentCodeVersion());
+		const run = ++this.#taskRuns;
+		const start = (): void => {
+			for (const key of this.decls.tasks.keys()) this.#startTask(key, this.host.currentCodeVersion());
+		};
+		if (this.#stopped.size === 0) {
+			start();
+			return;
+		}
+		const deadline = this.host.taskStopDeadline;
+		let timer: ReturnType<typeof setTimeout> | undefined;
+		const late = new Promise<boolean>((resolve) => {
+			timer = setTimeout(() => resolve(true), deadline);
+		});
+		const stopped = Promise.allSettled([...this.#stopped]).then(() => false);
+		void Promise.race([stopped, late]).then((missed) => {
+			clearTimeout(timer);
+			if (run !== this.#taskRuns || this.status !== "live") return;
+			if (missed) {
+				this.host.report(
+					new ChordError(
+						"aborted",
+						`${this.address}: aborted tasks still running after ${deadline} ms; starting their replacements anyway`,
+					),
+				);
+			}
+			start();
+		});
 	}
 
 	stopListeners(): void {
@@ -1133,12 +1227,12 @@ export class ObjectImpl {
 		this.#subscriptions.clear();
 	}
 
-	startTask(key: string, codeVersion: number): void {
+	#startTask(key: string, codeVersion: number): void {
 		const fn = this.decls.tasks.get(key);
 		if (fn === undefined) return;
 		const controller = new AbortController();
 		const ctx = new CtxImpl(this.host, {
-			signal: AbortSignal.any([controller.signal, this.callAbort.signal]),
+			signals: [controller.signal, this.callAbort.signal],
 			rootId: `task:${this.address}:${key}`,
 			codeVersion,
 			principal: this.host.principal,
@@ -1157,11 +1251,17 @@ export class ObjectImpl {
 		this.#tasks.set(key, { controller, done });
 	}
 
-	/** Aborts running tasks; their completion is awaited at disposal. */
+	/**
+	 * Aborts running tasks (and cancels a delayed start). Their completion is awaited by the next `startTasks` and at
+	 * disposal; each leaves `#stopped` when it finishes.
+	 */
 	stopTasks(): void {
+		this.#taskRuns++;
 		for (const task of this.#tasks.values()) {
 			task.controller.abort(new ChordError("aborted", "task stopped"));
-			this.#stopped.push(task.done);
+			const done = task.done;
+			this.#stopped.add(done);
+			void done.finally(() => this.#stopped.delete(done));
 		}
 		this.#tasks.clear();
 	}
@@ -1393,7 +1493,7 @@ export class ObjectImpl {
 		try {
 			await runAll(
 				[
-					() => Promise.allSettled(this.#stopped.splice(0)),
+					() => Promise.allSettled([...this.#stopped]),
 					...[...this.openOrder].reverse().map((resource) => () => resource.close(this.openOrder)),
 					...[...refs].map((ref) => () => ref.release()),
 				],
@@ -1401,6 +1501,7 @@ export class ObjectImpl {
 			);
 		} finally {
 			this.status = "disposed";
+			this.host.disposed(this);
 		}
 	}
 }
@@ -1553,7 +1654,8 @@ class SelfImpl implements Self {
 			existing.deps.length === deps.length &&
 			existing.deps.every((dep, index) => dep === deps[index]);
 		const resource = kept ? existing : new ResourceImpl(name, declaration as ResourceDeclaration<unknown>, deps);
-		if (!kept) this.#created.resources.push(resource);
+		if (kept) this.#decls.adopted.set(existing, declaration as ResourceDeclaration<unknown>);
+		else this.#created.resources.push(resource);
 		this.#decls.resources.set(name, resource);
 		return new ResourceFacade(resource, this.#object.host) as unknown as Resource<T>;
 	}

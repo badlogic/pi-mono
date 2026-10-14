@@ -6,7 +6,10 @@ import {
 	createHost,
 	type Facet,
 	type FacetLoader,
+	type Frame,
 	isChordError,
+	type Link,
+	local,
 	memoryLinkPair,
 	method,
 	remote,
@@ -66,6 +69,25 @@ function greeterFacet(greeting: string, options: { fail?: boolean; stateVersion?
 }
 
 /** Server + worker over a memory link; the worker loads facets by name from `modules`. */
+/** `link`, except that frames `drop` selects are never sent (a frame lost when its link dies). */
+function dropping(link: Link, drop: (frame: Frame) => boolean): Link {
+	return {
+		get closed() {
+			return link.closed;
+		},
+		send: (frame) => (drop(frame) ? undefined : link.send(frame)),
+		receive: (handler) => link.receive(handler),
+		onClose: (handler) => link.onClose(handler),
+		close: (reason) => link.close(reason),
+	};
+}
+
+const Ping = remote("t.cluster-ping", {
+	version: 1,
+	input: Type.Object({}),
+	variants: { main: { methods: { ping: method(undefined, Type.String()) } } },
+});
+
 function setup() {
 	const modules = new Map<string, Facet>([["greeter", greeterFacet("v1")]]);
 	const loader: FacetLoader = async (names) => names.map((name) => modules.get(String(name))!);
@@ -268,5 +290,282 @@ describe("cross-host reload", () => {
 		modules.set("greeter", greeterFacet("v3"));
 		await server.reload([], { remote: { "session:": ["greeter"] } });
 		assert.equal(await greeter.greet("b"), "v3 b");
+	});
+
+	it("a child that says hello while a reload runs is reconciled after it, never left in step with the old code", async () => {
+		const modules = new Map<string, Facet>([["greeter", greeterFacet("v1")]]);
+		const loading = latch();
+		const server = createHost({
+			name: "server",
+			onError: () => {},
+			loader: async (names) => {
+				await loading.promise;
+				return names.map((name) => ({ name: String(name), setup: () => {} }));
+			},
+		});
+		onTestFinished(() => server.close());
+		const reloading = server.reload(["server-plugin"], { remote: { "session:": ["greeter"] } });
+		// The worker connects while the reload loads its modules: it announces the server's current code version.
+		const [down, up] = memoryLinkPair();
+		server.accept(down, { principal: { worker: "w" }, kind: "host", name: "session:S1" });
+		const worker = createHost({
+			name: "session:S1",
+			upstream: up,
+			loader: async (names) => names.map((name) => modules.get(String(name))!),
+			onError: () => {},
+		});
+		onTestFinished(() => worker.close());
+		worker.install(modules.get("greeter")!);
+		await tick();
+		modules.set("greeter", greeterFacet("v2"));
+		loading.open();
+		const report = await reloading;
+		assert.deepEqual(Object.keys(report.children ?? {}), [], "it was not a participant");
+		const greeter = server.get(Greeter, {}, { at: "session:S1" });
+		assert.equal(await greeter.greet("a"), "v2 a");
+		assert.equal(worker.codeVersion, server.codeVersion);
+	});
+
+	it("a child keeps the previous code version until its parent retired it (spec 12)", async () => {
+		const { server, worker, modules } = setup();
+		await tick();
+		const greeter = server.get(Greeter, {}, { at: "session:S1" });
+		assert.equal(await greeter.greet("a"), "v1 a");
+		const first = server.codeVersion;
+		const go = latch();
+		// A server root of the first code version that calls the worker only after the next two reloads started.
+		const pinned = server.root(async (ctx) => {
+			await go.promise;
+			return greeter.greet("p", ctx);
+		});
+		modules.set("greeter", greeterFacet("v2"));
+		await server.reload([], { remote: { "session:": ["greeter"] } });
+		assert.equal(worker.previousCodeVersion, first);
+		const second = server.reload([], { remote: { "session:": [] }, retireDeadline: 2000 });
+		await tick();
+		await tick();
+		// The server still waits for its root, so the worker must not have retired that code version.
+		assert.equal(worker.previousCodeVersion, first);
+		go.open();
+		assert.equal(await pinned, "v1 p");
+		await second;
+		assert.equal(server.previousCodeVersion, undefined);
+	});
+
+	it("a child reconciled after its parent retired old code versions may retire its own previous one at once", async () => {
+		const modules = new Map<string, Facet>([["greeter", greeterFacet("v1")]]);
+		const server = createHost({ name: "server", onError: () => {} });
+		onTestFinished(() => server.close());
+		const plugin = (): Facet => ({ name: "server-plugin", setup: () => {} });
+		server.install(plugin());
+		await server.reload([plugin()]);
+		await server.reload([plugin()]);
+		assert.equal(server.previousCodeVersion, undefined);
+		const [down, up] = memoryLinkPair();
+		server.accept(down, { principal: { worker: "w" }, kind: "host", name: "session:S1" });
+		const worker = createHost({
+			name: "session:S1",
+			upstream: up,
+			loader: async (names) => names.map((name) => modules.get(String(name))!),
+			onError: () => {},
+		});
+		onTestFinished(() => worker.close());
+		worker.install(modules.get("greeter")!);
+		for (let i = 0; i < 50 && worker.codeVersion !== server.codeVersion; i++) await tick();
+		assert.equal(worker.codeVersion, server.codeVersion);
+		// Without the parent's retire watermark it would keep code version 1 until the parent's next retirement.
+		for (let i = 0; i < 20 && worker.previousCodeVersion !== undefined; i++) await tick();
+		assert.equal(worker.previousCodeVersion, undefined);
+		// And the next cluster reload does not wait for a retirement the parent will never announce.
+		const started = Date.now();
+		await server.reload([], { remote: { "session:": ["greeter"] }, retireDeadline: 10_000 });
+		assert.ok(Date.now() - started < 2000);
+	});
+
+	it("a reconciliation running when a reload starts syncs the child only after it, to the committed code version", async () => {
+		const modules = new Map<string, Facet>([["greeter", greeterFacet("v1")]]);
+		const serverLoading = latch();
+		let blockServer = false;
+		const server = createHost({
+			name: "server",
+			onError: () => {},
+			loader: async (names) => {
+				if (blockServer) await serverLoading.promise;
+				return names.map((name) => ({ name: String(name), setup: () => {} }));
+			},
+		});
+		onTestFinished(() => server.close());
+		server.install({ name: "server-plugin", setup: () => {} });
+		await server.reload(["server-plugin"], { remote: { "session:": ["greeter"] } });
+		// The worker connects behind: its reconciliation to code version 2 waits in the worker's module loading.
+		const workerLoading = latch();
+		let blockWorker = true;
+		const [down, up] = memoryLinkPair();
+		server.accept(down, { principal: { worker: "w" }, kind: "host", name: "session:S1" });
+		const worker = createHost({
+			name: "session:S1",
+			upstream: up,
+			loader: async (names) => {
+				if (blockWorker) await workerLoading.promise;
+				return names.map((name) => modules.get(String(name))!);
+			},
+			onError: () => {},
+		});
+		onTestFinished(() => worker.close());
+		worker.install(modules.get("greeter")!);
+		await tick();
+		// A reload starts before the reconciliation committed; the worker is not one of its participants.
+		blockServer = true;
+		modules.set("greeter", greeterFacet("v2"));
+		const reloading = server.reload(["server-plugin"], { remote: { "session:": ["greeter"] } });
+		blockWorker = false;
+		workerLoading.open();
+		for (let i = 0; i < 50 && worker.codeVersion !== 2; i++) await tick();
+		assert.equal(worker.codeVersion, 2);
+		serverLoading.open();
+		const report = await reloading;
+		assert.deepEqual(Object.keys(report.children ?? {}), []);
+		assert.equal(report.codeVersion, 3);
+		const greeter = server.get(Greeter, {}, { at: "session:S1" });
+		assert.equal(await greeter.greet("a"), "v2 a");
+		assert.equal(worker.codeVersion, server.codeVersion);
+	});
+
+	it("a child behind whose hello waits for a running reload is fenced at once: its calls up are admitted (spec 9)", async () => {
+		const pingFacet: Facet = {
+			name: "ping",
+			setup: (api) => api.serve(Ping, () => ({ variant: "main", ping: () => "pong" })),
+		};
+		const loading = latch();
+		const server = createHost({
+			name: "server",
+			onError: () => {},
+			loader: async (names) => {
+				await loading.promise;
+				return names.map((name) => ({ name: String(name), setup: () => {} }));
+			},
+		});
+		onTestFinished(() => server.close());
+		server.install(pingFacet);
+		await server.reload([pingFacet]);
+		assert.equal(server.previousCodeVersion, undefined, "code version 1 is retired");
+		const reloading = server.reload(["server-plugin"], { remote: { "session:": [] } });
+		const [down, up] = memoryLinkPair();
+		server.accept(down, { principal: { worker: "w" }, kind: "host", name: "session:S1" });
+		const worker = createHost({ name: "session:S1", upstream: up, onError: () => {} });
+		onTestFinished(() => worker.close());
+		// While the server's reload still loads its modules, a worker root (code version 1) calls the server.
+		const answer = await worker.root((ctx) => ctx.get(Ping, {}, { at: "server" }).ping(ctx));
+		assert.equal(answer, "pong");
+		loading.open();
+		await reloading;
+		for (let i = 0; i < 50 && worker.codeVersion !== server.codeVersion; i++) await tick();
+		assert.equal(worker.codeVersion, server.codeVersion);
+	});
+
+	it("a reconnecting child behind its parent, still retaining its previous code version, reconciles without waiting out the retire deadline", async () => {
+		const modules = new Map<string, Facet>([["greeter", greeterFacet("v1")]]);
+		const loader: FacetLoader = async (names) => names.map((name) => modules.get(String(name))!);
+		const server = createHost({ name: "server", onError: () => {} });
+		onTestFinished(() => server.close());
+		const [down, up] = memoryLinkPair();
+		// The `retire` frame is lost: the worker keeps code version 1, not permitted to retire it.
+		server.accept(
+			dropping(down, (frame) => frame.t === "retire"),
+			{ principal: { worker: "w" }, kind: "host", name: "session:S1" },
+		);
+		const worker = createHost({ name: "session:S1", upstream: up, loader, onError: () => {} });
+		onTestFinished(() => worker.close());
+		worker.install(modules.get("greeter")!);
+		await tick();
+		modules.set("greeter", greeterFacet("v2"));
+		await server.reload([], { remote: { "session:": ["greeter"] } });
+		await tick();
+		assert.equal(worker.previousCodeVersion, 1);
+		up.close("gone");
+		await tick();
+		// The server moves on while the worker is away, then the worker reconnects behind it.
+		modules.set("greeter", greeterFacet("v3"));
+		await server.reload([{ name: "server-plugin", setup: () => {} }]);
+		const [down2, up2] = memoryLinkPair();
+		server.accept(down2, { principal: { worker: "w" }, kind: "host", name: "session:S1" });
+		const started = Date.now();
+		worker.connect(up2);
+		for (let i = 0; i < 400 && worker.codeVersion !== server.codeVersion; i++)
+			await new Promise((resolve) => setTimeout(resolve, 5));
+		assert.equal(worker.codeVersion, server.codeVersion);
+		assert.ok(Date.now() - started < 2000, `reconciled after ${Date.now() - started} ms`);
+	});
+
+	it("forced retirement cancels a browser call relayed to a worker before the server closes the old code's resources", async () => {
+		const log: string[] = [];
+		const server = createHost({ name: "server", onError: () => {} });
+		onTestFinished(() => server.close());
+		const [down, up] = memoryLinkPair();
+		const worker = createHost({ name: "session:S1", upstream: up, onError: () => {} });
+		onTestFinished(() => worker.close());
+		const never = latch();
+		const Slow = remote("t.cluster-slow", {
+			version: 1,
+			input: Type.Object({}),
+			variants: { main: { methods: { wait: method() } } },
+		});
+		worker.serve(Slow, () => ({
+			variant: "main",
+			wait: async (ctx: Ctx) => {
+				ctx.signal.addEventListener("abort", () => log.push("worker aborted"));
+				await never.promise;
+			},
+		}));
+		// Records the cancel the server sends down: the guarantee is that it leaves before the old resources close.
+		const watched = dropping(down, (frame) => {
+			if (frame.t === "cancel") log.push("cancel sent");
+			return false;
+		});
+		server.route("session:", { authorize: () => true, resolve: async () => watched });
+		const Store = local("t.cluster-store", { version: 1, input: Type.Object({}) });
+		const storeFacet = (version: number): Facet => ({
+			name: "store",
+			setup: (api) =>
+				api.serve(
+					Store,
+					(_input, _principal, self) => {
+						self.resource("conn", {
+							version,
+							open: () => ({}),
+							close: () => void log.push(`server closes ${version}`),
+						});
+						return {};
+					},
+					{ lifetime: "host" },
+				),
+		});
+		await server.install(storeFacet(1));
+		const [browserDown, browserUp] = memoryLinkPair();
+		server.accept(browserDown, { principal: { guest: "g" } });
+		const browser = createHost({ name: "browser", kind: "client", upstream: browserUp, onError: () => {} });
+		onTestFinished(() => browser.close());
+		// The relayed call's root runs on the server's code version 1.
+		const call = browser.get(Slow, {}, { at: "session:S1" }).wait();
+		call.catch(() => {});
+		for (let i = 0; i < 50 && log.length === 0 && !worker.codeVersion; i++) await tick();
+		await new Promise((resolve) => setTimeout(resolve, 10));
+		await server.reload([storeFacet(2)]);
+		await server.reload([storeFacet(3)], { retireDeadline: 20 });
+		const settled = await Promise.race([
+			call.then(
+				() => "resolved",
+				() => "rejected",
+			),
+			new Promise((resolve) => setTimeout(() => resolve("pending"), 2000)),
+		]);
+		assert.equal(settled, "rejected", "the browser's call is cancelled with its root");
+		for (let i = 0; i < 50 && !log.includes("worker aborted"); i++) await tick();
+		assert.deepEqual(
+			log.filter((entry) => entry === "cancel sent" || entry === "server closes 1"),
+			["cancel sent", "server closes 1"],
+		);
+		assert.ok(log.includes("worker aborted"));
+		never.open();
 	});
 });
