@@ -47,6 +47,7 @@ export interface FauxModelDefinition {
 	cost?: { input: number; output: number; cacheRead: number; cacheWrite: number };
 	contextWindow?: number;
 	maxTokens?: number;
+	responseModelAliases?: string[];
 }
 
 export type FauxContentBlock = TextContent | ThinkingContent | ToolCall;
@@ -502,6 +503,7 @@ export function createFauxCore(options: RegisterFauxProviderOptions) {
 		cost: definition.cost ?? { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
 		contextWindow: definition.contextWindow ?? 128000,
 		maxTokens: definition.maxTokens ?? 16384,
+		responseModelAliases: definition.responseModelAliases,
 	})) as [Model<string>, ...Model<string>[]];
 
 	const resolveResponse = async (

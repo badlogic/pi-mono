@@ -848,6 +848,13 @@ export interface Model<TApi extends Api> extends BaseModel<TApi> {
 	promptCache?: ModelPromptCache;
 	contextWindow: number;
 	maxTokens: number;
+	/**
+	 * Provider-reported model names that identify this same route when a provider or gateway renames
+	 * the model it was asked for. Pi trusts a response only when its requested and reported models are
+	 * this model's id or one of these aliases; a genuine fallback to another model stays ineligible
+	 * for same-model recovery. Unset means only the exact model id is trusted.
+	 */
+	responseModelAliases?: string[];
 	/** Default sampling parameters for this model. See {@link StreamOptions.samplingParams}; per-request keys override these. */
 	samplingParams?: SamplingParams;
 	/** Sampling parameter overrides selected by the effective pi thinking level. */
