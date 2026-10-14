@@ -21,9 +21,9 @@ describe("tool display keybindings", () => {
 		expect(runner.getShortcuts(config).has(key)).toBe(false);
 		expect(warn).toHaveBeenCalledWith(expect.stringContaining("Skipping."));
 	});
-	it("uses independent configurable actions for groups and output", () => {
+	it("uses Ctrl+O by default with an optional standalone group shortcut", () => {
 		const defaults = new KeybindingsManager().getEffectiveConfig();
-		expect(defaults["app.tools.toggleGroups"]).toBe("f2");
+		expect(defaults["app.tools.toggleGroups"]).toEqual([]);
 		expect(defaults["app.tools.expand"]).toBe("ctrl+o");
 
 		const custom = new KeybindingsManager({ "app.tools.toggleGroups": "alt+g" }).getEffectiveConfig();
@@ -31,10 +31,10 @@ describe("tool display keybindings", () => {
 		expect(custom["app.tools.expand"]).toBe("ctrl+o");
 	});
 
-	it("distinguishes legacy F2 sequences from output expansion without default clashes", () => {
+	it("leaves F2 unbound and keeps the display action on Ctrl+O", () => {
 		const manager = new KeybindingsManager();
 		for (const data of ["\x1bOQ", "\x1b[12~"]) {
-			expect(manager.matches(data, "app.tools.toggleGroups")).toBe(true);
+			expect(manager.matches(data, "app.tools.toggleGroups")).toBe(false);
 			expect(manager.matches(data, "app.tools.expand")).toBe(false);
 		}
 		expect(manager.matches("\x0f", "app.tools.toggleGroups")).toBe(false);
@@ -42,7 +42,16 @@ describe("tool display keybindings", () => {
 		const f2Actions = Object.entries(manager.getEffectiveConfig())
 			.filter(([, keys]) => (Array.isArray(keys) ? keys.includes("f2") : keys === "f2"))
 			.map(([action]) => action);
-		expect(f2Actions).toEqual(["app.tools.toggleGroups"]);
+		expect(f2Actions).toEqual([]);
+	});
+
+	it("does not reserve unbound F2 against extension shortcuts", async () => {
+		harness = await createHarness({
+			extensionFactories: [(pi) => pi.registerShortcut("f2", { handler: async () => {} })],
+		});
+		const runner = harness.session.extensionRunner;
+		if (!runner) throw new Error("Expected the fixture extension runner");
+		expect(runner.getShortcuts(new KeybindingsManager().getEffectiveConfig()).has("f2")).toBe(true);
 	});
 });
 

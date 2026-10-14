@@ -47,8 +47,8 @@ const APP_KEYBINDINGS = {
 		description: "Cycle to previous model",
 	},
 	"app.model.select": { defaultKeys: "ctrl+l", description: "Open model selector" },
-	"app.tools.expand": { defaultKeys: "ctrl+o", description: "Toggle tool output" },
-	"app.tools.toggleGroups": { defaultKeys: "f2", description: "Toggle tool groups" },
+	"app.tools.expand": { defaultKeys: "ctrl+o", description: "Toggle tool output or cycle compact tool display" },
+	"app.tools.toggleGroups": { defaultKeys: [], description: "Toggle tool groups" },
 	"app.thinking.toggle": {
 		defaultKeys: "ctrl+t",
 		description: "Toggle thinking blocks",

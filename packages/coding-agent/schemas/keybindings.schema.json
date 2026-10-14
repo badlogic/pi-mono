@@ -233,7 +233,7 @@
     },
     "app.tools.expand": {
       "$ref": "#/$defs/KeybindingValue",
-      "description": "Toggle tool output"
+      "description": "Toggle tool output or cycle compact tool display"
     },
     "app.tools.toggleGroups": {
       "$ref": "#/$defs/KeybindingValue",

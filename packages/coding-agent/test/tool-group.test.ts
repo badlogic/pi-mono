@@ -36,7 +36,7 @@ function tool(name: string, id = name) {
 		process.cwd(),
 	);
 }
-function click(y = 0): TuiMouseEvent {
+function click(y = 1): TuiMouseEvent {
 	return {
 		type: "click",
 		button: "left",
@@ -66,14 +66,14 @@ describe("ToolGroupComponent", () => {
 		first.updateResult({ content: [], isError: false });
 		second.updateResult({ content: [], isError: true });
 		shell.updateResult({ content: [], isError: false }, true);
-		const summary = stripAnsi(group.render(100)[0]);
+		const summary = stripAnsi(group.render(100)[1]);
 		expect(summary).toContain("3 tools");
 		expect(summary).toContain("read ×2");
 		expect(summary).toContain("bash ×1");
 		expect(summary).toContain("1 running");
 		expect(summary).toContain("1 error");
 		shell.updateResult({ content: [], isError: false });
-		expect(stripAnsi(group.render(100)[0])).not.toContain("running");
+		expect(stripAnsi(group.render(100)[1])).not.toContain("running");
 		expect(first.getStatus()).toBe("success");
 		expect(second.getStatus()).toBe("error");
 	});
@@ -85,27 +85,27 @@ describe("ToolGroupComponent", () => {
 		child.updateArgs({ path: "partial" });
 		child.setArgsComplete();
 		expect(child.getStatus()).toBe("pending");
-		const summary = stripAnsi(group.render(100)[0]);
+		const summary = stripAnsi(group.render(100)[1]);
 		expect(summary).toContain("1 tool ·");
 		expect(summary).not.toContain("1 tools");
 		expect(summary).toContain("1 pending");
 		expect(summary).not.toContain("running");
 		child.updateResult({ content: [{ type: "text", text: "Operation aborted" }], isError: true });
-		expect(stripAnsi(group.render(100)[0])).toContain("1 error");
-		expect(stripAnsi(group.render(100)[0])).not.toContain("pending");
+		expect(stripAnsi(group.render(100)[1])).toContain("1 error");
+		expect(stripAnsi(group.render(100)[1])).not.toContain("pending");
 	});
 
 	test("summary refreshes on start, partial, and final results without group invalidation", () => {
 		const group = new ToolGroupComponent();
 		const child = tool("bash");
 		group.addTool(child);
-		expect(stripAnsi(group.render(100)[0])).toContain("1 pending");
+		expect(stripAnsi(group.render(100)[1])).toContain("1 pending");
 		child.markExecutionStarted();
-		expect(stripAnsi(group.render(100)[0])).toContain("1 running");
+		expect(stripAnsi(group.render(100)[1])).toContain("1 running");
 		child.updateResult({ content: [{ type: "text", text: "partial output" }], isError: false }, true);
-		expect(stripAnsi(group.render(100)[0])).toContain("1 running");
+		expect(stripAnsi(group.render(100)[1])).toContain("1 running");
 		child.updateResult({ content: [{ type: "text", text: "command failed" }], isError: true });
-		const failed = stripAnsi(group.render(100)[0]);
+		const failed = stripAnsi(group.render(100)[1]);
 		expect(failed).toContain("1 error");
 		expect(failed).not.toContain("running");
 		expect(failed).not.toContain("pending");
@@ -118,22 +118,23 @@ describe("ToolGroupComponent", () => {
 		group.addTool(first);
 		group.addTool(second);
 		first.updateResult({ content: [], isError: false });
-		expect(stripAnsi(group.render(100)[0])).not.toContain("done");
+		expect(stripAnsi(group.render(100)[1])).not.toContain("done");
 		second.markExecutionStarted();
-		expect(stripAnsi(group.render(100)[0])).not.toContain("done");
+		expect(stripAnsi(group.render(100)[1])).not.toContain("done");
 		second.updateResult({ content: [], isError: false });
-		expect(stripAnsi(group.render(100)[0])).toContain("2 tools · done ·");
+		expect(stripAnsi(group.render(100)[1])).toContain("2 tools · done ·");
 		second.updateResult({ content: [], isError: true });
-		expect(stripAnsi(group.render(100)[0])).not.toContain("done");
+		expect(stripAnsi(group.render(100)[1])).not.toContain("done");
 	});
 
-	test("collapsed output is exactly one width-truncated line even with wide names", () => {
+	test("collapsed summaries have one blank line above a width-truncated row", () => {
 		const group = new ToolGroupComponent();
 		group.addTool(tool("長い名前".repeat(20)));
 		for (const width of [0, 1, 2, 8, 20, 80]) {
 			const lines = group.render(width);
-			expect(lines).toHaveLength(1);
-			expect(visibleWidth(lines[0])).toBeLessThanOrEqual(width);
+			expect(lines).toHaveLength(2);
+			expect(lines[0]).toBe("");
+			expect(visibleWidth(lines[1])).toBeLessThanOrEqual(width);
 		}
 	});
 
@@ -175,6 +176,8 @@ describe("ToolGroupComponent", () => {
 		child.updateResult({ content: [], isError: false });
 		group.addTool(child);
 		other.addTool(tool("other"));
+		expect(group.handleMouse(click(0))).toBeUndefined();
+		expect(group.expanded).toBe(false);
 		expect(group.handleMouse(click())?.handled).toBe(true);
 		expect(group.expanded).toBe(true);
 		expect(other.expanded).toBe(false);

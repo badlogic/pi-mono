@@ -20,9 +20,9 @@ To include files or images:
 
 ## Follow Pi's work
 
-Pi shows each tool call and result while it works. Press `Ctrl+O` to expand or collapse tool output. Press `Ctrl+T` to show or hide thinking blocks.
+Pi shows each tool call and result while it works. With compact tool calls disabled (the default), `Ctrl+O` expands or collapses tool output. Press `Ctrl+T` to show or hide thinking blocks.
 
-Enable **Compact tool calls** in `/settings` to replace consecutive tool calls with a one-line summary. Press `F2` to open or close all groups, or click a summary in fullscreen mode to toggle one group. Group visibility is independent of `Ctrl+O`: closing and reopening a group preserves its tools' output detail. Summaries show running and failed calls; opening a group restores the original tools, including images.
+Enable **Compact tool calls** in `/settings` (`compactToolCalls: true`) to replace consecutive tool calls with one-line summaries. Groups start collapsed. `Ctrl+O` cycles all groups through collapsed summaries → open groups with collapsed output/previews → open groups with full output → summaries. Click a summary in fullscreen mode to toggle one group's visibility. Closing a group preserves its output state; the previews step collapses all tool output. For a standalone group visibility toggle without changing output detail, assign `app.tools.toggleGroups` in [Keybindings](keybindings.md); it has no default binding. Summaries show running and failed calls; opening a group restores the original tools, including images.
 
 The startup header lists the instructions and resources Pi loaded. The editor border indicates the current thinking level. The footer updates as the model uses context and reports usage.
 

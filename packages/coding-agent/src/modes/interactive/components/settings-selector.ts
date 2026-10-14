@@ -548,7 +548,7 @@ export class SettingsSelectorComponent extends Container {
 			{
 				id: "compact-tool-calls",
 				label: "Compact tool calls",
-				description: `Group consecutive tool calls into one summary. ${keyDisplayText("app.tools.toggleGroups")} toggles groups; ${keyDisplayText("app.tools.expand")} toggles output.`,
+				description: `Group consecutive tool calls into one summary. ${keyDisplayText("app.tools.expand")} cycles summaries, previews, and full output.`,
 				currentValue: config.compactToolCalls ? "true" : "false",
 				values: ["true", "false"],
 			},

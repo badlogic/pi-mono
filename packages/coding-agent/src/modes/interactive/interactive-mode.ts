@@ -4655,11 +4655,29 @@ export class InteractiveMode {
 	}
 
 	private toggleToolOutputExpansion(): void {
-		this.setToolsExpanded(!this.toolOutputExpanded);
+		if (!this.settingsManager.getCompactToolCalls()) {
+			this.setToolsExpanded(!this.toolOutputExpanded);
+			return;
+		}
+		if (!this.toolGroupsExpanded) {
+			// Individual tools can be expanded while the global output flag is false.
+			this.setToolsExpanded(false, true);
+			this.toolGroupsExpanded = true;
+		} else if (!this.toolOutputExpanded) {
+			this.setToolsExpanded(true);
+		} else {
+			this.toolGroupsExpanded = false;
+		}
+		for (const child of this.chatContainer.children) {
+			if (child instanceof ToolGroupComponent) child.setExpanded(this.toolGroupsExpanded);
+		}
+		this.showStatus(
+			`Tool display: ${this.toolGroupsExpanded ? (this.toolOutputExpanded ? "all" : "previews") : "groups collapsed"}`,
+		);
 	}
 
-	private setToolsExpanded(expanded: boolean): void {
-		if (expanded === this.toolOutputExpanded) return;
+	private setToolsExpanded(expanded: boolean, force = false): void {
+		if (!force && expanded === this.toolOutputExpanded) return;
 
 		this.toolOutputExpanded = expanded;
 		const activeHeader = this.customHeader ?? this.builtInHeader;
@@ -6995,9 +7013,8 @@ export class InteractiveMode {
 | \`${cycleThinkingLevel}\` | Cycle thinking level |
 | \`${cycleModelForward}\` / \`${cycleModelBackward}\` | Cycle models |
 | \`${selectModel}\` | Open model selector |
-| \`${expandTools}\` | Toggle tool output expansion |
-| \`${toggleGroups}\` | Toggle tool group visibility |
-| \`${toggleThinking}\` | Toggle thinking block visibility |
+| \`${expandTools}\` | ${this.settingsManager.getCompactToolCalls() ? "Cycle tool display: summaries → previews → full output" : "Toggle tool output expansion"} |
+${this.keybindings.getKeys("app.tools.toggleGroups").length > 0 ? `| \`${toggleGroups}\` | Toggle tool group visibility |\n` : ""}| \`${toggleThinking}\` | Toggle thinking block visibility |
 | \`${externalEditor}\` | Edit message in external editor |
 | \`${copyMessage}\` | Copy selection or last assistant message |
 | \`${followUp}\` | Queue follow-up message |

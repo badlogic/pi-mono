@@ -4,7 +4,7 @@
 
 ### Added
 
-- Added opt-in compact tool-call groups, with one-line status summaries and configurable F2 expansion independent of Ctrl+O tool output
+- Added opt-in compact tool-call groups, initially collapsed, with Ctrl+O cycling summaries → open groups with collapsed output/previews → open groups with full output → summaries; standalone group visibility remains configurable via `app.tools.toggleGroups`, with no default binding
 
 ### Fixed
 

@@ -76,15 +76,15 @@ export class ToolGroupComponent implements Component {
 		const names = Array.from(counts, ([name, count]) => `${name} ×${count}`).join(", ");
 		const summary = `${" ".repeat(this.outputPad)}${this.expanded ? "▾" : "▸"} ${this.tools.length} tool${this.tools.length === 1 ? "" : "s"} · ${[...status, names].join(" · ")}`;
 		const line = truncateToWidth(theme.fg(errors ? "error" : running ? "accent" : "muted", summary), width);
-		return this.expanded ? [line, ...this.content.render(width)] : [line];
+		return this.expanded ? ["", line, ...this.content.render(width)] : ["", line];
 	}
 
 	handleMouse(event: TuiMouseEvent): TuiMouseEventResult | undefined {
-		if (event.y === 0 && event.type === "click" && event.button === "left") {
+		if (event.y === 1 && event.type === "click" && event.button === "left") {
 			this.setExpanded(!this.expanded);
 			return { handled: true };
 		}
-		if (!this.expanded || event.y < 1) return undefined;
-		return this.content.handleMouse({ ...event, y: event.y - 1, height: event.height - 1 });
+		if (!this.expanded || event.y < 2) return undefined;
+		return this.content.handleMouse({ ...event, y: event.y - 2, height: event.height - 2 });
 	}
 }

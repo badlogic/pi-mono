@@ -1,6 +1,6 @@
 // INV-1 interactive-mode.ts: live, fallback, and replay group only consecutive tool rows.
 // INV-2 interactive-mode.ts: late visible assistant content splits groups without replacing tools.
-// INV-3 interactive-mode.ts: group visibility, child output, and settings updates are independent.
+// INV-3 interactive-mode.ts: Ctrl+O cycles compact display; standalone visibility/output controls stay independent.
 // Revert interactive-mode.ts -> all compact-mode assertions fail.
 import type { AgentMessage } from "@earendil-works/pi-agent-core";
 import type { AssistantMessage } from "@earendil-works/pi-ai";
@@ -62,6 +62,7 @@ interface TestMode {
 	showSettingsSelector(): void;
 	rebuildChatFromMessages(): void;
 	setupKeyHandlers(): void;
+	handleHotkeysCommand(): void;
 	prepareStreamingToolGroup(): void;
 }
 
@@ -260,8 +261,8 @@ describe("InteractiveMode tool grouping", () => {
 			expect(currentTool.getStatus()).toBe("error");
 			if (compact) {
 				expect(groups(mode).map((group) => group.tools)).toEqual([[originalTool], [currentTool]]);
-				expect(stripAnsi(groups(mode)[0].render(100)[0])).toContain("done");
-				expect(stripAnsi(groups(mode)[1].render(100)[0])).toContain("1 error");
+				expect(stripAnsi(groups(mode)[0].render(100)[1])).toContain("done");
+				expect(stripAnsi(groups(mode)[1].render(100)[1])).toContain("1 error");
 			} else {
 				expect(mode.chatContainer.children.filter((child) => child instanceof ToolExecutionComponent)).toEqual([
 					originalTool,
@@ -375,9 +376,9 @@ describe("InteractiveMode tool grouping", () => {
 		expect(groups(mode).map((group) => group.tools.length)).toEqual([1, 1]);
 		expect(mode.pendingTools.size).toBe(0);
 		for (const group of groups(mode)) {
-			expect(stripAnsi(group.render(100)[0])).toContain("1 error");
-			expect(stripAnsi(group.render(100)[0])).not.toContain("running");
-			expect(stripAnsi(group.render(100)[0])).not.toContain("pending");
+			expect(stripAnsi(group.render(100)[1])).toContain("1 error");
+			expect(stripAnsi(group.render(100)[1])).not.toContain("running");
+			expect(stripAnsi(group.render(100)[1])).not.toContain("pending");
 		}
 	});
 
@@ -396,7 +397,7 @@ describe("InteractiveMode tool grouping", () => {
 			partialResult: { content: [{ type: "text", text: "partial before abort" }], details: undefined },
 		});
 		expect(mode.pendingTools.get("a")).toBe(child);
-		expect(stripAnsi(group.render(100)[0])).toContain("1 running");
+		expect(stripAnsi(group.render(100)[1])).toContain("1 running");
 		group.setExpanded(true);
 		mode.setToolsExpanded(true);
 		expect(stripAnsi(group.render(100).join("\n"))).toContain("partial before abort");
@@ -411,7 +412,7 @@ describe("InteractiveMode tool grouping", () => {
 		expect(mode.pendingTools.has("a")).toBe(false);
 		expect(group.tools[0]).toBe(child);
 		expect(group.expanded).toBe(false);
-		const summary = stripAnsi(group.render(100)[0]);
+		const summary = stripAnsi(group.render(100)[1]);
 		expect(summary).toContain("1 error");
 		expect(summary).not.toMatch(/running|pending|done/);
 		group.setExpanded(true);
@@ -452,13 +453,110 @@ describe("InteractiveMode tool grouping", () => {
 		expect(groups(mode)[0].expanded).toBe(false);
 	});
 
-	test("configured group and output shortcuts are independent and preserve header/resource expansion", async () => {
+	test.each([
+		["ctrl+o", "\x0f"],
+		["alt+o", "\x1bo"],
+	] as const)("%s cycles summaries, previews, and full output without replacing tools", async (key, data) => {
 		const { mode } = createMode();
 		const editor = new CustomEditor(
 			Reflect.get(mode, "ui") as TUI,
 			getEditorTheme(),
-			new KeybindingsManager({ "app.tools.toggleGroups": "alt+g" }),
+			new KeybindingsManager({ "app.tools.expand": key }),
 		);
+		Object.assign(mode, { editor, defaultEditor: editor });
+		mode.setupKeyHandlers();
+		await stream(mode, assistant("a"));
+		await finish(mode, "a");
+		mode.addMessageToChat({ role: "user", content: "boundary", timestamp: 2 });
+		await stream(mode, assistant("b"));
+		await finish(mode, "b");
+		const originalGroups = groups(mode);
+		const originalTools = originalGroups.flatMap((group) => group.tools);
+		expect(originalGroups.every((group) => !group.expanded)).toBe(true);
+		editor.handleInput("\x1bOQ");
+		expect(originalGroups.every((group) => !group.expanded)).toBe(true);
+		for (let cycle = 0; cycle < 2; cycle++) {
+			for (const state of ["previews", "all", "groups collapsed"]) {
+				editor.handleInput(data);
+				expect(originalGroups.map((group) => group.expanded)).toEqual([
+					state !== "groups collapsed",
+					state !== "groups collapsed",
+				]);
+				for (const group of originalGroups) {
+					const output = stripAnsi(group.render(100).join("\n"));
+					expect(group.render(100).length > 2).toBe(state !== "groups collapsed");
+					expect(output.includes("output ")).toBe(state === "all");
+				}
+				expect(groups(mode)).toEqual(originalGroups);
+				expect(originalGroups.flatMap((group) => group.tools)).toEqual(originalTools);
+				expect(stripAnsi(mode.chatContainer.render(100).join("\n"))).toContain(`Tool display: ${state}`);
+			}
+		}
+	});
+
+	test.each([0, 1, 2, 3])("new live groups inherit display after %s Ctrl+O presses", async (presses) => {
+		const { mode } = createMode();
+		const editor = new CustomEditor(Reflect.get(mode, "ui") as TUI, getEditorTheme(), new KeybindingsManager());
+		Object.assign(mode, { editor, defaultEditor: editor });
+		mode.setupKeyHandlers();
+		await stream(mode, assistant("a"));
+		const child = mode.pendingTools.get("a");
+		for (let i = 0; i < presses; i++) editor.handleInput("\x0f");
+		expect(mode.pendingTools.get("a")).toBe(child);
+		await finish(mode, "a");
+		mode.addMessageToChat({ role: "user", content: "boundary", timestamp: 2 });
+		await stream(mode, assistant("b"));
+		await finish(mode, "b");
+		for (const group of groups(mode)) {
+			expect(group.expanded).toBe(presses % 3 !== 0);
+			expect(stripAnsi(group.render(100).join("\n")).includes("output ")).toBe(presses % 3 === 2);
+		}
+	});
+
+	test("Ctrl+O normalizes individually opened or closed groups on each display step", async () => {
+		const { mode } = createMode();
+		const editor = new CustomEditor(Reflect.get(mode, "ui") as TUI, getEditorTheme(), new KeybindingsManager());
+		Object.assign(mode, { editor, defaultEditor: editor });
+		mode.setupKeyHandlers();
+		await stream(mode, assistant("a"));
+		await finish(mode, "a");
+		mode.addMessageToChat({ role: "user", content: "boundary", timestamp: 2 });
+		await stream(mode, assistant("b"));
+		await finish(mode, "b");
+		const [first, second] = groups(mode);
+		first.setExpanded(true);
+		editor.handleInput("\x0f");
+		expect([first.expanded, second.expanded]).toEqual([true, true]);
+		second.setExpanded(false);
+		editor.handleInput("\x0f");
+		expect([first.expanded, second.expanded]).toEqual([true, true]);
+		for (const group of [first, second]) expect(stripAnsi(group.render(100).join("\n"))).toContain("output ");
+		first.setExpanded(false);
+		editor.handleInput("\x0f");
+		expect([first.expanded, second.expanded]).toEqual([false, false]);
+	});
+
+	test("the preview step collapses individually expanded output even when the global flag is false", async () => {
+		const { mode } = createMode();
+		const editor = new CustomEditor(Reflect.get(mode, "ui") as TUI, getEditorTheme(), new KeybindingsManager());
+		Object.assign(mode, { editor, defaultEditor: editor });
+		mode.setupKeyHandlers();
+		await stream(mode, assistant("a"));
+		await finish(mode, "a");
+		const group = groups(mode)[0];
+		const child = group.tools[0];
+		child.setExpanded(true);
+		expect(stripAnsi(child.render(100).join("\n"))).toContain("output a");
+		editor.handleInput("\x0f");
+		expect(group.expanded).toBe(true);
+		expect(stripAnsi(group.render(100).join("\n"))).not.toContain("output a");
+		editor.handleInput("\x0f");
+		expect(stripAnsi(group.render(100).join("\n"))).toContain("output a");
+	});
+
+	test("standard Ctrl+O keeps its two-state output and header/resource behavior", async () => {
+		const { mode } = createMode(false);
+		const editor = new CustomEditor(Reflect.get(mode, "ui") as TUI, getEditorTheme(), new KeybindingsManager());
 		let headerExpanded = false;
 		let resourceExpanded = false;
 		const header = Object.assign(new Text("header", 0, 0), {
@@ -476,18 +574,33 @@ describe("InteractiveMode tool grouping", () => {
 		mode.setupKeyHandlers();
 		await stream(mode, assistant("a"));
 		await finish(mode, "a");
-		const group = groups(mode)[0];
-		editor.handleInput("\x0f");
-		expect(group.expanded).toBe(false);
-		expect([headerExpanded, resourceExpanded]).toEqual([true, true]);
-		editor.handleInput("\x1bg");
-		expect(group.expanded).toBe(true);
-		expect([headerExpanded, resourceExpanded]).toEqual([true, true]);
-		expect(stripAnsi(group.render(100).join("\n"))).toContain("output a");
-		editor.handleInput("\x1bg");
-		editor.handleInput("\x0f");
-		expect(group.expanded).toBe(false);
-		expect([headerExpanded, resourceExpanded]).toEqual([false, false]);
+		for (const expanded of [true, false, true, false]) {
+			editor.handleInput("\x0f");
+			expect(groups(mode)).toHaveLength(0);
+			expect([headerExpanded, resourceExpanded]).toEqual([expanded, expanded]);
+			expect(stripAnsi(mode.chatContainer.render(100).join("\n")).includes("output a")).toBe(expanded);
+		}
+	});
+
+	test.each([
+		[false, false],
+		[false, true],
+		[true, false],
+		[true, true],
+	] as const)("hotkeys stays a table with compact=%s and a standalone group binding=%s", (compact, bound) => {
+		const { mode } = createMode(compact);
+		Object.assign(mode, {
+			keybindings: new KeybindingsManager(bound ? { "app.tools.toggleGroups": "alt+g" } : {}),
+		});
+		Object.assign(Reflect.get(mode, "session").extensionRunner, { getShortcuts: () => new Map<string, never>() });
+		mode.handleHotkeysCommand();
+		const rows = stripAnsi(mode.chatContainer.render(240).join("\n")).split("\n");
+		const thinkingRow = rows.find((row) => row.includes("Toggle thinking block visibility"));
+		expect(thinkingRow).toMatch(/^\s*│.*│\s*$/);
+		const groupRow = rows.find((row) => row.includes("Toggle tool group visibility"));
+		expect(Boolean(groupRow)).toBe(bound);
+		if (bound) expect(groupRow).toMatch(/^\s*│.*│\s*$/);
+		expect(rows.join("\n")).toContain(compact ? "Cycle tool display:" : "Toggle tool output expansion");
 	});
 
 	test.each([false, true])(
@@ -511,7 +624,7 @@ describe("InteractiveMode tool grouping", () => {
 				await finish(mode, "first");
 			}
 			editor.handleInput("\x0f");
-			expect(originalGroup.expanded).toBe(false);
+			expect(originalGroup.expanded).toBe(true);
 			const second = assistant("second", adjacentAssistant ? [] : first.content);
 			if (adjacentAssistant) {
 				await mode.handleEvent({ type: "message_start", message: { ...second, content: [] } });
