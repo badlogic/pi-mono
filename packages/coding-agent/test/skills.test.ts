@@ -1,4 +1,5 @@
-import { homedir } from "os";
+import { homedir, tmpdir } from "os";
+import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from "fs";
 import { join, resolve } from "path";
 import { describe, expect, it } from "vitest";
 import type { ResourceDiagnostic } from "../src/core/diagnostics.ts";
@@ -180,6 +181,28 @@ describe("skills", () => {
 
 			expect(skills).toHaveLength(0);
 			expect(diagnostics).toHaveLength(0);
+		});
+
+		it("keeps leading / root-anchored in .gitignore (issue #10877)", () => {
+			const dir = mkdtempSync(join(tmpdir(), "pi-skills-root-ignore-"));
+			try {
+				mkdirSync(join(dir, "commit-summarizer"));
+				writeFileSync(
+					join(dir, "commit-summarizer", "SKILL.md"),
+					`---\nname: commit-summarizer\ndescription: Summarize commits.\n---\n`,
+				);
+				mkdirSync(join(dir, "vendor-link"));
+				writeFileSync(
+					join(dir, "vendor-link", "SKILL.md"),
+					`---\nname: vendor-link\ndescription: Should stay ignored.\n---\n`,
+				);
+				writeFileSync(join(dir, ".gitignore"), "/*\n!/commit-summarizer/\n");
+				const { skills, diagnostics } = loadSkillsFromDir({ dir, source: "test" });
+				expect(diagnostics).toHaveLength(0);
+				expect(skills.map((s) => s.name)).toEqual(["commit-summarizer"]);
+			} finally {
+				rmSync(dir, { recursive: true, force: true });
+			}
 		});
 
 		it("should use parent directory name when name not in frontmatter", () => {

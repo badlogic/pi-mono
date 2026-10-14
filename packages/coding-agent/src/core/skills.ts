@@ -36,7 +36,9 @@ function prefixIgnorePattern(line: string, prefix: string): string | null {
 		pattern = pattern.slice(1);
 	}
 
-	if (pattern.startsWith("/")) {
+	// Strip a leading "/" only when prefixing a nested ignore file.
+	// At the scan root, keep "/" so patterns stay root-anchored (git semantics).
+	if (prefix && pattern.startsWith("/")) {
 		pattern = pattern.slice(1);
 	}
 
