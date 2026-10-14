@@ -1,4 +1,5 @@
 import type { Api, CredentialInfo, Model } from "@earendil-works/pi-ai";
+import { resolveModelReference } from "../core/model-reference.ts";
 import { resolveCliModel } from "../core/model-resolver.ts";
 import type { ModelRuntime } from "../core/model-runtime.ts";
 import type { Args } from "./args.ts";
@@ -41,12 +42,15 @@ export async function resolveCredentialForPrint(
 			providers.push({ id: provider.id });
 		}
 	} else {
+		const models = modelRuntime.getModels();
 		for (const provider of modelRuntime.getProviders()) {
 			if (!credentialTypes.has(provider.id)) continue;
-			const resolved = resolveCliModel({ cliProvider: provider.id, cliModel: cliModel!, modelRuntime });
-			if (resolved.model && !resolved.error && !resolved.warning?.includes("Using custom model id")) {
-				providers.push({ id: provider.id, model: resolved.model });
-			}
+			const resolved = resolveModelReference(
+				{ text: cliModel!, provider: provider.id, thinkingSuffix: "strict", fuzzy: true },
+				models,
+				() => true,
+			);
+			if (resolved.status === "resolved") providers.push({ id: provider.id, model: resolved.model });
 		}
 		if (providers.length === 0) {
 			throw new AuthCommandError(`Model "${cliModel}" not found. Use --list-models to see available models.`);

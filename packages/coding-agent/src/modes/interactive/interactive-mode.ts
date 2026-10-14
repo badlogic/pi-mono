@@ -97,11 +97,8 @@ import { configureHttpDispatcher, formatHttpIdleTimeoutMs } from "../../core/htt
 import { type AppKeybinding, KeybindingsManager } from "../../core/keybindings.ts";
 import type { McpHttpServerConfig } from "../../core/mcp-servers.ts";
 import { createCompactionSummaryMessage, createCustomMessage } from "../../core/messages.ts";
-import {
-	defaultModelPerProvider,
-	findExactModelReferenceMatch,
-	resolveModelScopeFromModels,
-} from "../../core/model-resolver.ts";
+import { findExactModelReferenceMatch } from "../../core/model-reference.ts";
+import { defaultModelPerProvider, resolveModelScopeFromModels } from "../../core/model-resolver.ts";
 import { CredentialSynchronizationError } from "../../core/model-runtime.ts";
 import { DefaultPackageManager } from "../../core/package-manager.ts";
 import { RADIUS_MCP_URL, RADIUS_PROVIDER_ID } from "../../core/radius.ts";

@@ -2,12 +2,20 @@
 
 ## [Unreleased]
 
+### Changed
+
+- Changed fuzzy `--model` matches to prefer providers with configured credentials and to report ambiguity when the identical best-matching ID exists on several providers, instead of choosing by catalog order ([#10160](https://github.com/earendil-works/pi/issues/10160))
+- Changed `--model` with `--api-key` to require `--provider` or `provider/id` when several providers offer the match, instead of choosing the provider with stored credentials ([#10160](https://github.com/earendil-works/pi/issues/10160))
+- Changed `--models` and `enabledModels` patterns that match the same ID on several providers to add each provider instead of the first in catalog order ([#10160](https://github.com/earendil-works/pi/issues/10160))
+
 ### Fixed
 
 - Pinned internal Pi dependencies to exact release versions to prevent fresh installs from mixing incompatible packages ([#10865](https://github.com/earendil-works/pi/issues/10865))
 - Fixed resumed sessions dropping tools activated during the session. Resume now restores the session's active tools, with `--tools +name`/`-name` entries applied to them, unless `--tools` with tool names, `--no-tools`, or `--no-builtin-tools` selects tools explicitly ([#10785](https://github.com/earendil-works/pi/issues/10785))
 - Fixed stopping a codemode script or reaching its deadline waiting for a non-interruptible built-in to return on Bun ([#10748](https://github.com/earendil-works/pi/issues/10748))
 - Fixed repeated codemode timeouts or aborts accumulating surviving workers; admission now limits live workers to two across sessions, counting cancelled workers until actual exit ([#10748](https://github.com/earendil-works/pi/issues/10748))
+- Fixed `--model provider/id` selecting the first gateway in catalog order, regardless of credentials, when the provider lacks the model but several gateways expose `provider/id` as a model ID; it now selects the gateway with configured credentials or reports the ambiguity ([#10160](https://github.com/earendil-works/pi/issues/10160))
+- Fixed a `:<thinking>` suffix on `--model` changing the selected provider or bypassing the ambiguity error for model IDs offered by several providers ([#10160](https://github.com/earendil-works/pi/issues/10160))
 
 ## [1.2.0] - 2026-10-12
 

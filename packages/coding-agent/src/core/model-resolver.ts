@@ -14,6 +14,7 @@ import chalk from "chalk";
 import { minimatch } from "minimatch";
 import { isValidThinkingLevel } from "../cli/args.ts";
 import { DEFAULT_THINKING_LEVEL } from "./defaults.ts";
+import { resolveModelReference, splitProviderPrefix } from "./model-reference.ts";
 import type { ModelRuntime } from "./model-runtime.ts";
 
 /** Default chat model IDs for providers with built-in chat models. */
@@ -67,114 +68,11 @@ export interface ScopedModel {
 	thinkingLevel?: ThinkingLevel;
 }
 
-/**
- * Helper to check if a model ID looks like an alias (no date suffix)
- * Dates are typically in format: -20241022 or -20250929
- */
-function isAlias(id: string): boolean {
-	// Check if ID ends with -latest
-	if (id.endsWith("-latest")) return true;
-
-	// Check if ID ends with a date pattern (-YYYYMMDD)
-	const datePattern = /-\d{8}$/;
-	return !datePattern.test(id);
-}
-
-/**
- * Find an exact model reference match.
- * Supports either a bare model id or a canonical provider/modelId reference.
- * When matching by bare id, ambiguous matches across providers are rejected.
- */
-export function findExactModelReferenceMatch(
-	modelReference: string,
-	availableModels: Model<Api>[],
-): Model<Api> | undefined {
-	const trimmedReference = modelReference.trim();
-	if (!trimmedReference) {
-		return undefined;
-	}
-
-	const normalizedReference = trimmedReference.toLowerCase();
-
-	const canonicalMatches = availableModels.filter(
-		(model) => `${model.provider}/${model.id}`.toLowerCase() === normalizedReference,
-	);
-	if (canonicalMatches.length === 1) {
-		return canonicalMatches[0];
-	}
-	if (canonicalMatches.length > 1) {
-		return undefined;
-	}
-
-	const slashIndex = trimmedReference.indexOf("/");
-	if (slashIndex !== -1) {
-		const provider = trimmedReference.substring(0, slashIndex).trim();
-		const modelId = trimmedReference.substring(slashIndex + 1).trim();
-		if (provider && modelId) {
-			const providerMatches = availableModels.filter(
-				(model) =>
-					model.provider.toLowerCase() === provider.toLowerCase() &&
-					model.id.toLowerCase() === modelId.toLowerCase(),
-			);
-			if (providerMatches.length === 1) {
-				return providerMatches[0];
-			}
-			if (providerMatches.length > 1) {
-				return undefined;
-			}
-		}
-	}
-
-	const idMatches = availableModels.filter((model) => model.id.toLowerCase() === normalizedReference);
-	return idMatches.length === 1 ? idMatches[0] : undefined;
-}
-
-/**
- * Try to match a pattern to a model from the available models list.
- * Returns the matched model or undefined if no match found.
- */
-function tryMatchModel(modelPattern: string, availableModels: Model<Api>[]): Model<Api> | undefined {
-	const exactMatch = findExactModelReferenceMatch(modelPattern, availableModels);
-	if (exactMatch) {
-		return exactMatch;
-	}
-
-	// No exact match - fall back to partial matching
-	const matches = availableModels.filter(
-		(m) =>
-			m.id.toLowerCase().includes(modelPattern.toLowerCase()) ||
-			m.name?.toLowerCase().includes(modelPattern.toLowerCase()),
-	);
-
-	if (matches.length === 0) {
-		return undefined;
-	}
-
-	// Separate into aliases and dated versions
-	const aliases = matches.filter((m) => isAlias(m.id));
-	const datedVersions = matches.filter((m) => !isAlias(m.id));
-
-	if (aliases.length > 0) {
-		// Prefer alias - if multiple aliases, pick the one that sorts highest
-		aliases.sort((a, b) => b.id.localeCompare(a.id));
-		return aliases[0];
-	} else {
-		// No alias found, pick latest dated version
-		datedVersions.sort((a, b) => b.id.localeCompare(a.id));
-		return datedVersions[0];
-	}
-}
-
-export interface ParsedModelResult {
-	model: Model<Api> | undefined;
-	/** Thinking level if explicitly specified in pattern, undefined otherwise */
-	thinkingLevel?: ThinkingLevel;
-	warning: string | undefined;
-}
-
-function buildFallbackModel(provider: string, modelId: string, availableModels: Model<Api>[]): Model<Api> | undefined {
+/** Build a custom model id on `provider`, copying metadata from one of its models. `provider` must have models. */
+function buildFallbackModel(provider: string, modelId: string, availableModels: Model<Api>[]): Model<Api> {
 	const providerModels = availableModels.filter((m) => m.provider === provider);
-	if (providerModels.length === 0) return undefined;
+	if (providerModels.length === 0)
+		throw new Error(`Cannot build a custom model for provider "${provider}" without models`);
 
 	const defaultId = defaultModelPerProvider[provider as KnownProvider];
 	const baseModel = defaultId
@@ -188,85 +86,6 @@ function buildFallbackModel(provider: string, modelId: string, availableModels: 
 	};
 }
 
-/**
- * Parse a pattern to extract model and thinking level.
- * Handles models with colons in their IDs (e.g., OpenRouter's :exacto suffix).
- *
- * Algorithm:
- * 1. Try to match full pattern as a model
- * 2. If found, return it with "off" thinking level
- * 3. If not found and has colons, split on last colon:
- *    - If suffix is valid thinking level, use it and recurse on prefix
- *    - If suffix is invalid, warn and recurse on prefix with "off"
- *
- * @internal Exported for testing
- */
-export function parseModelPattern(
-	pattern: string,
-	availableModels: Model<Api>[],
-	options?: { allowInvalidThinkingLevelFallback?: boolean },
-): ParsedModelResult {
-	// Try exact match first
-	const exactMatch = tryMatchModel(pattern, availableModels);
-	if (exactMatch) {
-		return { model: exactMatch, thinkingLevel: undefined, warning: undefined };
-	}
-
-	// No match - try splitting on last colon if present
-	const lastColonIndex = pattern.lastIndexOf(":");
-	if (lastColonIndex === -1) {
-		// No colons, pattern simply doesn't match any model
-		return { model: undefined, thinkingLevel: undefined, warning: undefined };
-	}
-
-	const prefix = pattern.substring(0, lastColonIndex);
-	const suffix = pattern.substring(lastColonIndex + 1);
-
-	if (isValidThinkingLevel(suffix)) {
-		// Valid thinking level - recurse on prefix and use this level
-		const result = parseModelPattern(prefix, availableModels, options);
-		if (result.model) {
-			// Only use this thinking level if no warning from inner recursion
-			return {
-				model: result.model,
-				thinkingLevel: result.warning ? undefined : suffix,
-				warning: result.warning,
-			};
-		}
-		return result;
-	} else {
-		// Invalid suffix
-		const allowFallback = options?.allowInvalidThinkingLevelFallback ?? true;
-		if (!allowFallback) {
-			// In strict mode (CLI --model parsing), treat it as part of the model id and fail.
-			// This avoids accidentally resolving to a different model.
-			return { model: undefined, thinkingLevel: undefined, warning: undefined };
-		}
-
-		// Scope mode: recurse on prefix and warn
-		const result = parseModelPattern(prefix, availableModels, options);
-		if (result.model) {
-			return {
-				model: result.model,
-				thinkingLevel: undefined,
-				warning: `Invalid thinking level "${suffix}" in pattern "${pattern}". Using default instead.`,
-			};
-		}
-		return result;
-	}
-}
-
-/**
- * Resolve model patterns to actual Model objects with optional thinking levels
- * Format: "pattern:level" where :level is optional
- * For each pattern, finds all matching models and picks the best version:
- * 1. Prefer alias (e.g., claude-sonnet-4-5) over dated versions (claude-sonnet-4-5-20250929)
- * 2. If no alias, pick the latest dated version
- *
- * Supports models with colons in their IDs (e.g., OpenRouter's model:exacto).
- * The algorithm tries to match the full pattern first, then progressively
- * strips colon-suffixes to find a match.
- */
 export interface ModelScopeDiagnostic {
 	type: "warning";
 	code: "no-match" | "invalid-thinking-level";
@@ -279,22 +98,34 @@ export interface ResolveModelScopeResult {
 	diagnostics: ModelScopeDiagnostic[];
 }
 
+/**
+ * Resolve scope patterns (`--models`, `enabledModels`) to models with optional thinking levels.
+ *
+ * Glob patterns (`*`, `?`, `[`) add every match; an exact model reference is tried first so ids
+ * containing `[` are not read as globs. Other patterns use model reference resolution. A pattern
+ * matching the same model on several providers adds all of them, since every model in `models` is
+ * usable.
+ */
 export function resolveModelScopeFromModels(
 	patterns: string[],
 	models: readonly Model<Api>[],
 ): ResolveModelScopeResult {
-	const availableModels = [...models];
 	const scopedModels: ScopedModel[] = [];
 	const diagnostics: ModelScopeDiagnostic[] = [];
+	const add = (model: Model<Api>, thinkingLevel: ThinkingLevel | undefined) => {
+		if (!scopedModels.some((scoped) => modelsAreEqual(scoped.model, model))) {
+			scopedModels.push({ model, thinkingLevel });
+		}
+	};
+	const noMatch = (pattern: string) =>
+		diagnostics.push({ type: "warning", code: "no-match", message: `No models match pattern "${pattern}"`, pattern });
 
 	for (const pattern of patterns) {
-		// Check if pattern contains glob characters
 		if (pattern.includes("*") || pattern.includes("?") || pattern.includes("[")) {
 			// Extract optional thinking level suffix (e.g., "provider/*:high")
 			const colonIdx = pattern.lastIndexOf(":");
 			let globPattern = pattern;
 			let thinkingLevel: ThinkingLevel | undefined;
-
 			if (colonIdx !== -1) {
 				const suffix = pattern.substring(colonIdx + 1);
 				if (isValidThinkingLevel(suffix)) {
@@ -303,59 +134,41 @@ export function resolveModelScopeFromModels(
 				}
 			}
 
-			const exactMatch = findExactModelReferenceMatch(globPattern, availableModels);
-			if (exactMatch) {
-				if (!scopedModels.find((sm) => modelsAreEqual(sm.model, exactMatch))) {
-					scopedModels.push({ model: exactMatch, thinkingLevel });
-				}
-				continue;
+			const exact = resolveModelReference(
+				{ text: globPattern, thinkingSuffix: "none", fuzzy: false },
+				models,
+				() => true,
+			);
+			let matches: readonly Model<Api>[] = [];
+			if (exact.status === "resolved") matches = [exact.model];
+			else if (exact.status === "ambiguous") matches = exact.candidates;
+			else {
+				// Match against "provider/modelId" or the model ID, so "*sonnet*" works without a provider
+				matches = models.filter(
+					(m) =>
+						minimatch(`${m.provider}/${m.id}`, globPattern, { nocase: true }) ||
+						minimatch(m.id, globPattern, { nocase: true }),
+				);
 			}
-
-			// Match against "provider/modelId" format OR just model ID
-			// This allows "*sonnet*" to match without requiring "anthropic/*sonnet*"
-			const matchingModels = availableModels.filter((m) => {
-				const fullId = `${m.provider}/${m.id}`;
-				return minimatch(fullId, globPattern, { nocase: true }) || minimatch(m.id, globPattern, { nocase: true });
-			});
-
-			if (matchingModels.length === 0) {
-				diagnostics.push({
-					type: "warning",
-					code: "no-match",
-					message: `No models match pattern "${pattern}"`,
-					pattern,
-				});
-				continue;
-			}
-
-			for (const model of matchingModels) {
-				if (!scopedModels.find((sm) => modelsAreEqual(sm.model, model))) {
-					scopedModels.push({ model, thinkingLevel });
-				}
-			}
+			if (matches.length === 0) noMatch(pattern);
+			for (const model of matches) add(model, thinkingLevel);
 			continue;
 		}
 
-		const { model, thinkingLevel, warning } = parseModelPattern(pattern, availableModels);
-
-		if (warning) {
-			diagnostics.push({ type: "warning", code: "invalid-thinking-level", message: warning, pattern });
-		}
-
-		if (!model) {
-			diagnostics.push({
-				type: "warning",
-				code: "no-match",
-				message: `No models match pattern "${pattern}"`,
-				pattern,
-			});
+		const result = resolveModelReference(
+			{ text: pattern, thinkingSuffix: "lenient", fuzzy: true },
+			models,
+			() => true,
+		);
+		if (result.status === "not-found") {
+			noMatch(pattern);
 			continue;
 		}
-
-		// Avoid duplicates
-		if (!scopedModels.find((sm) => modelsAreEqual(sm.model, model))) {
-			scopedModels.push({ model, thinkingLevel });
+		if (result.warning) {
+			diagnostics.push({ type: "warning", code: "invalid-thinking-level", message: result.warning, pattern });
 		}
+		const matches = result.status === "resolved" ? [result.model] : result.candidates;
+		for (const model of matches) add(model, result.thinkingLevel);
 	}
 
 	return { scopedModels, diagnostics };
@@ -399,26 +212,31 @@ export interface ResolveCliModelResult {
  * - --provider <provider> --model <pattern>
  * - --model <provider>/<pattern>
  * - Fuzzy matching (same rules as model scoping: exact id, then partial id/name)
+ * - A custom model id when the provider is explicit or named by a `provider/` prefix
  *
- * Note: This does not apply the thinking level by itself, but it may *parse* and
- * return a thinking level from "<pattern>:<thinking>" so the caller can apply it.
+ * The full catalog is searched, not only providers with configured auth, so `--api-key` works for
+ * first-time setup. Configured auth only chooses between providers offering the same match; with
+ * `inlineApiKey`, it does not, because the key belongs to whichever provider is selected.
+ *
+ * This does not apply the thinking level, but it parses and returns one from "<pattern>:<thinking>"
+ * so the caller can apply it.
  */
 export function resolveCliModel(options: {
 	cliProvider?: string;
 	cliModel?: string;
 	cliThinking?: ThinkingLevel;
+	/** `--api-key` was supplied for the selected provider. */
+	inlineApiKey?: boolean;
 	modelRuntime: ModelRuntime;
 }): ResolveCliModelResult {
-	const { cliProvider, cliModel, cliThinking, modelRuntime } = options;
+	const { cliProvider, cliModel, cliThinking, inlineApiKey, modelRuntime } = options;
 
 	if (!cliModel) {
 		return { model: undefined, warning: undefined, error: undefined };
 	}
 
-	// Important: use *all* models here, not just models with pre-configured auth.
-	// This allows "--api-key" to be used for first-time setup.
-	const availableModels = [...modelRuntime.getModels()];
-	if (availableModels.length === 0) {
+	const models = [...modelRuntime.getModels()];
+	if (models.length === 0) {
 		return {
 			model: undefined,
 			warning: undefined,
@@ -426,13 +244,9 @@ export function resolveCliModel(options: {
 		};
 	}
 
-	// Build canonical provider lookup (case-insensitive)
-	const providerMap = new Map<string, string>();
-	for (const m of availableModels) {
-		providerMap.set(m.provider.toLowerCase(), m.provider);
-	}
-
-	let provider = cliProvider ? providerMap.get(cliProvider.toLowerCase()) : undefined;
+	const provider = cliProvider
+		? models.find((m) => m.provider.toLowerCase() === cliProvider.toLowerCase())?.provider
+		: undefined;
 	if (cliProvider && !provider) {
 		return {
 			model: undefined,
@@ -441,167 +255,69 @@ export function resolveCliModel(options: {
 		};
 	}
 
-	// If no explicit --provider, try to interpret "provider/model" format first.
-	// When the prefix before the first slash matches a known provider, prefer that
-	// interpretation over matching models whose IDs literally contain slashes
-	// (e.g. "zai/glm-5" should resolve to provider=zai, model=glm-5, not to a
-	// vercel-ai-gateway model with id "zai/glm-5").
-	let pattern = cliModel;
-	let inferredProvider = false;
+	const result = resolveModelReference(
+		{ text: cliModel, provider, thinkingSuffix: "strict", fuzzy: true },
+		models,
+		inlineApiKey ? () => false : (providerId) => modelRuntime.hasConfiguredAuth(providerId),
+	);
+	if (result.status === "resolved") {
+		return { model: result.model, thinkingLevel: result.thinkingLevel, warning: result.warning, error: undefined };
+	}
+	if (result.status === "ambiguous") {
+		const matches = result.candidates
+			.map((m) => `${m.provider}/${m.id}`)
+			.sort((a, b) => a.localeCompare(b))
+			.join(", ");
+		const authHint = inlineApiKey
+			? "--api-key does not choose a provider."
+			: result.usableCount === 0
+				? "No matching provider is authenticated."
+				: "More than one matching provider is authenticated.";
+		return {
+			model: undefined,
+			warning: undefined,
+			error: `Model "${cliModel}" is ambiguous across providers: ${matches}. ${authHint} Use --provider or provider/model.`,
+		};
+	}
 
-	if (!provider) {
-		const slashIndex = cliModel.indexOf("/");
-		if (slashIndex !== -1) {
-			const maybeProvider = cliModel.substring(0, slashIndex);
-			const canonical = providerMap.get(maybeProvider.toLowerCase());
-			if (canonical) {
-				provider = canonical;
-				pattern = cliModel.substring(slashIndex + 1);
-				inferredProvider = true;
+	const target = provider
+		? {
+				provider,
+				modelText:
+					splitProviderPrefix(
+						cliModel,
+						models.filter((m) => m.provider === provider),
+					)?.modelText ?? cliModel,
 			}
+		: splitProviderPrefix(cliModel, models);
+	if (!target) {
+		return {
+			model: undefined,
+			warning: undefined,
+			error: `Model "${cliModel}" not found. Use --list-models to see available models.`,
+		};
+	}
+
+	// Parse a thinking level suffix for the custom model id, but only when --thinking is not explicit.
+	// e.g. "zai-org/GLM-5.1-FP8:high" -> modelId="zai-org/GLM-5.1-FP8", thinking="high"
+	let modelId = target.modelText;
+	let suffixThinking: ThinkingLevel | undefined;
+	if (!cliThinking) {
+		const lastColon = modelId.lastIndexOf(":");
+		const suffix = modelId.substring(lastColon + 1);
+		if (lastColon !== -1 && isValidThinkingLevel(suffix)) {
+			modelId = modelId.substring(0, lastColon);
+			suffixThinking = suffix;
 		}
 	}
 
-	// If no provider was inferred from the slash, try exact matches without provider inference.
-	// This handles models whose IDs naturally contain slashes (e.g. OpenRouter-style IDs).
-	// Bare exact IDs can exist in multiple providers, so do not choose by catalog order.
-	// Prefer the sole authenticated provider when there is one; otherwise require an
-	// explicit provider to avoid silently selecting an unusable provider.
-	if (!provider) {
-		const lower = cliModel.toLowerCase();
-		const exactMatches = availableModels.filter(
-			(m) => m.id.toLowerCase() === lower || `${m.provider}/${m.id}`.toLowerCase() === lower,
-		);
-		if (exactMatches.length === 1) {
-			return { model: exactMatches[0], warning: undefined, thinkingLevel: undefined, error: undefined };
-		}
-		if (exactMatches.length > 1) {
-			const authenticatedExactMatches = exactMatches.filter((m) => modelRuntime.hasConfiguredAuth(m.provider));
-			if (authenticatedExactMatches.length === 1) {
-				return {
-					model: authenticatedExactMatches[0],
-					warning: undefined,
-					thinkingLevel: undefined,
-					error: undefined,
-				};
-			}
-
-			const matches = exactMatches
-				.map((m) => `${m.provider}/${m.id}`)
-				.sort((a, b) => a.localeCompare(b))
-				.join(", ");
-			const authHint =
-				authenticatedExactMatches.length === 0
-					? "No matching provider is authenticated."
-					: "More than one matching provider is authenticated.";
-			return {
-				model: undefined,
-				warning: undefined,
-				thinkingLevel: undefined,
-				error: `Model "${cliModel}" is ambiguous across providers: ${matches}. ${authHint} Use --provider or provider/model.`,
-			};
-		}
-	}
-
-	if (cliProvider && provider) {
-		// If both were provided, tolerate --model <provider>/<pattern> by stripping the provider prefix
-		const prefix = `${provider}/`;
-		if (cliModel.toLowerCase().startsWith(prefix.toLowerCase())) {
-			pattern = cliModel.substring(prefix.length);
-		}
-	}
-
-	const candidates = provider ? availableModels.filter((m) => m.provider === provider) : availableModels;
-	const { model, thinkingLevel, warning } = parseModelPattern(pattern, candidates, {
-		allowInvalidThinkingLevelFallback: false,
-	});
-
-	if (model) {
-		// If provider inference matched an unauthenticated provider/model pair, prefer
-		// one exact raw model-id match that is authenticated. This keeps
-		// "provider/model" syntax preferred when usable, but handles models whose
-		// literal id starts with a known provider name (for example
-		// commandcode model id "xiaomi/mimo-v2.5-pro").
-		if (inferredProvider) {
-			const rawExactMatches = availableModels.filter(
-				(m) => m.id.toLowerCase() === cliModel.toLowerCase() && !modelsAreEqual(m, model),
-			);
-			if (rawExactMatches.length > 0 && !modelRuntime.hasConfiguredAuth(model.provider)) {
-				const authenticatedRawMatches = rawExactMatches.filter((m) => modelRuntime.hasConfiguredAuth(m.provider));
-				if (authenticatedRawMatches.length === 1) {
-					return {
-						model: authenticatedRawMatches[0],
-						thinkingLevel: undefined,
-						warning: undefined,
-						error: undefined,
-					};
-				}
-			}
-		}
-		return { model, thinkingLevel, warning, error: undefined };
-	}
-
-	// If we inferred a provider from the slash but found no match within that provider,
-	// fall back to matching the full input as a raw model id across all models.
-	// This handles OpenRouter-style IDs like "openai/gpt-4o:extended" where "openai"
-	// looks like a provider but the full string is actually a model id on openrouter.
-	if (inferredProvider) {
-		const lower = cliModel.toLowerCase();
-		const exact = availableModels.find(
-			(m) => m.id.toLowerCase() === lower || `${m.provider}/${m.id}`.toLowerCase() === lower,
-		);
-		if (exact) {
-			return { model: exact, warning: undefined, thinkingLevel: undefined, error: undefined };
-		}
-		// Also try parseModelPattern on the full input against all models
-		const fallback = parseModelPattern(cliModel, availableModels, {
-			allowInvalidThinkingLevelFallback: false,
-		});
-		if (fallback.model) {
-			return {
-				model: fallback.model,
-				thinkingLevel: fallback.thinkingLevel,
-				warning: fallback.warning,
-				error: undefined,
-			};
-		}
-	}
-
-	if (provider) {
-		// Parse thinking level suffix from the pattern before building the fallback model,
-		// but only when --thinking is not explicitly provided.
-		// e.g. "zai-org/GLM-5.1-FP8:high" → modelId="zai-org/GLM-5.1-FP8", fallbackThinking="high"
-		let fallbackPattern = pattern;
-		let fallbackThinking: ThinkingLevel | undefined;
-		if (!cliThinking) {
-			const lastColon = pattern.lastIndexOf(":");
-			if (lastColon !== -1) {
-				const suffix = pattern.substring(lastColon + 1);
-				if (isValidThinkingLevel(suffix)) {
-					fallbackPattern = pattern.substring(0, lastColon);
-					fallbackThinking = suffix;
-				}
-			}
-		}
-
-		const fallbackModel = buildFallbackModel(provider, fallbackPattern, availableModels);
-		if (fallbackModel) {
-			const requestedThinking = cliThinking ?? fallbackThinking;
-			const model =
-				requestedThinking && requestedThinking !== "off" ? { ...fallbackModel, reasoning: true } : fallbackModel;
-			const fallbackWarning = warning
-				? `${warning} Model "${fallbackPattern}" not found for provider "${provider}". Using custom model id.`
-				: `Model "${fallbackPattern}" not found for provider "${provider}". Using custom model id.`;
-			return { model, thinkingLevel: fallbackThinking, warning: fallbackWarning, error: undefined };
-		}
-	}
-
-	const display = provider ? `${provider}/${pattern}` : cliModel;
+	const fallbackModel = buildFallbackModel(target.provider, modelId, models);
+	const requestedThinking = cliThinking ?? suffixThinking;
 	return {
-		model: undefined,
-		thinkingLevel: undefined,
-		warning,
-		error: `Model "${display}" not found. Use --list-models to see available models.`,
+		model: requestedThinking && requestedThinking !== "off" ? { ...fallbackModel, reasoning: true } : fallbackModel,
+		thinkingLevel: suffixThinking,
+		warning: `Model "${modelId}" not found for provider "${target.provider}". Using custom model id.`,
+		error: undefined,
 	};
 }
 
@@ -613,15 +329,11 @@ export interface InitialModelResult {
 
 /**
  * Find the initial model to use based on priority:
- * 1. CLI args (provider + model)
- * 2. First model from scoped models (if not continuing/resuming)
- * 3. Restored from session (if continuing/resuming)
- * 4. Saved default from settings
- * 5. First available model with valid API key
+ * 1. First model from scoped models (if not continuing/resuming)
+ * 2. Saved default from settings
+ * 3. First available model with valid API key
  */
 export async function findInitialModel(options: {
-	cliProvider?: string;
-	cliModel?: string;
 	scopedModels: ScopedModel[];
 	isContinuing: boolean;
 	defaultProvider?: string;
@@ -631,8 +343,6 @@ export async function findInitialModel(options: {
 	modelRuntime: ModelRuntime;
 }): Promise<InitialModelResult> {
 	const {
-		cliProvider,
-		cliModel,
 		scopedModels,
 		isContinuing,
 		defaultProvider,
@@ -645,23 +355,7 @@ export async function findInitialModel(options: {
 	let model: Model<Api> | undefined;
 	let thinkingLevel: ThinkingLevel = DEFAULT_THINKING_LEVEL;
 
-	// 1. CLI args take priority
-	if (cliProvider && cliModel) {
-		const resolved = resolveCliModel({
-			cliProvider,
-			cliModel,
-			modelRuntime,
-		});
-		if (resolved.error) {
-			console.error(chalk.red(resolved.error));
-			process.exit(1);
-		}
-		if (resolved.model) {
-			return { model: resolved.model, thinkingLevel: DEFAULT_THINKING_LEVEL, fallbackMessage: undefined };
-		}
-	}
-
-	// 2. Use first model from scoped models (skip if continuing/resuming)
+	// 1. Use first model from scoped models (skip if continuing/resuming)
 	if (scopedModels.length > 0 && !isContinuing) {
 		const scopedModel = scopedModels[0];
 		const perModel = modelThinkingLevels?.[`${scopedModel.model.provider}/${scopedModel.model.id}`];
@@ -672,7 +366,7 @@ export async function findInitialModel(options: {
 		};
 	}
 
-	// 3. Try saved default from settings if auth is configured.
+	// 2. Try saved default from settings if auth is configured.
 	if (defaultProvider && defaultModelId) {
 		const found = modelRuntime.getModel(defaultProvider, defaultModelId);
 		if (found && modelRuntime.hasConfiguredAuth(found.provider)) {
@@ -687,7 +381,7 @@ export async function findInitialModel(options: {
 		}
 	}
 
-	// 4. Try first available model with valid API key
+	// 3. Try first available model with valid API key
 	const availableModels = [...modelRuntime.getAvailableSnapshot()];
 
 	if (availableModels.length > 0) {
@@ -704,7 +398,7 @@ export async function findInitialModel(options: {
 		return { model: availableModels[0], thinkingLevel: DEFAULT_THINKING_LEVEL, fallbackMessage: undefined };
 	}
 
-	// 5. No model found
+	// 4. No model found
 	return { model: undefined, thinkingLevel: DEFAULT_THINKING_LEVEL, fallbackMessage: undefined };
 }
 
