@@ -6,7 +6,17 @@ import { applyBackgroundToLine, flattenLines, visibleWidth, wrapTextWithAnsi } f
 
 const STRICT_STRIKETHROUGH_REGEX = /^(~~)(?=[^\s~])((?:\\.|[^\\])*?(?:\\.|[^\s~\\]))\1(?=[^~]|$)/;
 
-class StrictStrikethroughTokenizer extends Tokenizer {
+class MarkdownTokenizer extends Tokenizer {
+	override url(src: string): Tokens.Link | undefined {
+		const token = super.url(src);
+		if (!token) return undefined;
+
+		// Bare URLs stop at Chinese punctuation; explicit links and angle autolinks
+		// use separate tokenizers and can still contain these characters.
+		const punctuationIndex = token.raw.search(/[。，；：！？、“”‘’（）【】《》「」『』]/);
+		return punctuationIndex < 0 ? token : super.url(token.raw.slice(0, punctuationIndex));
+	}
+
 	override del(src: string): Tokens.Del | undefined {
 		const match = STRICT_STRIKETHROUGH_REGEX.exec(src);
 		if (!match) {
@@ -170,7 +180,7 @@ function trimPartialClosingFences(tokens: readonly Token[]): void {
 
 const markdownParser = new Marked();
 markdownParser.setOptions({
-	tokenizer: new StrictStrikethroughTokenizer(),
+	tokenizer: new MarkdownTokenizer(),
 });
 markdownParser.use({ extensions: [...LATEX_MARKDOWN_EXTENSIONS] });
 
