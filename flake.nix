@@ -37,6 +37,9 @@
           source = self;
           nodejs = pkgs.nodejs_22;
           packageJson = pkgs.lib.importJSON "${source}/packages/coding-agent/package.json";
+          treefmtWrapper = import ./nix/treefmt.nix {
+            inherit pkgs source;
+          };
           pi = pkgs.callPackage ./nix/package.nix {
             inherit
               source
@@ -47,7 +50,7 @@
           };
         in
         {
-          inherit pkgs pi;
+          inherit pkgs pi treefmtWrapper;
         };
     in
     {
@@ -55,6 +58,8 @@
         default = (perSystem system).pi;
         pi = (perSystem system).pi;
       });
+
+      formatter = forAllSystems (system: (perSystem system).treefmtWrapper);
 
       apps = forAllSystems (system: rec {
         default = pi;
