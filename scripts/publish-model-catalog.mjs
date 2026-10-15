@@ -21,14 +21,10 @@ import {
 	MODEL_CATALOG_SCHEMA_VERSION,
 	parseModelCatalogIndex,
 } from "./model-catalog-protocol.ts";
+import { MINIMUM_PI_VERSION } from "./model-catalog-minimum-version.mjs";
 
 // The storage layout, index format, and version ordering are defined in
 // model-catalog-protocol.ts, which pi.dev shares to serve these artifacts.
-// Bump this only when generated model metadata requires behavior unavailable in older pi clients.
-// Clients older than this keep the last catalog published under the previous minimum.
-// 1.2.1: kimi-coding models use openai-completions at /coding/v1; older clients only
-// implement anthropic-messages for kimi-coding and ignore a model's api.
-const MINIMUM_PI_VERSION = "1.2.1";
 const JSON_CONTENT_TYPE = "application/json; charset=utf-8";
 const IMMUTABLE_CACHE_CONTROL = "public, max-age=31536000, immutable";
 const INDEX_CACHE_CONTROL = "no-store";
