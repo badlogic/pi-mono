@@ -20,6 +20,8 @@
 		"build:native:win32": "npm --prefix packages/tui run build:native:win32",
 		"check": "node scripts/biome-check.mjs --write && npm run check:pinned-deps && npm run check:runtime-deps && npm run check:ts-imports && npm run check:entry-graphs && npm run check:install-lock:coding-agent && tsc --noEmit && npm run check:browser-smoke",
 		"check:browser-smoke": "node scripts/check-browser-smoke.mjs",
+		"fence:counts": "node tools/fence-counts.mjs --write",
+		"fence:check": "node tools/fence-counts.mjs",
 		"check:pinned-deps": "node scripts/check-pinned-deps.mjs",
 		"check:runtime-deps": "node scripts/check-runtime-deps.mjs",
 		"check:package-install": "node scripts/check-package-install.mjs",
