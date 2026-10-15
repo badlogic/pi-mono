@@ -8,7 +8,7 @@
 
 ### Changed
 
-- The Cloudflare Durable Object SQLite adapter executes an uncontended statement immediately instead of adding a promise turn, `get()` reads only the cursor's first row, and adapters over the same storage share their operation queue.
+- Cloudflare Durable Object SQLite adapters created for the same storage object now coordinate their operations, allowing multiple Pi storages to safely share one Durable Object database.
 
 ### Fixed
 
