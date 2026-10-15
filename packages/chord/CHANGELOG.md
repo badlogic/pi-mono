@@ -34,6 +34,7 @@
 - `maxCalls` in `AcceptOptions` limits the calls a peer may have in progress on a link; further ones are answered at once with `unavailable` (reason `too_many_calls`) and the link stays open
 - `FacetApi.signal` aborts once that run of the facet is no longer installed: a committed reload replaced or removed it, the reload that loaded it aborted, or the host closed. While a reload prepares, the installed and the candidate run are both live
 - `HostOptions.taskStopDeadline` (default 5000 ms) bounds how long a reload waits for aborted tasks before it starts their replacements
+- Links deflate call arguments, results and state snapshots whose JSON exceeds `PACK_THRESHOLD` (64K characters): over IPC as a base64 field, over WebSockets as a binary message. Relaying hosts forward the deflated bytes unread; the host that uses the payload inflates it. `webSocketLink(socket, { compress, acceptPacked })` (`WebSocketLinkOptions`) controls sending and accepting packed frames (servers should refuse them from untrusted clients), and `inflateMessage` turns a packed WebSocket message back into a text frame
 
 ### Changed
 
@@ -54,6 +55,7 @@
 - IPC links and the host manager's control channel wrote to a peer process that had exited without a callback, so the `EPIPE` Node reports for a write in the gap between the exit and `disconnect` (an `ack` sent just after a worker shut down) became an unhandled `error` event that crashed the process. The link now ends on a failed write (reason `ipc send failed: EPIPE`), and control messages to a gone peer are dropped
 - A relayed call ran under the origin's cancel signal only, so a forced retirement of the relaying host could not cancel it before closing the old code's resources; it now follows its root's signal
 - A resource kept across a reload closed with the `close` of the factory run that first opened it, and kept that run's code reachable; it now adopts the newest declaration at commit
+- `forkDriver` passed its own `CHORD2_LOCK` to forked children, so a child host that forked its own children made those without a lock of their own fail with `locked`
 - A call through a remote reference accepted a ctx from another host, or an object not made by Chord, and carried its root over the link; it now rejects it with `invalid/foreign_ctx` like a local reference ([#10959](https://github.com/earendil-works/pi/issues/10959))
 
 ## [1.2.0] - 2026-10-12
