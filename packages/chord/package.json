@@ -16,6 +16,11 @@
 			"types": "./dist/context/index.d.ts",
 			"import": "./dist/context/index.js"
 		},
+		"./output": {
+			"source": "./src/output.ts",
+			"types": "./dist/output.d.ts",
+			"import": "./dist/output.js"
+		},
 		"./delta": {
 			"source": "./src/delta/index.ts",
 			"types": "./dist/delta/index.d.ts",

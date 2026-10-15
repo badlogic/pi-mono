@@ -25,6 +25,8 @@ describe("truncate utilities", () => {
 		const output = execFileSync(
 			process.execPath,
 			[
+				// Workspace packages from source, as the test runner resolves them, not from a possibly stale build.
+				"--conditions=source",
 				"--import",
 				new URL("./fixtures/delete-buffer.ts", import.meta.url).href,
 				fileURLToPath(new URL("./fixtures/utf8-byte-length-without-buffer.ts", import.meta.url)),

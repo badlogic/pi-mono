@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { boundOutput, OutputBuffer, type OutputLimits, Progress, sanitizeOutput } from "../src/harness/output.ts";
+import { boundOutput, OutputBuffer, type OutputLimits, Progress, sanitizeOutput } from "../src/output.ts";
 
 const head = (maxLines: number, maxBytes = 1000): OutputLimits => ({ maxBytes, maxLines, retain: "head" });
 const tail = (maxLines: number, maxBytes = 1000): OutputLimits => ({ maxBytes, maxLines, retain: "tail" });

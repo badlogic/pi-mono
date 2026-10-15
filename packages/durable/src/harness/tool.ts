@@ -1,6 +1,13 @@
 import { type Context, copyJson, type Draft, type JsonRepresentation, type JsonValue } from "@earendil-works/chord";
 import { awaitWithContext } from "@earendil-works/chord/context";
 import { overlap } from "@earendil-works/chord/delta";
+import {
+	boundOutput,
+	OutputBuffer,
+	type OutputLimits,
+	PROGRESS_BYTES_PER_SECOND,
+	Progress,
+} from "@earendil-works/chord/output";
 import type { ImageContent, TextContent, ToolCall, ToolResultMessage } from "@earendil-works/pi-ai";
 import { validateToolArguments } from "@earendil-works/pi-ai/utils/validation";
 import { Compile } from "typebox/compile";
@@ -32,7 +39,6 @@ import {
 	type ToolSlot,
 	toolSlot,
 } from "./live.ts";
-import { boundOutput, OutputBuffer, type OutputLimits, PROGRESS_BYTES_PER_SECOND, Progress } from "./output.ts";
 import type {
 	NestedToolExecutionResult,
 	ToolControl,

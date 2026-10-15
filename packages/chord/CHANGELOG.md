@@ -24,6 +24,7 @@
 
 ### Added
 
+- `@earendil-works/chord/output`: `OutputBuffer`, which keeps a head or tail window of a stream at a cost proportional to each chunk, `Progress`, which paces commits of a changing value by their size, plus `boundOutput`, `sanitizeOutput`, `characterEnd`, `utf8ByteLength`, and the `OutputLimits`, `BoundedOutput`, `OutputSlice`, and `OutputSkip` types. Moved from `@earendil-works/pi-durable`, which now uses them from here.
 - Remote references to one object share one binding per host and key (type, normalized input identity, principal key, contract fingerprint): one hold, one stream per state member, calls over the same hold; every reference keeps its own status, observers and `release`. `HostOptions.linger` (`{ types: { [typeName]: ms }, cap }`, cap default 4) keeps a binding held and hydrated after its last reference is released, so a reference taken again meanwhile costs nothing on the link
 - Holds from clients carry an opaque `origin`: the id the accepting host gave the client connection, forwarded by relays and honored only from the parent link, so a host can tell client connections apart; a disconnect releases that client's holds at once
 - Flow control by units: the first unit of a new reference passes the window, so a `get` never waits behind other references' state; units for reloads and re-holds wait, built lazily from the current values; waiting ops are capped per link (`LinkOptions.pendingCap`, default four windows), beyond which the oldest streams become resets (a relay asks downstream with `resync`)
