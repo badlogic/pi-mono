@@ -29,6 +29,7 @@ import type { EventOf, ListenerDecl, Resource, ResourceDeclaration, Subscribable
 import { asChordError, ChordError, invalid, runAll } from "./errors.ts";
 import { enqueue } from "./publish.ts";
 import type { Registration, Registry } from "./registry.ts";
+import type { RemoteHost } from "./remote.ts";
 import { assertValid, normalize } from "./schema.ts";
 import type { Ctx, Exposed, GetOptions, Readable, RefStatus, Shape, StateEvent } from "./types.ts";
 
@@ -418,8 +419,8 @@ export class CtxImpl implements Ctx {
 		return this.#closed;
 	}
 
-	/** Throws unless this ctx may start work on `host` now (not expired, not aborted, not from another host). */
-	check(host: HostCore): void {
+	/** Throws unless this ctx may start work on `host` (the called reference's host) now: not expired, aborted or foreign. */
+	check(host: HostCore | RemoteHost): void {
 		if (this.host !== host) throw invalid("foreign_ctx", "ctx belongs to another host");
 		if (this.#closed) throw new ChordError("aborted", "ctx expired: its call already settled", { reason: "expired" });
 		if (this.signal.aborted) {

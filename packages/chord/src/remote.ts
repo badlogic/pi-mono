@@ -2,7 +2,7 @@ import { Value } from "typebox/value";
 import { HYDRATION, type Hydration } from "./cell.ts";
 import { type AnyContract, takesNoArgs } from "./contract.ts";
 import { applyImmutable, type Decoder, decoder } from "./delta/index.ts";
-import { ChordError } from "./errors.ts";
+import { ChordError, invalid } from "./errors.ts";
 import {
 	CtxImpl,
 	notifyStatus,
@@ -631,14 +631,17 @@ export class RemoteRef implements RefCore {
 				const host = this.binding.host;
 				if (host.inFactory > 0)
 					throw new ChordError("not_ready", `${this.address}.${name} called inside a factory`);
-				if (ctx instanceof CtxImpl) {
-					try {
-						ctx.check(ctx.host);
-					} catch (error) {
-						return Promise.reject(error);
-					}
+				// The same checks as a local reference's caller (RefImpl.caller and ObjectImpl.call): a ctx from another host
+				// or one not made by Chord would carry a root this host does not own over its link.
+				if (ctx !== undefined && !(ctx instanceof CtxImpl)) {
+					return Promise.reject(invalid("foreign_ctx", "ctx must come from a Chord host"));
 				}
-				if (ctx === undefined || (ctx instanceof CtxImpl && ctx.holder)) {
+				try {
+					ctx?.check(host);
+				} catch (error) {
+					return Promise.reject(error);
+				}
+				if (ctx === undefined || ctx.holder) {
 					return host.root((root) => this.#call(name, args, root), { signal: ctx?.signal });
 				}
 				return this.#call(name, args, ctx);

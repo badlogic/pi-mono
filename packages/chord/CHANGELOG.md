@@ -53,6 +53,7 @@
 - IPC links and the host manager's control channel wrote to a peer process that had exited without a callback, so the `EPIPE` Node reports for a write in the gap between the exit and `disconnect` (an `ack` sent just after a worker shut down) became an unhandled `error` event that crashed the process. The link now ends on a failed write (reason `ipc send failed: EPIPE`), and control messages to a gone peer are dropped
 - A relayed call ran under the origin's cancel signal only, so a forced retirement of the relaying host could not cancel it before closing the old code's resources; it now follows its root's signal
 - A resource kept across a reload closed with the `close` of the factory run that first opened it, and kept that run's code reachable; it now adopts the newest declaration at commit
+- A call through a remote reference accepted a ctx from another host, or an object not made by Chord, and carried its root over the link; it now rejects it with `invalid/foreign_ctx` like a local reference ([#10959](https://github.com/earendil-works/pi/issues/10959))
 
 ## [1.2.0] - 2026-10-12
 

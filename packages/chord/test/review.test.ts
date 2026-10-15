@@ -11,11 +11,13 @@ import {
 	hostNamed,
 	isChordError,
 	local,
+	memoryLinkPair,
 	method,
 	type Ref,
 	remote,
 } from "../src/index.ts";
 import { fits } from "../src/schema.ts";
+import { CountingLink } from "./fixtures/counting.ts";
 
 const tick = () => new Promise<void>((resolve) => setImmediate(resolve));
 const ticks = async (n = 10) => {
@@ -642,5 +644,43 @@ describe("review: ctx races", () => {
 			return true;
 		});
 		assert.ok(foreign);
+	});
+
+	// #10959
+	it("a remote reference refuses a foreign ctx and a ctx not made by Chord, without calling", async () => {
+		const RemoteTarget = remote("t.remote-target", {
+			version: 1,
+			input: Type.Object({}),
+			host: hostNamed("server"),
+			variants: { main: { state: {}, methods: { hit: method() } } },
+		});
+		let hits = 0;
+		const server = createHost({ self: { kind: "host" }, name: "server", onError: () => {} });
+		server.serve(RemoteTarget, () => ({
+			variant: "main",
+			hit: () => {
+				hits++;
+			},
+		}));
+		const [down, up] = memoryLinkPair();
+		server.accept(down, { kind: "host", name: "worker", principal: { worker: true } });
+		const link = new CountingLink(up);
+		const worker = createHost({ self: { kind: "host" }, name: "worker", onError: () => {} });
+		worker.connect(link, { principal: { kind: "server" } });
+		const other = createHost({ self: { kind: "host" }, name: "other", onError: () => {} });
+		const target = worker.hold(RemoteTarget, {});
+		await target.ready;
+		const foreign = await other.root((ctx) => target.hit(ctx).catch((error: unknown) => error));
+		assert.ok(isChordError(foreign, "invalid") && foreign.reason === "foreign_ctx", String(foreign));
+		const forged = { rootId: "forged", codeVersion: 1, signal: new AbortController().signal } as unknown as Ctx;
+		await assert.rejects(
+			target.hit(forged),
+			(error) => isChordError(error, "invalid") && error.reason === "foreign_ctx",
+		);
+		await ticks();
+		assert.equal(hits, 0);
+		assert.equal(link.count("sent", "call"), 0);
+		await worker.root((ctx) => target.hit(ctx));
+		assert.equal(hits, 1);
 	});
 });
