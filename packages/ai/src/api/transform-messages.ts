@@ -11,6 +11,33 @@ import type {
 
 const NON_VISION_USER_IMAGE_PLACEHOLDER = "(image omitted: model does not support images)";
 const NON_VISION_TOOL_IMAGE_PLACEHOLDER = "(tool image omitted: model does not support images)";
+const ERROR_TOOL_IMAGE_PLACEHOLDER = "(image attached after the tool results)";
+
+/** An error tool result split into a text-only result and the images to send after the tool results. */
+export interface SplitErrorToolResult {
+	/** The result content with each run of images replaced by a note. */
+	content: TextContent[];
+	/** Text naming the tool call, to send before `images`. */
+	caption: string;
+	images: ImageContent[];
+}
+
+/**
+ * Split the images out of an error tool result, for APIs that reject images in error results
+ * (Anthropic, and Claude on Bedrock). Send the returned content as the tool result and the caption and
+ * images after all tool results of the turn, in the same user message. Returns undefined for results
+ * that need no split (#10794).
+ */
+export function splitErrorToolResultImages(msg: ToolResultMessage): SplitErrorToolResult | undefined {
+	if (!msg.isError) return undefined;
+	const images = msg.content.filter((block): block is ImageContent => block.type === "image");
+	if (images.length === 0) return undefined;
+	return {
+		content: replaceImagesWithPlaceholder(msg.content, ERROR_TOOL_IMAGE_PLACEHOLDER),
+		caption: `Images from the error result of tool call ${msg.toolCallId} (${msg.toolName}):`,
+		images,
+	};
+}
 
 function replaceImagesWithPlaceholder(content: (TextContent | ImageContent)[], placeholder: string): TextContent[] {
 	const result: TextContent[] = [];

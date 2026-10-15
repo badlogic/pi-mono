@@ -72,7 +72,7 @@ import {
 	clampMaxTokensToContext,
 	clampReasoning,
 } from "./simple-options.ts";
-import { transformMessages } from "./transform-messages.ts";
+import { splitErrorToolResultImages, transformMessages } from "./transform-messages.ts";
 
 export type BedrockThinkingDisplay = "summarized" | "omitted";
 
@@ -1093,35 +1093,34 @@ function convertMessages(
 			case "toolResult": {
 				// Collect all consecutive toolResult messages into a single user message
 				// Bedrock requires all tool results to be in one message
-				const toolResults: ContentBlock.ToolResultMember[] = [];
-
-				// Add current tool result with all content blocks combined
-				toolResults.push({
-					toolResult: {
-						toolUseId: m.toolCallId,
-						content: convertToolResultContent(m.content),
-						status: m.isError ? ToolResultStatus.ERROR : ToolResultStatus.SUCCESS,
-					},
-				});
-
-				// Look ahead for consecutive toolResult messages
-				let j = i + 1;
+				const toolResults: ContentBlock[] = [];
+				// Claude rejects error tool results that contain anything but text, so for Claude their
+				// images follow all tool results of the turn (#10794). Other models keep them in place.
+				const errorImages: ContentBlock[] = [];
+				let j = i;
 				while (j < transformedMessages.length && transformedMessages[j].role === "toolResult") {
-					const nextMsg = transformedMessages[j] as ToolResultMessage;
+					const toolMsg = transformedMessages[j] as ToolResultMessage;
+					const split = isAnthropicClaudeModel(model) ? splitErrorToolResultImages(toolMsg) : undefined;
 					toolResults.push({
 						toolResult: {
-							toolUseId: nextMsg.toolCallId,
-							content: convertToolResultContent(nextMsg.content),
-							status: nextMsg.isError ? ToolResultStatus.ERROR : ToolResultStatus.SUCCESS,
+							toolUseId: toolMsg.toolCallId,
+							content: convertToolResultContent(split?.content ?? toolMsg.content),
+							status: toolMsg.isError ? ToolResultStatus.ERROR : ToolResultStatus.SUCCESS,
 						},
 					});
+					if (split) {
+						errorImages.push(
+							{ text: split.caption },
+							...split.images.map((image) => ({ image: createImageBlock(image.mimeType, image.data) })),
+						);
+					}
 					j++;
 				}
 
 				// Skip the messages we've already processed
 				i = j - 1;
 
-				result.push({ role: ConversationRole.USER, content: toolResults });
+				result.push({ role: ConversationRole.USER, content: [...toolResults, ...errorImages] });
 				break;
 			}
 			default:
