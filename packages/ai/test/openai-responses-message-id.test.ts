@@ -19,7 +19,7 @@ describe("OpenAI Responses message ID conversion", () => {
 		const assistant: AssistantMessage = {
 			role: "assistant",
 			content: [
-				{ type: "thinking", thinking: "private reasoning" },
+				{ type: "text", text: "first answer" },
 				{ type: "text", text: "visible answer" },
 			],
 			api: "anthropic-messages",
