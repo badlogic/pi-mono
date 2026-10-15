@@ -13,6 +13,7 @@
 ### Changed
 
 - Changed the `kimi-coding` provider to use OpenAI Chat Completions at `https://api.kimi.com/coding/v1`, the protocol used by the official Kimi Code client. K3, K3-256K, and Kimi For Coding now accept tools added mid-conversation without invalidating the prompt cache. `models.json` overrides of the `kimi-coding` base URL must now include `/v1` ([#10720](https://github.com/earendil-works/pi/issues/10720))
+- Changed model switching to drop thinking blocks from earlier assistant messages produced by a different model, instead of sending them as plain text. The new model previously saw the old model's reasoning as part of its replies and could start writing its own reasoning into the visible answer ([#10995](https://github.com/earendil-works/pi/issues/10995))
 
 ### Fixed
 
