@@ -132,8 +132,9 @@ class DurableObjectSqliteTransaction extends DurableObjectSqliteExecutor {
 }
 
 /**
- * `SqliteDatabase` adapter for the SQLite storage of a Cloudflare Durable Object. Integers are JavaScript numbers;
- * binding a `bigint` outside the safe integer range throws.
+ * `SqliteDatabase` adapter for the SQLite storage of a Cloudflare Durable Object. Adapters given the same storage
+ * object share a queue; direct calls to the underlying storage bypass it. Integers are JavaScript numbers; binding a
+ * `bigint` outside the safe integer range throws.
  */
 export class DurableObjectSqliteDatabase extends DurableObjectSqliteExecutor implements SqliteDatabase {
 	private readonly queue: SerialQueue;
@@ -179,7 +180,10 @@ export class DurableObjectSqliteDatabase extends DurableObjectSqliteExecutor imp
 	}
 }
 
-/** Open durable storage on a SQLite-backed Durable Object's `ctx.storage`, optionally under a table prefix. */
+/**
+ * Open durable storage on a SQLite-backed Durable Object, optionally under a table prefix. Calls given the same
+ * storage object share an operation queue.
+ */
 export function openDurableObjectSqliteStorage(
 	storage: DurableObjectSqliteStorage,
 	options: SqliteStorageOptions = {},

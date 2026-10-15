@@ -233,4 +233,24 @@ describe("Durable Object SQLite adapter", () => {
 		expect(await read).toEqual([{ id: 2 }]);
 		await database.close();
 	});
+
+	it("includes direct underlying calls in an active transaction", async () => {
+		const sqlite = new DatabaseSync(":memory:");
+		const storage = durableObjectStorage(sqlite);
+		const database = new DurableObjectSqliteDatabase(storage);
+		await database.exec("CREATE TABLE items (id INTEGER PRIMARY KEY)");
+		const { promise: opened, resolve: markOpened } = Promise.withResolvers<void>();
+		const { promise: gate, resolve } = Promise.withResolvers<void>();
+		const transaction = database.transaction(async (handle) => {
+			await handle.run("INSERT INTO items (id) VALUES (?)", 1);
+			markOpened();
+			await gate;
+			throw new Error("abort");
+		});
+		await opened;
+		storage.sql.exec("INSERT INTO items (id) VALUES (?)", 2);
+		resolve();
+		await expect(transaction).rejects.toThrow("abort");
+		expect(sqlite.prepare("SELECT id FROM items").all()).toEqual([]);
+	});
 });
