@@ -43,7 +43,8 @@ const RETRYABLE_PROVIDER_ERROR_PATTERN = buildProviderErrorPattern([
 	"504",
 	"520",
 	"524",
-	"service.?unavailable",
+	// Also matches "The service is temporarily unavailable" (#10965).
+	"service.?(?:is.?)?(?:temporarily.?)?unavailable",
 	"server.?error",
 	"internal.?error",
 
