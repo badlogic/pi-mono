@@ -25,7 +25,8 @@ import {
 // The storage layout, index format, and version ordering are defined in
 // model-catalog-protocol.ts, which pi.dev shares to serve these artifacts.
 // Bump this only when generated model metadata requires behavior unavailable in older pi clients.
-const MINIMUM_PI_VERSION = "0.80.7";
+// Pi 0.85.0 added per-model OpenRouter API dispatch. Older clients keep their existing index entry (#9099).
+const MINIMUM_PI_VERSION = "0.85.0";
 const JSON_CONTENT_TYPE = "application/json; charset=utf-8";
 const IMMUTABLE_CACHE_CONTROL = "public, max-age=31536000, immutable";
 const INDEX_CACHE_CONTROL = "no-store";
