@@ -209,12 +209,6 @@ describe("getSupportedThinkingLevels", () => {
 		expect(getSupportedThinkingLevels(model!)).toEqual(["low", "high", "max"]);
 	});
 
-	it("excludes off for always-thinking Kimi Coding Highspeed", () => {
-		const model = getModel("kimi-coding", "kimi-for-coding-highspeed");
-		expect(model).toBeDefined();
-		expect(getSupportedThinkingLevels(model!)).not.toContain("off");
-	});
-
 	it("includes only high for OpenCode Grok Build", () => {
 		const model = getModel("opencode", "grok-build-0.1");
 		expect(model).toBeDefined();

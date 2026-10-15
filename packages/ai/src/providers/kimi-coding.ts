@@ -1,14 +1,14 @@
-import { openAICompletionsApi } from "../api/openai-completions.lazy.ts";
+import { anthropicMessagesApi } from "../api/anthropic-messages.lazy.ts";
 import { envApiKeyAuth, lazyOAuth } from "../auth/helpers.ts";
 import { loadKimiCodingOAuth } from "../auth/oauth/load.ts";
 import { createProvider, type Provider } from "../models.ts";
 import { KIMI_CODING_MODELS } from "./kimi-coding.models.ts";
 
-export function kimiCodingProvider(): Provider<"openai-completions"> {
+export function kimiCodingProvider(): Provider<"anthropic-messages"> {
 	return createProvider({
 		id: "kimi-coding",
 		name: "Kimi For Coding",
-		baseUrl: "https://api.kimi.com/coding/v1",
+		baseUrl: "https://api.kimi.com/coding",
 		auth: {
 			apiKey: envApiKeyAuth("Kimi API key", ["KIMI_API_KEY"]),
 			oauth: lazyOAuth({
@@ -19,6 +19,6 @@ export function kimiCodingProvider(): Provider<"openai-completions"> {
 			}),
 		},
 		models: Object.values(KIMI_CODING_MODELS),
-		api: openAICompletionsApi(),
+		api: anthropicMessagesApi(),
 	});
 }
