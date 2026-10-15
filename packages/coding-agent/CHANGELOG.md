@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Added
+
+- Changing the thinking level mid-session on OpenAI GPT-6 models (API key) now keeps the prompt cache ([#10853](https://github.com/earendil-works/pi/issues/10853))
+
 ### Changed
 
 - Changed the default NVIDIA model to `nvidia/nemotron-3.5-super-vl-120b-a12b` ([#10910](https://github.com/earendil-works/pi/pull/10910) by [@cv](https://github.com/cv))
@@ -12,6 +16,11 @@
 - Fixed resumed sessions dropping tools activated during the session. Resume now restores the session's active tools, with `--tools +name`/`-name` entries applied to them, unless `--tools` with tool names, `--no-tools`, or `--no-builtin-tools` selects tools explicitly ([#10785](https://github.com/earendil-works/pi/issues/10785))
 - Fixed stopping a codemode script or reaching its deadline waiting for a non-interruptible built-in to return on Bun ([#10748](https://github.com/earendil-works/pi/issues/10748))
 - Fixed repeated codemode timeouts or aborts accumulating surviving workers; admission now limits live workers to two across sessions, counting cancelled workers until actual exit ([#10748](https://github.com/earendil-works/pi/issues/10748))
+- Fixed `--model` choosing a provider by catalog order when several providers offer the match; Pi now prefers the provider with credentials and otherwise reports the ambiguity. `--models` and `enabledModels` add a model for each provider that offers it and warn about the ambiguity ([#10160](https://github.com/earendil-works/pi/issues/10160))
+- Fixed `read` line-range labels for numeric-string or null arguments in the TUI, session tree, HTML exports, and examples ([#9887](https://github.com/earendil-works/pi/issues/9887))
+- Fixed the Nix flake build failing when a provider switched APIs: the model catalog pin is now refreshed from the newest published catalog when its model API groups differ, and releases pin the newest catalog and build with it before tagging ([#10985](https://github.com/earendil-works/pi/issues/10985))
+- Fixed the Nix package putting its Node.js first on `PATH`, which made bash tool shells use Pi's Node instead of the user's `node`/`npm`. Pi's Node is now only a fallback ([#10519](https://github.com/earendil-works/pi/issues/10519))
+- Fixed prompt templates dropping empty quoted arguments (`""` or `''`), which shifted later positional arguments and prevented positional defaults from applying ([#10867](https://github.com/earendil-works/pi/issues/10867))
 
 ## [1.2.0] - 2026-10-12
 

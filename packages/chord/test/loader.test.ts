@@ -15,7 +15,7 @@ describe("node loader", () => {
 	});
 
 	it("needs a configured loader for modules", async () => {
-		const host = createHost({ onError: () => {} });
+		const host = createHost({ self: { kind: "host" }, onError: () => {} });
 		await assert.rejects(host.load(["./facet.ts"]), /createHost\(\{ loader \}\)/);
 	});
 });

@@ -63,13 +63,13 @@ See [Choose a Model](models.md) for model selection and [Providers](providers.md
 - `--provider <name>`<br>
   Restricts `--model` lookup to one provider. It requires `--model`.
 - `--model <pattern>`<br>
-  Selects by exact ID or fuzzy ID/name match. It accepts `provider/id` and an optional `:<thinking>` suffix.
+  Selects by exact ID or fuzzy ID/name match. It accepts `provider/id` and an optional `:<thinking>` suffix. If several providers match, Pi prefers the one with credentials, otherwise it asks for `--provider`.
 - `--api-key <key>`<br>
-  Uses a non-persistent API-key override. It requires a model selected through `--model` or `--models`.
+  Uses a non-persistent API-key override. It requires a model selected through `--model` or `--models`. It does not choose between providers that offer the same model.
 - `--thinking <level>`<br>
   Sets `off`, `minimal`, `low`, `medium`, `high`, `xhigh`, or `max`. It overrides a `--model` suffix and is clamped to the model's capabilities.
 - `--models <patterns>`<br>
-  Sets a comma-separated scope for startup and cycling. It accepts exact IDs, fuzzy matches, case-insensitive globs, and optional `:<thinking>` suffixes.
+  Sets a comma-separated scope for startup and cycling. It accepts exact IDs, fuzzy matches, case-insensitive globs, and optional `:<thinking>` suffixes. A model offered by several providers is added for each, with a warning.
 - `--list-models [search]`<br>
   Lists available models, optionally filtered by a fuzzy search, then exits.
 

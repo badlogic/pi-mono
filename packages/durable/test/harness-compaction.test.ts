@@ -418,9 +418,9 @@ describe("manual compaction", () => {
 		expect(usage.input).toBeGreaterThan(usageBefore.input);
 		await turn(chat, "next", "done");
 		const agent = chat.faux.agentRequests.at(-1)!.messages;
-		// The next request: the summary, the kept turn, the new input, then one complete system baseline.
-		expect(agent.map((message) => message.role)).toEqual(["user", "user", "assistant", "user", "system"]);
-		expect(agent[4]).toMatchObject({ sections: { preamble: "You are helpful." } });
+		// The next request: one complete system baseline leading the summary, the kept turn, and the new input (#10904).
+		expect(agent.map((message) => message.role)).toEqual(["system", "user", "user", "assistant", "user"]);
+		expect(agent[0]).toMatchObject({ sections: { preamble: "You are helpful." } });
 		await chat.harness.close(context);
 	});
 
@@ -484,9 +484,10 @@ describe("manual compaction", () => {
 		await result(chat, await chat.root.compact(undefined, context));
 		gate.resolve();
 		expect((await input.wait(context)).status).toBe("done");
-		// The continuation request starts with the summary.
+		// The continuation request starts with the new baseline, then the summary, ahead of the kept tool call (#10904).
 		const continuation = chat.faux.agentRequests.at(-1)!.messages;
-		expect(userText(continuation[0])).toContain("<summary>\nSUMMARY\n</summary>");
+		expect(continuation[0]?.role).toBe("system");
+		expect(userText(continuation[1])).toContain("<summary>\nSUMMARY\n</summary>");
 		expect((await kinds(chat.root)).slice(-4)).toEqual([
 			"pi.tool-result",
 			"pi.compaction",
@@ -1246,7 +1247,8 @@ describe("overflow compaction", () => {
 		const [compaction] = (await allEntries(chat.root)).filter((record) => record.kind === "pi.compaction");
 		expect(compaction).toMatchObject({ data: { reason: "overflow" } });
 		const retry = chat.faux.agentRequests.at(-1)!.messages;
-		expect(userText(retry[0])).toContain("SUMMARY");
+		expect(retry[0]?.role).toBe("system");
+		expect(userText(retry[1])).toContain("SUMMARY");
 		expect(retry.some((message) => message.role === "assistant" && message.stopReason === "error")).toBe(false);
 		await chat.harness.close(context);
 	});

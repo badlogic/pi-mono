@@ -75,6 +75,8 @@ export function usesGoogleThinkingLevel<T extends GoogleApiType>(model: Model<T>
 		// Match Gemini 3 Pro/Flash IDs with or without a minor version, such as
 		// gemini-3-flash-preview, gemini-3.1-pro-preview, and gemini-3.8-flash.
 		/gemini-3(?:\.\d+)?-(?:pro|flash)/.test(id) ||
+		// Match Gemini 4 and later, such as gemini-4-argon (#10890).
+		/gemini-(?:[4-9]|[1-9]\d)/.test(id) ||
 		id === "gemini-flash-latest" ||
 		id === "gemini-flash-lite-latest" ||
 		// Match both hosted Gemma 4 naming forms: gemma-4-* and gemma4-*.

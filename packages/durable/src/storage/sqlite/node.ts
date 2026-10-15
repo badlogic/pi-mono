@@ -3,15 +3,19 @@ import { dirname } from "node:path";
 import type { StatementSync } from "node:sqlite";
 import { DatabaseSync } from "node:sqlite";
 import type { SqliteDatabase, SqliteExecutor, SqliteValue } from "./database.ts";
-import { SqliteStorage } from "./storage.ts";
+import { validateSqliteSchemaPrefix } from "./schema.ts";
+import { SqliteStorage, type SqliteStorageOptions } from "./storage.ts";
 
 /** Node SQLite connection settings for a durable storage file. */
-export type NodeSqliteStorageOptions = {
+export type NodeSqliteDatabaseOptions = {
 	/** SQLite WAL auto-checkpoint threshold. SQLite and this adapter default to 1,000 pages; 0 disables it. */
 	readonly walAutoCheckpointPages?: number;
 	/** Time SQLite waits for a competing file lock. SQLite defaults to 0; this adapter defaults to 5,000 ms. */
 	readonly busyTimeoutMs?: number;
 };
+
+/** Node SQLite connection settings plus durable storage options. */
+export type NodeSqliteStorageOptions = NodeSqliteDatabaseOptions & SqliteStorageOptions;
 
 const DEFAULT_WAL_AUTO_CHECKPOINT_PAGES = 1_000;
 const DEFAULT_BUSY_TIMEOUT_MS = 5_000;
@@ -179,7 +183,7 @@ export class NodeSqliteDatabase extends NodeSqliteExecutor implements SqliteData
 /** Open and configure a Node-backed SQLite database facade. */
 export async function openNodeSqliteDatabase(
 	path: string,
-	options: NodeSqliteStorageOptions = {},
+	options: NodeSqliteDatabaseOptions = {},
 ): Promise<NodeSqliteDatabase> {
 	const checkpointPages = options.walAutoCheckpointPages ?? DEFAULT_WAL_AUTO_CHECKPOINT_PAGES;
 	const timeout = options.busyTimeoutMs ?? DEFAULT_BUSY_TIMEOUT_MS;
@@ -201,10 +205,12 @@ export async function openNodeSqliteDatabase(
 	}
 }
 
-/** Open or create file-backed durable storage using Node's built-in SQLite. */
+/** Open or create file-backed durable storage using Node's built-in SQLite, optionally under a table prefix. */
 export async function openNodeSqliteStorage(
 	path: string,
 	options: NodeSqliteStorageOptions = {},
 ): Promise<SqliteStorage> {
-	return SqliteStorage.open(await openNodeSqliteDatabase(path, options));
+	const { prefix, ...databaseOptions } = options;
+	if (prefix !== undefined) validateSqliteSchemaPrefix(prefix);
+	return SqliteStorage.open(await openNodeSqliteDatabase(path, databaseOptions), { prefix });
 }

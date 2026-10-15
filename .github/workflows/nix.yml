@@ -2,11 +2,12 @@ name: Nix
 
 # The flake builds with the model catalog revision pinned in
 # nix/model-catalog.json. This workflow keeps that pin usable independently of
-# releases: after pi.dev publishes a catalog from main, it replaces the pin only
-# if the current one no longer hydrates main (for example after a provider was
-# added) or lacks a model type the live catalog has for one of main's providers
-# (for example after a provider gained classifier models), builds the flake,
-# and commits the new pin to main.
+# releases: after pi.dev publishes a catalog from main, it replaces the pin with
+# the newest catalog only if the current one no longer hydrates main (for
+# example after a provider was added) or its provider/type/API model groups
+# differ from the newest catalog for one of main's providers (for example after
+# a provider gained classifier models or switched APIs), builds the flake, and
+# commits the new pin to main.
 #
 # Release tags are built exactly as tagged, with their committed pin. Once all
 # systems build, the stable branch is fast-forwarded to the tag so that

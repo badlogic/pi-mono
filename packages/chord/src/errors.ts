@@ -16,8 +16,8 @@ export const CHORD_ERROR_CODES = [
 export type ChordErrorCode = (typeof CHORD_ERROR_CODES)[number];
 
 /**
- * Finer cause inside a code, for logs and tests: e.g. `invalid` + `args`, `result`, `state`, `input`, `behavior`,
- * `duplicate`, `cycle`, `read_only`, `not_eager`, `registry_conflict`; `unavailable` + `unknown_type`.
+ * Finer cause inside a code, for logs and tests: e.g. `invalid` + `args`, `result`, `state`, `input`, `implementation`,
+ * `duplicate`, `cycle`, `read_only`, `not_host_lifetime`, `registry_conflict`; `unavailable` + `unknown_type`.
  */
 export type ChordErrorReason = string;
 

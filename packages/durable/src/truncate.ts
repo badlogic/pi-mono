@@ -1,3 +1,4 @@
+import { utf8ByteLength } from "@earendil-works/chord/output";
 /**
  * Shared truncation utilities for tool outputs.
  *
@@ -5,7 +6,7 @@
  * - Line limit (default: 2000 lines)
  * - Byte limit (default: 50KB)
  *
- * Never returns partial lines. Tool output streams are bounded by `src/harness/output.ts` instead.
+ * Never returns partial lines. Tool output streams are bounded by `OutputBuffer` from `@earendil-works/chord/output` instead.
  */
 
 export const DEFAULT_MAX_LINES = 2000;
@@ -43,40 +44,8 @@ export interface TruncationOptions {
 	maxBytes?: number;
 }
 
-interface RuntimeBuffer {
-	byteLength(content: string, encoding: "utf8"): number;
-}
-
-const runtimeBuffer = (globalThis as { Buffer?: RuntimeBuffer }).Buffer;
-const nonAsciiPattern = /[^\x00-\x7f]/;
-
-export function utf8ByteLength(content: string): number {
-	if (runtimeBuffer) return runtimeBuffer.byteLength(content, "utf8");
-
-	const firstNonAscii = content.search(nonAsciiPattern);
-	if (firstNonAscii === -1) return content.length;
-
-	let bytes = firstNonAscii;
-	for (let i = firstNonAscii; i < content.length; i++) {
-		const code = content.charCodeAt(i);
-		if (code <= 0x7f) {
-			bytes += 1;
-		} else if (code <= 0x7ff) {
-			bytes += 2;
-		} else if (code >= 0xd800 && code <= 0xdbff && i + 1 < content.length) {
-			const next = content.charCodeAt(i + 1);
-			if (next >= 0xdc00 && next <= 0xdfff) {
-				bytes += 4;
-				i++;
-			} else {
-				bytes += 3;
-			}
-		} else {
-			bytes += 3;
-		}
-	}
-	return bytes;
-}
+// One implementation, shared with the output buffer.
+export { utf8ByteLength };
 
 function splitLinesForCounting(content: string): string[] {
 	if (content.length === 0) return [];

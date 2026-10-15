@@ -125,10 +125,11 @@ describe("getSupportedThinkingLevels", () => {
 	});
 
 	it.each([
-		["gpt-6-sol", { input: 2, output: 10, cacheRead: 0.2, cacheWrite: 2.5 }],
-		["gpt-6-luna", { input: 0.1, output: 0.5, cacheRead: 0.01, cacheWrite: 0.125 }],
-		["gpt-6.1-sol", { input: 2, output: 10, cacheRead: 0.1, cacheWrite: 2.5 }],
-	] as const)("includes official metadata for OpenAI and Codex %s", (modelId, cost) => {
+		["gpt-6-sol", { input: 2, output: 10, cacheRead: 0.2, cacheWrite: 2.5 }, 272000],
+		["gpt-6-luna", { input: 0.1, output: 0.5, cacheRead: 0.01, cacheWrite: 0.125 }, 272000],
+		// Codex serves GPT-6.1 Sol with a 500K default context window (#10840)
+		["gpt-6.1-sol", { input: 2, output: 10, cacheRead: 0.1, cacheWrite: 2.5 }, 500000],
+	] as const)("includes official metadata for OpenAI and Codex %s", (modelId, cost, codexContextWindow) => {
 		for (const provider of ["openai", "openai-codex"] as const) {
 			const model = getModel(provider, modelId);
 			expect(model).toMatchObject({
@@ -145,7 +146,7 @@ describe("getSupportedThinkingLevels", () => {
 						},
 					],
 				},
-				contextWindow: 272000,
+				contextWindow: provider === "openai-codex" ? codexContextWindow : 272000,
 				maxTokens: 128000,
 				compat: {
 					supportsAdditionalTools: true,
@@ -171,12 +172,6 @@ describe("getSupportedThinkingLevels", () => {
 
 	it("includes low/high/max plus off for DeepSeek V4.1 Flash on the DeepSeek provider", () => {
 		const model = getModel("deepseek", "deepseek-flash");
-		expect(model).toBeDefined();
-		expect(getSupportedThinkingLevels(model!)).toEqual(["off", "low", "high", "max"]);
-	});
-
-	it("includes low/high/max plus off for DeepSeek V4 Flash on opencode-go", () => {
-		const model = getModel("opencode-go", "deepseek-v4-flash");
 		expect(model).toBeDefined();
 		expect(getSupportedThinkingLevels(model!)).toEqual(["off", "low", "high", "max"]);
 	});
@@ -212,6 +207,12 @@ describe("getSupportedThinkingLevels", () => {
 		const model = getModel("kimi-coding", "k3");
 		expect(model).toBeDefined();
 		expect(getSupportedThinkingLevels(model!)).toEqual(["low", "high", "max"]);
+	});
+
+	it("excludes off for always-thinking Kimi Coding Highspeed", () => {
+		const model = getModel("kimi-coding", "kimi-for-coding-highspeed");
+		expect(model).toBeDefined();
+		expect(getSupportedThinkingLevels(model!)).not.toContain("off");
 	});
 
 	it("includes only high for OpenCode Grok Build", () => {
