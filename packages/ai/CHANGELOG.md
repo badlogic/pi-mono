@@ -10,6 +10,10 @@
 
 - Added cache-preserving thinking level changes for GPT-6 models on the openai provider: with an API key, the level is sent as configuration_update input items instead of changing reasoning.effort, controlled by compat.supportsMidConvoEffort ([#10853](https://github.com/earendil-works/pi/issues/10853))
 
+### Changed
+
+- Changed the `kimi-coding` provider to use OpenAI Chat Completions at `https://api.kimi.com/coding/v1`, the protocol used by the official Kimi Code client. K3, K3-256K, and Kimi For Coding now accept tools added mid-conversation without invalidating the prompt cache. `models.json` overrides of the `kimi-coding` base URL must now include `/v1` ([#10720](https://github.com/earendil-works/pi/issues/10720))
+
 ### Fixed
 
 - Fixed tool-call argument parsing dropping fields when a string contains an invalid `\u` escape such as `\usepackage` ([#10868](https://github.com/earendil-works/pi/issues/10868))
