@@ -173,6 +173,18 @@ describe("Google thinking level maps", () => {
 		expect(payload.config?.thinkingConfig).toEqual({ includeThoughts: true, thinkingLevel: "MEDIUM" });
 	});
 
+	// Regression test for https://github.com/earendil-works/pi/issues/11003
+	it.each(googleAdapters)(
+		"falls back to LOW instead of thinkingBudget or MINIMAL for unmapped Gemini 4 models on $name",
+		async ({ capture }) => {
+			const disabledPayload = await capture("gemini-4-argon", {});
+			expect(disabledPayload.config?.thinkingConfig).toEqual({ thinkingLevel: "LOW" });
+
+			const minimalPayload = await capture("gemini-4-argon", {}, "minimal");
+			expect(minimalPayload.config?.thinkingConfig).toEqual({ includeThoughts: true, thinkingLevel: "LOW" });
+		},
+	);
+
 	it.each(["xhigh", "max"] as const)("maps Google Generative AI %s to a supported level", async (reasoning) => {
 		const payload = await captureGooglePayload(
 			googleModel("gemini-3.7-flash", { xhigh: "high", max: "high" }),

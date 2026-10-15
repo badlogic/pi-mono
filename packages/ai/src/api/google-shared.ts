@@ -53,6 +53,11 @@ export function resolveGoogleThinkingLevel<T extends GoogleApiType>(
 	const resolvedLevel = typeof mapped === "string" ? mapped.toLowerCase() : level;
 	switch (resolvedLevel) {
 		case "minimal":
+			return mapped === undefined &&
+				(/gemini-3(?:\.\d+)?-pro/.test(model.id.toLowerCase()) ||
+					/gemini-(?:[4-9]|[1-9]\d)/.test(model.id.toLowerCase()))
+				? "low"
+				: "minimal";
 		case "low":
 		case "medium":
 		case "high":
@@ -104,7 +109,7 @@ export function toGoogleSdkThinkingLevel(level: GoogleApiThinkingLevel): GoogleS
 export function getDisabledGoogleThinkingConfig<T extends GoogleApiType>(model: Model<T>): ThinkingConfig {
 	if (!usesGoogleThinkingLevel(model)) return { thinkingBudget: 0 };
 
-	const fallback = clampThinkingLevel(model, "off");
+	const fallback = clampThinkingLevel(model, "minimal");
 	if (fallback === "off") return { thinkingBudget: 0 };
 
 	const resolvedLevel = resolveGoogleThinkingLevel(model, fallback);
