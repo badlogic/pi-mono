@@ -217,3 +217,8 @@ export function highlight(code: string, options: HighlightOptions = {}): string 
 export function supportsLanguage(name: string): boolean {
 	return hljs.getLanguage(name) !== undefined;
 }
+
+/** Changes when deferred grammars are registered, including by another module loader. */
+export function getHighlightLanguageCount(): number {
+	return hljs.listLanguages().length;
+}

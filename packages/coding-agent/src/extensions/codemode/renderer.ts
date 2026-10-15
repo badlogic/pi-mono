@@ -12,7 +12,8 @@ import type { ToolDefinition } from "../../core/extensions/types.ts";
 import { getTextOutput, replaceTabs, startToolTimer, str, toolTimerText } from "../../core/tools/render-utils.ts";
 import { keyHint } from "../../modes/interactive/components/keybinding-hints.ts";
 import { VisualLinePreview } from "../../modes/interactive/components/visual-truncate.ts";
-import { highlightCode, type Theme } from "../../modes/interactive/theme/theme.ts";
+import { highlightCode, theme as syntaxTheme, type Theme } from "../../modes/interactive/theme/theme.ts";
+import { getHighlightLanguageCount } from "../../utils/syntax-highlight.ts";
 import type { CodemodeNestedCall, CodemodeToolDetails } from "./tool.ts";
 
 const CODE_PREVIEW_LINES = 10;
@@ -20,6 +21,16 @@ const CALL_PREVIEW_COUNT = 8;
 const OUTPUT_PREVIEW_LINES = 5;
 const COLLAPSED_ARGS_CHARS = 80;
 const SCRIPT_HEADER = /^Script (completed|failed)\nWall time [\d.]+ seconds\nOutput:\n$/;
+
+interface CodeHighlightState {
+	codeHighlight?: {
+		code: string;
+		colors: Theme["colors"];
+		colorMode: ReturnType<Theme["getColorMode"]>;
+		languageCount: number;
+		text: string;
+	};
+}
 
 function expandHint(theme: Theme, hidden: number, noun: string): string {
 	return `${theme.fg("muted", `... (${hidden} more ${noun},`)} ${keyHint("app.tools.expand", "to expand")}${theme.fg("muted", ")")}`;
@@ -72,14 +83,36 @@ export const codemodeRenderers: Pick<
 		const code = str((args as { code?: unknown } | undefined)?.code);
 		const title = theme.fg("toolTitle", theme.bold("codemode"));
 		const component = (context.lastComponent as Container | undefined) ?? new Container();
+		const state = context.state as CodeHighlightState;
 		component.clear();
+		if (!code) state.codeHighlight = undefined;
 		if (code === null) {
 			component.addChild(new Text(`${title} ${theme.fg("error", "[invalid arg]")}`, 0, 0));
 			return component;
 		}
 		component.addChild(new Text(title, 0, 0));
 		if (code) {
-			const highlighted = highlightCode(replaceTabs(code.replace(/\r/g, "").trimEnd()), "javascript").join("\n");
+			// highlightCode reads the global theme, whose proxy identity survives theme changes.
+			const colors = syntaxTheme.colors;
+			const colorMode = syntaxTheme.getColorMode();
+			const languageCount = getHighlightLanguageCount();
+			let cached = state.codeHighlight;
+			if (
+				cached?.code !== code ||
+				cached.colors !== colors ||
+				cached.colorMode !== colorMode ||
+				cached.languageCount !== languageCount
+			) {
+				cached = {
+					code,
+					colors,
+					colorMode,
+					languageCount,
+					text: highlightCode(replaceTabs(code.replace(/\r/g, "").trimEnd()), "javascript").join("\n"),
+				};
+				state.codeHighlight = cached;
+			}
+			const highlighted = cached.text;
 			component.addChild(
 				context.expanded
 					? new Text(highlighted, 0, 0)
