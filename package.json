@@ -34,6 +34,7 @@
 		"update:model-catalog-pin": "node scripts/update-model-catalog-pin.mjs",
 		"eval": "npm run eval --workspace=@earendil-works/pi-evals --",
 		"check:model-catalog": "node scripts/publish-model-catalog.mjs --input .artifacts/model-catalog --dry-run",
+		"check:model-catalog-compat": "node scripts/check-model-catalog-compat.mjs",
 		"profile:tui": "node scripts/profile-coding-agent-node.mjs --mode tui",
 		"profile:rpc": "node scripts/profile-coding-agent-node.mjs --mode rpc",
 		"test": "npm run test:scripts && npm run test --workspaces --if-present",
