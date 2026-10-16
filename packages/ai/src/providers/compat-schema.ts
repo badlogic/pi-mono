@@ -600,16 +600,19 @@ function mergeCompatProperties<
 	return { ...merged, ...overrides } as MergedCompatProperties<PropertyGroups, Overrides>;
 }
 
-const CompatSchemasByApi = {
+/** Compatibility schema for each API whose models accept compat. Mirrors the compat type of Model. */
+export const CompatSchemasByApi = {
 	"openai-completions": OpenAICompletionsCompatSchema,
 	"openai-responses": OpenAIResponsesCompatSchema,
+	"azure-openai-responses": OpenAIResponsesCompatSchema,
+	"openai-codex-responses": OpenAIResponsesCompatSchema,
 	"anthropic-messages": AnthropicMessagesCompatSchema,
 	"bedrock-converse-stream": BedrockCompatSchema,
 	"mistral-conversations": MistralConversationsCompatSchema,
 } as const;
 
 const ProviderCompatProperties = mergeCompatProperties(
-	Object.values(CompatSchemasByApi).map((schema) => schema.properties),
+	[...new Set(Object.values(CompatSchemasByApi))].map((schema) => schema.properties),
 	ProviderCompatPropertyOverrides,
 );
 
