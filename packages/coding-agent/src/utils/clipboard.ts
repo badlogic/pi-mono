@@ -17,6 +17,11 @@ function isRemoteSession(env: NodeJS.ProcessEnv): boolean {
 	return Boolean(env.SSH_CONNECTION || env.SSH_CLIENT || env.MOSH_CONNECTION || env.PI_CLIPBOARD_OSC52 === "1");
 }
 
+function isTerminalMultiplexer(env: NodeJS.ProcessEnv): boolean {
+	const term = env.TERM?.toLowerCase() ?? "";
+	return Boolean(env.TMUX || env.ZELLIJ || env.STY || term.startsWith("tmux") || term.startsWith("screen"));
+}
+
 function emitOsc52(text: string): boolean {
 	const encoded = Buffer.from(text).toString("base64");
 	if (encoded.length > MAX_OSC52_ENCODED_LENGTH) {
@@ -120,8 +125,9 @@ export async function copyToClipboard(text: string): Promise<void> {
 	}
 	let osc52Emitted = false;
 	if (!copied && p === "linux" && isWSL(env)) {
-		// Windows Terminal supports OSC 52; prefer it over the slower PowerShell round trip.
-		if (env.WT_SESSION) osc52Emitted = emitOsc52(text);
+		// Windows Terminal supports OSC 52; prefer it over the slower PowerShell round trip
+		// unless running inside a multiplexer that intercepts bare sequences.
+		if (env.WT_SESSION && !isTerminalMultiplexer(env)) osc52Emitted = emitOsc52(text);
 		copied = osc52Emitted || (await copyViaWindowsClipboard(text));
 	}
 	// OSC 52 cannot be verified, so a desktop session with a display reports the failure

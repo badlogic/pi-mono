@@ -23,6 +23,9 @@ const mocks = vi.hoisted(() => ({
 }));
 vi.mock("@earendil-works/pi-tui", () => ({ getNativeClipboard: mocks.getNativeClipboard }));
 vi.mock("../src/utils/clipboard-command.ts", () => ({ runClipboardCommand: mocks.command }));
+vi.mock("../src/utils/wsl.ts", () => ({
+	isWSL: (env: NodeJS.ProcessEnv = process.env) => Boolean(env.WSL_DISTRO_NAME || env.WSLENV),
+}));
 vi.mock("node:os", async () => ({
 	...(await vi.importActual<typeof OsModule>("node:os")),
 	platform: mocks.platform,
@@ -43,6 +46,10 @@ beforeEach(() => {
 		"WSL_DISTRO_NAME",
 		"WSLENV",
 		"PI_CLIPBOARD_OSC52",
+		"TMUX",
+		"ZELLIJ",
+		"STY",
+		"TERM",
 	])
 		vi.stubEnv(name, "");
 	mocks.platform.mockReturnValue("darwin");
@@ -247,6 +254,33 @@ describe("copyToClipboard", () => {
 		await copyToClipboard("hello");
 		expect(mocks.command).not.toHaveBeenCalled();
 		expect(osc52Writes).toHaveLength(1);
+	});
+	test.each(["TMUX", "ZELLIJ", "STY"] as const)(
+		"WSL in Windows Terminal inside a multiplexer (%s) falls back to PowerShell",
+		async (envVar) => {
+			mocks.platform.mockReturnValue("linux");
+			vi.stubEnv("WSL_DISTRO_NAME", "Ubuntu");
+			vi.stubEnv("WT_SESSION", "session");
+			vi.stubEnv(envVar, "1");
+			mocks.command.mockImplementation(async (name) =>
+				name === "wslpath" ? Buffer.from("C:\\clip.txt") : Buffer.alloc(0),
+			);
+			await copyToClipboard("hello");
+			expect(mocks.command.mock.calls.map(([name]) => name)).toEqual(["wslpath", "powershell.exe"]);
+			expect(osc52Writes).toHaveLength(0);
+		},
+	);
+	test("WSL in Windows Terminal with tmux TERM falls back to PowerShell", async () => {
+		mocks.platform.mockReturnValue("linux");
+		vi.stubEnv("WSL_DISTRO_NAME", "Ubuntu");
+		vi.stubEnv("WT_SESSION", "session");
+		vi.stubEnv("TERM", "tmux-256color");
+		mocks.command.mockImplementation(async (name) =>
+			name === "wslpath" ? Buffer.from("C:\\clip.txt") : Buffer.alloc(0),
+		);
+		await copyToClipboard("hello");
+		expect(mocks.command.mock.calls.map(([name]) => name)).toEqual(["wslpath", "powershell.exe"]);
+		expect(osc52Writes).toHaveLength(0);
 	});
 	test("WSL in Windows Terminal emits OSC 52 once in a remote session", async () => {
 		mocks.platform.mockReturnValue("linux");
