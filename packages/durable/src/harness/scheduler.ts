@@ -152,7 +152,8 @@ export type TaskSchedulerOptions = {
 	readonly session: SessionImpl;
 	readonly storage: Storage;
 	readonly registry: RegistryReader;
-	readonly models: Models;
+	/** The host's current model access (`HarnessOptions.models`); read at each access. */
+	readonly models: () => Models;
 	/** Resolve a conversation's agent against a snapshot; the runtime calls it at most once per phase. */
 	readonly agent: (conversationId: ConversationId, snapshot: RegistrySnapshot, context: Context) => Promise<Agent>;
 	/** Resolve the settings; read at each access. */
@@ -200,7 +201,7 @@ export class TaskScheduler {
 	readonly #session: SessionImpl;
 	readonly #storage: Storage;
 	readonly #registry: RegistryReader;
-	readonly #models: Models;
+	readonly #models: () => Models;
 	readonly #agent: TaskSchedulerOptions["agent"];
 	readonly #settings: TaskSchedulerOptions["settings"];
 	readonly #env: TaskSchedulerOptions["env"];
@@ -1613,11 +1614,14 @@ export class TaskScheduler {
 			},
 		};
 		const settings = this.#settings;
+		const models = this.#models;
 		return {
 			taskId: invocation.taskId as TaskId<JsonValue>,
 			conversationId: invocation.conversationId,
 			signal: invocation.controller.signal,
-			models: this.#models,
+			get models() {
+				return models();
+			},
 			agent: (context) =>
 				invocation.ended ? Promise.reject(endedError(invocation)) : awaitWithContext(agent(), context),
 			get settings() {

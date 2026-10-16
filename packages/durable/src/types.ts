@@ -181,6 +181,7 @@ export interface TaskRuntime<I, S, R, H extends object> extends DocumentObserver
 	agent(context: Context): Promise<Agent>;
 	/** `HarnessOptions.settings`, resolved at each access. */
 	readonly settings: Settings;
+	/** `HarnessOptions.models`, resolved at each access. */
 	readonly models: Models;
 	/** Calls `HarnessOptions.env` for the task's conversation; rejects with its error. */
 	env(context: Context): Promise<ExecutionEnv | undefined>;

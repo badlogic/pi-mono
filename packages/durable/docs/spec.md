@@ -359,9 +359,11 @@ type AnyTask = {
 };
 
 type HarnessOptions<Tool extends ToolRegistration = ToolRegistration> = {
-  readonly models: Models; // the pi-ai Models interface
+  /** The pi-ai Models interface, or a function returning the current one, called at each use. */
+  readonly models: Models | (() => Models);
   readonly registry: RegistryReader<Tool>; // section 7.1
-  readonly settings?: HarnessSettings;
+  /** Run settings, or a function returning the current ones; read at each use either way. */
+  readonly settings?: HarnessSettings | (() => HarnessSettings | undefined);
   /** Builds a conversation's environment. Never called on the Session line; may be async. */
   readonly env?: (
     target: { readonly conversationId: ConversationId; readonly cwd?: string; readonly read: DocumentReader },
@@ -819,8 +821,11 @@ selection, request options, retry, compaction thresholds, tool execution, and
 queue modes. Nothing copies or stores it. Every reader resolves it anew into
 `Settings`, each absent field over its built-in default and object fields merged
 key by key, and uses that value for one decision (section 7.1 lists the
-readers). A settings object with getters therefore follows the user's
-preferences without a Session write. Settings are synchronous because queue
+readers). A settings object with getters, or a `settings` function, therefore
+follows the user's preferences without a Session write. `models` works the same
+way: a function is called at each use (generation and compaction requests,
+`runtime.models`, `api.models` of hooks and tools at each access), so a host can
+replace its model configuration without reopening the Harness. Settings are synchronous because queue
 modes are read on the Session line. `stream` is forwarded to generation
 requests; `stream.maxRetries` are provider retries inside one request, while
 `retry` governs durable generation attempts (section 8.3). Settings changes make
@@ -1752,6 +1757,7 @@ interface TaskRuntime<I, S, R, H extends object> extends DocumentObserver, Docum
   agent(context: Context): Promise<Agent>;
   /** `HarnessOptions.settings`, resolved at each access. */
   readonly settings: Settings;
+  /** `HarnessOptions.models`, resolved at each access. */
   readonly models: Models;
   readonly hooks: HookRunner<H>;
   /** Calls `HarnessOptions.env` for the task's conversation; rejects with its error. */
@@ -2719,6 +2725,7 @@ interface HookApi extends DocumentReader {
   readonly taskId: TaskId;
   readonly conversationId: ConversationId;
   /** `HarnessOptions.models`. */
+  /** The current `HarnessOptions.models`, read at each access. */
   readonly models: Models;
   memo<T extends JsonValue>(name: string, context: Context): Promise<T | undefined>;
   memo<T extends JsonValue>(name: string, candidate: T, context: Context): Promise<T>;
@@ -2858,6 +2865,7 @@ interface ToolExecutionApi<TDetails extends JsonValue = JsonValue> extends Docum
   /** The calling conversation's agent, as the tool task's phase resolved it. */
   agent(context: Context): Promise<Agent>;
   /** `HarnessOptions.models`: the catalog, credentials, and request transforms generation uses. */
+  /** The current `HarnessOptions.models`, read at each access. */
   readonly models: Models;
   /** Built by `HarnessOptions.env` for this call. */
   readonly env: ExecutionEnv | undefined;

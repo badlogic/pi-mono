@@ -1,5 +1,6 @@
 import type { AttachedReplicatedState, Context, JsonValue } from "@earendil-works/chord";
 import { withAbortSignal, withoutAbortSignal } from "@earendil-works/chord/context";
+import type { Models } from "@earendil-works/pi-ai";
 import { ResetEntry } from "../entries.ts";
 import type { ExecutionEnv } from "../env/index.ts";
 import { contained, SessionImpl } from "../session/session.ts";
@@ -43,6 +44,7 @@ import type {
 	ConversationWatch,
 	HarnessInspection,
 	HarnessOptions,
+	HarnessSettings,
 	Harness as HarnessType,
 	RegistrySnapshot,
 	SettledTask,
@@ -165,9 +167,20 @@ class ConversationImpl<Tool extends ToolRegistration> implements Conversation {
 	}
 }
 
+/** `HarnessOptions.models` as a function: a plain `Models` is returned at every call. */
+function currentModels(models: HarnessOptions["models"]): () => Models {
+	return typeof models === "function" ? models : () => models;
+}
+
+/** `HarnessOptions.settings` as a function: plain settings, or none, are returned at every call. */
+function currentSettings(settings: HarnessOptions["settings"]): () => HarnessSettings | undefined {
+	return typeof settings === "function" ? settings : () => settings;
+}
+
 /** Session kernel extended with conversation handles and a registry. */
 class HarnessImpl<Tool extends ToolRegistration> extends SessionImpl implements HarnessType {
 	readonly #options: HarnessOptions<Tool>;
+	readonly #hostSettings: () => HarnessSettings | undefined;
 	readonly #report: (error: unknown) => void;
 	readonly #host: ConversationHost<Tool>;
 	readonly #tasks: TaskScheduler;
@@ -177,18 +190,20 @@ class HarnessImpl<Tool extends ToolRegistration> extends SessionImpl implements 
 	constructor(rawStorage: Storage, options: HarnessOptions<Tool>, context: Context) {
 		const report = safeReport(options.onReport);
 		const now = safeNow(options.now, report);
+		const hostSettings = currentSettings(options.settings);
 		// Read at each use, as all settings are, but only this field: it is read on every commit.
-		super(rawStorage, now, () => options.settings?.documentRetentionMs);
+		super(rawStorage, now, () => hostSettings()?.documentRetentionMs);
 		// Every component reads and writes through the Session's failure guard: `rawStorage` serves only `super()`.
 		const storage = this.storage;
 		this.#options = options;
 		this.#report = report;
-		const settings = () => resolveSettings(options.settings);
+		this.#hostSettings = hostSettings;
+		const settings = () => resolveSettings(hostSettings());
 		this.#tasks = new TaskScheduler({
 			session: this,
 			storage,
 			registry: options.registry,
-			models: options.models,
+			models: currentModels(options.models),
 			agent: (id, snapshot, callContext) => this.resolveAgent(id, snapshot as RegistrySnapshot<Tool>, callContext),
 			settings,
 			env: (id, callContext) => this.buildEnv(id, callContext),
@@ -223,7 +238,7 @@ class HarnessImpl<Tool extends ToolRegistration> extends SessionImpl implements 
 	): Promise<Agent<Tool>> {
 		const registry = snapshot ?? this.#options.registry.snapshot();
 		const state = await this.snapshot(AgentDoc, id, context);
-		return resolveAgent(state, registry, resolveSettings(this.#options.settings), this.#report);
+		return resolveAgent(state, registry, resolveSettings(this.#hostSettings()), this.#report);
 	}
 
 	/** Build a conversation's environment from its current `cwd`; `undefined` without an `env` option. */
