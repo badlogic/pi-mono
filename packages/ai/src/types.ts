@@ -1,4 +1,5 @@
 import type { TelemetryContext } from "@earendil-works/pi-telemetry";
+import type { ServiceTier } from "openai/resources/responses/responses.js";
 import type { AnthropicOptions } from "./api/anthropic-messages.ts";
 import type { AzureOpenAIResponsesOptions } from "./api/azure-openai-responses.ts";
 import type { BedrockOptions } from "./api/bedrock-converse-stream.ts";
@@ -222,6 +223,12 @@ export interface StreamOptions extends ProviderRequestOptions<Model<Api>> {
 	 */
 	onProviderStreamEvent?: (data: unknown, model: Model<Api>) => void | Promise<void>;
 	temperature?: number;
+	/**
+	 * Latency tier for the OpenAI Responses adapters, sent as `service_tier`.
+	 * `"priority"` and `"fast"` are the same Fast mode; `"flex"` is the cheaper, slower one.
+	 * Only applied by the `openai-responses` and `openai-codex-responses` adapters; other adapters ignore it.
+	 */
+	serviceTier?: ServiceTier;
 	/**
 	 * Arbitrary sampling parameters merged into the request body as-is, after the named request
 	 * fields, so keys here override them. Lets custom OpenAI-compatible servers (llama.cpp, vLLM,

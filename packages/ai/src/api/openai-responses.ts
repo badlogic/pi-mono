@@ -137,7 +137,6 @@ function getPromptCacheOptions(
 export interface OpenAIResponsesOptions extends StreamOptions {
 	reasoningEffort?: "minimal" | "low" | "medium" | "high" | "xhigh" | "max";
 	reasoningSummary?: "auto" | "detailed" | "concise" | null;
-	serviceTier?: ResponseCreateParamsStreaming["service_tier"];
 	toolChoice?: ResponseCreateParamsStreaming["tool_choice"];
 }
 

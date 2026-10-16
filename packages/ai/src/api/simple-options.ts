@@ -44,6 +44,7 @@ export function buildBaseOptions(
 		temperature: options?.temperature,
 		samplingParams,
 		maxTokens: clampMaxTokensToContext(model, context, options?.maxTokens ?? model.maxTokens),
+		serviceTier: options?.serviceTier,
 		signal: options?.signal,
 		telemetryContext: options?.telemetryContext,
 		apiKey: apiKey || options?.apiKey,

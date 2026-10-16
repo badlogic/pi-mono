@@ -79,7 +79,6 @@ const CODEX_RESPONSE_STATUSES = new Set<CodexResponseStatus>([
 export interface OpenAICodexResponsesOptions extends StreamOptions {
 	reasoningEffort?: "none" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max";
 	reasoningSummary?: "auto" | "concise" | "detailed" | "off" | "on" | null;
-	serviceTier?: ResponseCreateParamsStreaming["service_tier"];
 	textVerbosity?: "low" | "medium" | "high";
 	toolChoice?: "auto" | "none" | "required";
 }
@@ -608,6 +607,7 @@ function getServiceTierCostMultiplier(
 		case "flex":
 			return 0.5;
 		case "priority":
+		case "fast":
 			return model.id === "gpt-5.5" ? 2.5 : 2;
 		default:
 			return 1;
@@ -633,7 +633,10 @@ function resolveCodexServiceTier(
 	responseServiceTier: ResponseCreateParamsStreaming["service_tier"] | undefined,
 	requestServiceTier: ResponseCreateParamsStreaming["service_tier"] | undefined,
 ): ResponseCreateParamsStreaming["service_tier"] | undefined {
-	if (responseServiceTier === "default" && (requestServiceTier === "flex" || requestServiceTier === "priority")) {
+	if (
+		responseServiceTier === "default" &&
+		(requestServiceTier === "flex" || requestServiceTier === "priority" || requestServiceTier === "fast")
+	) {
 		return requestServiceTier;
 	}
 	return responseServiceTier ?? requestServiceTier;

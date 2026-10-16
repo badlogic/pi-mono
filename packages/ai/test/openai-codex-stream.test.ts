@@ -1134,10 +1134,12 @@ describe("openai-codex streaming", () => {
 	it.each([
 		["gpt-5.1-codex", "flex", 0.5],
 		["gpt-5.1-codex", "priority", 2],
+		["gpt-5.1-codex", "fast", 2],
 		["gpt-5.5", "flex", 0.5],
 		["gpt-5.5", "priority", 2.5],
+		["gpt-5.5", "fast", 2.5],
 	] as const)(
-		"uses the client-sent %s service tier for %s when Codex echoes default",
+		"uses the client-sent service tier for %s (%s) when Codex echoes default",
 		async (modelId, serviceTier, multiplier) => {
 			const tempDir = mkdtempSync(join(tmpdir(), "pi-codex-stream-"));
 			process.env.PI_CODING_AGENT_DIR = tempDir;
@@ -1227,6 +1229,102 @@ describe("openai-codex streaming", () => {
 			expect(result.usage.cost.input).toBe(1 * multiplier);
 			expect(result.usage.cost.output).toBe(2 * multiplier);
 			expect(result.usage.cost.total).toBe(3 * multiplier);
+		},
+	);
+
+	// #11040: streamSimple rebuilt its options through buildBaseOptions, which left
+	// serviceTier out, so a tier set on the request options never reached the body.
+	it.each(["priority", "fast"] as const)(
+		"forwards the %s service tier that streamSimple was called with into the request body",
+		async (serviceTier) => {
+			const tempDir = mkdtempSync(join(tmpdir(), "pi-codex-stream-"));
+			process.env.PI_CODING_AGENT_DIR = tempDir;
+			const token = mockToken();
+			const sse = `${[
+				`data: ${JSON.stringify({
+					type: "response.output_item.added",
+					item: { type: "message", id: "msg_1", role: "assistant", status: "in_progress", content: [] },
+				})}`,
+				`data: ${JSON.stringify({ type: "response.content_part.added", part: { type: "output_text", text: "" } })}`,
+				`data: ${JSON.stringify({ type: "response.output_text.delta", delta: "Hello" })}`,
+				`data: ${JSON.stringify({
+					type: "response.output_item.done",
+					item: {
+						type: "message",
+						id: "msg_1",
+						role: "assistant",
+						status: "completed",
+						content: [{ type: "output_text", text: "Hello" }],
+					},
+				})}`,
+				`data: ${JSON.stringify({
+					type: "response.completed",
+					response: {
+						status: "completed",
+						service_tier: "default",
+						usage: {
+							input_tokens: 1000000,
+							output_tokens: 1000000,
+							total_tokens: 2000000,
+							input_tokens_details: { cached_tokens: 0 },
+						},
+					},
+				})}`,
+			].join("\n\n")}\n\n`;
+
+			const encoder = new TextEncoder();
+			const sentBodies: (Record<string, unknown> | null)[] = [];
+			const fetchMock = vi.fn(async (input: string | URL, init?: RequestInit) => {
+				const url = typeof input === "string" ? input : input.toString();
+				if (url === "https://api.github.com/repos/openai/codex/releases/latest") {
+					return new Response(JSON.stringify({ tag_name: "rust-v0.0.0" }), { status: 200 });
+				}
+				if (url.startsWith("https://raw.githubusercontent.com/openai/codex/")) {
+					return new Response("PROMPT", { status: 200, headers: { etag: '"etag"' } });
+				}
+				if (url === "https://chatgpt.com/backend-api/codex/responses") {
+					sentBodies.push(decodeCodexRequestBody(init?.body));
+					return new Response(
+						new ReadableStream<Uint8Array>({
+							start(controller) {
+								controller.enqueue(encoder.encode(sse));
+								controller.close();
+							},
+						}),
+						{ status: 200, headers: { "content-type": "text/event-stream" } },
+					);
+				}
+				return new Response("not found", { status: 404 });
+			});
+			vi.stubGlobal("fetch", fetchMock);
+
+			const model: Model<"openai-codex-responses"> = {
+				id: "gpt-5.6-sol",
+				name: "GPT-5.6 Sol",
+				api: "openai-codex-responses",
+				provider: "openai-codex",
+				baseUrl: "https://chatgpt.com/backend-api",
+				reasoning: true,
+				input: ["text"],
+				cost: { input: 1, output: 2, cacheRead: 0, cacheWrite: 0 },
+				contextWindow: 400000,
+				maxTokens: 128000,
+			};
+			const context = normalizeContext({
+				systemPrompt: "You are a helpful assistant.",
+				messages: [{ role: "user", content: "Say hello", timestamp: Date.now() }],
+			});
+
+			const result = await streamSimpleOpenAICodexResponses(model, context, {
+				apiKey: token,
+				serviceTier,
+				transport: "sse",
+			}).result();
+
+			expect(sentBodies[0]?.service_tier).toBe(serviceTier);
+			// Codex answers "default" either way, so the tier the client asked for is what prices the turn.
+			expect(result.usage.cost.input).toBe(2);
+			expect(result.usage.cost.total).toBe(6);
 		},
 	);
 
