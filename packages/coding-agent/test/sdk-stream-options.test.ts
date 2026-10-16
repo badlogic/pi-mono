@@ -147,7 +147,10 @@ describe("createAgentSession stream options", () => {
 		}
 	}
 
-	async function createCacheWarmingSession(populate?: (manager: SessionManager, model: Model<Api>) => void) {
+	async function createCacheWarmingSession(
+		populate?: (manager: SessionManager, model: Model<Api>) => void,
+		extensionFactory?: ExtensionFactory,
+	) {
 		const model: Model<Api> = {
 			...createModel("anthropic-messages"),
 			cost: { input: 10, output: 50, cacheRead: 0.25, cacheWrite: 12.5 },
@@ -166,13 +169,25 @@ describe("createAgentSession stream options", () => {
 		});
 		const sessionManager = SessionManager.inMemory(cwd);
 		populate?.(sessionManager, model);
+		const settingsManager = SettingsManager.inMemory({ cacheWarming: "idle" });
+		let resourceLoader: DefaultResourceLoader | undefined;
+		if (extensionFactory) {
+			resourceLoader = new DefaultResourceLoader({
+				cwd,
+				agentDir,
+				settingsManager,
+				extensionFactories: [extensionFactory],
+			});
+			await resourceLoader.reload();
+		}
 		const { session } = await createAgentSession({
 			cwd,
 			agentDir,
 			model,
 			modelRuntime: getModelRuntime(modelRegistry),
-			settingsManager: SettingsManager.inMemory({ cacheWarming: "idle" }),
+			settingsManager,
 			sessionManager,
+			resourceLoader,
 		});
 		return {
 			session,
@@ -196,6 +211,30 @@ describe("createAgentSession stream options", () => {
 			expect(fixture.session.cacheWarmingStatus?.nextWarmAt).toBeGreaterThan(Date.now());
 			fixture.session.agent.state.messages = fixture.session.agent.state.messages.slice(1);
 			expect(fixture.session.cacheWarmingStatus?.reason).toBe("conversation context changed");
+		} finally {
+			fixture.dispose();
+		}
+	});
+
+	it("keeps cache warming when a boundary rebuilds equivalent context messages", async () => {
+		// https://github.com/earendil-works/pi/issues/10956
+		// agent_before_settle commits boundary drafts and re-projects the session, which
+		// re-materializes custom messages as new objects; the request prefix is unchanged.
+		const fixture = await createCacheWarmingSession(
+			(manager) => {
+				manager.appendCustomMessageEntry("note", "remember this", true);
+			},
+			(pi) => {
+				pi.on("agent_before_settle", () => undefined);
+			},
+		);
+		try {
+			const before = fixture.session.agent.state.messages;
+			await fixture.session.prompt("test");
+			const after = fixture.session.agent.state.messages;
+			expect(after[0]).not.toBe(before[0]);
+			expect(after[0]).toEqual(before[0]);
+			expect(fixture.session.cacheWarmingStatus?.state).toBe("scheduled");
 		} finally {
 			fixture.dispose();
 		}

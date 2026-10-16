@@ -375,7 +375,12 @@ export async function createAgentSession(options: CreateAgentSessionOptions = {}
 				currentModel.provider === requestModel.provider &&
 				currentModel.id === requestModel.id &&
 				messages.length <= currentMessages.length &&
-				messages.every((message, index) => currentMessages[index] === message)
+				messages.every((message, index) => {
+					// Boundary commits re-project the session, which re-materializes custom
+					// messages and summaries as new objects for the same entries.
+					const current = currentMessages[index];
+					return current === message || (current.role === message.role && current.timestamp === message.timestamp);
+				})
 			);
 		};
 	};
