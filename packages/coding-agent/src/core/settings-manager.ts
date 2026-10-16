@@ -81,8 +81,12 @@ function deepMergeObjects(base: Record<string, unknown>, overrides: Record<strin
 	return result;
 }
 
-/** Tools enabled at startup when `defaultTools` does not change them. */
-export const DEFAULT_TOOL_NAMES: readonly string[] = ["read", "bash", "edit", "write"];
+/**
+ * Tools enabled at startup when `defaultTools` does not change them. On Windows `powershell` is
+ * enabled too; `bash` stays as a fallback, and the prompt prefers PowerShell when both are enabled.
+ */
+export const DEFAULT_TOOL_NAMES: readonly string[] =
+	process.platform === "win32" ? ["read", "bash", "powershell", "edit", "write"] : ["read", "bash", "edit", "write"];
 
 /** Whether a tool selection entry is a `+name` or `-name` modifier. */
 export function isToolModifier(entry: unknown): boolean {
