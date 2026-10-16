@@ -3048,7 +3048,7 @@ async function generateModels() {
 			reasoning: true,
 			thinkingLevelMap: ANT_LING_THINKING_LEVEL_MAP,
 			input: ["text"],
-			cost: { input: 0.5, output: 1.5, cacheRead: 0.125, cacheWrite: 0 },
+			cost: { input: 0.5, output: 1.5, cacheRead: 0.1, cacheWrite: 0 },
 			contextWindow: 262144,
 			maxTokens: 262144,
 			compat: toggleReasoningEffortCompat,
