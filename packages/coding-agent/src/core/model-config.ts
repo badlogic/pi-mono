@@ -6,8 +6,8 @@ import {
 	ModelCostSchema,
 	ModelInputLimitsSchema,
 	ModelInputModalitySchema,
-	modelPromptCacheSchema,
-	thinkingLevelMapSchema,
+	ModelPromptCacheSchema,
+	ThinkingLevelMapSchema,
 } from "@earendil-works/pi-ai/providers/model-schema";
 import { type Static, Type } from "typebox";
 import { Compile } from "typebox/compile";
@@ -37,14 +37,9 @@ const HeadersSchema = Type.Record(Type.String(), Type.String(), {
 	description: "Request headers. Values resolve like apiKey.",
 });
 
-/**
- * Model fields shared by models entries and modelOverrides entries. Omitted override fields keep the
- * model's value, so defaults and descriptions of omitted entries apply only to models entries.
- */
+/** Model fields shared by models entries and modelOverrides entries. Defaults apply only to models entries. */
 const ModelFieldDescriptions = {
 	name: "Display name, also matched by --model patterns.",
-	thinkingLevelMap: "Provider value sent for each thinking level. null marks a level unsupported.",
-	promptCache: "Best-effort prompt cache lifetime in seconds for the short and long retention tiers.",
 	reasoning: "Whether the model supports thinking.",
 	contextWindow: "Context window in tokens.",
 	maxTokens: "Maximum output tokens.",
@@ -56,19 +51,11 @@ const ModelDefinitionSchema = Type.Object({
 	api: Type.Optional(Type.String({ minLength: 1, description: "Overrides the provider api." })),
 	baseUrl: Type.Optional(Type.String({ minLength: 1, description: "Overrides the provider baseUrl." })),
 	reasoning: Type.Optional(Type.Boolean({ default: false, description: ModelFieldDescriptions.reasoning })),
-	thinkingLevelMap: Type.Optional(
-		thinkingLevelMapSchema({
-			description: `${ModelFieldDescriptions.thinkingLevelMap} Omitted levels through high use the provider's default value; omitted xhigh and max are unsupported.`,
-		}),
-	),
+	thinkingLevelMap: Type.Optional(ThinkingLevelMapSchema),
 	input: Type.Optional(Type.Array(ModelInputModalitySchema, { default: ["text"] })),
 	inputLimits: Type.Optional(ModelInputLimitsSchema),
 	cost: Type.Optional(ModelCostSchema),
-	promptCache: Type.Optional(
-		modelPromptCacheSchema({
-			description: `${ModelFieldDescriptions.promptCache} A missing tier means the lifetime is unknown, so Pi does not warm it.`,
-		}),
-	),
+	promptCache: Type.Optional(ModelPromptCacheSchema),
 	contextWindow: Type.Optional(
 		Type.Number({ exclusiveMinimum: 0, default: 128000, description: ModelFieldDescriptions.contextWindow }),
 	),
@@ -84,11 +71,11 @@ const ModelDefinitionSchema = Type.Object({
 const ModelOverrideSchema = Type.Object({
 	name: Type.Optional(Type.String({ minLength: 1, description: ModelFieldDescriptions.name })),
 	reasoning: Type.Optional(Type.Boolean({ description: ModelFieldDescriptions.reasoning })),
-	thinkingLevelMap: Type.Optional(thinkingLevelMapSchema({ description: ModelFieldDescriptions.thinkingLevelMap })),
+	thinkingLevelMap: Type.Optional(ThinkingLevelMapSchema),
 	input: Type.Optional(Type.Array(ModelInputModalitySchema)),
 	inputLimits: Type.Optional(ModelInputLimitsSchema),
 	cost: Type.Optional(Type.Partial(ModelCostSchema)),
-	promptCache: Type.Optional(modelPromptCacheSchema({ description: ModelFieldDescriptions.promptCache })),
+	promptCache: Type.Optional(ModelPromptCacheSchema),
 	contextWindow: Type.Optional(
 		Type.Number({ exclusiveMinimum: 0, description: ModelFieldDescriptions.contextWindow }),
 	),

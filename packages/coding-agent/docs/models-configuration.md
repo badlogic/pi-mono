@@ -34,7 +34,7 @@ Each `models` entry adds a model to the provider. An entry whose `id` matches an
 | `api` | string |  | Overrides the provider api. |
 | `baseUrl` | string |  | Overrides the provider baseUrl. |
 | `reasoning` | boolean | `false` | Whether the model supports thinking. |
-| `thinkingLevelMap` | object |  | Provider value sent for each thinking level. null marks a level unsupported. Omitted levels through high use the provider's default value; omitted xhigh and max are unsupported. |
+| `thinkingLevelMap` | object |  | Provider value sent for each thinking level. null marks a level unsupported. Levels the model does not map use the provider's default value through high; xhigh and max are unsupported. |
 | `input` | `("text" \| "image")[]` | `["text"]` |  |
 | `inputLimits` | [object](#input-limits) |  |  |
 | `cost` | object |  |  |
@@ -48,7 +48,7 @@ Each `models` entry adds a model to the provider. An entry whose `id` matches an
 | `cost.tiers[].output` | number |  | Required. Output cost in USD per million tokens. |
 | `cost.tiers[].cacheRead` | number |  | Required. Cache-read cost in USD per million tokens. |
 | `cost.tiers[].cacheWrite` | number |  | Required. Cache-write cost in USD per million tokens. |
-| `promptCache` | object |  | Best-effort prompt cache lifetime in seconds for the short and long retention tiers. A missing tier means the lifetime is unknown, so Pi does not warm it. |
+| `promptCache` | object |  | Best-effort prompt cache lifetime in seconds for the short and long retention tiers. Pi warms only tiers with a known lifetime. |
 | `contextWindow` | number | `128000` | Context window in tokens. |
 | `maxTokens` | number | `16384` | Maximum output tokens. |
 | `samplingParams` | object |  | Fields merged into every request body. Applies only to OpenAI-compatible APIs. |
@@ -64,7 +64,7 @@ Each `modelOverrides` key is the ID of a built-in or extension model. Unknown ID
 |---|---|---|---|
 | `name` | string |  | Display name, also matched by --model patterns. |
 | `reasoning` | boolean |  | Whether the model supports thinking. |
-| `thinkingLevelMap` | object |  | Provider value sent for each thinking level. null marks a level unsupported. |
+| `thinkingLevelMap` | object |  | Provider value sent for each thinking level. null marks a level unsupported. Levels the model does not map use the provider's default value through high; xhigh and max are unsupported. |
 | `input` | `("text" \| "image")[]` |  |  |
 | `inputLimits` | [object](#input-limits) |  |  |
 | `cost` | object |  |  |
@@ -78,7 +78,7 @@ Each `modelOverrides` key is the ID of a built-in or extension model. Unknown ID
 | `cost.tiers[].output` | number |  | Required. Output cost in USD per million tokens. |
 | `cost.tiers[].cacheRead` | number |  | Required. Cache-read cost in USD per million tokens. |
 | `cost.tiers[].cacheWrite` | number |  | Required. Cache-write cost in USD per million tokens. |
-| `promptCache` | object |  | Best-effort prompt cache lifetime in seconds for the short and long retention tiers. |
+| `promptCache` | object |  | Best-effort prompt cache lifetime in seconds for the short and long retention tiers. Pi warms only tiers with a known lifetime. |
 | `contextWindow` | number |  | Context window in tokens. |
 | `maxTokens` | number |  | Maximum output tokens. |
 | `samplingParams` | object |  | Fields merged into every request body. Applies only to OpenAI-compatible APIs. |
