@@ -2,10 +2,6 @@
 
 ## [Unreleased]
 
-### Added
-
-- Added `thinkingLevelMapSchema()` and `modelPromptCacheSchema()` for per-use schema descriptions, and exported `CompatSchemasByApi`, which now also maps `azure-openai-responses` and `openai-codex-responses` ([#10790](https://github.com/earendil-works/pi/issues/10790))
-
 ### Fixed
 
 - Fixed whitespace-only tool output (for example a bare `\r\n` from bash) being sent as-is to OpenAI Completions, OpenAI Responses, and Google providers; it now uses the same placeholder as empty output, since some providers reject whitespace-only tool content with a 400 ([#8720](https://github.com/earendil-works/pi/issues/8720))
