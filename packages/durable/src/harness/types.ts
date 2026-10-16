@@ -136,7 +136,8 @@ export interface ConversationHandle {
 /** Post-tools controls requested by a tool result. */
 export type ToolControl = {
 	readonly addTools?: readonly string[];
-	readonly terminate?: true;
+	/** End the run without another model request when every result of the round sets it to `true`; `false` is a no-op. */
+	readonly terminate?: boolean;
 	readonly handoff?: string;
 };
 
