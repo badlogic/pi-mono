@@ -112,7 +112,7 @@ export { type RenderLatexOptions, renderLatex } from "./latex.ts";
 export { getNativeClipboard, type NativeClipboard } from "./native-platform.ts";
 export { oklabToOkhslLightness } from "./oklab.ts";
 // Program status reporting (OSC 7501)
-export { formatProgramStatus, type ProgramStatus } from "./program-status.ts";
+export { formatProgramStatus, isValidProgramStatusId, type ProgramStatus } from "./program-status.ts";
 // Input buffering for batch splitting
 export { StdinBuffer, type StdinBufferEventMap, type StdinBufferOptions } from "./stdin-buffer.ts";
 // Terminal interface and implementations

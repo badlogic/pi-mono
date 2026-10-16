@@ -49,3 +49,31 @@ describe("isProgramStatusReply", () => {
 		assert.equal(isProgramStatusReply("\x1b]11;rgb:0000/0000/0000\x07"), false);
 	});
 });
+
+describe("formatProgramStatus id", () => {
+	it("emits a valid hierarchical id", () => {
+		assert.equal(
+			formatProgramStatus({ state: "working", id: "legion/scout", message: "running" }),
+			`\x1b]7501;state=working:id=legion/scout:msg=${Buffer.from("running").toString("base64")}\x1b\\`,
+		);
+	});
+
+	it("omits invalid ids so a malformed id cannot overwrite the root", () => {
+		assert.equal(
+			formatProgramStatus({ state: "working", id: "bad id", message: "x" }),
+			`\x1b]7501;state=working:msg=${Buffer.from("x").toString("base64")}\x1b\\`,
+		);
+		assert.doesNotMatch(formatProgramStatus({ state: "clear", id: "" }), /id=/);
+		assert.doesNotMatch(formatProgramStatus({ state: "clear", id: `${"a/".repeat(9)}b` }), /id=/);
+	});
+
+	it("round-trips root and child records as separate sequences", () => {
+		const root = formatProgramStatus({ state: "working", app: "pi", message: "2 subagents" });
+		const child = formatProgramStatus({ state: "working", id: "legion/worker", message: "worker" });
+		const clear = formatProgramStatus({ state: "clear", id: "legion/worker" });
+		assert.ok(root.startsWith("\x1b]7501;state=working:app=pi:msg="));
+		assert.match(child, /:id=legion\/worker:/);
+		assert.equal(clear, "\x1b]7501;state=clear:id=legion/worker\x1b\\");
+		assert.notEqual(root, child);
+	});
+});

@@ -4,15 +4,20 @@ import type { AgentSessionEvent } from "../../core/agent-session.ts";
 
 export type BlockedStatus = { kind: NonNullable<ProgramStatus["kind"]>; message: string };
 
+/** External busy source (e.g. live subagents). Keeps root OSC `working` without locking the turn. */
+export type ActivityStatus = { message?: string };
+
 function firstLine(text: string | undefined): string {
 	return text?.split(/\r?\n/, 1)[0]?.trim() || "Error";
 }
 
 /**
- * Reports interactive-mode state to the terminal (OSC 7501): `working` during agent runs and
- * compaction, `blocked` while a dialog waits for the user, then `done`, `error`, or `idle` once the run
- * settles. Messages are limited to the session name, dialog titles, and the first line of errors; prompts
- * and assistant output are never reported.
+ * Reports interactive-mode state to the terminal (OSC 7501): `working` during agent runs,
+ * compaction, or extension activities (e.g. live subagents); `blocked` while a dialog waits for
+ * the user; then `done`, `error`, or `idle` once the run settles and no activities remain.
+ * Child records (with `id`) are emitted alongside the root. Messages are limited to the session
+ * name, dialog titles, activity labels, and the first line of errors; prompts and assistant
+ * output are never reported.
  */
 export class ProgramStatusReporter {
 	private readonly getTerminal: () => Terminal;
@@ -25,7 +30,12 @@ export class ProgramStatusReporter {
 	private restingStatus: ProgramStatus = { state: "idle" };
 	/** Open dialogs by source, in the order they opened. The most recent one is reported. */
 	private readonly blocked = new Map<string, BlockedStatus>();
-	private lastReport: string | undefined;
+	/** Extension activities by source. Presence keeps root `working` after the turn settles. */
+	private readonly activities = new Map<string, ActivityStatus>();
+	/** Non-root OSC records keyed by id (e.g. legion/scout). */
+	private readonly childRecords = new Map<string, ProgramStatus>();
+	private lastRootKey: string | undefined;
+	private readonly lastChildKeys = new Map<string, string>();
 
 	constructor(getTerminal: () => Terminal, getSessionName: () => string | undefined) {
 		this.getTerminal = getTerminal;
@@ -83,28 +93,86 @@ export class ProgramStatusReporter {
 		this.report();
 	}
 
+	/**
+	 * Report extension activity (e.g. live subagents) as root `working` until cleared with
+	 * `undefined`. Reopening a source replaces it. Does not change turn idle / Esc semantics.
+	 */
+	setActivity(source: string, activity: ActivityStatus | undefined): void {
+		this.activities.delete(source);
+		if (activity) this.activities.set(source, activity);
+		this.report();
+	}
+
+	/**
+	 * Emit or clear a non-root OSC 7501 record. `status.id` is required. `state=clear` removes that
+	 * id and every stored descendant. Does not change the root record (use {@link setActivity}).
+	 */
+	setProgramRecord(status: ProgramStatus & { id: string }): void {
+		const id = status.id;
+		if (status.state === "clear") {
+			const prefix = `${id}/`;
+			for (const key of [...this.childRecords.keys()]) {
+				if (key === id || key.startsWith(prefix)) this.childRecords.delete(key);
+			}
+		} else {
+			this.childRecords.set(id, { ...status });
+		}
+		this.report();
+	}
+
 	/** Forget the previous session's run, for example after switching sessions. */
 	reset(): void {
 		this.runActive = false;
 		this.compacting = false;
 		this.runResult = { state: "done" };
 		this.restingStatus = { state: "idle" };
+		this.activities.clear();
+		this.childRecords.clear();
 		this.report();
 	}
 
 	report(): void {
-		const status: ProgramStatus = { ...this.currentStatus(), app: APP_NAME };
-		const key = JSON.stringify(status);
-		if (key === this.lastReport) return;
-		this.lastReport = key;
-		this.getTerminal().setProgramStatus(status);
+		const terminal = this.getTerminal();
+		const root: ProgramStatus = { ...this.currentStatus(), app: APP_NAME };
+		const rootKey = JSON.stringify(root);
+		if (rootKey !== this.lastRootKey) {
+			this.lastRootKey = rootKey;
+			terminal.setProgramStatus(root);
+		}
+
+		const nextChildKeys = new Map<string, string>();
+		for (const [id, record] of this.childRecords) {
+			const status: ProgramStatus = { ...record, id, app: record.app ?? APP_NAME };
+			const key = JSON.stringify(status);
+			nextChildKeys.set(id, key);
+			if (this.lastChildKeys.get(id) !== key) {
+				terminal.setProgramStatus(status);
+			}
+		}
+		for (const id of this.lastChildKeys.keys()) {
+			if (!nextChildKeys.has(id)) {
+				terminal.setProgramStatus({ state: "clear", id });
+			}
+		}
+		this.lastChildKeys.clear();
+		for (const [id, key] of nextChildKeys) this.lastChildKeys.set(id, key);
 	}
 
 	private currentStatus(): ProgramStatus {
 		const blocked = [...this.blocked.values()].at(-1);
 		if (blocked) return { state: "blocked", ...blocked };
 		if (this.compacting) return { state: "working", message: "Compacting context" };
-		const status = this.runActive ? { state: "working" as const } : this.restingStatus;
+		const activity = [...this.activities.values()].at(-1);
+		const childBusy = [...this.childRecords.values()].some(
+			(record) => record.state === "working" || record.state === "blocked",
+		);
+		if (this.runActive || activity || childBusy) {
+			return {
+				state: "working",
+				message: activity?.message ?? this.getSessionName(),
+			};
+		}
+		const status = this.restingStatus;
 		if (status.state === "working" || status.state === "done") return { ...status, message: this.getSessionName() };
 		return status;
 	}

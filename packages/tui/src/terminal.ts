@@ -119,8 +119,10 @@ export interface Terminal {
 	setProgress(active: boolean): void;
 
 	/**
-	 * Report what the program is doing (OSC 7501). Sent only to terminals that support it; the latest
-	 * status is re-sent when support is confirmed or the terminal restarts.
+	 * Report what the program is doing (OSC 7501). Sent only to terminals that support it.
+	 * Each call addresses one record (`id` when set, otherwise the root). Records are retained and
+	 * re-sent when support is confirmed or the terminal restarts. `state=clear` with an `id` clears
+	 * that record and its descendants; without `id` it clears every record.
 	 */
 	setProgramStatus(status: ProgramStatus): void;
 }
@@ -161,8 +163,8 @@ export class ProcessTerminal implements Terminal {
 	private stdinBuffer?: StdinBuffer;
 	private stdinDataHandler?: (data: string) => void;
 	private progressInterval?: ReturnType<typeof setInterval>;
-	/** Latest program status, kept across stop() so start() can report it again. */
-	private programStatus?: ProgramStatus;
+	/** Program-status records by id ("" = root), kept across stop() so start() can report them again. */
+	private readonly programStatuses = new Map<string, ProgramStatus>();
 	/** Whether the terminal confirmed OSC 7501 support since the last start(), or `PI_PROGRAM_STATUS=1`. */
 	private programStatusSupported = false;
 	/** The support query was sent and its DA1 sentinel has not arrived yet. */
@@ -468,8 +470,8 @@ export class ProcessTerminal implements Terminal {
 		if (this.clearProgressInterval()) {
 			process.stdout.write(TERMINAL_PROGRESS_CLEAR_SEQUENCE);
 		}
-		// Remove the status while stopped, for example after exit or while suspended. start() reports it again.
-		if (this.programStatusSupported && this.programStatus) {
+		// Remove every record while stopped, for example after exit or while suspended. start() reports them again.
+		if (this.programStatusSupported && this.programStatuses.size > 0) {
 			process.stdout.write(formatProgramStatus({ state: "clear" }));
 		}
 		this.programStatusSupported = false;
@@ -574,13 +576,25 @@ export class ProcessTerminal implements Terminal {
 	}
 
 	setProgramStatus(status: ProgramStatus): void {
-		this.programStatus = status.state === "clear" ? undefined : status;
+		if (status.state === "clear") {
+			if (status.id === undefined) {
+				this.programStatuses.clear();
+			} else {
+				const prefix = `${status.id}/`;
+				for (const key of [...this.programStatuses.keys()]) {
+					if (key === status.id || key.startsWith(prefix)) this.programStatuses.delete(key);
+				}
+			}
+		} else {
+			this.programStatuses.set(status.id ?? "", status);
+		}
 		if (this.programStatusSupported) process.stdout.write(formatProgramStatus(status));
 	}
 
 	private writeProgramStatus(): void {
-		if (this.programStatusSupported && this.programStatus) {
-			process.stdout.write(formatProgramStatus(this.programStatus));
+		if (!this.programStatusSupported) return;
+		for (const status of this.programStatuses.values()) {
+			process.stdout.write(formatProgramStatus(status));
 		}
 	}
 

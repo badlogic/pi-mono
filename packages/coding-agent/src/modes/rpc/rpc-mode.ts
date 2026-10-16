@@ -31,6 +31,7 @@ import { toJsonEvent } from "../json-event.ts";
 import { attachJsonlLineReader, serializeJsonLine } from "./jsonl.ts";
 import type {
 	RpcCommand,
+	RpcExtensionActivity,
 	RpcExtensionUIRequest,
 	RpcExtensionUIResponse,
 	RpcResponse,
@@ -41,6 +42,7 @@ import type {
 // Re-export types for consumers
 export type {
 	RpcCommand,
+	RpcExtensionActivity,
 	RpcExtensionUIRequest,
 	RpcExtensionUIResponse,
 	RpcResponse,
@@ -57,7 +59,7 @@ export async function runRpcMode(runtimeHost: AgentSessionRuntime): Promise<neve
 	let unsubscribe: (() => void) | undefined;
 	let unsubscribeBackpressure: (() => void) | undefined;
 
-	const output = (obj: RpcResponse | RpcExtensionUIRequest | object) => {
+	const output = (obj: RpcResponse | RpcExtensionUIRequest | RpcExtensionActivity | object) => {
 		writeRawStdout(serializeJsonLine(obj));
 	};
 
@@ -174,6 +176,29 @@ export async function runRpcMode(runtimeHost: AgentSessionRuntime): Promise<neve
 				statusKey: key,
 				statusText: text,
 			} as RpcExtensionUIRequest);
+		},
+
+		setActivity(source: string, activity: { message?: string } | undefined): void {
+			output({
+				type: "extension_activity",
+				id: crypto.randomUUID(),
+				source,
+				activity: activity ?? null,
+			} as RpcExtensionActivity);
+		},
+
+		setProgramRecord(status: {
+			state: "idle" | "working" | "blocked" | "done" | "error" | "clear";
+			id: string;
+			app?: string;
+			kind?: "permission" | "question" | "auth";
+			message?: string;
+		}): void {
+			output({
+				type: "extension_activity",
+				id: crypto.randomUUID(),
+				record: status,
+			} as RpcExtensionActivity);
 		},
 
 		setWorkingMessage(_message?: string): void {

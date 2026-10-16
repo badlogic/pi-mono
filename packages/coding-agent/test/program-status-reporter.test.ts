@@ -16,7 +16,8 @@ function setup(sessionName?: string) {
 		for (const event of events) reporter.handleEvent(event);
 	};
 	const last = () => {
-		const { app: _app, ...status } = reports.at(-1)!;
+		const report = [...reports].reverse().find((status) => status.id === undefined) ?? reports.at(-1)!;
+		const { app: _app, id: _id, ...status } = report;
 		return Object.fromEntries(Object.entries(status).filter(([, value]) => value !== undefined));
 	};
 	return { reporter, reports, session, send, last };
@@ -152,5 +153,80 @@ describe("ProgramStatusReporter", () => {
 		send({ type: "agent_start" }, assistantEnd("stop"), settled);
 		reporter.reset();
 		expect(last()).toEqual({ state: "idle" });
+	});
+
+	it("keeps root working while an activity is set, then restores resting status", () => {
+		const { reporter, send, last } = setup("Session");
+		send({ type: "agent_start" }, assistantEnd("stop"), settled);
+		expect(last()).toEqual({ state: "done", message: "Session" });
+
+		reporter.setActivity("legion", { message: "2 subagents (scout, worker)" });
+		expect(last()).toEqual({ state: "working", message: "2 subagents (scout, worker)" });
+
+		reporter.setActivity("plugin", { message: "bg task" });
+		expect(last()).toEqual({ state: "working", message: "bg task" });
+
+		reporter.setActivity("plugin", undefined);
+		expect(last()).toEqual({ state: "working", message: "2 subagents (scout, worker)" });
+
+		reporter.setActivity("legion", undefined);
+		expect(last()).toEqual({ state: "done", message: "Session" });
+	});
+
+	it("does not let activities override blocked or compacting", () => {
+		const { reporter, send, last } = setup();
+		reporter.setActivity("legion", { message: "busy" });
+		expect(last()).toEqual({ state: "working", message: "busy" });
+
+		reporter.setBlocked("dialog", { kind: "permission", message: "Allow?" });
+		expect(last()).toEqual({ state: "blocked", kind: "permission", message: "Allow?" });
+		reporter.setBlocked("dialog", undefined);
+		expect(last()).toEqual({ state: "working", message: "busy" });
+
+		send({ type: "compaction_start", reason: "manual" });
+		expect(last()).toEqual({ state: "working", message: "Compacting context" });
+		send(compactionEnd("manual"));
+		expect(last()).toEqual({ state: "working", message: "busy" });
+	});
+
+	it("emits hierarchical child records alongside the root", () => {
+		const { reporter, reports, send, last } = setup("Session");
+		send({ type: "agent_start" }, assistantEnd("stop"), settled);
+		reporter.setActivity("legion", { message: "1 subagent (scout)" });
+		reporter.setProgramRecord({ id: "legion/scout", state: "working", message: "scout" });
+
+		const child = reports.filter((r) => r.id === "legion/scout").at(-1);
+		expect(child).toMatchObject({ state: "working", id: "legion/scout", message: "scout", app: "pi" });
+		expect(last()).toEqual({ state: "working", message: "1 subagent (scout)" });
+
+		reporter.setProgramRecord({ id: "legion/scout", state: "clear" });
+		expect(reports.at(-1)).toMatchObject({ state: "clear", id: "legion/scout" });
+
+		reporter.setActivity("legion", undefined);
+		expect(last()).toEqual({ state: "done", message: "Session" });
+	});
+
+	it("clears activities and child records on reset", () => {
+		const { reporter, reports, send, last } = setup("Session");
+		send({ type: "agent_start" }, assistantEnd("stop"), settled);
+		reporter.setActivity("legion", { message: "busy" });
+		reporter.setProgramRecord({ id: "legion/scout", state: "working", message: "scout" });
+		expect(last()).toEqual({ state: "working", message: "busy" });
+
+		reporter.reset();
+		expect(last()).toEqual({ state: "idle" });
+		expect(reports.filter((r) => r.id === "legion/scout" && r.state === "clear").length).toBeGreaterThan(0);
+	});
+
+	it("keeps root working from child records without an activity", () => {
+		const { reporter, send, last } = setup("Session");
+		send({ type: "agent_start" }, assistantEnd("stop"), settled);
+		expect(last()).toEqual({ state: "done", message: "Session" });
+
+		reporter.setProgramRecord({ id: "plugin/bg/job", state: "working", message: "job" });
+		expect(last()).toEqual({ state: "working", message: "Session" });
+
+		reporter.setProgramRecord({ id: "plugin/bg/job", state: "clear" });
+		expect(last()).toEqual({ state: "done", message: "Session" });
 	});
 });

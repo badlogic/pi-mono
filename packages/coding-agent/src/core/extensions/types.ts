@@ -52,6 +52,7 @@ import type {
 	KeyId,
 	OverlayHandle,
 	OverlayOptions,
+	ProgramStatus,
 	TUI,
 } from "@earendil-works/pi-tui";
 import type { Static, TSchema } from "typebox";
@@ -164,6 +165,22 @@ export interface ExtensionUIContext {
 
 	/** Set status text in the footer/status bar. Pass undefined to clear. */
 	setStatus(key: string, text: string | undefined): void;
+
+	/**
+	 * Report extension activity to the OSC 7501 program-status reporter (interactive mode).
+	 * While any source has an activity, root status stays `working` (below `blocked` /
+	 * compacting). Pass `undefined` to clear that source. Does not change `isIdle()` /
+	 * turn Esc semantics. In RPC mode, forwarded to the host as `extension_activity`.
+	 */
+	setActivity(source: string, activity: { message?: string } | undefined): void;
+
+	/**
+	 * Emit or clear a non-root OSC 7501 record (`status.id` required). Use for hierarchical
+	 * child ids such as `legion/<slug>`. `state=clear` removes that id and descendants.
+	 * Interactive mode writes through the reporter; RPC forwards as `extension_activity` with
+	 * `record`. No-op in print mode.
+	 */
+	setProgramRecord(status: ProgramStatus & { id: string }): void;
 
 	/** Set the working/loading message shown during streaming. Call with no argument to restore default. */
 	setWorkingMessage(message?: string): void;

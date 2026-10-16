@@ -80,6 +80,8 @@ export function createTestUiContext(overrides: Partial<ExtensionUIContext> = {})
 		notify: () => {},
 		onTerminalInput: () => () => {},
 		setStatus: () => {},
+		setActivity: () => {},
+		setProgramRecord: () => {},
 		setWorkingMessage: () => {},
 		setWorkingVisible: () => {},
 		setWorkingIndicator: () => {},

@@ -286,6 +286,33 @@ export type RpcExtensionUIRequest =
 	| { type: "extension_ui_request"; id: string; method: "setTitle"; title: string }
 	| { type: "extension_ui_request"; id: string; method: "set_editor_text"; text: string };
 
+/**
+ * Child-side extension activity / child OSC record, forwarded to the host.
+ * Hosts (e.g. legion) fold this into parent `setActivity` / `setProgramRecord`.
+ * Fire-and-forget; no response.
+ */
+export type RpcExtensionActivity =
+	| {
+			type: "extension_activity";
+			id: string;
+			source: string;
+			activity: { message?: string } | null;
+			record?: undefined;
+	  }
+	| {
+			type: "extension_activity";
+			id: string;
+			source?: undefined;
+			activity?: undefined;
+			record: {
+				state: "idle" | "working" | "blocked" | "done" | "error" | "clear";
+				id: string;
+				app?: string;
+				kind?: "permission" | "question" | "auth";
+				message?: string;
+			};
+	  };
+
 // ============================================================================
 // Extension UI Commands (stdin)
 // ============================================================================
