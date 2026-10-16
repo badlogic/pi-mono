@@ -106,8 +106,10 @@ function buildRules(
 	const hasLs = selectedTools.includes("ls");
 
 	if ((hasBash || hasPowerShell) && !hasGrep && !hasFind && !hasLs) {
+		// The powershell tool only works on Windows (getPowerShellConfig throws elsewhere), so when it is
+		// selected the platform is already Windows and no OS check is needed here.
 		if (hasBash && hasPowerShell) {
-			addRule("Use bash or PowerShell for file operations like listing, searching, and finding files");
+			addRule("Prefer PowerShell over bash for file operations like listing, searching, and finding files");
 		} else if (hasPowerShell) {
 			addRule("Use PowerShell for file operations like listing, searching, and finding files");
 		} else {

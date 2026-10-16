@@ -9,6 +9,7 @@
 ### Changed
 
 - `generateSummary()` and `generateSummaryWithUsage()` now ignore their `reserveTokens` parameter. Summary requests use the model's output limit instead.
+- When both `bash` and `powershell` are enabled, the system prompt now tells the model to prefer PowerShell for file operations ([#11049](https://github.com/earendil-works/pi/issues/11049))
 
 ### Fixed
 
