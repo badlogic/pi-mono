@@ -157,7 +157,7 @@ describe("isContextOverflow", () => {
 			cacheRead: 1048512,
 			output: 0,
 			provider: "xiaomi",
-			model: "mimo-v2.5-pro",
+			model: "mimo-v2.6-pro",
 		});
 		expect(isContextOverflow(message, 1048576)).toBe(true);
 	});

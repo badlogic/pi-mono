@@ -18,7 +18,7 @@ class PayloadCaptured extends Error {
 
 function makeModel(allowEmptySignature?: boolean): Model<"anthropic-messages"> {
 	return {
-		id: "mimo-v2.5-pro",
+		id: "mimo-v2.6-pro",
 		name: "MiMo-V2.5-Pro",
 		api: "anthropic-messages",
 		provider: "xiaomi-token-plan-ams",
@@ -36,7 +36,7 @@ function makeContext(
 	thinkingSignature: string,
 	thinking = "internal reasoning",
 	provider = "xiaomi-token-plan-ams",
-	model = "mimo-v2.5-pro",
+	model = "mimo-v2.6-pro",
 ): Context {
 	const assistant: AssistantMessage = {
 		role: "assistant",
