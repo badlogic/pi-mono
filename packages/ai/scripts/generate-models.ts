@@ -2898,6 +2898,13 @@ async function generateModels() {
 				requiresReasoningContentOnAssistantMessages: true,
 			};
 		}
+		// Groq's Qwen chat templates reject the `developer` role (#10741).
+		if (candidate.provider === "groq" && candidate.id.startsWith("qwen/")) {
+			candidate.compat = {
+				...candidate.compat,
+				supportsDeveloperRole: false,
+			};
+		}
 		if (candidate.provider === "openrouter" && candidate.id === "z-ai/glm-5") {
 			candidate.cost.input = 0.6;
 			candidate.cost.output = 1.9;

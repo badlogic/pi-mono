@@ -1254,6 +1254,36 @@ describe("openai-completions tool_choice", () => {
 		}
 	});
 
+	// Regression for #10741: Groq's Qwen chat templates reject the developer role.
+	it("stores Groq Qwen compat for developer role rejection in built-in metadata", () => {
+		for (const modelId of ["qwen/qwen3.6-27b", "qwen/qwen3.8-27b"] as const) {
+			const model = getModel("groq", modelId)!;
+			expect(model.compat?.supportsDeveloperRole).toBe(false);
+		}
+	});
+
+	it("sends system instead of developer for Groq Qwen reasoning models", async () => {
+		const model = getModel("groq", "qwen/qwen3.8-27b")!;
+		let payload: unknown;
+
+		await streamSimple(
+			model,
+			{
+				systemPrompt: "Follow instructions.",
+				messages: [{ role: "user", content: "Hi", timestamp: Date.now() }],
+			},
+			{
+				apiKey: "test",
+				onPayload: (params: unknown) => {
+					payload = params;
+				},
+			},
+		).result();
+
+		const params = payload as { messages?: Array<{ role?: string }> };
+		expect(params.messages?.[0]?.role).toBe("system");
+	});
+
 	it("replays Xiaomi MiMo assistant tool calls with empty reasoning_content when thinking is missing", async () => {
 		const model = getModel("xiaomi", "mimo-v2.5-pro")!;
 		const assistantMessage: AssistantMessage = {
