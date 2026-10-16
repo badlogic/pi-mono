@@ -2,6 +2,14 @@
 
 ## [Unreleased]
 
+### Breaking Changes
+
+- Removed the `reserveTokens` parameter from `generateSummary()` and `generateSummaryWithUsage()`. Summary requests now use the model's output limit instead of a limit derived from `compaction.reserveTokens`.
+
+### Fixed
+
+- Fixed compaction and branch summaries failing with "generation hit the token cap" when reasoning used most of the fixed summary output limit. Summaries now use the model's output limit, and `compaction.reserveTokens` only controls when compaction starts ([#9512](https://github.com/earendil-works/pi/issues/9512), [#9075](https://github.com/earendil-works/pi/issues/9075)).
+
 ## [1.3.0] - 2026-10-15
 
 ### New Features
