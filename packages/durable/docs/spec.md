@@ -408,6 +408,14 @@ type CompactionPolicy = {
   backgroundTokens: number;
 };
 
+/**
+ * `modelOverrides` is keyed by exact `"provider/modelId"`; each field it sets replaces the harness-wide one for that
+ * model. Readers resolve the policy for the model they act for (see the reader table below).
+ */
+type CompactionSettings = Partial<CompactionPolicy> & {
+  readonly modelOverrides?: Readonly<Record<string, Partial<CompactionPolicy>>>;
+};
+
 type ToolExecutionMode = "parallel" | "sequential";
 
 /** How many queued items of one mode a boundary selects (section 6). */
@@ -419,7 +427,7 @@ type HarnessSettings = {
   readonly extensions?: readonly Extension[];
   readonly stream?: ConversationStreamOptions;
   readonly retry?: Partial<ConversationRetryPolicy>;
-  readonly compaction?: Partial<CompactionPolicy>;
+  readonly compaction?: CompactionSettings;
   readonly toolExecution?: ToolExecutionMode;
   readonly steeringMode?: QueueMode;
   readonly followUpMode?: QueueMode;
@@ -434,7 +442,7 @@ type Settings = {
   readonly extensions?: readonly Extension[]; // default: every installed extension, in install order
   readonly stream: ConversationStreamOptions; // default {}
   readonly retry: ConversationRetryPolicy; // { enabled: true, maxRetries: 3, baseDelayMs: 2000, maxAgentDelayMs: 60000 }
-  readonly compaction: CompactionPolicy; // { enabled: true, reserveTokens: 16384, keepRecentTokens: 20000, backgroundTokens: 32768 }
+  readonly compaction: CompactionPolicy & Pick<CompactionSettings, "modelOverrides">; // { enabled: true, reserveTokens: 16384, keepRecentTokens: 20000, backgroundTokens: 32768 }
   readonly toolExecution: ToolExecutionMode; // "parallel"
   readonly steeringMode: QueueMode; // "one-at-a-time"
   readonly followUpMode: QueueMode; // "one-at-a-time"
@@ -2663,12 +2671,13 @@ await conversation.configure({ extensions: { add: [Venv] } }, context);
 
 | reader | resolves | when |
 |---|---|---|
-| generation `prepare` | agent (tools, sections, model, thinking level), stream options, compaction thresholds | once per request; model, stream options, and offered tools are fixed in the request checkpoint (section 8.3) |
+| generation `prepare` | agent (tools, sections, model, thinking level), stream options, compaction thresholds for that model | once per request; model, stream options, and offered tools are fixed in the request checkpoint (section 8.3) |
 | every task phase | extension selection for hooks; `runtime.agent()` | at most once per phase handler, at its first hook dispatch or `agent()` call, from that phase's snapshot and the committed `pi.agent`, off the Session line, with the invocation's context; fixed for the rest of the phase |
 | tool task | the implementation of an accepted call | at `call` and `execute`: the name among the phase agent's `tools`, the current selection after the tools filter; no such tool, for example one removed after preparation: `tool_unavailable`. Replay policy on reopen uses the same lookup (section 7.3) |
 | generation, when a tool round starts | tool execution mode | once per round (section 8.3) |
 | generation, compaction | retry policy | at each attempt's classification |
-| compaction `select` | model, thinking level, stream options, compaction thresholds | once; the summary request stays pinned across its retries (section 8.7) |
+| generation, on a context overflow | compaction policy for the request's model | at classification |
+| compaction `select` | model, thinking level, stream options, compaction thresholds for that model | once; the summary request stays pinned across its retries (section 8.7) |
 | boundaries and idle admission, on the Session line | queue modes | per boundary (section 6) |
 | tool task, `prepare`, `runtime.env()` | environment | at each call (section 2.2) |
 

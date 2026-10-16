@@ -68,6 +68,7 @@ export type {
 	CompactionPolicy,
 	CompactionReason,
 	CompactionResult,
+	CompactionSettings,
 	ContextView,
 	Conversation,
 	ConversationAbortOptions,

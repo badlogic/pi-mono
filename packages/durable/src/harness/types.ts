@@ -136,7 +136,8 @@ export interface ConversationHandle {
 /** Post-tools controls requested by a tool result. */
 export type ToolControl = {
 	readonly addTools?: readonly string[];
-	readonly terminate?: true;
+	/** End the run without another model request when every result of the round sets it to `true`; `false` is a no-op. */
+	readonly terminate?: boolean;
 	readonly handoff?: string;
 };
 
@@ -507,6 +508,14 @@ export type CompactionPolicy = {
 };
 
 /**
+ * Harness-wide compaction settings. `modelOverrides` is keyed by exact `"provider/modelId"`; each field it sets
+ * replaces the harness-wide one for that model, so small- and large-window models can share a harness.
+ */
+export type CompactionSettings = Partial<CompactionPolicy> & {
+	readonly modelOverrides?: Readonly<Record<string, Partial<CompactionPolicy>>>;
+};
+
+/**
  * How often running progress is committed. Each progress commit is a storage write; a host whose storage is remote can
  * commit less often, so live answers and tool output appear in larger steps.
  */
@@ -532,7 +541,7 @@ export type HarnessSettings = {
 	readonly extensions?: readonly Extension[];
 	readonly stream?: ConversationStreamOptions;
 	readonly retry?: Partial<ConversationRetryPolicy>;
-	readonly compaction?: Partial<CompactionPolicy>;
+	readonly compaction?: CompactionSettings;
 	readonly progress?: Partial<ProgressPolicy>;
 	readonly toolExecution?: ToolExecutionMode;
 	readonly steeringMode?: QueueMode;
@@ -556,7 +565,8 @@ export type Settings = {
 	readonly extensions?: readonly Extension[];
 	readonly stream: ConversationStreamOptions;
 	readonly retry: ConversationRetryPolicy;
-	readonly compaction: CompactionPolicy;
+	/** Harness-wide policy over the defaults; per-model overrides apply where the model is known. */
+	readonly compaction: CompactionPolicy & Pick<CompactionSettings, "modelOverrides">;
 	readonly progress: ProgressPolicy;
 	readonly toolExecution: ToolExecutionMode;
 	readonly steeringMode: QueueMode;

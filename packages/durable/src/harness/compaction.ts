@@ -27,11 +27,13 @@ import { ensureProviderSessionId } from "./provider.ts";
 import { admitSubmission } from "./submissions.ts";
 import type {
 	CompactionHooks,
+	CompactionPolicy,
 	CompactionReason,
 	CompactionResult,
 	ContextView,
 	ConversationStreamOptions,
 	ModelRef,
+	Settings,
 } from "./types.ts";
 import { recordUsage } from "./usage.ts";
 
@@ -119,7 +121,7 @@ export const CompactionTask = defineTask<CompactionInput, CompactionCheckpoint, 
 			const ref = agent.model;
 			const model = ref === undefined ? undefined : runtime.models.getModel(ref.provider, ref.modelId);
 			if (ref === undefined || model === undefined) return failNoModel(runtime, ref, context);
-			const policy = settings.compaction;
+			const policy = compactionPolicy(settings, ref);
 			const view = await runtime.context(conversationId, context);
 			const cut = selectCut(view, policy.keepRecentTokens);
 			if (cut === undefined) return complete(runtime, context);
@@ -251,6 +253,18 @@ export async function createCompaction(
 	const status = { taskId, reason: input.reason, blocking: owner !== undefined, attempt: 1 };
 	addCompactionStatus(await tx.doc(LiveDoc, conversationId), status);
 	return taskId;
+}
+
+/** The compaction policy for `model`: its `modelOverrides` entry over the harness-wide policy, field by field. */
+export function compactionPolicy(settings: Settings, model: ModelRef): CompactionPolicy {
+	const { modelOverrides, ...policy } = settings.compaction;
+	const override = modelOverrides?.[`${model.provider}/${model.modelId}`];
+	return {
+		enabled: override?.enabled ?? policy.enabled,
+		reserveTokens: override?.reserveTokens ?? policy.reserveTokens,
+		keepRecentTokens: override?.keepRecentTokens ?? policy.keepRecentTokens,
+		backgroundTokens: override?.backgroundTokens ?? policy.backgroundTokens,
+	};
 }
 
 /**

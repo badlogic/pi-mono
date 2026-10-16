@@ -673,6 +673,23 @@ describe("tool results", () => {
 		]);
 		await first.harness.close(context);
 	});
+
+	// #10858
+	it("does not terminate on terminate: false", async () => {
+		const setup = chatSetup();
+		const keep = tool("keep", async () => ({ output: [], control: { terminate: false } }));
+		addTool(setup.registry, keep);
+		const { harness, entries, status } = await run(
+			setup,
+			[calls(["keep", {}, "c1"]), DONE],
+			async (_harness, root) => {
+				await root.configure({ tools: [keep] }, context);
+			},
+		);
+		expect(status).toBe("done");
+		expect(entries.at(-1)!.kind).toBe("pi.assistant");
+		await harness.close(context);
+	});
 });
 
 describe("generation hooks", () => {
