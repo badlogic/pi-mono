@@ -16,7 +16,13 @@
       nixpkgs-darwin-x64,
     }:
     let
-      systems = [
+      inherit (nixpkgs) lib;
+      inherit (lib) importJSON genAttrs getExe;
+
+      source = self;
+      packageJson = importJSON "${source}/packages/coding-agent/package.json";
+
+      platforms = [
         "aarch64-darwin"
         "aarch64-linux"
         "x86_64-darwin"
@@ -26,30 +32,25 @@
       nixpkgsFor =
         system:
         (if system == "x86_64-darwin" then nixpkgs-darwin-x64 else nixpkgs).legacyPackages.${system};
-      inherit (nixpkgs) lib;
 
-      forAllSystems = lib.genAttrs systems;
+      forAllSystems = genAttrs platforms;
+
+      piOverlay = _final: prev: {
+        pi = prev.callPackage ./nix/package.nix {
+          inherit source packageJson platforms;
+          nodejs = prev.nodejs_22;
+        };
+      };
 
       perSystem =
         system:
         let
           pkgs = nixpkgsFor system;
-          source = self;
-          nodejs = pkgs.nodejs_22;
-          packageJson = pkgs.lib.importJSON "${source}/packages/coding-agent/package.json";
-          treefmtWrapper = import ./nix/treefmt.nix {
-            inherit pkgs source;
-          };
-          pi = pkgs.callPackage ./nix/package.nix {
-            inherit
-              source
-              nodejs
-              packageJson
-              ;
-            platforms = systems;
-          };
+          pi = (pkgs.extend piOverlay).pi;
+          treefmtWrapper = import ./nix/treefmt.nix { inherit pkgs source; };
           devShell = import ./nix/devshell.nix {
-            inherit pkgs nodejs treefmtWrapper;
+            inherit pkgs treefmtWrapper;
+            nodejs = pkgs.nodejs_22;
           };
         in
         {
@@ -77,16 +78,11 @@
         default = pi;
         pi = {
           type = "app";
-          program = lib.getExe (perSystem system).pi;
+          program = getExe (perSystem system).pi;
           meta.description = (perSystem system).pi.meta.description;
         };
       });
 
-      overlays.default = final: _previous: {
-        pi = final.callPackage ./nix/package.nix {
-          source = self;
-          platforms = systems;
-        };
-      };
+      overlays.default = piOverlay;
     };
 }
