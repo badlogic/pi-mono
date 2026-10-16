@@ -12,15 +12,20 @@ export const ModelInputModalitySchema = Type.Enum(MODEL_INPUT_MODALITIES);
 export const CacheRetentionSchema = Type.Enum(CACHE_RETENTIONS);
 
 const ThinkingLevelMapValueSchema = Type.Union([Type.String(), Type.Null()]);
-export const ThinkingLevelMapSchema = Type.Partial(Type.Record(ModelThinkingLevelSchema, ThinkingLevelMapValueSchema));
+export function thinkingLevelMapSchema(options?: TSchemaOptions) {
+	return Type.Partial(Type.Record(ModelThinkingLevelSchema, ThinkingLevelMapValueSchema), options);
+}
 
-export const ModelPromptCacheSchema = Type.Partial(
-	Type.Record(Type.Enum(MODEL_PROMPT_CACHE_RETENTIONS), Type.Number({ exclusiveMinimum: 0 })),
-	{
-		description:
-			"Best-effort prompt cache lifetime in seconds for each retention tier. A missing tier means the lifetime is unknown, so Pi does not warm it.",
-	},
-);
+export const ThinkingLevelMapSchema = thinkingLevelMapSchema();
+
+export function modelPromptCacheSchema(options?: TSchemaOptions) {
+	return Type.Partial(
+		Type.Record(Type.Enum(MODEL_PROMPT_CACHE_RETENTIONS), Type.Number({ exclusiveMinimum: 0 })),
+		options,
+	);
+}
+
+export const ModelPromptCacheSchema = modelPromptCacheSchema();
 
 const ModelCostRatesProperties = {
 	input: Type.Number({ description: "Input cost in USD per million tokens." }),
