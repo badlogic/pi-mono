@@ -77,6 +77,7 @@ describe("generateSummary reasoning options", () => {
 		const result = await generateSummaryWithUsage(
 			messages,
 			createModel(true),
+			undefined,
 			"test-key",
 			undefined,
 			undefined,
@@ -96,12 +97,14 @@ describe("generateSummary reasoning options", () => {
 	});
 
 	it("preserves the string result from generateSummary", async () => {
-		await expect(generateSummary(messages, createModel(false), "test-key")).resolves.toBe("## Goal\nTest summary");
+		await expect(generateSummary(messages, createModel(false), undefined, "test-key")).resolves.toBe(
+			"## Goal\nTest summary",
+		);
 	});
 
 	it("uses fresh routing sessions without prompt caching", async () => {
-		await generateSummary(messages, createModel(false), "test-key");
-		await generateSummary(messages, createModel(false), "test-key");
+		await generateSummary(messages, createModel(false), undefined, "test-key");
+		await generateSummary(messages, createModel(false), undefined, "test-key");
 
 		const requestOptions = completeSimpleMock.mock.calls.map((call) => call[2]);
 		expect(requestOptions).toHaveLength(2);
@@ -151,7 +154,7 @@ describe("generateSummary reasoning options", () => {
 	it("rejects tool calls from conversation summaries", async () => {
 		completeSimpleMock.mockResolvedValueOnce(mockToolCallResponse);
 
-		await expect(generateSummaryWithUsage(messages, createModel(false), "test-key")).rejects.toThrow(
+		await expect(generateSummaryWithUsage(messages, createModel(false), undefined, "test-key")).rejects.toThrow(
 			"Summarization attempted to call a tool",
 		);
 	});
@@ -180,7 +183,7 @@ describe("generateSummary reasoning options", () => {
 			content: [{ type: "text", text: "partial" }],
 		});
 
-		await expect(generateSummaryWithUsage(messages, createModel(false), "test-key")).rejects.toThrow(
+		await expect(generateSummaryWithUsage(messages, createModel(false), undefined, "test-key")).rejects.toThrow(
 			"generation hit the token cap",
 		);
 	});
@@ -207,7 +210,17 @@ describe("generateSummary reasoning options", () => {
 	});
 
 	it("does not set reasoning when thinking is off", async () => {
-		await generateSummary(messages, createModel(true), "test-key", undefined, undefined, undefined, undefined, "off");
+		await generateSummary(
+			messages,
+			createModel(true),
+			undefined,
+			"test-key",
+			undefined,
+			undefined,
+			undefined,
+			undefined,
+			"off",
+		);
 
 		expect(completeSimpleMock).toHaveBeenCalledTimes(1);
 		expect(completeSimpleMock.mock.calls[0][2]).toMatchObject({
@@ -220,6 +233,7 @@ describe("generateSummary reasoning options", () => {
 		await generateSummary(
 			messages,
 			createModel(false),
+			undefined,
 			"test-key",
 			undefined,
 			undefined,
@@ -247,6 +261,7 @@ describe("generateSummary reasoning options", () => {
 					},
 				],
 			}),
+			undefined,
 			"test-key",
 		);
 
@@ -255,7 +270,7 @@ describe("generateSummary reasoning options", () => {
 	});
 
 	it("does not set Anthropic refusal fallback for models without allowed fallback targets", async () => {
-		await generateSummary(messages, createModel(true), "test-key");
+		await generateSummary(messages, createModel(true), undefined, "test-key");
 
 		expect(completeSimpleMock).toHaveBeenCalledTimes(1);
 		expect(completeSimpleMock.mock.calls[0][2]).not.toHaveProperty("refusalFallbacks");

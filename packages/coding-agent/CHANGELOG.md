@@ -2,9 +2,9 @@
 
 ## [Unreleased]
 
-### Breaking Changes
+### Changed
 
-- Removed the `reserveTokens` parameter from `generateSummary()` and `generateSummaryWithUsage()`. Summary requests now use the model's output limit instead of a limit derived from `compaction.reserveTokens`.
+- `generateSummary()` and `generateSummaryWithUsage()` now ignore their `reserveTokens` parameter. Summary requests use the model's output limit instead.
 
 ### Fixed
 
