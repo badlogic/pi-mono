@@ -96,7 +96,7 @@ describe("buildSystemPrompt", () => {
 
 		test.each([
 			[["powershell"], "Use PowerShell for file operations"],
-			[["bash", "powershell"], "Use bash or PowerShell for file operations"],
+			[["bash", "powershell"], "Prefer PowerShell over bash for file operations"],
 		] as const)("uses shell-specific guidance for %j", (selectedTools, expected) => {
 			const prompt = buildSystemPrompt({
 				selectedTools: [...selectedTools],
