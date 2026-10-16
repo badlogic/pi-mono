@@ -66,6 +66,9 @@ const RETRYABLE_PROVIDER_ERROR_PATTERN = buildProviderErrorPattern([
 	"connection.?lost",
 	"other side closed",
 	"fetch failed",
+	// node-fetch system errors, e.g. the Google ADC OAuth token refresh used by
+	// google-vertex. The reason is often empty (#10996).
+	"request to \\S+ failed, reason:",
 	"getaddrinfo",
 	"ENOTFOUND",
 	"EAI_AGAIN",
