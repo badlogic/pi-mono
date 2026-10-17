@@ -10,26 +10,26 @@ const MAX_TIMER_DELAY = 2_147_483_647;
 const inWorkers = typeof navigator !== "undefined" && navigator.userAgent === "Cloudflare-Workers";
 
 /**
- * The default `HarnessOptions.setTimer`: `setTimeout`, never firing early, also for delays beyond its limit. A
- * background timer is unreferenced, so it never keeps the process alive. It is declined in Cloudflare Workers and
- * wherever timers cannot be unreferenced.
+ * The default `HarnessOptions.setTimer`: `setTimeout`, waiting out delays beyond its limit in steps. A background timer
+ * is unreferenced, so it never keeps the process alive. It is declined in Cloudflare Workers and wherever timers cannot
+ * be unreferenced.
  */
 export const nativeTimer: SetTimer = (callback, delayMs, options) => {
 	if (options.background && inWorkers) return undefined;
-	let handle: ReturnType<typeof setTimeout>;
-	const arm = (remaining: number): boolean => {
-		handle = setTimeout(
-			() => (remaining > MAX_TIMER_DELAY ? arm(remaining - MAX_TIMER_DELAY) : callback()),
+	const arm = (remaining: number): ReturnType<typeof setTimeout> => {
+		const next = setTimeout(
+			() => {
+				if (remaining > MAX_TIMER_DELAY) handle = arm(remaining - MAX_TIMER_DELAY);
+				else callback();
+			},
 			Math.min(remaining, MAX_TIMER_DELAY),
 		);
-		if (!options.background) return true;
-		const unref = (handle as { unref?: unknown }).unref;
-		if (typeof unref !== "function") return false;
-		unref.call(handle);
-		return true;
+		if (options.background) (next as { unref?: () => void }).unref?.();
+		return next;
 	};
-	if (!arm(Math.max(0, delayMs))) {
-		clearTimeout(handle!);
+	let handle = arm(Math.max(0, delayMs));
+	if (options.background && typeof (handle as { unref?: unknown }).unref !== "function") {
+		clearTimeout(handle);
 		return undefined;
 	}
 	return () => clearTimeout(handle);

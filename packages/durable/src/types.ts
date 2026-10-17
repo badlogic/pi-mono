@@ -134,10 +134,11 @@ export type TaskDocFamilyToken<T extends JsonObject, I extends JsonValue> = DocF
 >;
 
 /**
- * A host timer, given as `HarnessOptions.setTimer`: call `callback` once, no sooner than `delayMs` from now, and return
+ * A host timer, given as `HarnessOptions.setTimer`: call `callback` once, about `delayMs` from now, and return
  * a function that disarms it. `background` timers only free memory, and a host may decline one by returning
  * `undefined`, for example where a pending timer keeps the process from hibernating; the Harness then frees that memory
  * at later commits. Other timers pace or resume work: one the host throws on or declines is armed with `setTimeout`.
+ * A timer should not fire early; callers check their clock again when it fires.
  */
 export type SetTimer = (
 	callback: () => void,

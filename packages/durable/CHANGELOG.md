@@ -6,7 +6,7 @@
 
 - `TaskRuntime.sleep()` is removed: it waited inside a phase, which holds an invocation and, after a restart, reruns the phase and restarts the wait. A task now ends its phase asleep with `runtime.sleepUntil(until, checkpoint, context)` or by returning `{ status: "sleeping", until, checkpoint }` from `runtime.commit()`; move the work after the wait into the next phase and carry what it needs in the checkpoint. `TaskRuntime.setTimer()` paces work inside a phase without waiting for it.
 - Tasks have a `sleeping` status, so code that handles every `TaskState`, `TaskGraphState`, or `TaskInspection` state needs a case for it.
-- Opening a SQLite storage migrates it to schema version 2 automatically, rebuilding its task table. A migrated database cannot be opened by 1.3.0 or earlier, so a deployment cannot roll back past this release. JSONL storage needs no migration, but 1.3.0 or earlier never resumes a sleeping task it finds, so its conversation stays busy.
+- Opening a SQLite storage migrates it to schema version 2 automatically, rebuilding its task table. A migrated database cannot be opened by 1.3.0 or earlier, so a deployment cannot roll back past this release. JSONL storage needs no migration, but 1.3.0 or earlier never resumes a sleeping task it finds (a run's conversation stays busy).
 - `TaskRuntime` has `sleepUntil()` and `setTimer()`, and `ToolExecutionApi` has `now()`: code that builds either object by hand, such as a test fake or a tool wrapper that does not spread the original, must add them.
 
 ### Added

@@ -165,13 +165,15 @@ export class Session extends DurableObject<Env> {
 				// A failed alarm write resets the object; it arms again when it next starts.
 				void this.#arm(wake).catch(() => ctx.abort("Alarm write failed"));
 			this.#harness = await Harness.open(storage, { models, registry, onWake }, context);
-			this.#harness.resume();
+			// Armed before `resume()` runs anything, as for any call that can start work.
+			await this.#arm(this.#harness.wake());
+			this.#harness.resume(); // work a lost instance left, and due sleeps
 		});
 	}
 
 	override async alarm(): Promise<void> {
-		this.#harness.resume(); // resumes due sleeps and work a lost process left
-		await this.#arm(this.#harness.wake());
+		await this.#arm({ ...this.#harness.wake(), active: true });
+		this.#harness.resume(); // due sleeps and work a lost instance left
 	}
 
 	// Arm before any call that can start work (submit, compact, abortTask, abort, a registry change): `onWake` runs

@@ -71,6 +71,8 @@ export class TestSession extends DurableObject {
 				},
 				context,
 			);
+			// Armed before `resume()` runs anything, as for any call that can start work.
+			await this.arm(this.#harness.wake());
 			this.#harness.resume();
 		});
 	}
@@ -94,8 +96,8 @@ export class TestSession extends DurableObject {
 	}
 
 	async alarm(): Promise<void> {
+		await this.arm({ ...this.#harness.wake(), active: true });
 		this.#harness.resume();
-		await this.arm(this.#harness.wake());
 	}
 
 	/** The alarm a host arms for `wake`: the earliest sleep, or a recovery heartbeat while work can run. */

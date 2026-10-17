@@ -2363,11 +2363,10 @@ when `nodejs_compat` gives it an `unref()`, and wherever timers cannot be
 unreferenced. Foreground timers pace or resume work: throttled
 progress commits through `TaskRuntime.setTimer()`, and, without `onWake`, the
 timer for the earliest sleep while scheduling runs. That one keeps a Node.js
-process alive, since a sleeping task is work left to do. A timer must not fire
-before its delay and may fire late; the default splits a delay beyond what
-`setTimeout` supports itself. A host that throws on or declines a foreground
+process alive, since a sleeping task is work left to do. A timer should not fire
+early and may fire late; every caller checks its clock again when it fires. The
+default waits out a delay beyond what `setTimeout` supports in steps. A host that throws on or declines a foreground
 timer has it armed with `setTimeout` instead, and the first failure is reported.
-Callers still check their clock when a timer fires.
 
 **Wakeups.** `Harness.wake()` says, from memory and also while scheduling is
 paused, when the Session next needs a running process:
