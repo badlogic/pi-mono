@@ -1,4 +1,4 @@
-import { existsSync } from "node:fs";
+import { existsSync, lstatSync } from "node:fs";
 import { delimiter, join } from "node:path";
 import { spawn, spawnSync } from "child_process";
 import { getBinDir } from "../config.ts";
@@ -32,8 +32,17 @@ function findExecutableOnPath(executable: string): string | null {
 			});
 			if (result.status === 0 && result.stdout) {
 				const firstMatch = result.stdout.trim().split(/\r?\n/)[0];
-				if (firstMatch && existsSync(firstMatch)) {
-					return firstMatch;
+				if (firstMatch) {
+					// existsSync is false for Microsoft Store app-execution aliases
+					// (zero-length reparse points that stat cannot resolve), even
+					// though spawning them works. lstat does not follow the reparse
+					// point, so it still rejects paths that truly do not exist.
+					try {
+						lstatSync(firstMatch);
+						return firstMatch;
+					} catch {
+						// where returned a path that does not exist
+					}
 				}
 			}
 		} catch {
