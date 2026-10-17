@@ -115,21 +115,26 @@ function codemodeChat(globals: CodemodeGlobal[] = [], namespaces: CodemodeNamesp
 		),
 	);
 	const gates = new Map<number, Deferred>();
+	const done = new Map<number, Deferred>();
 	const finished: number[] = [];
+	const once = (map: Map<number, Deferred>, id: number) => {
+		const found = map.get(id) ?? deferred();
+		map.set(id, found);
+		return found;
+	};
 	const slows = {
 		finished,
-		gate: (id: number) => {
-			const gate = gates.get(id) ?? deferred();
-			gates.set(id, gate);
-			return gate;
-		},
+		gate: (id: number) => once(gates, id),
 		release: (id: number) => slows.gate(id).resolve(),
+		/** Resolves once call `id` has finished. */
+		finishedCall: (id: number) => once(done, id).promise,
 	};
 	addTool(
 		setup.registry,
 		tool("slow", async (args) => {
 			await slows.gate(args.id ?? 0).promise;
 			finished.push(args.id ?? 0);
+			once(done, args.id ?? 0).resolve();
 			return { output: [{ type: "text", text: `slow ${args.id}` }] };
 		}),
 	);
@@ -230,7 +235,7 @@ describe("durable code mode", () => {
 			return order;`;
 		// 2 finishes first, then 1.
 		chat.slows.release(2);
-		void eventually(() => chat.slows.finished.includes(2)).then(() => chat.slows.release(1));
+		void chat.slows.finishedCall(2).then(() => chat.slows.release(1));
 		const { harness, result } = await restart(chat, code);
 		expect(result).toEqual({ text: "[2,1]", isError: false });
 		expect(Object.fromEntries(chat.echo)).toEqual({ "2,1": 1 });
