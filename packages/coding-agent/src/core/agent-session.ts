@@ -404,6 +404,7 @@ export class AgentSession {
 	private _compactionAbortController: AbortController | undefined = undefined;
 	private _autoCompactionAbortController: AbortController | undefined = undefined;
 	private _overflowRecoveryAttempted = false;
+	private readonly _deferredCompactionActions: Array<() => Promise<void>> = [];
 
 	// Branch summarization state
 	private _branchSummaryAbortController: AbortController | undefined = undefined;
@@ -2342,6 +2343,10 @@ export class AgentSession {
 				this.agent.steer(appMessage);
 			}
 		} else if (options?.triggerTurn) {
+			if (this.isCompacting) {
+				this._deferredCompactionActions.push(async () => await this.sendCustomMessage(message, options));
+				return;
+			}
 			if (this._isEmittingAgentSettled) {
 				this._deferredSettledActions.push(async () => await this.sendCustomMessage(message, options));
 				return;
@@ -2773,7 +2778,21 @@ export class AgentSession {
 
 	private _clearManualCompactionState(): void {
 		this._compactionAbortController = undefined;
-		this._resolveIdleWaitIfIdle();
+	}
+
+	/** Submit deferred messages after compaction ends without waiting for their runs to finish. */
+	private _flushDeferredCompactionActions(): void {
+		if (this.isCompacting) return;
+		const deferred = this._deferredCompactionActions.splice(0);
+		for (const action of deferred) {
+			action().catch((error) => {
+				this._extensionRunner.emitError({
+					extensionPath: "<runtime>",
+					event: "send_message",
+					error: error instanceof Error ? error.message : String(error),
+				});
+			});
+		}
 	}
 
 	/**
@@ -2935,6 +2954,8 @@ export class AgentSession {
 			throw error;
 		} finally {
 			this._clearManualCompactionState();
+			this._flushDeferredCompactionActions();
+			this._resolveIdleWaitIfIdle();
 		}
 	}
 
@@ -3269,6 +3290,7 @@ export class AgentSession {
 			if (this._autoCompactionAbortController === abortController) {
 				this._autoCompactionAbortController = undefined;
 			}
+			this._flushDeferredCompactionActions();
 			this._resolveIdleWaitIfIdle();
 		}
 	}
@@ -4181,6 +4203,7 @@ export class AgentSession {
 			return { editorText, cancelled: false, summaryEntry };
 		} finally {
 			this._branchSummaryAbortController = undefined;
+			this._flushDeferredCompactionActions();
 			this._resolveIdleWaitIfIdle();
 		}
 	}
