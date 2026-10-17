@@ -26,10 +26,11 @@ const charged = new Set<string>();
 
 type PaymentInput = { card: string };
 type PaymentResult = { card: string };
-const Payment = defineTask<PaymentInput, { phase: "charge"; at: number }, PaymentResult>({
+type PaymentState = { phase: "charge" } | { phase: "confirm" };
+const Payment = defineTask<PaymentInput, PaymentState, PaymentResult>({
 	name: "example.payment",
 	version: 1,
-	initial: () => ({ phase: "charge", at: Date.now() + 100 }),
+	initial: () => ({ phase: "charge" }),
 	phases: {
 		charge: async (task, runtime, taskContext) => {
 			const card = task.input.card;
@@ -39,7 +40,11 @@ const Payment = defineTask<PaymentInput, { phase: "charge"; at: number }, Paymen
 				return;
 			}
 			charged.add(card);
-			await runtime.sleep(task.state.checkpoint.at, taskContext);
+			// The bank confirms after a moment: wait for it without holding an invocation.
+			await runtime.sleepUntil(runtime.now() + 100, { phase: "confirm" }, taskContext);
+		},
+		confirm: async (task, runtime, taskContext) => {
+			const card = task.input.card;
 			await runtime.commit(
 				() => ({ status: "terminal", outcome: { status: "completed", result: { card } } }),
 				taskContext,

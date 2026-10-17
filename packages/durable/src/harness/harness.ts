@@ -5,6 +5,7 @@ import { ResetEntry } from "../entries.ts";
 import type { ExecutionEnv } from "../env/index.ts";
 import { contained, SessionImpl } from "../session/session.ts";
 import type { Transaction } from "../session/transaction.ts";
+import { hostTimers } from "../timers.ts";
 import type {
 	ConversationId,
 	ConversationOwnership,
@@ -51,6 +52,7 @@ import type {
 	Submission,
 	SubmissionDraft,
 	ToolRegistration,
+	Wake,
 } from "./types.ts";
 import { addUsageState, UsageDoc, type UsageState } from "./usage.ts";
 import { scanAll } from "./util.ts";
@@ -192,7 +194,7 @@ class HarnessImpl<Tool extends ToolRegistration> extends SessionImpl implements 
 		const now = safeNow(options.now, report);
 		const hostSettings = currentSettings(options.settings);
 		// Read at each use, as all settings are, but only this field: it is read on every commit.
-		super(rawStorage, now, () => hostSettings()?.documentRetentionMs);
+		super(rawStorage, now, () => hostSettings()?.documentRetentionMs, options.setTimer);
 		// Every component reads and writes through the Session's failure guard: `rawStorage` serves only `super()`.
 		const storage = this.storage;
 		this.#options = options;
@@ -208,6 +210,8 @@ class HarnessImpl<Tool extends ToolRegistration> extends SessionImpl implements 
 			settings,
 			env: (id, callContext) => this.buildEnv(id, callContext),
 			now,
+			onWake: options.onWake,
+			timers: hostTimers(options.setTimer, report),
 			report: this.#report,
 			settleOutcome: settleSchedulerOutcome,
 			withdrawInputs: withdrawQueuedInputs,
@@ -257,6 +261,11 @@ class HarnessImpl<Tool extends ToolRegistration> extends SessionImpl implements 
 	resume(): void {
 		this.assertUsable();
 		this.#tasks.resume();
+	}
+
+	wake(): Wake {
+		this.assertUsable();
+		return this.#tasks.wake();
 	}
 
 	getTask<R>(id: TaskId<R>, context: Context): Promise<TaskRecord<JsonValue, JsonValue, R> | undefined> {

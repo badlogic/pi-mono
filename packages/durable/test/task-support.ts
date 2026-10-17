@@ -4,6 +4,7 @@ import {
 	createRegistry,
 	defineExtension,
 	Harness,
+	type HarnessOptions,
 	type HarnessSettings,
 	type Registry,
 	type RegistryReader,
@@ -63,7 +64,13 @@ export async function settled(promise: Promise<unknown>): Promise<boolean> {
 export async function openTasks(
 	storage: Storage,
 	tasks: readonly AnyTask[],
-	options: { readonly registry?: Registry; readonly now?: () => number; readonly settings?: HarnessSettings } = {},
+	options: {
+		readonly registry?: Registry;
+		readonly now?: () => number;
+		readonly settings?: HarnessSettings;
+		readonly onWake?: HarnessOptions["onWake"];
+		readonly setTimer?: HarnessOptions["setTimer"];
+	} = {},
 ): Promise<{ readonly harness: Harness; readonly registry: Registry; readonly reports: unknown[] }> {
 	const registry = options.registry ?? createRegistry();
 	if (tasks.length > 0) registry.install(defineExtension({ name: "tasks", tasks }));
@@ -76,6 +83,8 @@ export async function openTasks(
 			onReport: (error) => reports.push(error),
 			...(options.now === undefined ? {} : { now: options.now }),
 			...(options.settings === undefined ? {} : { settings: options.settings }),
+			...(options.onWake === undefined ? {} : { onWake: options.onWake }),
+			...(options.setTimer === undefined ? {} : { setTimer: options.setTimer }),
 		},
 		context,
 	);

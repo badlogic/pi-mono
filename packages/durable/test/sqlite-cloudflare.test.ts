@@ -15,7 +15,7 @@ describe("Durable Object SQLite adapter", () => {
 	it("keeps schema names unprefixed by default", async () => {
 		const sqlite = new DatabaseSync(":memory:");
 		await openDurableObjectSqliteStorage(durableObjectStorage(sqlite));
-		expect(sqlite.prepare("SELECT version FROM durable_schema").get()).toEqual({ version: 1 });
+		expect(sqlite.prepare("SELECT version FROM durable_schema").get()).toEqual({ version: 2 });
 		expect(sqlite.prepare("SELECT name FROM sqlite_master WHERE name = 'pi_durable_schema'").get()).toBeUndefined();
 	});
 

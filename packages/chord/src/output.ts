@@ -302,26 +302,48 @@ function countNewlines(text: string): number {
 /** Each progress commit also buys a pause proportional to what it wrote. */
 export const PROGRESS_BYTES_PER_SECOND = 100 * 1024;
 
+/** The clock and timer progress commits pace on. */
+export type ProgressClock = {
+	readonly now: () => number;
+	/** Call `callback` once after about `delayMs`; returns a function that disarms it. */
+	readonly setTimer: (callback: () => void, delayMs: number) => () => void;
+};
+
+const SYSTEM_CLOCK: ProgressClock = {
+	now: () => Date.now(),
+	setTimer: (callback, delayMs) => {
+		const timer = setTimeout(callback, delayMs);
+		return () => clearTimeout(timer);
+	},
+};
+
 /**
  * Adaptive progress commits: the first change after an idle period commits at once; each commit then delays the next
  * by at least `minIntervalMs` and by its written size at 100 KiB/s. At most one commit is in flight; changes made
- * meanwhile coalesce into the next one.
+ * meanwhile coalesce into the next one. Paces on `clock`, by default `Date.now` and `setTimeout`.
  */
 export class Progress {
 	readonly #write: () => Promise<number>;
 	readonly #onError: (error: unknown) => void;
 	readonly #minIntervalMs: number;
+	readonly #clock: ProgressClock;
 	#waiters: PromiseWithResolvers<void>[] = [];
-	#timer: ReturnType<typeof setTimeout> | undefined;
+	#timer: (() => void) | undefined;
 	#inFlight: Promise<void> | undefined;
 	#nextAt = 0;
 	#dirty = false;
 	#stopped = false;
 
-	constructor(write: () => Promise<number>, onError: (error: unknown) => void, minIntervalMs: number) {
+	constructor(
+		write: () => Promise<number>,
+		onError: (error: unknown) => void,
+		minIntervalMs: number,
+		clock: ProgressClock = SYSTEM_CLOCK,
+	) {
 		this.#write = write;
 		this.#onError = onError;
 		this.#minIntervalMs = minIntervalMs;
+		this.#clock = clock;
 	}
 
 	/** Schedule a commit. */
@@ -341,7 +363,7 @@ export class Progress {
 	/** Stop committing and wait for the commit in flight; returns the waiters the final commit must settle. */
 	async stop(): Promise<PromiseWithResolvers<void>[]> {
 		this.#stopped = true;
-		clearTimeout(this.#timer);
+		this.#timer?.();
 		this.#timer = undefined;
 		await this.#inFlight;
 		return this.#waiters.splice(0);
@@ -349,10 +371,10 @@ export class Progress {
 
 	#schedule(): void {
 		if (this.#stopped || this.#timer !== undefined || this.#inFlight !== undefined) return;
-		const wait = this.#nextAt - Date.now();
+		const wait = this.#nextAt - this.#clock.now();
 		if (wait <= 0) this.#flush();
 		else
-			this.#timer = setTimeout(() => {
+			this.#timer = this.#clock.setTimer(() => {
 				this.#timer = undefined;
 				this.#flush();
 			}, wait);
@@ -362,7 +384,7 @@ export class Progress {
 		if (this.#stopped || !this.#dirty) return;
 		this.#dirty = false;
 		const waiters = this.#waiters.splice(0);
-		const started = Date.now();
+		const started = this.#clock.now();
 		this.#inFlight = this.#write()
 			.then(
 				(bytes) => {

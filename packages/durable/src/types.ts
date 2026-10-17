@@ -133,16 +133,32 @@ export type TaskDocFamilyToken<T extends JsonObject, I extends JsonValue> = DocF
 	DocFamilyDefinition<T, I> & { readonly scope: "task" }
 >;
 
+/**
+ * A host timer, given as `HarnessOptions.setTimer`: call `callback` once, about `delayMs` from now, and return a
+ * function that disarms it. `background` timers only free memory, and a host may decline one by returning `undefined`,
+ * for example where a pending timer keeps the process from hibernating; the Harness then frees that memory at later
+ * commits. Other timers pace or resume work and must be armed. A timer may fire early or late: callers check their
+ * clock again.
+ */
+export type SetTimer = (
+	callback: () => void,
+	delayMs: number,
+	options: { readonly background: boolean },
+) => (() => void) | undefined;
+
 /** Live task record reserved by one invocation. */
 export type RunningTask<I, S, R> = TaskRecord<I, S, R> & {
 	readonly state: Extract<TaskState<S, R>, { readonly status: "running" }>;
 };
 
 /**
- * Next state a task commits for itself: a replacement checkpoint, a wait, or its outcome. A returned `terminal` state is
+ * Next state a task commits for itself: a replacement checkpoint, a wait on tasks, a sleep, or its outcome. A returned `terminal` state is
  * stored as `completing` while ordinary owned work below the task is live (spec §5.5).
  */
-export type NextTaskState<S, R> = Extract<TaskState<S, R>, { readonly status: "running" | "waiting" | "terminal" }>;
+export type NextTaskState<S, R> = Extract<
+	TaskState<S, R>,
+	{ readonly status: "running" | "waiting" | "sleeping" | "terminal" }
+>;
 
 /**
  * Runs one checkpoint phase. It must commit a changed checkpoint or a terminal outcome through `runtime.commit()`;
@@ -234,10 +250,21 @@ export interface TaskRuntime<I, S, R, H extends object> extends DocumentObserver
 	context(conversationId: ConversationId, context: Context, options?: { readonly at?: EntryId }): Promise<ContextView>;
 	/** The Harness clock. */
 	now(): number;
+	/**
+	 * Call `callback` once after about `delayMs` on the Harness's timer (`HarnessOptions.setTimer`), for pacing work
+	 * inside a phase, such as throttled progress commits. Not durable: the invocation's end disarms it, and after its end
+	 * nothing is armed. Returns a function that disarms it. Wait for time between phases with `sleepUntil()`.
+	 */
+	setTimer(callback: () => void, delayMs: number): () => void;
 	/** Forward a non-fatal failure to `HarnessOptions.onReport`. */
 	report(error: unknown): void;
-	/** Resolve once the Harness clock reaches `until`; rejects when the invocation or `context` is cancelled. */
-	sleep(until: number, context: Context): Promise<void>;
+	/**
+	 * Commit a sleep: the task holds no invocation until the Harness clock reaches `until`, then resumes at `checkpoint`.
+	 * Resolves once the sleep is stored, not when the time comes; the phase returns right after. Returning
+	 * `{ status: "sleeping", until, checkpoint }` from `commit()` is the same sleep, for one that must commit together
+	 * with other writes.
+	 */
+	sleepUntil(until: number, checkpoint: S, context: Context): Promise<void>;
 }
 
 /** Executable durable state machine definition, registered in the registry by `name`. */
@@ -524,6 +551,16 @@ export type TaskState<S, R> =
 			readonly outcome?: never;
 	  }
 	| {
+			/**
+			 * Parked without an invocation until the Harness clock reaches `until`, in milliseconds on the
+			 * `HarnessOptions.now` clock; then resumes at `checkpoint`. An abort mark does not wait for it.
+			 */
+			readonly status: "sleeping";
+			readonly checkpoint: S;
+			readonly until: number;
+			readonly outcome?: never;
+	  }
+	| {
 			/** Outcome decided; becomes terminal once no ordinary owned work below is live. Runs no more code. */
 			readonly status: "completing";
 			readonly checkpoint?: never;
@@ -574,7 +611,10 @@ type TaskRecordBase<I, R> = {
 export type TaskRecord<I, S, R> = TaskRecordBase<I, R> &
 	(
 		| {
-				readonly state: Extract<TaskState<S, R>, { readonly status: "pending" | "running" | "waiting" }>;
+				readonly state: Extract<
+					TaskState<S, R>,
+					{ readonly status: "pending" | "running" | "waiting" | "sleeping" }
+				>;
 				/** Small first-writer-wins values retained while the task can run. */
 				readonly memos?: Readonly<Record<string, JsonValue>>;
 		  }

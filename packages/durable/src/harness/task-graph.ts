@@ -24,6 +24,8 @@ export type TaskGraphState =
 			readonly on: readonly TaskId[];
 			readonly policy: JoinPolicy;
 	  }
+	/** Asleep until the Harness clock reaches `until`. */
+	| { readonly status: "sleeping"; readonly phase: string; readonly until: number }
 	/** Outcome held until its ordinary owned work drains. */
 	| { readonly status: "completing"; readonly outcome: TaskOutcome<JsonValue>["status"] };
 
@@ -52,7 +54,7 @@ type AnyTaskRecord = TaskRecord<JsonValue, JsonValue, JsonValue>;
 type Observer = CommittedStateSource<TaskGraph> | CommittedWatch<TaskGraph>;
 type Mount = { value: TaskGraph; readonly observers: Set<Observer> };
 
-const LIVE_STATUSES = ["pending", "running", "waiting", "completing"] as const;
+const LIVE_STATUSES = ["pending", "running", "waiting", "sleeping", "completing"] as const;
 const SCAN_PAGE_SIZE = 256;
 
 /**
@@ -224,6 +226,8 @@ function stateOf(record: AnyTaskRecord): TaskGraphState {
 			return { status: state.status, phase: phaseOf(state.checkpoint) };
 		case "waiting":
 			return { status: "waiting", phase: phaseOf(state.checkpoint), on: [...state.on], policy: state.policy };
+		case "sleeping":
+			return { status: "sleeping", phase: phaseOf(state.checkpoint), until: state.until };
 		// Terminal records never reach here: they leave the graph.
 		case "completing":
 		case "terminal":

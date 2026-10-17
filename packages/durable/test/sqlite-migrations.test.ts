@@ -44,6 +44,61 @@ describe("durable SQLite migrations", () => {
 		}
 	});
 
+	it("migrates a version 1 database to store sleeping tasks, keeping its tasks and indexes", async () => {
+		const path = await databasePath();
+		const database = await openNodeSqliteDatabase(path);
+		await applySqliteMigrations(database, SQLITE_MIGRATIONS.slice(0, 1));
+		const waiting = {
+			id: 5,
+			conversationId: 1,
+			kind: "test.task",
+			version: 1,
+			input: null,
+			background: false,
+			abortRequested: false,
+			state: { status: "waiting", checkpoint: { phase: "run" }, on: [], policy: "allSettled" },
+		};
+		await database.run(
+			"INSERT INTO tasks (id, conversation_id, kind, status, abort_requested, background, record) VALUES (5, 1, 'test.task', 'waiting', 0, 0, ?)",
+			JSON.stringify(waiting),
+		);
+		await expect(
+			database.run(
+				"INSERT INTO tasks (id, conversation_id, kind, status, abort_requested, background, record) VALUES (6, 1, 'test.task', 'sleeping', 0, 0, '{}')",
+			),
+		).rejects.toThrow();
+		await database.close();
+
+		const storage = await openNodeSqliteStorage(path);
+		await storage.close(BACKGROUND_CONTEXT);
+		const migrated = await openNodeSqliteDatabase(path);
+		try {
+			expect(await migrated.get("SELECT version FROM durable_schema WHERE singleton = 1")).toEqual({ version: 2 });
+			expect(await migrated.get("SELECT status, record FROM tasks WHERE id = 5")).toEqual({
+				status: "waiting",
+				record: JSON.stringify(waiting),
+			});
+			await migrated.run(
+				"INSERT INTO tasks (id, conversation_id, kind, status, abort_requested, background, record) VALUES (6, 1, 'test.task', 'sleeping', 0, 0, '{}')",
+			);
+			const indexes = await migrated.all<{ name: string }>(
+				"SELECT name FROM sqlite_schema WHERE type = 'index' AND tbl_name = 'tasks' ORDER BY name",
+			);
+			expect(indexes.map(({ name }) => name)).toEqual([
+				"tasks_by_abort_requested",
+				"tasks_by_background",
+				"tasks_by_conversation",
+				"tasks_by_kind",
+				"tasks_by_status",
+			]);
+			expect(await migrated.get("SELECT count(*) AS count FROM sqlite_schema WHERE name = 'tasks_v2'")).toEqual({
+				count: 0,
+			});
+		} finally {
+			await migrated.close();
+		}
+	});
+
 	it("rejects a database newer than the portable core", async () => {
 		const path = await databasePath();
 		const database = await openNodeSqliteDatabase(path);

@@ -310,6 +310,7 @@ async function run(
 		get env() {
 			return env;
 		},
+		now: () => runtime.now(),
 		output: (chunk, skipped) => {
 			assertLive();
 			if (reported.output.push(chunk, skipped)) progress.mark();
@@ -492,6 +493,17 @@ function publishProgress(runtime: Runtime, reported: Reported, enabled: boolean,
 			if (!runtime.signal.aborted) runtime.report(error);
 		},
 		runtime.settings.progress.outputIntervalMs,
+		{
+			// After the invocation ends nothing more commits; the clock only has to answer.
+			now: () => {
+				try {
+					return runtime.now();
+				} catch {
+					return Date.now();
+				}
+			},
+			setTimer: (callback, delayMs) => runtime.setTimer(callback, delayMs),
+		},
 	);
 }
 

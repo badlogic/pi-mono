@@ -11,6 +11,7 @@ import {
 } from "../documents.ts";
 import { SessionFailed, StorageRequestError } from "../errors.ts";
 import { idFromNumber } from "../ids.ts";
+import { hostTimers, type Timers } from "../timers.ts";
 import type {
 	CommitChange,
 	CommitPublication,
@@ -41,6 +42,7 @@ import type {
 	SessionDocFamilyToken,
 	SessionDocToken,
 	SessionEnd,
+	SetTimer,
 	Storage,
 	StorageWrite,
 	StoredDocument,
@@ -63,15 +65,21 @@ import {
 import { type LoadedDocument, Transaction, type TransactionHost, type TransactionScope } from "./transaction.ts";
 
 /**
- * Open a Session kernel over one storage backend. `now` is the wall clock for task times; default `Date.now`. The first
+ * Open a Session kernel over one storage backend. `now` is the wall clock for task times; default `Date.now`.
+ * `setTimer` arms the timers that evict idle documents; default `setTimeout` (see `HarnessOptions.setTimer`). The first
  * error a Storage method throws fails the Session (`SessionFailed`); see `SessionImpl`.
  */
 export function createSession(
 	storage: Storage,
-	options?: { readonly now?: () => number; readonly documentRetentionMs?: number },
+	options?: { readonly now?: () => number; readonly documentRetentionMs?: number; readonly setTimer?: SetTimer },
 ): Session {
 	const retention = options?.documentRetentionMs;
-	return new SessionImpl(storage, options?.now, retention === undefined ? undefined : () => retention);
+	return new SessionImpl(
+		storage,
+		options?.now,
+		retention === undefined ? undefined : () => retention,
+		options?.setTimer,
+	);
 }
 
 /** Default document retention: ten minutes, as for kept contexts. */
@@ -89,9 +97,6 @@ export function setDefaultDocumentRetention(ms: number): void {
 export function documentRetention(ms: number | undefined): number {
 	return typeof ms === "number" && ms >= 0 ? ms : defaultRetention;
 }
-
-/** Longest delay `setTimeout` supports; a longer retention waits in several steps. */
-const MAX_TIMER_DELAY = 2_147_483_647;
 
 /**
  * Session kernel: one mutation line, the loaded document tracker cache, and committed publication.
@@ -118,10 +123,11 @@ export class SessionImpl implements Session {
 	readonly #attachedDocuments = new Map<DocumentId, number>();
 	readonly #clock: () => number;
 	readonly #documentRetentionMs: () => number;
+	readonly #timers: Timers;
 	/** The pending eviction: a timer for the oldest idle document, or a line job when the retention is 0. */
-	#documentSweep: { readonly at: number; readonly timer: ReturnType<typeof setTimeout> | undefined } | undefined;
+	#documentSweep: { readonly at: number; disarm: (() => void) | undefined } | undefined;
 	#sweepJobs = 0;
-	/** Set once a timer could not be unreferenced: then none is kept, and the end of each commit evicts what expired. */
+	/** Set once the host declined a background timer: then none is kept, and the end of each commit evicts what expired. */
 	#documentTimersUnavailable = false;
 	readonly #commitListeners = new Set<(publication: CommitPublication, context: Context) => void>();
 	/** The Session's own listeners, such as its scheduler's: they keep memory in step with storage, so a throw fails it. */
@@ -153,10 +159,12 @@ export class SessionImpl implements Session {
 		storage: Storage,
 		now: () => number = Date.now,
 		documentRetentionMs: () => number | undefined = () => undefined,
+		setTimer?: SetTimer,
 	) {
 		// Waits race it; none has to.
 		this.#failed.promise.catch(() => {});
 		this.#storage = new GuardedStorage(storage, this);
+		this.#timers = hostTimers(setTimer, (error) => this.report(error));
 		// Cache bookkeeping must never change the outcome of the operation it follows: a clock or a retention setting
 		// that throws counts as now, and as the default.
 		this.#clock = () => {
@@ -518,7 +526,7 @@ export class SessionImpl implements Session {
 
 	/** Run the close listeners once, each on its own: one that fails is reported, and the rest still run. */
 	#notifyClose(): void {
-		if (this.#documentSweep?.timer !== undefined) clearTimeout(this.#documentSweep.timer);
+		this.#documentSweep?.disarm?.();
 		this.#documentSweep = undefined;
 		const listeners = [...this.#closeListeners];
 		this.#closeListeners.clear();
@@ -618,8 +626,8 @@ export class SessionImpl implements Session {
 
 	/**
 	 * Schedule the eviction of the oldest idle document: on the line at once when the retention is 0, otherwise when it
-	 * expires, by a timer that never keeps the process alive. Where timers cannot be unreferenced, as in Cloudflare
-	 * Workers, none is kept: the end of each commit evicts what expired.
+	 * expires, by a background timer (`HarnessOptions.setTimer`), which never keeps the process alive. Where the host
+	 * declines it, as the default does in Cloudflare Workers, none is kept: the end of each commit evicts what expired.
 	 */
 	#scheduleDocumentSweep(): void {
 		if (this.#closing !== undefined) return;
@@ -627,9 +635,9 @@ export class SessionImpl implements Session {
 		if (oldest.done === true) return;
 		const at = oldest.value + this.#documentRetentionMs();
 		if (this.#documentSweep !== undefined && this.#documentSweep.at <= at) return;
-		if (this.#documentSweep?.timer !== undefined) clearTimeout(this.#documentSweep.timer);
+		this.#documentSweep?.disarm?.();
 		// The pending sweep stays set until its job runs, so touches while the line is busy queue no more.
-		const sweep = { at, timer: undefined as ReturnType<typeof setTimeout> | undefined };
+		const sweep: { readonly at: number; disarm: (() => void) | undefined } = { at, disarm: undefined };
 		const run = (): void => {
 			this.#sweepJobs++;
 			this.#enqueue(async () => {
@@ -647,16 +655,14 @@ export class SessionImpl implements Session {
 			this.#documentSweep = undefined;
 			return;
 		}
-		const timer = setTimeout(run, Math.min(delay, MAX_TIMER_DELAY));
-		const unref = (timer as { unref?: unknown }).unref;
-		if (typeof unref !== "function") {
-			clearTimeout(timer);
+		// A timer that fires early sweeps nothing and arms the next one.
+		const disarm = this.#timers.background(run, delay);
+		if (disarm === undefined) {
 			this.#documentTimersUnavailable = true;
 			this.#documentSweep = undefined;
 			return;
 		}
-		unref.call(timer);
-		sweep.timer = timer;
+		sweep.disarm = disarm;
 	}
 
 	/** On the line: evict the idle documents whose retention passed, oldest first, then schedule the next eviction. */

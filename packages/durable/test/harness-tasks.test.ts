@@ -567,7 +567,7 @@ describe("task runtime", () => {
 		await expect(runtime.commit(() => {}, context)).rejects.toThrow("invocation has ended");
 		await expect(runtime.memo("x", context)).rejects.toThrow("invocation has ended");
 		await expect(runtime.memo("x", 1, context)).rejects.toThrow("invocation has ended");
-		await expect(runtime.sleep(0, context)).rejects.toThrow("invocation has ended");
+		await expect(runtime.sleepUntil(0, { phase: "run" }, context)).rejects.toThrow("invocation has ended");
 		await expect(runtime.watchDoc(Notes, context)).rejects.toThrow("invocation has ended");
 		// The handler's own context is cancelled by now; the ended invocation still wins.
 		await expect(runtime.agent(handlerContext!)).rejects.toThrow("invocation has ended");
@@ -685,58 +685,6 @@ describe("task runtime", () => {
 		held!.release();
 		expect(String(await watching)).toContain("invocation has ended");
 		expect((await harness.waitForTask(id, context)).state.outcome).toMatchObject({ status: "faulted" });
-		await harness.close(context);
-	});
-
-	it("sleeps until the Harness clock reaches the deadline, rechecking after each timer", async () => {
-		let clock = 1_000;
-		const woke = deferred();
-		const Sleeper = oneStep("test.sleeper", async (_task, runtime, ctx) => {
-			await runtime.sleep(900, ctx);
-			await runtime.sleep(1_005, ctx);
-			woke.resolve();
-			await runtime.commit(() => completed(null), ctx);
-		});
-		const { harness, root } = await openRoot([Sleeper], { now: () => clock });
-		const id = await start(root, Sleeper);
-		harness.resume();
-		// The clock stands still, so real timers keep firing without waking the task.
-		await new Promise((resolve) => setTimeout(resolve, 30));
-		expect(await settled(woke.promise)).toBe(false);
-		clock = 1_005;
-		await harness.waitForTask(id, context);
-		await harness.close(context);
-	});
-
-	it("rejects a sleep when the invocation is signalled or the sleep's own context is cancelled", async () => {
-		const results: string[] = [];
-		const sleeping = deferred();
-		const Signalled = oneStep("test.sleep-signalled", async (_task, runtime, ctx) => {
-			sleeping.resolve();
-			await runtime.sleep(Date.now() + 60_000, ctx).catch((error: unknown) => {
-				results.push(`signalled:${(error as Error).name}`);
-				throw error;
-			});
-		});
-		const Cancelled = oneStep("test.sleep-cancelled", async (_task, runtime, ctx) => {
-			const controller = new AbortController();
-			const sleeping = runtime.sleep(Date.now() + 60_000, withSignal(controller.signal));
-			controller.abort(new Error("stop sleeping"));
-			await sleeping.catch((error: unknown) => results.push(`cancelled:${(error as Error).message}`));
-			await runtime.commit(() => completed(null), ctx);
-		});
-		const { harness, root } = await openRoot([Signalled, Cancelled]);
-		const signalled = await start(root, Signalled);
-		const cancelled = await start(root, Cancelled);
-		harness.resume();
-		await harness.waitForTask(cancelled, context);
-		await sleeping.promise;
-		await harness.abortTask(signalled, context);
-		expect((await harness.waitForTask(signalled, context)).state.outcome).toEqual({
-			status: "aborted",
-			reason: "test",
-		});
-		expect(results).toEqual(["cancelled:stop sleeping", "signalled:AbortError"]);
 		await harness.close(context);
 	});
 });

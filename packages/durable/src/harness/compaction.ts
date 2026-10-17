@@ -204,7 +204,8 @@ export const CompactionTask = defineTask<CompactionInput, CompactionCheckpoint, 
 				if (retry) {
 					const status = compactionStatus(live, runtime.taskId);
 					if (status !== undefined) status.retry = { at: until, error: message.errorMessage ?? "" };
-					return { status: "running", checkpoint: { phase: "retry", ...request, until } };
+					const checkpoint = { phase: "retry", ...request, until } as const;
+					return { status: "sleeping", checkpoint, until };
 				}
 				const text = summaryFailure(message);
 				failCompactionStatus(live, runtime.taskId, text);
@@ -214,9 +215,10 @@ export const CompactionTask = defineTask<CompactionInput, CompactionCheckpoint, 
 				};
 			}, context);
 		},
+		/** After the backoff's sleep; a run before `until` (an early wake, or a record of an earlier version) sleeps again. */
 		retry: async (task, runtime, context) => {
 			const { phase: _, until, ...request } = task.state.checkpoint;
-			await runtime.sleep(until, context);
+			if (until > runtime.now()) return runtime.sleepUntil(until, task.state.checkpoint, context);
 			const attempt = request.attempt + 1;
 			await runtime.commit(async (tx) => {
 				const status = compactionStatus(await tx.doc(LiveDoc, runtime.conversationId), runtime.taskId);

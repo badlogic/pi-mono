@@ -220,9 +220,10 @@ export const GenerationTask = defineTask<GenerationInput, GenerationCheckpoint, 
 			const request = { attempt, compacted, model: ref, cutoff, messages: view.messages };
 			await classify(runtime, request, message, context);
 		},
+		/** After the backoff's sleep; a run before `until` (an early wake, or a record of an earlier version) sleeps again. */
 		retry: async (task, runtime, context) => {
 			const { attempt, compacted, until } = task.state.checkpoint;
-			await runtime.sleep(until, context);
+			if (until > runtime.now()) return runtime.sleepUntil(until, task.state.checkpoint, context);
 			await runtime.commit(async (tx) => {
 				(await tx.doc(LiveDoc, runtime.conversationId)).generation = { attempt: attempt + 1 };
 				const checkpoint: GenerationCheckpoint = {
@@ -233,11 +234,12 @@ export const GenerationTask = defineTask<GenerationInput, GenerationCheckpoint, 
 				return { status: "running", checkpoint };
 			}, context);
 		},
+		/** After the sleep until `pollAt`; a run before it (an early wake, or a record of an earlier version) sleeps again. */
 		poll: async (task, runtime, context) => {
 			const { attempt, compacted, model: ref, cutoff, handle, pollAt } = task.state.checkpoint;
 			const model = runtime.models.getModel(ref.provider, ref.modelId);
 			if (model === undefined) return failNoModel(runtime, ref, context);
-			await runtime.sleep(pollAt, context);
+			if (pollAt > runtime.now()) return runtime.sleepUntil(pollAt, task.state.checkpoint, context);
 			const message = await runtime.models.fetchDeferred(model, handle, { signal: runtime.signal });
 			const request = { attempt, compacted, model: ref, cutoff, pollAt };
 			await classify(runtime, request, message, context);
@@ -400,7 +402,7 @@ async function streamResponse(
 ): Promise<AssistantMessage> {
 	const interval = runtime.settings.progress.partialIntervalMs;
 	let pending: AssistantMessage | undefined;
-	let timer: ReturnType<typeof setTimeout> | undefined;
+	let timer: (() => void) | undefined;
 	let inFlight: Promise<void> | undefined;
 	let stopped = false;
 	const flush = (): void => {
@@ -424,7 +426,7 @@ async function streamResponse(
 			})
 			.finally(() => {
 				inFlight = undefined;
-				if (pending !== undefined && !stopped) timer = setTimeout(flush, interval);
+				if (pending !== undefined && !stopped) timer = runtime.setTimer(flush, interval);
 			});
 	};
 	try {
@@ -434,12 +436,12 @@ async function streamResponse(
 			// never gets past it, so it never leaves a partial.
 			if (event.type === "done" || event.type === "error" || event.partial.content.length === 0) continue;
 			pending = event.partial;
-			if (timer === undefined && inFlight === undefined) timer = setTimeout(flush, interval);
+			if (timer === undefined && inFlight === undefined) timer = runtime.setTimer(flush, interval);
 		}
 		return await events.result();
 	} finally {
 		stopped = true;
-		clearTimeout(timer);
+		timer?.();
 		await inFlight;
 	}
 }
@@ -461,7 +463,7 @@ async function classify(
 			runtime.now() + (handle.pollAfterMs ?? DEFAULT_POLL_AFTER_MS),
 			request.pollAt === undefined ? Number.NEGATIVE_INFINITY : request.pollAt + 1,
 		);
-		await runtime.commit(async (tx) => {
+		await runtime.commit(async (tx): Promise<Next> => {
 			(await tx.doc(LiveDoc, conversationId)).generation = { attempt, deferred: { pollAt } };
 			const checkpoint = {
 				phase: "poll",
@@ -472,7 +474,7 @@ async function classify(
 				handle,
 				pollAt,
 			} as const;
-			return { status: "running", checkpoint };
+			return { status: "sleeping", checkpoint, until: pollAt };
 		}, context);
 		return;
 	}
@@ -523,7 +525,7 @@ async function classify(
 				...(compacted === undefined ? {} : { compacted }),
 				until,
 			} as const;
-			return { status: "running", checkpoint };
+			return { status: "sleeping", checkpoint, until };
 		}
 		const text = message.errorMessage ?? `Model response ended with stop reason ${message.stopReason}`;
 		endRun(tx, live, runtime.taskId, { status: "unanswered", reason: "model_error", detail: text });

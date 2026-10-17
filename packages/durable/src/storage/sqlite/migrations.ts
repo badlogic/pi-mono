@@ -88,7 +88,32 @@ export function createSqliteMigrations(schema: SqliteSchema): readonly SqliteMig
 		) STRICT`,
 		`CREATE INDEX ${indexes.documentRevisionsByKind} ON ${tables.documentRevisions} (document_id, kind, seq DESC)`,
 	];
-	return [{ version: 1, statements: initialSchema }];
+	// Version 2 adds the `sleeping` task status. SQLite cannot change a CHECK constraint in place, so the table is rebuilt.
+	const rebuiltTasks = `${tables.tasks}_v2`;
+	const sleepingStatus: readonly string[] = [
+		`CREATE TABLE ${rebuiltTasks} (
+			id INTEGER PRIMARY KEY,
+			conversation_id INTEGER NOT NULL,
+			kind TEXT NOT NULL,
+			status TEXT NOT NULL CHECK (status IN ('pending', 'running', 'waiting', 'sleeping', 'completing', 'terminal')),
+			abort_requested INTEGER NOT NULL CHECK (abort_requested IN (0, 1)),
+			background INTEGER NOT NULL CHECK (background IN (0, 1)),
+			record TEXT NOT NULL CHECK (json_valid(record))
+		) STRICT`,
+		`INSERT INTO ${rebuiltTasks} (id, conversation_id, kind, status, abort_requested, background, record)
+			SELECT id, conversation_id, kind, status, abort_requested, background, record FROM ${tables.tasks}`,
+		`DROP TABLE ${tables.tasks}`,
+		`ALTER TABLE ${rebuiltTasks} RENAME TO ${tables.tasks}`,
+		`CREATE INDEX ${indexes.tasksByStatus} ON ${tables.tasks} (status, id)`,
+		`CREATE INDEX ${indexes.tasksByConversation} ON ${tables.tasks} (conversation_id, id)`,
+		`CREATE INDEX ${indexes.tasksByKind} ON ${tables.tasks} (kind, id)`,
+		`CREATE INDEX ${indexes.tasksByAbortRequested} ON ${tables.tasks} (abort_requested, id)`,
+		`CREATE INDEX ${indexes.tasksByBackground} ON ${tables.tasks} (background, id)`,
+	];
+	return [
+		{ version: 1, statements: initialSchema },
+		{ version: 2, statements: sleepingStatus },
+	];
 }
 
 export const SQLITE_MIGRATIONS: readonly SqliteMigration[] = createSqliteMigrations(DEFAULT_SQLITE_SCHEMA);

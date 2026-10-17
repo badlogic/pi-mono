@@ -114,6 +114,7 @@ export type {
 	ToolHooks,
 	ToolRegistration,
 	UserInput,
+	Wake,
 	Wrap,
 } from "./harness/types.ts";
 export { UsageDoc, type UsageState } from "./harness/usage.ts";
@@ -175,6 +176,7 @@ export type {
 	SessionDocFamilyToken,
 	SessionDocToken,
 	SessionEnd,
+	SetTimer,
 	Storage,
 	StorageWrite,
 	StoredDocument,

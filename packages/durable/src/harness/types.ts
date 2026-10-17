@@ -29,6 +29,7 @@ import type {
 	JsonObject,
 	Page,
 	Session,
+	SetTimer,
 	SubmissionId,
 	SubmissionRecord,
 	Task,
@@ -215,6 +216,8 @@ export interface ToolExecutionApi<TDetails extends JsonValue = JsonValue> extend
 	readonly models: Models;
 	/** Built by `HarnessOptions.env` for this call; `undefined` without an environment. */
 	readonly env: ExecutionEnv | undefined;
+	/** The Harness clock (`HarnessOptions.now`), for times a rerun after a restart compares against. */
+	now(): number;
 	/**
 	 * Append running output; it becomes the result's `output` when the result omits it. `skipped` counts output
 	 * omitted before the chunk, as reported by an environment given `outputWindow` (`ShellOutputInfo.skipped`).
@@ -600,13 +603,40 @@ export type HarnessOptions<Tool extends ToolRegistration = ToolRegistration> = {
 	 * Table reads throw `ReadAfterWrite`, as in `init`; a throw fails the creating commit.
 	 */
 	readonly conversationCreated?: (tx: Tx, conversation: ConversationRecord) => void | Promise<void>;
+	/**
+	 * The Harness clock, epoch milliseconds; default `Date.now`. Sleeping tasks store deadlines on it, so every process
+	 * that opens the same storage must use the same clock.
+	 */
 	readonly now?: () => number;
+	/**
+	 * Arms every timer the Harness uses: pacing progress commits, freeing idle memory (`background`), and, without
+	 * `onWake`, resuming sleeping tasks; and the timers of `TaskRuntime.setTimer()`. Default `setTimeout`, with background
+	 * timers unreferenced, or declined where they cannot be. Tests can pass fake timers; a host can keep timers off a
+	 * process that should hibernate.
+	 */
+	readonly setTimer?: SetTimer;
+	/**
+	 * Wakes the process for sleeping tasks instead of a `setTimer` timer. Without it, while scheduling runs, a timer that
+	 * keeps the process alive resumes sleeping tasks when they are due. With it, the Harness arms no timer for them: it
+	 * calls `onWake` after open and whenever `Harness.wake()` changes, and the host arms its own wakeup, such as a
+	 * Durable Object alarm, and calls `resume()` when it fires. Called off the Session line; it may call `wake()` and
+	 * `resume()`, and must not block. A throw is reported and ignored.
+	 */
+	readonly onWake?: (wake: Wake) => void;
 	/**
 	 * Receives failures that do not fail the calling operation, such as a throwing hook or listener, and the error that
 	 * fails the Session, once. Its own throw or rejection is dropped.
 	 */
 	readonly onReport?: (error: unknown) => void;
 };
+
+/**
+ * When a Session next needs a running process (`Harness.wake()`). `active`: some task can run now or is running, so a
+ * process that dies must be woken again soon, for example by a recovery alarm. `at`: the earliest sleep not yet due,
+ * when there is one. Neither: nothing needs a process until new work is submitted. Tasks blocked on a missing or
+ * unmigratable definition, `completing` tasks, and waits on live tasks do not count; the work they wait for does.
+ */
+export type Wake = { readonly active: boolean; readonly at?: number };
 
 /** Live task and what the scheduler would do with it under the current registry. */
 export type TaskInspection = {
@@ -620,6 +650,8 @@ export type TaskInspection = {
 		 * must end before its abort handler starts.
 		 */
 		| { readonly kind: "waiting"; readonly on: readonly TaskId[] }
+		/** Sleeps until the Harness clock reaches `until`. */
+		| { readonly kind: "sleeping"; readonly until: number }
 		/** Outcome held until its ordinary owned work drains. */
 		| { readonly kind: "completing" }
 		/** No registered definition can take it; aborting it settles it as `orphaned`. */
@@ -718,6 +750,13 @@ export interface Harness extends Session {
 	 * `Harness.waitForIdle()`, and `Conversation.waitForIdle()`. Read-only viewers never do.
 	 */
 	resume(): void;
+	/**
+	 * When this Session next needs a running process, from the scheduler's memory: `active` while some task can run now
+	 * or is running, `at` for the earliest sleep. Answers also while scheduling is paused. A host that wakes the
+	 * process itself, such as a Durable Object alarm, arms from it and calls `resume()` when woken; see
+	 * `HarnessOptions.onWake`.
+	 */
+	wake(): Wake;
 
 	/** Return the reserved root conversation, creating it with `agent` and `init` in one commit when absent. */
 	root(

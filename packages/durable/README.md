@@ -125,6 +125,70 @@ const again = await root.submit({ type: "input", content: "Hello", requestId: "g
 
 `harness.submission(id)` reacquires a submission by ID, for example to wait for it after a restart.
 
+### Sleeping and Waking Up
+
+A task waits for time by ending its phase asleep. The sleep is stored, so the task holds no invocation meanwhile, survives restarts, and resumes at the checkpoint once the Harness clock reaches `until`:
+
+```typescript
+const Reminder = defineTask<{ text: string; at: number }, { phase: "wait" } | { phase: "deliver" }, null>({
+	name: "app.reminder",
+	version: 1,
+	initial: () => ({ phase: "wait" }),
+	phases: {
+		// Resolves once the sleep is stored; the phase ends there.
+		wait: (task, runtime, context) => runtime.sleepUntil(task.input.at, { phase: "deliver" }, context),
+		deliver: async (task, runtime, context) => {
+			await notify(task.input.text);
+			await runtime.commit(() => ({ status: "terminal", outcome: { status: "completed", result: null } }), context);
+		},
+	},
+	abort: (_task, runtime, context) =>
+		runtime.commit(() => ({ status: "terminal", outcome: { status: "aborted" } }), context),
+});
+```
+
+There is no sleep in the middle of a phase: a phase reruns from its top after a restart, so work after the wait goes in the next phase, and what it needs goes in the checkpoint. `{ status: "sleeping", until, checkpoint }` returned from `runtime.commit()` is the same sleep, committed together with other writes. Retry backoffs and deferred-response polls of the built-in tasks sleep the same way.
+
+Every timer the Harness uses goes through `setTimer` (default `setTimeout`), and every time through `now` (default `Date.now`); pass both to run a Harness on a fake clock. Sleep deadlines are stored on `now`, so every process that opens one storage must use the same clock. While scheduling runs, a timer resumes sleeping tasks when they are due and keeps a Node.js process alive meanwhile.
+
+A host whose process can be evicted, such as a Cloudflare Durable Object, wakes it itself. With `onWake`, the Harness arms no timer for sleeps; it tells the host what `harness.wake()` says whenever that changes: `active` while some task can run now or is running, and `at`, the earliest sleep. The host keeps its alarm armed and calls `resume()` when it fires:
+
+```typescript
+export class Session extends DurableObject<Env> {
+	#harness!: Harness;
+
+	constructor(ctx: DurableObjectState, env: Env) {
+		super(ctx, env);
+		void ctx.blockConcurrencyWhile(async () => {
+			const storage = await openDurableObjectSqliteStorage(ctx.storage);
+			this.#harness = await Harness.open(storage, { models, registry, onWake: (wake) => void this.#arm(wake) }, context);
+			this.#harness.resume();
+		});
+	}
+
+	override async alarm(): Promise<void> {
+		this.#harness.resume(); // resumes due sleeps and work a lost process left
+		await this.#arm(this.#harness.wake());
+	}
+
+	async submit(conversation: Conversation, input: string, requestId: string): Promise<void> {
+		// Arm before admitting work: an early alarm is harmless, a missing one strands the work.
+		await this.#arm({ ...this.#harness.wake(), active: true });
+		await conversation.submit({ type: "input", content: input, requestId }, context);
+	}
+
+	async #arm(wake: Wake): Promise<void> {
+		// A recovery heartbeat while work runs, never later than the earliest sleep.
+		const heartbeat = wake.active ? Date.now() + 60_000 : undefined;
+		const at = heartbeat === undefined || wake.at === undefined ? (heartbeat ?? wake.at) : Math.min(heartbeat, wake.at);
+		if (at === undefined) await this.ctx.storage.deleteAlarm();
+		else await this.ctx.storage.setAlarm(at);
+	}
+}
+```
+
+The default `setTimer` declines the timers that only free memory where timers cannot be unreferenced, as in Workers, so no pending timer keeps the object from hibernating.
+
 ## Extensions
 
 Code the Harness runs, other than its built-in tasks, comes in named extensions installed in a registry your process owns:

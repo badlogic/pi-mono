@@ -665,6 +665,25 @@ export function createStorageConformance(options: StorageConformanceOptions): re
 			expect(await scan("terminal")).toEqual([terminal]);
 		}),
 
+		createCase(options, "stores and scans sleeping tasks by status", async (storage) => {
+			const rootId = await createRoot(storage);
+			const sleepingId = await storage.mintId<TaskId<JsonValue>>();
+			const sleeping: StoredTask = {
+				...pendingTask(sleepingId, rootId),
+				state: { status: "sleeping", checkpoint: { phase: "next" }, until: 61_000 },
+				memos: { kept: true },
+			};
+			await storage.commit([{ type: "task", value: sleeping }], context);
+			expect(await storage.task(sleepingId, context)).toEqual(sleeping);
+			const scan = async (status: StoredTask["state"]["status"]) =>
+				(await storage.scanTasks({ status }, 10, undefined, context)).items;
+			expect(await scan("sleeping")).toEqual([sleeping]);
+			const running: StoredTask = { ...sleeping, state: { status: "running", checkpoint: { phase: "next" } } };
+			await storage.commit([{ type: "task", value: running }], context);
+			expect(await scan("sleeping")).toEqual([]);
+			expect(await scan("running")).toEqual([running]);
+		}),
+
 		createCase(
 			options,
 			"indexes request IDs per conversation and replaces complete submission records",
