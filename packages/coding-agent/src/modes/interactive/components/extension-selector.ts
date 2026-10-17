@@ -86,6 +86,7 @@ export class ExtensionSelectorComponent extends Container {
 		this.listContainer.clear();
 
 		const maxVisible = 10;
+		// Center the window on the selection, then clamp it to the list boundaries.
 		const startIndex = Math.max(
 			0,
 			Math.min(this.selectedIndex - Math.floor(maxVisible / 2), this.options.length - maxVisible),
