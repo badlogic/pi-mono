@@ -31,6 +31,21 @@
 			"types": "./dist/node.d.ts",
 			"import": "./dist/node.js"
 		},
+		"./sqlite": {
+			"source": "./src/sqlite/index.ts",
+			"types": "./dist/sqlite/index.d.ts",
+			"import": "./dist/sqlite/index.js"
+		},
+		"./sqlite/node": {
+			"source": "./src/sqlite/node.ts",
+			"types": "./dist/sqlite/node.d.ts",
+			"import": "./dist/sqlite/node.js"
+		},
+		"./sqlite/cloudflare": {
+			"source": "./src/sqlite/cloudflare.ts",
+			"types": "./dist/sqlite/cloudflare.d.ts",
+			"import": "./dist/sqlite/cloudflare.js"
+		},
 		"./package.json": "./package.json"
 	},
 	"sideEffects": false,

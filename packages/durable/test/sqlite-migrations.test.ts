@@ -57,44 +57,6 @@ describe("durable SQLite migrations", () => {
 		await expect(openNodeSqliteStorage(path)).rejects.toThrow("is newer than supported version");
 	});
 
-	it("rolls initial bootstrap and every pending migration back together", async () => {
-		const database = await openNodeSqliteDatabase(await databasePath());
-		try {
-			const failed: readonly SqliteMigration[] = [
-				{
-					version: 1,
-					statements: [
-						"CREATE TABLE migration_first (value TEXT) STRICT",
-						"INSERT INTO migration_first (value) VALUES ('retained')",
-					],
-				},
-				{
-					version: 2,
-					statements: ["CREATE TABLE migration_second (value TEXT) STRICT", "THIS IS NOT SQL"],
-				},
-			];
-			await expect(applySqliteMigrations(database, failed)).rejects.toThrow();
-			expect(
-				await database.get(
-					"SELECT count(*) AS count FROM sqlite_schema WHERE name IN ('durable_schema', 'migration_first', 'migration_second')",
-				),
-			).toEqual({ count: 0 });
-
-			await applySqliteMigrations(database, [
-				failed[0],
-				{ version: 2, statements: ["CREATE TABLE migration_second (value TEXT) STRICT"] },
-			]);
-			expect(await database.get("SELECT version FROM durable_schema WHERE singleton = 1")).toEqual({
-				version: 2,
-			});
-			expect(await database.get("SELECT value FROM migration_first")).toEqual({
-				value: "retained",
-			});
-		} finally {
-			await database.close();
-		}
-	});
-
 	it("rolls a failed migration back and preserves stored data for a successful retry", async () => {
 		const path = await databasePath();
 		const storage = await openNodeSqliteStorage(path);

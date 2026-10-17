@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Added
+
+- `@earendil-works/chord/sqlite`: portable SQLite interfaces, atomic migration runner, and schema-prefix validation, with Node (`/sqlite/node`) and Cloudflare Durable Object (`/sqlite/cloudflare`) drivers. Moved from Durable, which keeps its storage implementations and re-exports the moved public names.
+
 ## [1.3.0] - 2026-10-15
 
 ### Breaking Changes

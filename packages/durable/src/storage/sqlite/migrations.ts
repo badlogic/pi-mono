@@ -1,10 +1,11 @@
-import type { SqliteDatabase } from "./database.ts";
+import {
+	applySqliteMigrations as applyMigrations,
+	type SqliteDatabase,
+	type SqliteMigration,
+} from "@earendil-works/chord/sqlite";
 import { DEFAULT_SQLITE_SCHEMA, type SqliteSchema } from "./schema.ts";
 
-export type SqliteMigration = {
-	readonly version: number;
-	readonly statements: readonly string[];
-};
+export type { SqliteMigration } from "@earendil-works/chord/sqlite";
 
 /** Build immutable, ordered schema history for a set of SQLite identifiers. */
 export function createSqliteMigrations(schema: SqliteSchema): readonly SqliteMigration[] {
@@ -94,8 +95,6 @@ export const SQLITE_MIGRATIONS: readonly SqliteMigration[] = createSqliteMigrati
 
 export const CURRENT_SQLITE_SCHEMA_VERSION = SQLITE_MIGRATIONS.at(-1)?.version ?? 0;
 
-type SchemaRow = { readonly version: number };
-
 /** Apply all pending schema migrations atomically. */
 export async function applySqliteMigrations(
 	database: SqliteDatabase,
@@ -110,31 +109,5 @@ export async function applySqliteMigrationsForSchema(
 	schema: SqliteSchema,
 	migrations: readonly SqliteMigration[] = createSqliteMigrations(schema),
 ): Promise<void> {
-	for (let index = 0; index < migrations.length; index++) {
-		if (migrations[index]?.version !== index + 1) {
-			throw new Error("Durable SQLite migrations must have contiguous versions starting at 1");
-		}
-	}
-
-	const { durableSchema } = schema.tables;
-	await database.transaction(async (transaction) => {
-		await transaction.exec(`CREATE TABLE IF NOT EXISTS ${durableSchema} (
-			singleton INTEGER PRIMARY KEY CHECK (singleton = 1),
-			version INTEGER NOT NULL CHECK (version >= 0)
-		) STRICT`);
-		await transaction.run(`INSERT OR IGNORE INTO ${durableSchema} (singleton, version) VALUES (1, 0)`);
-		const row = await transaction.get<SchemaRow>(`SELECT version FROM ${durableSchema} WHERE singleton = 1`);
-		if (row === undefined) throw new Error("Durable SQLite schema metadata is missing");
-		const currentVersion = migrations.at(-1)?.version ?? 0;
-		if (row.version > currentVersion) {
-			throw new Error(
-				`Durable SQLite schema version ${row.version} is newer than supported version ${currentVersion}`,
-			);
-		}
-		for (const migration of migrations) {
-			if (migration.version <= row.version) continue;
-			for (const statement of migration.statements) await transaction.exec(statement);
-			await transaction.run(`UPDATE ${durableSchema} SET version = ? WHERE singleton = 1`, migration.version);
-		}
-	});
+	await applyMigrations(database, migrations, { table: schema.tables.durableSchema });
 }
