@@ -12,6 +12,7 @@
 - `settings.compaction.modelOverrides` sets compaction thresholds per model, keyed by exact `"provider/modelId"`, so one harness can serve small- and large-window models; the threshold check, overflow recovery, and the compaction task use the entry of the model they act for ([#10942](https://github.com/earendil-works/pi/issues/10942)).
 - Durable sleeps: a sleeping task holds no invocation, survives restarts, and resumes at its checkpoint once the Harness clock reaches `until`. Generation retry backoffs, deferred-response polls, and compaction retry backoffs sleep this way; a record that slept inside a running phase sleeps again when it resumes early.
 - `HarnessOptions.setTimer` arms every timer of the Session and Harness (progress throttles, idle-memory eviction, sleeps), and `ToolExecutionApi.now()` reads the Harness clock, which code mode now uses for its deadlines; with `now`, a Harness runs entirely on a host or fake clock.
+- Tests that run in workerd (`npm run test:workers`): the storage conformance suite and the schema migration on real Durable Object SQLite, a sleep resumed by the object's alarm after an eviction, and a turn recovered through the recovery alarm after an eviction mid-stream.
 - `Harness.wake()` and `HarnessOptions.onWake` tell a host when the Session next needs a process: `active` while work can run, `at` for the earliest sleep. With `onWake`, the Harness keeps no timer for sleeps, so a Cloudflare Durable Object can hibernate and wake on its alarm, calling `resume()`.
 - `HarnessOptions.models` and `HarnessOptions.settings` also accept a function returning the current value, like `env`. Generation, compaction, hooks and tools call it at each use (`api.models` reads the current value at each access), so a host can replace its model configuration or settings without reopening the Harness. A plain object still works.
 
@@ -23,6 +24,7 @@
 
 ### Fixed
 
+- In Cloudflare Workers with `nodejs_compat`, the timers that evict idle documents and contexts were armed, since timers there have an `unref()`; a pending one kept a Durable Object from hibernating and blocked its eviction. They are now declined in Workers, and memory is freed at later commits.
 - The README's Errors section now limits the `StorageRequestError` exemption to reads: a `StorageRequestError` thrown by `commit()` or `mintId()` fails the Harness like any other storage error ([#11014](https://github.com/earendil-works/pi/issues/11014)).
 
 ## [1.3.0] - 2026-10-15

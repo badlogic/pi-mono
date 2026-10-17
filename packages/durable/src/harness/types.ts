@@ -611,8 +611,8 @@ export type HarnessOptions<Tool extends ToolRegistration = ToolRegistration> = {
 	/**
 	 * Arms every timer the Harness uses: pacing progress commits, freeing idle memory (`background`), and, without
 	 * `onWake`, resuming sleeping tasks; and the timers of `TaskRuntime.setTimer()`. Default `setTimeout`, with background
-	 * timers unreferenced, or declined where they cannot be. Tests can pass fake timers; a host can keep timers off a
-	 * process that should hibernate.
+	 * timers unreferenced, or declined in Cloudflare Workers and where they cannot be unreferenced. Tests can pass fake
+	 * timers; a host can keep timers off a process that should hibernate.
 	 */
 	readonly setTimer?: SetTimer;
 	/**

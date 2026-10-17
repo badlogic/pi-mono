@@ -4,11 +4,17 @@ import type { SetTimer } from "./types.ts";
 const MAX_TIMER_DELAY = 2_147_483_647;
 
 /**
+ * Cloudflare Workers: a pending timer keeps a Durable Object from hibernating or being evicted, even an unreferenced
+ * one (`nodejs_compat` gives timers an `unref()` that changes nothing).
+ */
+const inWorkers = typeof navigator !== "undefined" && navigator.userAgent === "Cloudflare-Workers";
+
+/**
  * The default `HarnessOptions.setTimer`: `setTimeout`. A background timer is unreferenced, so it never keeps the
- * process alive; where timers cannot be unreferenced, as in Cloudflare Workers, it is declined, since a pending timer
- * could keep a Durable Object from hibernating.
+ * process alive. It is declined in Cloudflare Workers and wherever timers cannot be unreferenced.
  */
 export const nativeTimer: SetTimer = (callback, delayMs, options) => {
+	if (options.background && inWorkers) return undefined;
 	const handle = setTimeout(callback, Math.min(Math.max(0, delayMs), MAX_TIMER_DELAY));
 	if (options.background) {
 		const unref = (handle as { unref?: unknown }).unref;

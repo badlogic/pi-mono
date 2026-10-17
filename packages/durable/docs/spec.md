@@ -379,7 +379,7 @@ type HarnessOptions<Tool extends ToolRegistration = ToolRegistration> = {
   /**
    * Arms every timer of the Session and Harness (section 5.6). `background` timers only free memory and may be
    * declined by returning `undefined`; the others pace or resume work. Default `setTimeout`, background timers
-   * unreferenced, or declined where they cannot be.
+   * unreferenced, or declined in Cloudflare Workers and where they cannot be unreferenced.
    */
   readonly setTimer?: (
     callback: () => void,
@@ -2355,9 +2355,10 @@ poll, sleeps again with the same checkpoint (section 8.3).
 `HarnessOptions.setTimer` (default `setTimeout`). Background timers only free
 memory: document eviction (section 4) and kept contexts (section 5.1). A host
 may decline one by returning `undefined`; that memory is then freed at later
-commits and task changes. The default declines them where timers cannot be
-unreferenced, as in Cloudflare Workers, since a pending timer keeps a Durable
-Object from hibernating. Foreground timers pace or resume work: throttled
+commits and task changes. The default declines them in Cloudflare Workers, since
+a pending timer keeps a Durable Object from hibernating or being evicted even
+when `nodejs_compat` gives it an `unref()`, and wherever timers cannot be
+unreferenced. Foreground timers pace or resume work: throttled
 progress commits through `TaskRuntime.setTimer()`, and, without `onWake`, the
 timer for the earliest sleep while scheduling runs. That one keeps a Node.js
 process alive, since a sleeping task is work left to do. A timer may fire early

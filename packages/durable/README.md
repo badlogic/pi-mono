@@ -187,7 +187,7 @@ export class Session extends DurableObject<Env> {
 }
 ```
 
-The default `setTimer` declines the timers that only free memory where timers cannot be unreferenced, as in Workers, so no pending timer keeps the object from hibernating.
+The default `setTimer` declines the timers that only free memory in Workers, so no pending timer keeps the object from hibernating or being evicted; memory is then freed at later commits.
 
 ## Extensions
 
@@ -383,7 +383,7 @@ const harness = await Harness.open(storage, {
 		compaction: { reserveTokens: 16384 },
 		progress: { partialIntervalMs: 100, outputIntervalMs: 100 },
 		toolExecution: "parallel",
-		contextRetentionMs: 600_000, // idle conversations keep their context in memory this long (checked lazily where timers cannot be unreferenced)
+		contextRetentionMs: 600_000, // idle conversations keep their context in memory this long (checked lazily where background timers are declined, as in Workers)
 		documentRetentionMs: 600_000, // loaded documents nothing observes stay in memory this long after their last use; observed ones always
 		get followUpMode() {
 			return userSettings.followUpMode;
