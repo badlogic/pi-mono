@@ -674,6 +674,29 @@ export async function runRpcMode(runtimeHost: AgentSessionRuntime): Promise<neve
 			}
 
 			// =================================================================
+			// MCP servers (per-session registrations)
+			// =================================================================
+
+			case "register_mcp_server": {
+				try {
+					session.extensionRunner.registerRpcMcpServer(command.name, command.config);
+				} catch (err) {
+					return error(id, "register_mcp_server", err instanceof Error ? err.message : String(err));
+				}
+				return success(id, "register_mcp_server", { name: command.name });
+			}
+
+			case "unregister_mcp_server": {
+				session.extensionRunner.unregisterRpcMcpServer(command.name);
+				return success(id, "unregister_mcp_server");
+			}
+
+			case "get_mcp_servers": {
+				const servers = session.extensionRunner.getRpcMcpServers();
+				return success(id, "get_mcp_servers", { servers });
+			}
+
+			// =================================================================
 			// Commands (available for invocation via prompt)
 			// =================================================================
 

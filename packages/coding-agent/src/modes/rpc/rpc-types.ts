@@ -10,6 +10,7 @@ import type { ImageContent, Model } from "@earendil-works/pi-ai";
 import type { PromptDisposition, QueuedInputDisposition, SessionStats } from "../../core/agent-session.ts";
 import type { BashResult } from "../../core/bash-executor.ts";
 import type { CompactionResult } from "../../core/compaction/index.ts";
+import type { McpServerConfig, RegisteredMcpServer } from "../../core/mcp-servers.ts";
 import type { SessionEntry, SessionTreeNode } from "../../core/session-manager.ts";
 import type { SourceInfo } from "../../core/source-info.ts";
 
@@ -69,6 +70,11 @@ export type RpcCommand =
 
 	// Messages
 	| { id?: string; type: "get_messages" }
+
+	// MCP servers (per-session registrations, same shape as an `mcp.json` entry)
+	| { id?: string; type: "register_mcp_server"; name: string; config: McpServerConfig }
+	| { id?: string; type: "unregister_mcp_server"; name: string }
+	| { id?: string; type: "get_mcp_servers" }
 
 	// Commands (available for invocation via prompt)
 	| { id?: string; type: "get_commands" };
@@ -231,6 +237,17 @@ export type RpcResponse =
 
 	// Messages
 	| { id?: string; type: "response"; command: "get_messages"; success: true; data: { messages: AgentMessage[] } }
+
+	// MCP servers
+	| { id?: string; type: "response"; command: "register_mcp_server"; success: true; data: { name: string } }
+	| { id?: string; type: "response"; command: "unregister_mcp_server"; success: true }
+	| {
+			id?: string;
+			type: "response";
+			command: "get_mcp_servers";
+			success: true;
+			data: { servers: RegisteredMcpServer[] };
+	  }
 
 	// Commands
 	| {

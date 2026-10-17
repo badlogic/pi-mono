@@ -15,6 +15,12 @@ import { type Theme, theme } from "../../modes/interactive/theme/theme.ts";
 import type { CacheWarmingAction } from "../cache-warmer.ts";
 import type { ResourceDiagnostic } from "../diagnostics.ts";
 import type { KeybindingsConfig } from "../keybindings.ts";
+import {
+	type McpServerConfig,
+	mcpNamespace,
+	type RegisteredMcpServer,
+	validateMcpServerConfig,
+} from "../mcp-servers.ts";
 import type { ModelRegistry } from "../model-registry.ts";
 import type { ScopedModel } from "../model-resolver.ts";
 import type { SessionManager } from "../session-manager.ts";
@@ -862,6 +868,40 @@ export class ExtensionRunner {
 
 	getCommand(name: string): ResolvedCommand | undefined {
 		return this.resolveRegisteredCommands().find((command) => command.invocationName === name);
+	}
+
+	/**
+	 * Register an MCP server from RPC mode (`register_mcp_server`).
+	 * Same validation, ownership, and namespace-clash rules as
+	 * `pi.registerMcpServer()`; the entry is owned by "rpc" and the MCP
+	 * extension connects it like any later registration.
+	 * See https://github.com/earendil-works/pi/issues/11067.
+	 */
+	registerRpcMcpServer(name: string, config: unknown): McpServerConfig {
+		const validated = validateMcpServerConfig(name, config);
+		if (typeof validated === "string") {
+			throw new Error(`Invalid MCP server "${name}" in register_mcp_server: ${validated}`);
+		}
+		const owner = this.runtime.mcpServers.get(name)?.extensionPath;
+		if (owner !== undefined && owner !== "rpc") {
+			throw new Error(`MCP server "${name}" is already registered by extension "${owner}"`);
+		}
+		const clash = this.runtime.mcpServers
+			.list()
+			.find((server) => server.name !== name && mcpNamespace(server.name) === mcpNamespace(name));
+		if (clash) throw new Error(`MCP server "${name}" conflicts with registered server "${clash.name}"`);
+		this.runtime.mcpServers.register({ name, config: structuredClone(validated), extensionPath: "rpc" });
+		return validated;
+	}
+
+	/** Remove an MCP server registered through RPC mode. Other owners are left alone. */
+	unregisterRpcMcpServer(name: string): void {
+		this.runtime.mcpServers.unregister(name, "rpc");
+	}
+
+	/** MCP servers registered through RPC mode, in registration order. */
+	getRpcMcpServers(): RegisteredMcpServer[] {
+		return this.runtime.mcpServers.list().filter((server) => server.extensionPath === "rpc");
 	}
 
 	/**

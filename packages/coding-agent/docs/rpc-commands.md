@@ -783,6 +783,59 @@ Response:
 
 The current session name is available via `get_state` in the `sessionName` field. To set the initial name when starting RPC mode, pass `--name <name>` or `-n <name>` to the `pi --mode rpc` process.
 
+## MCP servers
+
+Per-session MCP servers, with the same config shape as an `mcpServers` entry in
+`mcp.json`. Registrations are not saved; a server of the same name in `mcp.json`
+takes precedence. The MCP extension connects a registered server right away.
+
+### register_mcp_server
+
+```json
+{"type": "register_mcp_server", "name": "jira", "config": {"url": "https://mcp.example.com/jira"}}
+```
+
+Response:
+```json
+{
+  "type": "response",
+  "command": "register_mcp_server",
+  "success": true,
+  "data": {"name": "jira"}
+}
+```
+
+### unregister_mcp_server
+
+```json
+{"type": "unregister_mcp_server", "name": "jira"}
+```
+
+Response:
+```json
+{
+  "type": "response",
+  "command": "unregister_mcp_server",
+  "success": true
+}
+```
+
+### get_mcp_servers
+
+```json
+{"type": "get_mcp_servers"}
+```
+
+Response:
+```json
+{
+  "type": "response",
+  "command": "get_mcp_servers",
+  "success": true,
+  "data": {"servers": [{"name": "jira", "config": {}, "extensionPath": "rpc"}]}
+}
+```
+
 ## Discoverable commands
 
 ### get_commands
