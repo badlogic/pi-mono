@@ -1,7 +1,15 @@
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { defineTask, MemoryStorage, type Storage, type TaskId, type Wake } from "@earendil-works/pi-durable";
+import {
+	defineExtension,
+	defineTask,
+	MemoryStorage,
+	type SetTimer,
+	type Storage,
+	type TaskId,
+	type Wake,
+} from "@earendil-works/pi-durable";
 import { afterEach, describe, expect, it } from "vitest";
 import { openNodeSqliteStorage } from "../src/storage/sqlite/node.ts";
 import { context, flush } from "./session-support.ts";
@@ -51,6 +59,22 @@ async function startNap(harness: Awaited<ReturnType<typeof openTasks>>["harness"
 
 async function stateOf(harness: Awaited<ReturnType<typeof openTasks>>["harness"], id: TaskId) {
 	return (await harness.getTask(id, context))?.state;
+}
+
+type FakeTimer = { readonly delayMs: number; readonly callback: () => void; disarmed: boolean };
+
+/** A host `setTimer` that records the timers that pace work and declines background ones. */
+function fakeTimers() {
+	const armed: FakeTimer[] = [];
+	const setTimer: SetTimer = (callback, delayMs, options) => {
+		if (options.background) return undefined;
+		const timer: FakeTimer = { delayMs, callback, disarmed: false };
+		armed.push(timer);
+		return () => {
+			timer.disarmed = true;
+		};
+	};
+	return { armed, setTimer, live: () => armed.filter((timer) => !timer.disarmed) };
 }
 
 /** Let microtasks and a few timer turns run. */
@@ -139,43 +163,68 @@ describe("sleeping tasks", () => {
 		await harness.close(context);
 	});
 
-	it("resumes a due sleep with a timer when there is no onWake", async () => {
-		const Nap = napTask(30);
-		const { harness } = await openTasks(new MemoryStorage(), [Nap]);
+	it("resumes a due sleep with its timer without onWake, with background timers declined", async () => {
+		let clock = 1_000;
+		const timers = fakeTimers();
+		const Nap = napTask(500);
+		const { harness } = await openTasks(new MemoryStorage(), [Nap], { now: () => clock, setTimer: timers.setTimer });
 		const id = await startNap(harness, Nap);
-		const started = Date.now();
-		// Only this call: the timer wakes the task.
 		harness.resume();
-		const receipt = await harness.waitForTask(id, context);
-		expect(receipt.state.outcome.status).toBe("completed");
-		expect(Date.now() - started).toBeGreaterThanOrEqual(25);
+		await eventually(() => timers.live().some((timer) => timer.delayMs === 500));
+		expect((await stateOf(harness, id))?.status).toBe("sleeping");
+		clock = 1_500;
+		timers
+			.live()
+			.find((timer) => timer.delayMs === 500)!
+			.callback();
+		// Polled: `waitForTask()` would call `resume()`, which wakes due sleeps itself.
+		await eventually(async () => (await stateOf(harness, id))?.status === "terminal");
+		expect(await stateOf(harness, id)).toMatchObject({ outcome: { status: "completed", result: 1_500 } });
 		await harness.close(context);
 	});
 
-	it("arms its timers through setTimer: a sleep's in the foreground, a declined background one is not needed", async () => {
+	it("runs a due sleep at any scheduling pass, before its timer fires", async () => {
 		let clock = 1_000;
-		const armed: { readonly delayMs: number; readonly background: boolean; readonly callback: () => void }[] = [];
+		const timers = fakeTimers();
 		const Nap = napTask(500);
-		const { harness } = await openTasks(new MemoryStorage(), [Nap], {
+		const { harness, registry } = await openTasks(new MemoryStorage(), [Nap], {
 			now: () => clock,
-			setTimer: (callback, delayMs, options) => {
-				armed.push({ delayMs, background: options.background, callback });
-				// Declines background timers, as a host that must hibernate would.
-				return options.background ? undefined : () => {};
-			},
+			setTimer: timers.setTimer,
 		});
 		const id = await startNap(harness, Nap);
 		harness.resume();
-		await eventually(() => armed.some((timer) => !timer.background && timer.delayMs === 500));
-		expect((await stateOf(harness, id))?.status).toBe("sleeping");
+		await eventually(async () => (await stateOf(harness, id))?.status === "sleeping");
+		// The deadline passes, and an unrelated change starts a pass before the timer fires.
 		clock = 1_500;
-		armed.find((timer) => !timer.background && timer.delayMs === 500)!.callback();
-		expect((await harness.waitForTask(id, context)).state.outcome).toEqual({ status: "completed", result: 1_500 });
+		registry.install(defineExtension({ name: "unrelated" }));
+		// Polled: `waitForTask()` would call `resume()`, which wakes due sleeps itself.
+		await eventually(async () => (await stateOf(harness, id))?.status === "terminal");
+		expect(await stateOf(harness, id)).toMatchObject({ outcome: { status: "completed", result: 1_500 } });
 		await harness.close(context);
 	});
 
-	it("disarms an invocation's timers when it ends", async () => {
-		const disarmed: number[] = [];
+	it("disarms the sleep timer when the sleep is aborted and when the Harness closes", async () => {
+		const clock = 1_000;
+		const timers = fakeTimers();
+		const Short = napTask(500);
+		const { harness } = await openTasks(new MemoryStorage(), [Short], {
+			now: () => clock,
+			setTimer: timers.setTimer,
+		});
+		const aborted = await startNap(harness, Short);
+		harness.resume();
+		await eventually(() => timers.live().some((timer) => timer.delayMs === 500));
+		await harness.abortTask(aborted, context);
+		await harness.waitForTask(aborted, context);
+		await eventually(() => timers.live().length === 0);
+		const kept = await startNap(harness, Short);
+		await eventually(async () => (await stateOf(harness, kept))?.status === "sleeping");
+		expect(timers.live().map((timer) => timer.delayMs)).toEqual([500]);
+		await harness.close(context);
+		expect(timers.live()).toEqual([]);
+	});
+
+	it("disarms an invocation's timers when it ends, and a late fire runs nothing", async () => {
 		const fired: string[] = [];
 		const Timed = defineTask<null, { phase: "run" }, null>({
 			name: "test.timed",
@@ -189,13 +238,8 @@ describe("sleeping tasks", () => {
 			},
 			abort: async () => {},
 		});
-		let next = 0;
-		const { harness } = await openTasks(new MemoryStorage(), [Timed], {
-			setTimer: (_callback, delayMs) => {
-				const id = next++;
-				return delayMs === 60_000 ? () => disarmed.push(id) : () => {};
-			},
-		});
+		const timers = fakeTimers();
+		const { harness } = await openTasks(new MemoryStorage(), [Timed], { setTimer: timers.setTimer });
 		const root = await harness.root(context);
 		const id = await root.commit(
 			(tx) => tx.createTask(Timed, null, { ownership: { kind: "conversation" } }),
@@ -203,22 +247,90 @@ describe("sleeping tasks", () => {
 		);
 		harness.resume();
 		await harness.waitForTask(id, context);
-		await eventually(() => disarmed.length === 1);
+		const timer = timers.armed.find((armed) => armed.delayMs === 60_000)!;
+		await eventually(() => timer.disarmed);
+		// A host timer that fires anyway: the ended invocation's callback does not run.
+		timer.callback();
 		expect(fired).toEqual([]);
 		await harness.close(context);
 	});
 
-	it("keeps no timer with onWake", async () => {
-		const Nap = napTask(10);
-		const { harness } = await openTasks(new MemoryStorage(), [Nap], { onWake: () => {} });
+	it("arms no timer for sleeps with onWake", async () => {
+		let clock = 1_000;
+		const timers = fakeTimers();
+		const Nap = napTask(500);
+		const { harness } = await openTasks(new MemoryStorage(), [Nap], {
+			now: () => clock,
+			setTimer: timers.setTimer,
+			onWake: () => {},
+		});
 		const id = await startNap(harness, Nap);
 		harness.resume();
-		await new Promise((resolve) => setTimeout(resolve, 60));
-		expect((await stateOf(harness, id))?.status).toBe("sleeping");
+		await eventually(async () => (await stateOf(harness, id))?.status === "sleeping");
+		await settle();
+		expect(timers.armed).toEqual([]);
+		clock = 1_500;
 		expect(harness.wake()).toEqual({ active: true });
 		harness.resume();
 		expect((await harness.waitForTask(id, context)).state.outcome.status).toBe("completed");
 		await harness.close(context);
+	});
+
+	it("arms a foreground timer the host declines with setTimeout, reporting it once", async () => {
+		const Nap = napTask(10);
+		const { harness, reports } = await openTasks(new MemoryStorage(), [Nap], { setTimer: () => undefined });
+		const first = await startNap(harness, Nap);
+		const second = await startNap(harness, Nap);
+		harness.resume();
+		expect((await harness.waitForTask(first, context)).state.outcome.status).toBe("completed");
+		expect((await harness.waitForTask(second, context)).state.outcome.status).toBe("completed");
+		expect(reports.map((error) => (error as Error).message)).toEqual([
+			"HarnessOptions.setTimer declined a timer that paces work; using setTimeout",
+		]);
+		await harness.close(context);
+	});
+
+	it("counts neither a wait on a sleeping task nor an outcome held over one as active", async () => {
+		const clock = 1_000;
+		const Child = napTask(500);
+		type ParentState = { phase: "start" } | { phase: "joined"; child: TaskId<number> };
+		const Parent = defineTask<{ hold: boolean }, ParentState, null>({
+			name: "test.parent",
+			version: 1,
+			initial: () => ({ phase: "start" }),
+			phases: {
+				start: async (task, runtime, ctx) => {
+					await runtime.commit(async (tx) => {
+						const child = await tx.createTask(Child, null, { ownership: { kind: "task", taskId: task.id } });
+						// Held: completes next, holding its outcome over the sleeping child. Otherwise waits for it.
+						return task.input.hold
+							? { status: "running", checkpoint: { phase: "joined", child } }
+							: { status: "waiting", checkpoint: { phase: "joined", child }, on: [child], policy: "allSettled" };
+					}, ctx);
+				},
+				joined: async (_task, runtime, ctx) => {
+					await runtime.commit(() => completed(null), ctx);
+				},
+			},
+			abort: async () => {},
+		});
+		for (const hold of [false, true]) {
+			const { harness } = await openTasks(new MemoryStorage(), [Parent, Child], {
+				now: () => clock,
+				onWake: () => {},
+			});
+			const root = await harness.root(context);
+			const id = await root.commit(
+				(tx) => tx.createTask(Parent, { hold }, { ownership: { kind: "conversation" } }),
+				context,
+			);
+			harness.resume();
+			const parked = hold ? "completing" : "waiting";
+			await eventually(async () => (await stateOf(harness, id))?.status === parked);
+			await eventually(() => harness.wake().at === 1_500);
+			expect(harness.wake()).toEqual({ active: false, at: 1_500 });
+			await harness.close(context);
+		}
 	});
 
 	it("runs the abort handler of a sleeping task without waiting for its time", async () => {
@@ -288,7 +400,6 @@ describe("sleeping tasks", () => {
 	});
 
 	it("does not count a task without a definition as active", async () => {
-		const Nap = napTask(10);
 		const Missing = napTask(10);
 		const { harness } = await openTasks(new MemoryStorage(), []);
 		const root = await harness.root(context);
@@ -298,33 +409,36 @@ describe("sleeping tasks", () => {
 		harness.resume();
 		await settle();
 		expect(harness.wake()).toEqual({ active: false });
-		void Nap;
 		await harness.close(context);
 	});
 
-	it("reports a throwing onWake and keeps calling it for later changes", async () => {
+	it("reports a throwing onWake and offers the same wake again at the next pass", async () => {
 		let clock = 1_000;
 		const wakes: Wake[] = [];
 		const failure = new Error("alarm failed");
+		let failing = true;
 		const Nap = napTask(1_000);
-		const { harness, reports } = await openTasks(new MemoryStorage(), [Nap], {
+		const { harness, registry, reports } = await openTasks(new MemoryStorage(), [Nap], {
 			now: () => clock,
 			onWake: (wake) => {
 				wakes.push(wake);
-				if (wake.at !== undefined) throw failure;
+				if (failing && wake.at !== undefined) throw failure;
 			},
 		});
 		const id = await startNap(harness, Nap);
 		harness.resume();
-		await eventually(async () => (await stateOf(harness, id))?.status === "sleeping");
-		await settle();
-		expect(reports.length).toBeGreaterThan(0);
-		expect(reports.every((error) => error === failure)).toBe(true);
+		await eventually(() => wakes.some((wake) => wake.at === 2_000 && !wake.active));
+		expect(reports).toContain(failure);
+		// The host recovers; an unrelated change offers the same, undelivered wake again.
+		failing = false;
+		const offered = wakes.length;
+		registry.install(defineExtension({ name: "unrelated" }));
+		await eventually(() => wakes.length > offered);
+		expect(wakes.at(-1)).toEqual({ active: false, at: 2_000 });
 		clock = 2_000;
 		harness.resume();
 		await harness.waitForTask(id, context);
-		await settle();
-		expect(wakes.at(-1)).toEqual({ active: false });
+		await eventually(() => wakes.at(-1)?.active === false && wakes.at(-1)?.at === undefined);
 		await harness.close(context);
 	});
 });

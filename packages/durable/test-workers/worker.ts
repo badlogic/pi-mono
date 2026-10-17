@@ -65,7 +65,8 @@ export class TestSession extends DurableObject {
 					now: () => this.now(),
 					onWake: (wake) => {
 						this.wakes.push(wake);
-						void this.arm(wake);
+						// A failed alarm write resets the object; it arms again when it next starts.
+						void this.arm(wake).catch(() => ctx.abort("Alarm write failed"));
 					},
 				},
 				context,

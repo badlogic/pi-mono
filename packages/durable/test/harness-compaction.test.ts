@@ -1,6 +1,7 @@
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { DatabaseSync } from "node:sqlite";
 import {
 	type AssistantMessage,
 	fauxAssistantMessage,
@@ -1733,10 +1734,25 @@ describe("compaction recovery", () => {
 		chat.setup.settings.retry = { enabled: true, maxRetries: 2, baseDelayMs: 60_000 };
 		chat.faux.summaries.push(failure("overloaded"));
 		const id = await chat.root.compact(undefined, context);
-		await waitFor(async () => (await live(chat)).compactions?.[0]?.retry !== undefined);
+		await waitFor(async () => (await chat.harness.getTask(id, context))?.state.status === "sleeping");
+		const until = now + 60_000;
 		expect((await chat.harness.getTask(id, context))?.state).toMatchObject({
-			checkpoint: { phase: "retry", attempt: 1 },
+			status: "sleeping",
+			checkpoint: { phase: "retry", attempt: 1, until },
+			until,
 		});
+		await chat.harness.close(context);
+		// Earlier versions slept inside a running `retry` phase: reopened before its time, it sleeps again.
+		const database = new DatabaseSync(path);
+		database
+			.prepare(
+				"UPDATE tasks SET status = 'running', record = json_set(json_remove(record, '$.state.until'), '$.state.status', 'running') WHERE id = ?",
+			)
+			.run(id);
+		database.close();
+		chat = await reopen(path, chat.setup, chat.faux);
+		await waitFor(async () => (await chat.harness.getTask(id, context))?.state.status === "sleeping");
+		expect(chat.faux.summaryRequests).toHaveLength(1);
 		await chat.harness.close(context);
 		now += 120_000;
 		chat = await reopen(path, chat.setup, chat.faux);

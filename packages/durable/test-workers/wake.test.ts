@@ -87,10 +87,20 @@ describe("a Harness woken by its Durable Object alarm", () => {
 		await eventually(stub, async (_instance, state) => (await state.storage.getAlarm()) === null);
 	});
 
-	it("declines background timers by default, so no pending timer keeps an object from hibernating", () => {
+	it("can evict an object whose Harness keeps idle documents and contexts in memory", async () => {
+		const stub = fresh();
+		await runInDurableObject(stub, async (instance: TestSession) => {
+			instance.script(["answer"]);
+			await instance.submit("hi", "turn-1");
+			const root = await instance.root();
+			await (await root.submit({ type: "input", content: "hi", requestId: "turn-1" }, context)).wait(context);
+		});
+		// Retention timers would keep the object running; the default declines them in Workers.
 		expect(nativeTimer(() => {}, 10, { background: true })).toBeUndefined();
-		const disarm = nativeTimer(() => {}, 10, { background: false });
-		expect(typeof disarm).toBe("function");
-		disarm?.();
+		const evicted = await Promise.race([
+			evictDurableObject(stub).then(() => "evicted"),
+			new Promise((resolve) => setTimeout(() => resolve("still running"), 2_000)),
+		]);
+		expect(evicted).toBe("evicted");
 	});
 });

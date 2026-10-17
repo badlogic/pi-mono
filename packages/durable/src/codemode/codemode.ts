@@ -799,6 +799,8 @@ class CodemodeCall {
 					}));
 		running.then(
 			(done) => {
+				// A result after the outcome is decided has nowhere to go, and the call's API has ended.
+				if (this.stopped) return;
 				this.queue.push({ id: call.id, at: this.api.now(), ...done });
 				void this.pump();
 			},

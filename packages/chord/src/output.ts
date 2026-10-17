@@ -376,7 +376,8 @@ export class Progress {
 		else
 			this.#timer = this.#clock.setTimer(() => {
 				this.#timer = undefined;
-				this.#flush();
+				// Checks the clock again: a timer that fires early waits for the rest.
+				this.#schedule();
 			}, wait);
 	}
 

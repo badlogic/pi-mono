@@ -237,9 +237,9 @@ export const GenerationTask = defineTask<GenerationInput, GenerationCheckpoint, 
 		/** After the sleep until `pollAt`; a run before it (an early wake, or a record of an earlier version) sleeps again. */
 		poll: async (task, runtime, context) => {
 			const { attempt, compacted, model: ref, cutoff, handle, pollAt } = task.state.checkpoint;
+			if (pollAt > runtime.now()) return runtime.sleepUntil(pollAt, task.state.checkpoint, context);
 			const model = runtime.models.getModel(ref.provider, ref.modelId);
 			if (model === undefined) return failNoModel(runtime, ref, context);
-			if (pollAt > runtime.now()) return runtime.sleepUntil(pollAt, task.state.checkpoint, context);
 			const message = await runtime.models.fetchDeferred(model, handle, { signal: runtime.signal });
 			const request = { attempt, compacted, model: ref, cutoff, pollAt };
 			await classify(runtime, request, message, context);

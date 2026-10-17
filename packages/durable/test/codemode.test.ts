@@ -663,6 +663,30 @@ describe("durable code mode", () => {
 		await harness.close(context);
 	});
 
+	it("drops a global's result that arrives after the script finished", async () => {
+		const late = deferred<string>();
+		const chat = codemodeChat([
+			{ name: "slowly", execute: () => late.promise },
+			{ name: "quickly", execute: async () => "quick" },
+		]);
+		chat.setup.faux.setResponses([script(`const pending = slowly(); await quickly(); return 1;`), DONE]);
+		const rejections: unknown[] = [];
+		const onRejection = (reason: unknown) => rejections.push(reason);
+		process.on("unhandledRejection", onRejection);
+		try {
+			const { harness, root } = await openChat(await openNodeSqliteStorage(await sqlitePath()), chat.setup);
+			await (await root.submit({ type: "input", content: "go" }, context)).wait(context);
+			expect(await resultText(chat.setup, root)).toEqual({ text: "1", isError: false });
+			// The script's tool call has ended; its pending global resolves now.
+			late.resolve("late");
+			await new Promise((resolve) => setTimeout(resolve, 20));
+			expect(rejections).toEqual([]);
+			await harness.close(context);
+		} finally {
+			process.off("unhandledRejection", onRejection);
+		}
+	});
+
 	it("rejects a failed tool call with its error text and structured output", async () => {
 		const chat = codemodeChat();
 		addTool(

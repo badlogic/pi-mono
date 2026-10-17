@@ -1164,9 +1164,10 @@ export class TaskScheduler {
 			}
 			const last = this.#lastWake;
 			if (last !== undefined && last.active === wake.active && last.at === wake.at) return;
-			this.#lastWake = wake;
 			try {
 				this.#onWake(wake);
+				// Only a delivered wake counts: after a throw, the next change or kick offers it again.
+				this.#lastWake = wake;
 			} catch (error) {
 				this.#report(error);
 			}
@@ -1200,7 +1201,9 @@ export class TaskScheduler {
 	}
 
 	/** A sleep whose `until` the clock has not reached; an abort mark ends a sleep. */
-	#notDue(record: AnyTaskRecord): boolean {
+	#notDue(
+		record: AnyTaskRecord,
+	): record is AnyTaskRecord & { readonly state: { readonly status: "sleeping"; readonly until: number } } {
 		const state = record.state;
 		return state.status === "sleeping" && !record.abortRequested && state.until > this.#now();
 	}
@@ -1249,6 +1252,9 @@ export class TaskScheduler {
 					return;
 				}
 				await this.#loadScopes(false);
+				// Every pass picks up sleeps whose time has come: a pass started by any change may be the first to run after
+				// a deadline, and the wake it schedules no longer keeps a timer for a due sleep.
+				this.#wakeDue();
 				// Taken once per pass, and only when some task is a candidate.
 				let snapshot: RegistrySnapshot | undefined;
 				for (const id of [...this.#runnable]) {
@@ -1262,7 +1268,7 @@ export class TaskScheduler {
 						this.#runnable.delete(id);
 						continue;
 					}
-					// It returns when its time comes: `#wakeDue()` from the timer or `resume()`.
+					// It returns at the first pass after its time comes, which the timer, `resume()`, or any change starts.
 					if (this.#notDue(record)) {
 						this.#runnable.delete(id);
 						continue;
@@ -1392,8 +1398,7 @@ export class TaskScheduler {
 		if (record.state.status === "completing") return { kind: "completing" };
 		const on = this.#waitingOn(record);
 		if (on.length > 0) return { kind: "waiting", on };
-		if (this.#notDue(record) && record.state.status === "sleeping")
-			return { kind: "sleeping", until: record.state.until };
+		if (this.#notDue(record)) return { kind: "sleeping", until: record.state.until };
 		const fit = this.#fit(record, snapshot.task(record.kind));
 		if ("reason" in fit) return { kind: "blocked", ...fit };
 		if (fit.migrates && fit.task.definition.migrate === undefined) {

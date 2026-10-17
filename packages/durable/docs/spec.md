@@ -685,7 +685,7 @@ and open rejects a registry whose snapshot lacks any of them.
 Open changes surviving `running` tasks to `pending`, keeps `waiting` tasks
 waiting and `sleeping` tasks asleep, and re-evaluates finalization and `failFast` for `completing` and
 `waiting` tasks (section 5.5). It never migrates or terminalizes a task because
-its definition is missing or unmigratable. Such a task stays `pending` or `waiting` and is **blocked**: the
+its definition is missing or unmigratable. Such a task stays `pending`, `waiting`, or `sleeping` and is **blocked**: the
 scheduler skips it and reconsiders it whenever the registry changes (section
 5.4). Any built-in document touched by recovery migrates through its ordinary
 typed access path. Open does not scan or migrate other documents. No handler
@@ -1748,7 +1748,7 @@ type TaskRecord<I, S, R> = {
   readonly endedAt?: number;
 } & (
   | {
-      readonly state: Extract<TaskState<S, R>, { status: "pending" | "running" | "waiting" }>;
+      readonly state: Extract<TaskState<S, R>, { status: "pending" | "running" | "waiting" | "sleeping" }>;
       readonly memos?: Readonly<Record<string, JsonValue>>;
     }
   | {
@@ -1765,7 +1765,7 @@ type RunningTask<I, S, R> = TaskRecord<I, S, R> & {
  * State a task commits for itself: a replacement checkpoint, a wait, or its outcome. A returned `terminal` state
  * becomes `completing` while ordinary owned work below is live (section 5.5).
  */
-type NextTaskState<S, R> = Extract<TaskState<S, R>, { status: "running" | "waiting" | "terminal" }>;
+type NextTaskState<S, R> = Extract<TaskState<S, R>, { status: "running" | "waiting" | "sleeping" | "terminal" }>;
 
 interface HookRunner<H extends object> {
   each<K extends keyof H>(name: K, invoke: (handler: NonNullable<H[K]>) => void | Promise<void>): Promise<void>;
@@ -1882,10 +1882,11 @@ callback returns a state, the runtime replaces the task's state in the same
 commit, so the checkpoint or outcome is atomic with the callback's entries,
 documents, and child tasks and is type-checked against the task's checkpoint and
 result types. Returning nothing leaves the state unchanged. A terminal or
-completing state drops the memos. A `waiting` state ends the invocation even
-when its checkpoint is unchanged; it rejects when `on` names a missing task or
-closes a wait cycle (section 5.5), which no task on it could finish first, and
-an empty `on` resumes at the next scheduling pass. `pending` is never returned;
+completing state drops the memos. A `waiting` or `sleeping` state ends the
+invocation even when its checkpoint is unchanged. A wait rejects when `on` names
+a missing task or closes a wait cycle (section 5.5), which no task on it could
+finish first, and an empty `on` resumes at the next scheduling pass; a sleep
+rejects an `until` that is not a time (section 5.6). `pending` is never returned;
 only reconciliation and handover write it.
 
 `Tx` has no task replacement operation. A task changes only its own state,
@@ -1944,7 +1945,7 @@ invocation queued earlier therefore either lands before the step and counts, or
 reaches the line after it and rejects. Before the first phase only rules 1–3
 apply:
 
-1. Terminal, `completing`, or `waiting`: stop.
+1. Terminal, `completing`, `waiting`, or `sleeping`: stop.
 2. Session closing: stop; preserve the checkpoint and any abort mark for reopen.
 3. Run mode with a durable abort mark: end and join the run invocation; a fresh
    abort invocation starts once the task's ordinary owned work is no longer
@@ -1964,10 +1965,11 @@ again.
 
 On open, running-task reconciliation changes surviving `running` tasks back to
 `pending`, preserving their checkpoint and abort mark; `waiting` tasks stay
-waiting, and `completing` and `waiting` tasks are re-evaluated (section 5.5). Task migration runs at
-reservation, atomically with `pending` or `waiting` -> `running`. One callback handles every
+waiting and `sleeping` tasks asleep, and `completing` and `waiting` tasks are
+re-evaluated (section 5.5). Task migration runs at reservation, atomically with
+`pending`, `waiting`, or `sleeping` -> `running`. One callback handles every
 supported older version. A task whose definition is missing, older than the
-stored version, or fails migration stays `pending` or `waiting` and blocked until a fitting
+stored version, or fails migration stays `pending`, `waiting`, or `sleeping` and blocked until a fitting
 definition is installed or the task is aborted (section 5.4).
 `close()` marks the runtime closing, seals admission and reservation, signals
 invocations, and ends states and watches. Outside the Session line it settles admitted
@@ -2361,8 +2363,11 @@ when `nodejs_compat` gives it an `unref()`, and wherever timers cannot be
 unreferenced. Foreground timers pace or resume work: throttled
 progress commits through `TaskRuntime.setTimer()`, and, without `onWake`, the
 timer for the earliest sleep while scheduling runs. That one keeps a Node.js
-process alive, since a sleeping task is work left to do. A timer may fire early
-or late; every caller checks its clock again.
+process alive, since a sleeping task is work left to do. A timer must not fire
+before its delay and may fire late; the default splits a delay beyond what
+`setTimeout` supports itself. A host that throws on or declines a foreground
+timer has it armed with `setTimeout` instead, and the first failure is reported.
+Callers still check their clock when a timer fires.
 
 **Wakeups.** `Harness.wake()` says, from memory and also while scheduling is
 paused, when the Session next needs a running process:
@@ -2380,9 +2385,12 @@ whenever the value changes, off the Session line; a throw is reported. The host
 arms its own wakeup and calls `resume()` when it fires, which makes due sleeps
 runnable. A host whose process can be evicted, such as a Durable Object with
 its one alarm, arms the alarm at `at`, or at `now + heartbeat` while `active`
-if that is earlier, and deletes it when neither is set. It arms the recovery wakeup
-before admitting work, since an early wakeup is harmless and a missing one
-leaves work stranded.
+if that is earlier, and deletes it when neither is set. `onWake` runs after the
+commit that changes the value, so a host call that can make an idle Session
+active arms the recovery wakeup first: `submit()`, `compact()`, `abortTask()`,
+`Conversation.abort()`, a registry change, and `resume()` after open. An early
+wakeup is harmless; a missing one leaves work stranded. A failed alarm write
+resets the object, which arms again when it next starts.
 
 ## 6. Submissions and inbox
 

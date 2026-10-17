@@ -16,6 +16,8 @@ declare module "cloudflare:workers" {
 	export type DurableObjectState = {
 		readonly storage: DurableObjectStorage;
 		blockConcurrencyWhile<T>(callback: () => Promise<T>): Promise<T>;
+		/** Reset the object: its instance is dropped, and the next event starts a new one. */
+		abort(reason?: string): void;
 	};
 
 	export type DurableObjectId = { toString(): string };

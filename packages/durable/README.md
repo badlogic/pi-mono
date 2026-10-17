@@ -149,7 +149,7 @@ const Reminder = defineTask<{ text: string; at: number }, { phase: "wait" } | { 
 
 There is no sleep in the middle of a phase: a phase reruns from its top after a restart, so work after the wait goes in the next phase, and what it needs goes in the checkpoint. `{ status: "sleeping", until, checkpoint }` returned from `runtime.commit()` is the same sleep, committed together with other writes. Retry backoffs and deferred-response polls of the built-in tasks sleep the same way.
 
-Every timer the Harness uses goes through `setTimer` (default `setTimeout`), and every time through `now` (default `Date.now`); pass both to run a Harness on a fake clock. Sleep deadlines are stored on `now`, so every process that opens one storage must use the same clock. While scheduling runs, a timer resumes sleeping tasks when they are due and keeps a Node.js process alive meanwhile.
+The timers of the Session, the scheduler, and its tasks go through `setTimer` (default `setTimeout`), and their times through `now` (default `Date.now`); pass both to run a Harness on a fake clock. The Node.js environment, file watcher, and image worker keep their own timers. Sleep deadlines are stored on `now`, so every process that opens one storage must use the same clock. While scheduling runs, a timer resumes sleeping tasks when they are due and keeps a Node.js process alive meanwhile.
 
 A host whose process can be evicted, such as a Cloudflare Durable Object, wakes it itself. With `onWake`, the Harness arms no timer for sleeps; it tells the host what `harness.wake()` says whenever that changes: `active` while some task can run now or is running, and `at`, the earliest sleep. The host keeps its alarm armed and calls `resume()` when it fires:
 
@@ -161,7 +161,10 @@ export class Session extends DurableObject<Env> {
 		super(ctx, env);
 		void ctx.blockConcurrencyWhile(async () => {
 			const storage = await openDurableObjectSqliteStorage(ctx.storage);
-			this.#harness = await Harness.open(storage, { models, registry, onWake: (wake) => void this.#arm(wake) }, context);
+			const onWake = (wake: Wake) =>
+				// A failed alarm write resets the object; it arms again when it next starts.
+				void this.#arm(wake).catch(() => ctx.abort("Alarm write failed"));
+			this.#harness = await Harness.open(storage, { models, registry, onWake }, context);
 			this.#harness.resume();
 		});
 	}
@@ -171,8 +174,9 @@ export class Session extends DurableObject<Env> {
 		await this.#arm(this.#harness.wake());
 	}
 
+	// Arm before any call that can start work (submit, compact, abortTask, abort, a registry change): `onWake` runs
+	// after the commit. An early alarm is harmless, a missing one strands the work.
 	async submit(conversation: Conversation, input: string, requestId: string): Promise<void> {
-		// Arm before admitting work: an early alarm is harmless, a missing one strands the work.
 		await this.#arm({ ...this.#harness.wake(), active: true });
 		await conversation.submit({ type: "input", content: input, requestId }, context);
 	}

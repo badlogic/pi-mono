@@ -609,8 +609,9 @@ export type HarnessOptions<Tool extends ToolRegistration = ToolRegistration> = {
 	 */
 	readonly now?: () => number;
 	/**
-	 * Arms every timer the Harness uses: pacing progress commits, freeing idle memory (`background`), and, without
-	 * `onWake`, resuming sleeping tasks; and the timers of `TaskRuntime.setTimer()`. Default `setTimeout`, with background
+	 * Arms the timers of the Session, the scheduler, and its tasks: pacing progress commits, freeing idle memory
+	 * (`background`), and, without `onWake`, resuming sleeping tasks; and the timers of `TaskRuntime.setTimer()`. The
+	 * Node.js environment, file watcher, and image worker keep their own timers. Default `setTimeout`, with background
 	 * timers unreferenced, or declined in Cloudflare Workers and where they cannot be unreferenced. Tests can pass fake
 	 * timers; a host can keep timers off a process that should hibernate.
 	 */
@@ -619,8 +620,9 @@ export type HarnessOptions<Tool extends ToolRegistration = ToolRegistration> = {
 	 * Wakes the process for sleeping tasks instead of a `setTimer` timer. Without it, while scheduling runs, a timer that
 	 * keeps the process alive resumes sleeping tasks when they are due. With it, the Harness arms no timer for them: it
 	 * calls `onWake` after open and whenever `Harness.wake()` changes, and the host arms its own wakeup, such as a
-	 * Durable Object alarm, and calls `resume()` when it fires. Called off the Session line; it may call `wake()` and
-	 * `resume()`, and must not block. A throw is reported and ignored.
+	 * Durable Object alarm, and calls `resume()` when it fires. Called off the Session line, after the commit that
+	 * changed the value, so a host arms a recovery wakeup before calls that can start work. It may call `wake()` and
+	 * `resume()`, and must not block. A throw is reported, and the value is offered again at the next change.
 	 */
 	readonly onWake?: (wake: Wake) => void;
 	/**
