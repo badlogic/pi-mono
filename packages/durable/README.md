@@ -112,7 +112,7 @@ const root = await harness.root(context); // the same root as last time
 harness.resume(); // continue any run the last process left unfinished
 ```
 
-Work interrupted by a crash or close stays pending. `resume()` starts the task scheduler; submitting or waiting starts it too. Each conversation has its own persisted UUIDv7 in `pi.provider`, forwarded to pi-ai as `sessionId` for provider prompt-cache and session affinity. It survives reopen, retries, reset, compaction, and model changes; a child or fork receives a fresh identity. A legacy conversation receives and persists one before its first generation or compaction request.
+Work interrupted by a crash or close stays pending. `resume()` starts the task scheduler; submitting or waiting starts it too. Deadlines such as retry backoffs are waited for with `setTimeout`; pass `timer: (until, context) => Promise<void>` to wait on your host's alarms or delayed queue messages instead, and reopen and `resume()` when one fires without an open Harness. Each conversation has its own persisted UUIDv7 in `pi.provider`, forwarded to pi-ai as `sessionId` for provider prompt-cache and session affinity. It survives reopen, retries, reset, compaction, and model changes; a child or fork receives a fresh identity. A legacy conversation receives and persists one before its first generation or compaction request.
 
 A retried submission with the same `requestId` returns the existing submission instead of submitting twice:
 
@@ -124,12 +124,6 @@ const again = await root.submit({ type: "input", content: "Hello", requestId: "g
 ```
 
 `harness.submission(id)` reacquires a submission by ID, for example to wait for it after a restart.
-
-### Wait with alarms instead of timers
-
-Tasks wait for deadlines, such as a retry backoff or the next poll of a deferred response, with a `setTimeout` in this process. Pass `timer: (until, context) => Promise<void>` to wait on your host's alarms or delayed queue messages instead, so nothing stays in memory during a long wait. `until` is an absolute time on the Harness clock (`now`); the Harness checks the clock after every wake and calls `timer` again while the deadline is ahead, so an early or duplicate alarm only rearms it. A cancelled sleep rejects at once, even if your timer ignores `context`. A rejected timer faults the task; retry transient failures to arm an alarm inside your timer.
-
-An alarm cannot resume a lost process. When one fires and no Harness is open, open the storage and call `resume()`: the task reruns its phase from its checkpoint, sleeps again, and arms the new Harness's timer. Keep an alarm armed while `harness.inspect()` lists unfinished tasks, since a process can die between committing a deadline and arming it.
 
 ## Extensions
 
