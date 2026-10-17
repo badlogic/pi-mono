@@ -418,7 +418,6 @@ export function safeNow(now: (() => number) | undefined, report: (error: unknown
 	};
 }
 
-/** The default `HarnessOptions.timer`: a `setTimeout` per wake, at most `MAX_TIMER_DELAY` long. */
 function nativeTimer(now: () => number): NonNullable<HarnessOptions["timer"]> {
 	return (until, context) =>
 		new Promise((resolve, reject) => {

@@ -68,7 +68,6 @@ export async function settled(promise: Promise<unknown>): Promise<boolean> {
 export function manualTimer(): {
 	readonly timer: NonNullable<HarnessOptions["timer"]>;
 	readonly armed: { readonly until: number; readonly context: Context }[];
-	/** Resolve every pending wait. */
 	deliver(): void;
 } {
 	const armed: { readonly until: number; readonly context: Context }[] = [];

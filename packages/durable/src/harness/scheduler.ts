@@ -161,7 +161,6 @@ export type TaskSchedulerOptions = {
 	/** Build a conversation's environment with `HarnessOptions.env`. */
 	readonly env: (conversationId: ConversationId, context: Context) => Promise<ExecutionEnv | undefined>;
 	readonly now: () => number;
-	/** Waits for task deadlines: `HarnessOptions.timer`, or the Harness's native default. */
 	readonly timer: Timer;
 	readonly report: (error: unknown) => void;
 	/** Harness cleanup staged in the commit that makes an outcome the scheduler wrote itself terminal. */
@@ -1816,10 +1815,7 @@ export class TaskScheduler {
 		);
 	}
 
-	/**
-	 * Wait until the Harness clock reaches `until`, rechecking it after every wake of the timer. Cancellation rejects at
-	 * once, even when a host timer ignores it, so a late wake cannot resume an ended invocation.
-	 */
+	/** Wait until the Harness clock reaches `until`, rechecking it after every wake: a host timer may wake early. */
 	async #sleep(invocation: Invocation, until: number, context: Context): Promise<void> {
 		if (invocation.ended) throw endedError(invocation);
 		const waiting = withAbortSignal(invocation.controller.signal, context);
@@ -1934,7 +1930,10 @@ function canReserve(task: AnyTask, record: AnyTaskRecord): boolean {
 	);
 }
 
-/** Settle as `promise` does, or reject with the signal's reason, as is, once it aborts, whichever comes first. */
+/**
+ * A host timer may ignore cancellation, and its late wake must not resume an ended invocation. Unlike
+ * `awaitWithContext()`, rejects with the abort reason itself, as `throwIfAborted()` does.
+ */
 function untilAborted<T>(promise: Promise<T>, signal: AbortSignal): Promise<T> {
 	return new Promise((resolve, reject) => {
 		if (signal.aborted) return reject(signal.reason);
