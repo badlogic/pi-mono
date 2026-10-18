@@ -16,6 +16,7 @@ import type {
 	JsonObject,
 	NextTaskState,
 	ReportInfo,
+	ReportTask,
 	RunningTask,
 	Storage,
 	StorageWrite,
@@ -40,7 +41,7 @@ import type {
 	TaskInspection,
 	Wake,
 } from "./types.ts";
-import { closedError, scanAll, Waiters } from "./util.ts";
+import { closedError, optionalExtension, scanAll, Waiters } from "./util.ts";
 
 type AnyTaskRecord = TaskRecord<JsonValue, JsonValue, JsonValue>;
 /** A record that can still run code: pending, running, waiting, or sleeping. */
@@ -383,10 +384,8 @@ export class TaskScheduler {
 			const restarts = (record.restarts ?? 0) + 1;
 			const error = new Error(
 				`Task ${record.id} (${record.kind}) was cut off ${restarts} times without progress; it is parked until retryTask()`,
-				{ cause: "restart_limit" },
 			);
-			const info = this.#taskInfo({ taskId: record.id, kind: record.kind, conversationId: record.conversationId });
-			this.#report(error, { ...info, blocked: "restart_limit" });
+			this.#report(error, { type: "task_parked", ...this.#aboutTask(recordTask(record)) });
 		}
 		// Derive abort marks a crash left unapplied below cancelled owners, and finalize held outcomes.
 		this.#cascadePending = true;
@@ -433,7 +432,7 @@ export class TaskScheduler {
 		try {
 			snapshot = this.#registry.snapshot();
 		} catch (error) {
-			if (!this.#snapshotReported) this.#report(error, HOST);
+			if (!this.#snapshotReported) this.#report(error, REGISTRY);
 			this.#snapshotReported = true;
 			return undefined;
 		}
@@ -480,7 +479,7 @@ export class TaskScheduler {
 						snapshot = this.#registry.snapshot();
 					} catch (error) {
 						snapshotFailed = true;
-						this.#report(error, HOST);
+						this.#report(error, REGISTRY);
 					}
 				}
 				if (snapshot !== undefined && "reason" in this.#fit(record, snapshot.task(record.kind))) continue;
@@ -687,7 +686,7 @@ export class TaskScheduler {
 		try {
 			return this.#settings().contextRetentionMs;
 		} catch (error) {
-			this.#report(error, HOST);
+			this.#report(error, SETTINGS);
 			return 0;
 		}
 	}
@@ -1268,7 +1267,7 @@ export class TaskScheduler {
 		try {
 			this.#unsubscribeRegistry();
 		} catch (error) {
-			this.#report(error, HOST);
+			this.#report(error, REGISTRY);
 		}
 		const error = closedError(this.#session);
 		this.#taskWaiters.rejectAll(error);
@@ -1299,7 +1298,7 @@ export class TaskScheduler {
 				// Only a delivered wake counts: after a throw, the next change or kick offers it again.
 				this.#lastWake = wake;
 			} catch (error) {
-				this.#report(error, { source: "wake" });
+				this.#report(error, ON_WAKE);
 			}
 		});
 	}
@@ -1339,14 +1338,14 @@ export class TaskScheduler {
 	 * The report info of a task's failure, with the extension that installed its definition: the code that failed is
 	 * that extension's. Built-in tasks have none.
 	 */
-	#taskInfo(task: {
+	/** What a report about `task`'s own code says of it: the task, and the extension that installed its definition. */
+	#aboutTask(task: {
 		readonly taskId: TaskId;
 		readonly kind: string;
 		readonly conversationId: ConversationId;
 		/** The installer of the definition whose code ran (an invocation's); absent: the current one's. */
 		readonly extension?: string | undefined;
-	}): ReportInfo {
-		const info = taskInfo(task);
+	}): { readonly task: ReportTask; readonly extension?: string } {
 		let extension: string | undefined;
 		if ("extension" in task) extension = task.extension;
 		else {
@@ -1357,7 +1356,7 @@ export class TaskScheduler {
 				// A registry that throws is reported where it is read for scheduling; a report goes out without the name.
 			}
 		}
-		return extension === undefined ? info : { ...info, extension };
+		return { task: reportTask(task), ...optionalExtension(extension) };
 	}
 
 	/** Make parked tasks that a raised `settings.restartLimit` no longer parks candidates again, and tell the graph. */
@@ -1379,7 +1378,7 @@ export class TaskScheduler {
 		try {
 			return this.#settings().restartLimit;
 		} catch (error) {
-			this.#report(error, HOST);
+			this.#report(error, SETTINGS);
 			return DEFAULT_RESTART_LIMIT;
 		}
 	}
@@ -1389,7 +1388,7 @@ export class TaskScheduler {
 			try {
 				listener();
 			} catch (error) {
-				this.#report(error, { source: "listener" });
+				this.#report(error, { type: "listener_error" });
 			}
 		}
 	}
@@ -1529,11 +1528,10 @@ export class TaskScheduler {
 			throw error;
 		}
 		for (const { record, message } of faulted) {
-			const info = this.#taskInfo({ taskId: record.id, kind: record.kind, conversationId: record.conversationId });
-			this.#report(new Error(message, { cause: "restart_limit" }), {
-				...info,
-				faulted: true,
-				blocked: "restart_limit",
+			this.#report(new Error(message), {
+				type: "task_faulted",
+				...this.#aboutTask(recordTask(record)),
+				reason: "restart_limit",
 			});
 		}
 		// Marked, or already marked or gone: done with them. Reserve again, now seeing the marks.
@@ -1572,10 +1570,7 @@ export class TaskScheduler {
 			queueMicrotask(() => this.#notifyBlocked());
 			this.#scheduleWake();
 			const extension = installerOf(snapshot, fit.task);
-			this.#report(
-				error,
-				this.#taskInfo({ taskId: record.id, kind: record.kind, conversationId: record.conversationId, extension }),
-			);
+			this.#report(error, { type: "migration_failed", ...this.#aboutTask({ ...recordTask(record), extension }) });
 			return { kind: "blocked", reason: "migration_failed" };
 		}
 	}
@@ -1665,7 +1660,7 @@ export class TaskScheduler {
 				if (invocation.mode === "run") await this.#run(reservation);
 				else await this.#runAbort(reservation);
 			} catch (error) {
-				this.#report(error, this.#taskInfo(invocation));
+				this.#report(error, { type: "task_error", ...this.#aboutTask(invocation) });
 			} finally {
 				this.#end(invocation);
 				invocation.finish();
@@ -1736,16 +1731,11 @@ export class TaskScheduler {
 			}
 			if (state.reported === undefined || state.reported.task !== next) {
 				state.reported = { task: next };
-				const cause = next === undefined ? "missing_task" : "incompatible_task";
-				this.#report(
-					new Error(`Task ${current.id} keeps running under its old ${current.kind} definition`, { cause }),
-					this.#taskInfo({
-						taskId: current.id,
-						kind: current.kind,
-						conversationId: current.conversationId,
-						extension,
-					}),
-				);
+				this.#report(new Error(`Task ${current.id} keeps running under its old ${current.kind} definition`), {
+					type: "task_outdated",
+					...this.#aboutTask({ ...recordTask(current), extension }),
+					reason: next === undefined ? "missing_task" : "incompatible_task",
+				});
 			}
 		}
 		return true;
@@ -1794,7 +1784,8 @@ export class TaskScheduler {
 				return undefined;
 			}, this.#context);
 			// Reported once the fault is durable: a host may count it, for example toward a breaker.
-			if (fault !== undefined) this.#report(fault.error, { ...this.#taskInfo(invocation), faulted: true });
+			if (fault !== undefined)
+				this.#report(fault.error, { type: "task_faulted", ...this.#aboutTask(invocation), reason: "threw" });
 			return continued;
 		} catch (error) {
 			// The step writes the scheduler's own decision, a fault or a terminal record; a throw there would otherwise
@@ -1987,7 +1978,7 @@ export class TaskScheduler {
 						await invoke(handler.bind(handlers));
 					} catch (error) {
 						if (invocation.controller.signal.aborted) throw error;
-						this.#report(error, { ...taskInfo(invocation), source: "extension", extension });
+						this.#report(error, { type: "extension_error", extension, task: reportTask(invocation) });
 					}
 				}
 			},
@@ -2171,12 +2162,17 @@ export class TaskScheduler {
 					disarm();
 				};
 			},
-			report: (error, from = { source: "task" }) => {
+			report: (error, from) => {
 				if (invocation.ended) throw endedError(invocation);
 				// The task's own failure names the task's extension; any other names whose code failed, if anyone's.
+				const task = reportTask(invocation);
 				this.#report(
 					error,
-					from.source === "task" ? this.#taskInfo(invocation) : { ...taskInfo(invocation), ...from },
+					from === undefined
+						? { type: "task_error", ...this.#aboutTask(invocation) }
+						: from.type === "extension"
+							? { type: "extension_error", task, ...optionalExtension(from.extension) }
+							: { type: "host_error", callback: from.callback, task },
 				);
 			},
 		};
@@ -2227,7 +2223,9 @@ export class TaskScheduler {
 	}
 }
 
-const HOST: ReportInfo = { source: "host" };
+const REGISTRY: ReportInfo = { type: "host_error", callback: "registry" };
+const SETTINGS: ReportInfo = { type: "host_error", callback: "settings" };
+const ON_WAKE: ReportInfo = { type: "host_error", callback: "onWake" };
 
 /** The extension that installed `task` in `snapshot`, the last one that lists it; none for a built-in task. */
 function installerOf(snapshot: RegistrySnapshot, task: AnyTask | undefined): string | undefined {
@@ -2236,12 +2234,17 @@ function installerOf(snapshot: RegistrySnapshot, task: AnyTask | undefined): str
 }
 
 /** The report info of a failure of a task. */
-function taskInfo(task: {
+function reportTask(task: {
 	readonly taskId: TaskId;
 	readonly kind: string;
 	readonly conversationId: ConversationId;
-}): ReportInfo {
-	return { source: "task", taskId: task.taskId, taskKind: task.kind, conversationId: task.conversationId };
+}): ReportTask {
+	return { id: task.taskId, kind: task.kind, conversationId: task.conversationId };
+}
+
+/** A stored task's identity, as an invocation names it. */
+function recordTask(record: Pick<AnyTaskRecord, "id" | "kind" | "conversationId">) {
+	return { taskId: record.id, kind: record.kind, conversationId: record.conversationId };
 }
 
 /**

@@ -66,7 +66,7 @@ async function openWith(path: string, registry: Registry, settings: { restartLim
 			return (...args: unknown[]) => (dead ? new Promise(() => {}) : value.apply(target, args));
 		},
 	});
-	const { harness, reports } = await openTasks(storage, [], {
+	const { harness, infos } = await openTasks(storage, [], {
 		registry,
 		settings,
 		onWake: (wake) => wakes.push(wake),
@@ -75,7 +75,7 @@ async function openWith(path: string, registry: Registry, settings: { restartLim
 		dead = true;
 		killed.add(inner);
 	};
-	return { harness, wakes, reports, kill };
+	return { harness, wakes, infos, kill };
 }
 
 describe("recovery at open", () => {
@@ -148,9 +148,11 @@ describe("tasks that cannot run", () => {
 			opened.kill(); // a crash: a close would not count
 			opened = await openWith(path, registry, { restartLimit: 3 });
 		}
-		const { harness, reports } = opened;
+		const { harness, infos } = opened;
 		expect((await harness.getTask(id, context))?.restarts).toBe(3);
-		expect(reports.map((error) => (error as Error).cause)).toEqual(["restart_limit"]);
+		expect(infos).toEqual([
+			{ type: "task_parked", task: { id, kind: "test.crash-loop", conversationId: root.id }, extension: "loop" },
+		]);
 		const inspection = await harness.inspect(context);
 		expect(inspection.tasks.find((task) => task.record.id === id)?.state).toEqual({
 			kind: "blocked",
@@ -259,8 +261,8 @@ describe("tasks that cannot run", () => {
 		// The receipt keeps no restart count.
 		expect(settled.restarts).toBeUndefined();
 		expect(aborts).toBe(1);
-		await eventually(() => opened.reports.length > 0);
-		expect(opened.reports.map((error) => (error as Error).cause)).toEqual(["restart_limit"]);
+		await eventually(() => opened.infos.length > 0);
+		expect(opened.infos).toMatchObject([{ type: "task_faulted", task: { id }, reason: "restart_limit" }]);
 		await opened.harness.close(context);
 	});
 

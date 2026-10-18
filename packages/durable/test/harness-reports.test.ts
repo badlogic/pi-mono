@@ -67,10 +67,10 @@ describe("reports", () => {
 		expect((await harness.waitForTask(id, context)).state.outcome.status).toBe("faulted");
 		await eventually(() => reports.length === 2);
 		// The task's own failures name the extension that installed it.
-		const task = { source: "task", taskId: id, taskKind: "test.faulty", conversationId: root.id, extension: "test" };
+		const task = { task: { id, kind: "test.faulty", conversationId: root.id }, extension: "test" };
 		expect(reports).toEqual([
-			{ message: "noted", info: task },
-			{ message: "broken", info: { ...task, faulted: true } },
+			{ message: "noted", info: { type: "task_error", ...task } },
+			{ message: "broken", info: { type: "task_faulted", ...task, reason: "threw" } },
 		]);
 		await harness.close(context);
 	});
@@ -104,8 +104,9 @@ describe("reports", () => {
 		registry.install(defineExtension({ name: "new-extension", tasks: [definition("new")] }));
 		gate.resolve();
 		await harness.waitForTask(id, context);
-		await eventually(() => reports.some((report) => report.info.faulted === true));
-		expect(reports.find((report) => report.info.faulted === true)).toMatchObject({
+		const faulted = (report: Report) => report.info.type === "task_faulted";
+		await eventually(() => reports.some(faulted));
+		expect(reports.find(faulted)).toMatchObject({
 			message: "broken in old",
 			info: { extension: "old-extension" },
 		});
@@ -153,13 +154,10 @@ describe("reports", () => {
 		const root = await harness.root(context, { agent: { model: { provider: "faux", modelId: "faux-1" } } });
 		await (await root.submit({ type: "input", content: "hi" }, context)).wait(context);
 		const infoOf = (message: string) => reports.find((report) => report.message === message)?.info;
-		expect(infoOf("env")).toMatchObject({ source: "host", taskKind: "pi.generation", conversationId: root.id });
-		expect(infoOf("section")).toMatchObject({
-			source: "extension",
-			extension: "sections",
-			taskKind: "pi.generation",
-		});
-		expect(infoOf("hook")).toMatchObject({ source: "extension", extension: "hooks", taskKind: "pi.generation" });
+		const generation = { kind: "pi.generation", conversationId: root.id };
+		expect(infoOf("env")).toMatchObject({ type: "host_error", callback: "env", task: generation });
+		expect(infoOf("section")).toMatchObject({ type: "extension_error", extension: "sections", task: generation });
+		expect(infoOf("hook")).toMatchObject({ type: "extension_error", extension: "hooks", task: generation });
 		await harness.close(context);
 	});
 
@@ -210,18 +208,18 @@ describe("reports", () => {
 		);
 		const infoOf = (message: string) => reports.find((report) => report.message === message)?.info;
 		expect(infoOf("Wrapper renamed echo to renamed")).toEqual({
-			source: "extension",
+			type: "extension_error",
 			conversationId: root.id,
 			extension: "wraps",
 		});
-		expect(infoOf("listener")).toEqual({ source: "listener" });
-		expect(infoOf("alarm")).toEqual({ source: "wake" });
-		expect(infoOf("no timers")).toEqual({ source: "timer" });
+		expect(infoOf("listener")).toEqual({ type: "listener_error" });
+		expect(infoOf("alarm")).toEqual({ type: "host_error", callback: "onWake" });
+		expect(infoOf("no timers")).toEqual({ type: "host_error", callback: "setTimer" });
 
 		const failure = new Error("disk gone");
 		storage.failNextCommit(failure);
 		await root.commit((tx) => tx.createConversation({ ownership: { kind: "ownerless" } }), context).catch(() => {});
 		await harness.closed;
-		expect(infoOf("disk gone")).toEqual({ source: "session" });
+		expect(infoOf("disk gone")).toEqual({ type: "session_failed" });
 	});
 });

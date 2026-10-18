@@ -53,6 +53,7 @@ import type {
 	ToolRegistration,
 } from "./types.ts";
 import { recordUsage } from "./usage.ts";
+import { optionalExtension } from "./util.ts";
 
 /**
  * A model-issued call, read from its assistant entry, or a nested call a running tool made through `executeTool()`,
@@ -566,7 +567,7 @@ async function finalResult(
 				(agent) => toolExtension(agent, tool.name),
 				() => undefined,
 			);
-			runtime.report(new Error(broken), { source: "extension", ...(extension === undefined ? {} : { extension }) });
+			runtime.report(new Error(broken), { type: "extension", ...optionalExtension(extension) });
 		}
 	}
 	// Programs get the tool's own value: without a schema, its output. The model reads only `output`, so model-issued

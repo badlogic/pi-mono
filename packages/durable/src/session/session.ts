@@ -66,7 +66,7 @@ import {
 import { type LoadedDocument, Transaction, type TransactionHost, type TransactionScope } from "./transaction.ts";
 
 /** The default source of a report: a listener, which never fails what ran it. */
-const LISTENER: ReportInfo = { source: "listener" };
+const LISTENER: ReportInfo = { type: "listener_error" };
 
 /**
  * Open a Session kernel over one storage backend. `now` is the wall clock for task times; default `Date.now`.
@@ -168,7 +168,7 @@ export class SessionImpl implements Session {
 		// Waits race it; none has to.
 		this.#failed.promise.catch(() => {});
 		this.#storage = new GuardedStorage(storage, this);
-		this.#timers = hostTimers(setTimer, (error) => this.report(error, { source: "timer" }));
+		this.#timers = hostTimers(setTimer, (error) => this.report(error, { type: "host_error", callback: "setTimer" }));
 		// Cache bookkeeping must never change the outcome of the operation it follows: a clock or a retention setting
 		// that throws counts as now, and as the default.
 		this.#clock = () => {
@@ -226,7 +226,7 @@ export class SessionImpl implements Session {
 		// Seal first, so a report handler that calls back finds the Session failed. Closing runs the close listeners
 		// synchronously; a failing backend close is the caller's to see, and here nobody waits.
 		this.close(BACKGROUND_CONTEXT).catch(() => {});
-		this.report(error, { source: "session" });
+		this.report(error, { type: "session_failed" });
 	}
 
 	/**
@@ -511,7 +511,7 @@ export class SessionImpl implements Session {
 							// A Storage that cannot close is a failed one; an earlier failure stays the cause.
 							if (this.#failure === undefined) {
 								this.#failure = { error };
-								this.report(error, { source: "session" });
+								this.report(error, { type: "session_failed" });
 							}
 							throw error;
 						}

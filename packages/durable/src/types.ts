@@ -133,41 +133,63 @@ export type TaskDocFamilyToken<T extends JsonObject, I extends JsonValue> = DocF
 	DocFamilyDefinition<T, I> & { readonly scope: "task" }
 >;
 
-/**
- * Where a reported failure came from (`HarnessOptions.onReport`):
- * - `session`: the error failed the Session, which closes (a Storage error, or the Session's own bookkeeping).
- * - `task`: a task's phase faulted, a task's runtime reported it, or a task cannot run; `taskId` names it.
- * - `extension`: extension code other than a task phase: a hook, a system prompt section, or a wrapper.
- * - `listener`: a commit, close, watch, view, or document listener.
- * - `host`: a host callback: the clock, the settings, the registry, or the environment builder.
- * - `timer`: `HarnessOptions.setTimer`.
- * - `wake`: `HarnessOptions.onWake`.
- */
-export type ReportSource = "session" | "task" | "extension" | "listener" | "host" | "timer" | "wake";
-
-/** Whose code a task's `runtime.report()` is about: its own (default), an extension's, or the host's. */
-export type ReportFrom =
-	| { readonly source: "task" }
-	| { readonly source: "extension"; readonly extension?: string }
-	| { readonly source: "host" };
-
-/** What a report is about: its source and, when a task is involved, the task. */
-export type ReportInfo = {
-	readonly source: ReportSource;
-	readonly taskId?: TaskId;
+/** The task a report is about. */
+export type ReportTask = {
+	readonly id: TaskId;
 	/** The task's registered name. */
-	readonly taskKind?: string;
-	readonly conversationId?: ConversationId;
-	/**
-	 * The extension whose code failed, when known: the one that installed a failing task's definition, or a hook's, a
-	 * section's, a wrapper's, or a tool's. Built-in tasks have none.
-	 */
-	readonly extension?: string;
-	/** Set when the error ended its task `faulted`. */
-	readonly faulted?: true;
-	/** Set when the report is about the task being parked by `settings.restartLimit`, or faulted at it. */
-	readonly blocked?: "restart_limit";
+	readonly kind: string;
+	readonly conversationId: ConversationId;
 };
+
+/** A host callback, by its `HarnessOptions` name; `env` is the environment builder, `models` a provider call. */
+export type HostCallback = "now" | "settings" | "registry" | "env" | "models" | "setTimer" | "onWake";
+
+/**
+ * What a report to `HarnessOptions.onReport` is about. `extension`, where present, names the extension whose code
+ * failed, when known; for a task's own code, the one that installed the definition the task ran.
+ * - `session_failed`: the error failed the Session, which closes: a Storage error, often a platform reset.
+ * - `task_faulted`: the task ended `faulted`: its phase threw (`reason: "threw"`), or its abort handler was cut off
+ *   `settings.restartLimit` times (`reason: "restart_limit"`).
+ * - `task_parked`: the restart limit parked the task until `Harness.retryTask()`.
+ * - `migration_failed`: the task's stored state could not be migrated; it is blocked until the registry changes.
+ * - `task_outdated`: a running task keeps running under its old definition, which was uninstalled (`missing_task`)
+ *   or replaced by one that cannot take over its state (`incompatible_task`).
+ * - `task_error`: the task's own `runtime.report()`, or a failure in running it.
+ * - `extension_error`: a hook, a section, a wrapper, or a tool's invalid structured output; with the task that ran it,
+ *   or, outside a task, the conversation whose agent was resolved.
+ * - `host_error`: a host callback threw; with the task that called it, if one did.
+ * - `listener_error`: a commit, close, watch, view, or document listener threw.
+ */
+export type ReportInfo =
+	| { readonly type: "session_failed" }
+	| {
+			readonly type: "task_faulted";
+			readonly task: ReportTask;
+			readonly extension?: string;
+			readonly reason: "threw" | "restart_limit";
+	  }
+	| { readonly type: "task_parked"; readonly task: ReportTask; readonly extension?: string }
+	| { readonly type: "migration_failed"; readonly task: ReportTask; readonly extension?: string }
+	| {
+			readonly type: "task_outdated";
+			readonly task: ReportTask;
+			readonly extension?: string;
+			readonly reason: "missing_task" | "incompatible_task";
+	  }
+	| { readonly type: "task_error"; readonly task: ReportTask; readonly extension?: string }
+	| {
+			readonly type: "extension_error";
+			readonly extension?: string;
+			readonly task?: ReportTask;
+			readonly conversationId?: ConversationId;
+	  }
+	| { readonly type: "host_error"; readonly callback: HostCallback; readonly task?: ReportTask }
+	| { readonly type: "listener_error" };
+
+/** Whose code a task's `runtime.report()` is about when not the task's own: an extension's, or a host callback. */
+export type ReportFrom =
+	| { readonly type: "extension"; readonly extension?: string }
+	| { readonly type: "host"; readonly callback: HostCallback };
 
 /**
  * A host timer, given as `HarnessOptions.setTimer`: call `callback` once, about `delayMs` from now, and return
@@ -293,9 +315,9 @@ export interface TaskRuntime<I, S, R, H extends object> extends DocumentObserver
 	 */
 	setTimer(callback: () => void, delayMs: number): () => void;
 	/**
-	 * Forward a non-fatal failure to `HarnessOptions.onReport`, with this task in its info. `from` says whose code
-	 * failed: the task's own (default), `extension` code it called, such as a section, with the extension's name when
-	 * known, or a `host` callback, such as the environment builder.
+	 * Forward a non-fatal failure to `HarnessOptions.onReport`, with this task in its info: a `task_error` about the
+	 * task's own code, or, with `from`, an `extension_error` about extension code it called, such as a section, or a
+	 * `host_error` about a host callback, such as the environment builder.
 	 */
 	report(error: unknown, from?: ReportFrom): void;
 	/**

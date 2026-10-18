@@ -645,9 +645,9 @@ export type HarnessOptions<Tool extends ToolRegistration = ToolRegistration> = {
 	readonly onWake?: (wake: Wake) => void;
 	/**
 	 * Receives failures that do not fail the calling operation, such as a throwing hook or listener, a task that faulted,
-	 * and the error that fails the Session, once. `info` says where it came from: a host can tell a failed Session
-	 * (`source: "session"`, often a platform reset) from a faulted task (`source: "task"`, `faulted`). Its own throw or
-	 * rejection is dropped.
+	 * and the error that fails the Session, once. `info` says what happened: a host can tell a failed Session
+	 * (`session_failed`, often a platform reset) from a faulted task (`task_faulted`) or a parked one (`task_parked`).
+	 * Its own throw or rejection is dropped.
 	 */
 	readonly onReport?: (error: unknown, info: ReportInfo) => void;
 };

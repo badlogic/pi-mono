@@ -596,16 +596,34 @@ type TaskInspection = {
 /** When the Session next needs a running process (section 5.6). */
 type Wake = { readonly active: boolean; readonly at?: number };
 
-/** Where a report came from (section 10.1). */
-type ReportInfo = {
-  readonly source: "session" | "task" | "extension" | "listener" | "host" | "timer" | "wake";
-  readonly taskId?: TaskId;
-  readonly taskKind?: string;
-  readonly conversationId?: ConversationId;
-  readonly extension?: string;
-  readonly faulted?: true;
-  readonly blocked?: "restart_limit";
-};
+/** What a report is about (section 10.1). */
+type ReportTask = { readonly id: TaskId; readonly kind: string; readonly conversationId: ConversationId };
+type HostCallback = "now" | "settings" | "registry" | "env" | "models" | "setTimer" | "onWake";
+type ReportInfo =
+  | { readonly type: "session_failed" }
+  | {
+      readonly type: "task_faulted";
+      readonly task: ReportTask;
+      readonly extension?: string;
+      readonly reason: "threw" | "restart_limit";
+    }
+  | { readonly type: "task_parked"; readonly task: ReportTask; readonly extension?: string }
+  | { readonly type: "migration_failed"; readonly task: ReportTask; readonly extension?: string }
+  | {
+      readonly type: "task_outdated";
+      readonly task: ReportTask;
+      readonly extension?: string;
+      readonly reason: "missing_task" | "incompatible_task";
+    }
+  | { readonly type: "task_error"; readonly task: ReportTask; readonly extension?: string }
+  | {
+      readonly type: "extension_error";
+      readonly extension?: string;
+      readonly task?: ReportTask;
+      readonly conversationId?: ConversationId;
+    }
+  | { readonly type: "host_error"; readonly callback: HostCallback; readonly task?: ReportTask }
+  | { readonly type: "listener_error" };
 
 type HarnessInspection = {
   readonly scheduling: "paused" | "running" | "closing";
@@ -1848,10 +1866,10 @@ interface TaskRuntime<I, S, R, H extends object> extends DocumentObserver, Docum
   /** The Harness clock. */
   now(): number;
   /** Forward a non-fatal failure to `HarnessOptions.onReport`. */
-  /** `from`: whose code failed, the task's own (default), an extension's (with its name), or a `host` callback's. */
+  /** A `task_error`, or with `from` an `extension_error` or `host_error`, with this task (section 10.1). */
   report(
     error: unknown,
-    from?: { source: "task" } | { source: "extension"; extension?: string } | { source: "host" },
+    from?: { type: "extension"; extension?: string } | { type: "host"; callback: HostCallback },
   ): void;
   /** Commit `{ status: "sleeping", until, checkpoint }`; resolves once stored (section 5.6). */
   sleepUntil(until: number, checkpoint: S, context: Context): Promise<void>;
@@ -2172,7 +2190,7 @@ itself that differs from its current one (a new checkpoint, a wait, a sleep, an
 outcome) is progress and removes the count; the same checkpoint committed again,
 memos, and document writes are not. Once `restarts` reaches
 `settings.restartLimit` (default 5; `Infinity` never parks), the task is parked:
-blocked with reason `restart_limit`, reported once through `onReport` at the open
+blocked with reason `restart_limit`, reported once as `task_parked` at the open
 that parks it, shown in `inspect()` and the task graph, and not active in
 `wake()`. Work that deterministically exhausts memory or CPU before its next
 checkpoint thus stops after a few attempts instead of running forever. Every
@@ -2183,13 +2201,13 @@ task again, and does nothing for a task that is not parked. A run task that is
 parked keeps its conversation busy. An abort mark starts the count over and
 still runs a parked task's abort handler; an abort handler cut off
 `restartLimit` times is not run again, and the task ends `faulted` with detail
-`{ reason: "restart_limit" }`, reported with `blocked: "restart_limit"`.
+`{ reason: "restart_limit" }`, reported as `task_faulted` with reason `restart_limit`.
 
 An abort invocation resolves the definition the same way. When the definition
 can take the task, its abort handler runs; otherwise the task is orphaned as
 described below.
 
-A failed migration is reported once through `onReport` and retried only after
+A failed migration is reported once as `migration_failed` and retried only after
 the registry resolves a different definition object for the task's kind.
 
 The Harness never terminalizes a task merely because registry code is missing or
@@ -2276,7 +2294,7 @@ over: the step commits the task back to `pending` with its checkpoint, memos,
 and abort mark and ends the invocation, and the next reservation starts a fresh invocation under the new
 definition, applying the reservation rules above. When the definition is missing
 or cannot reserve the task, the invocation keeps running under its old
-definition, reports once through `onReport` per resolved definition, and
+definition, reports once as `task_outdated` per resolved definition, and
 reconsiders at its next boundary. A handler that
 never settles never hands over.
 
@@ -5322,26 +5340,34 @@ listener throws ends with `listener_error`. A throwing or rejecting `onReport` i
 dropped, since nothing is left to report it to. A throwing `now()` is reported
 once, and `Date.now` serves instead.
 
-**Every report says where it came from.** `onReport(error, info)` gets a
-`ReportInfo` whose `source` is one of:
+**Every report says what happened.** `onReport(error, info)` gets a
+`ReportInfo` whose `type` is one of:
 
-- `session`: the error that failed the Session (a Storage error, often a
+- `session_failed`: the error that failed the Session (a Storage error, often a
   platform reset, or the Session's own bookkeeping);
-- `task`: a task's phase that faulted (`faulted: true`), a task's
-  `runtime.report()`, a failed migration, or a task parked or faulted by the
-  restart limit (`blocked: "restart_limit"`), with `taskId`, `taskKind`, and
-  `conversationId`;
-- `extension`: hooks, wrappers, system prompt sections, and a tool's invalid
-  structured output;
-- `listener`; `host` for the clock, settings, registry, environment builder, and
-  model provider calls such as cancelling a deferred response; `timer` for
-  `setTimer`; and `wake` for `onWake`.
+- `task_faulted`: a task ended `faulted`, because its phase threw (reason
+  `threw`) or its abort handler was cut off `restartLimit` times (reason
+  `restart_limit`);
+- `task_parked`: the restart limit parked a task (section 5.4);
+- `migration_failed`: a task's migration threw, and the task is blocked;
+- `task_outdated`: a running task keeps its old definition, which is missing
+  (`missing_task`) or cannot take the task (`incompatible_task`);
+- `task_error`: a task's own `runtime.report()`, or a failure running it;
+- `extension_error`: hooks, wrappers, system prompt sections, and a tool's
+  invalid structured output, with the task that ran them, or for a wrapper
+  outside a task the conversation whose agent was resolved;
+- `host_error`: a host callback, by its `HarnessOptions` name: `now`,
+  `settings`, `registry`, `env`, `models` for provider calls such as cancelling
+  a deferred response, `setTimer`, or `onWake`; with the task that called it,
+  if one did;
+- `listener_error`: a commit, close, watch, view, or document listener.
 
-`extension` names the extension whose code failed, when known. A `task` report
-names the extension that installed the definition the task ran, as of its
-reservation; built-in tasks have none. An `extension` report names the hook's or
-the wrapper's extension, or the last selected extension that provides or wraps
-the section or tool. A host acts on reports outside the scheduler, for example
+Every task report carries `task` (its ID, kind, and conversation). `extension`
+names the extension whose code failed, when known. A task report names the
+extension that installed the definition the task ran, as of its reservation;
+built-in tasks have none. An `extension_error` names the hook's or the wrapper's
+extension, or the last selected extension that provides or wraps the section or
+tool. A host acts on reports outside the scheduler, for example
 counting faults of one task kind toward a breaker.
 
 ## 11. Backends

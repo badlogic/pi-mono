@@ -48,6 +48,7 @@ import type {
 	UserInput,
 } from "./types.ts";
 import { recordUsage } from "./usage.ts";
+import { optionalExtension } from "./util.ts";
 
 export type GenerationInput = Record<string, never>;
 
@@ -157,7 +158,7 @@ export const GenerationTask = defineTask<GenerationInput, GenerationCheckpoint, 
 				env = await runtime.env(context);
 			} catch (error) {
 				if (context.abortSignal?.aborted) throw error;
-				runtime.report(error, { source: "host" });
+				runtime.report(error, { type: "host", callback: "env" });
 			}
 			const input: PromptInput = { conversationId, agent, env, shown: Object.fromEntries(shown), read: runtime };
 			const desired = await renderSections(
@@ -166,7 +167,7 @@ export const GenerationTask = defineTask<GenerationInput, GenerationCheckpoint, 
 				shown,
 				(error, section) =>
 					runtime.report(error, {
-						source: "extension",
+						type: "extension",
 						...optionalExtension(sectionExtension(agent, section.key)),
 					}),
 				context,
@@ -283,7 +284,7 @@ export const GenerationTask = defineTask<GenerationInput, GenerationCheckpoint, 
 				try {
 					await runtime.models.cancelDeferred(model, checkpoint.handle, { signal: runtime.signal });
 				} catch (error) {
-					runtime.report(error, { source: "host" });
+					runtime.report(error, { type: "host", callback: "models" });
 				}
 			}
 		}
@@ -758,9 +759,4 @@ function createGeneration(tx: Tx, conversationId: ConversationId): Promise<TaskI
 /** Hand run control from `from` to `to`; the run's inputs move with it. */
 export function handOver(live: Draft<LiveState>, from: TaskId, to: TaskId): void {
 	if (live.run?.taskId === from) live.run.taskId = to;
-}
-
-/** `{ extension }` when the extension is known. */
-function optionalExtension(extension: string | undefined): { readonly extension?: string } {
-	return extension === undefined ? {} : { extension };
 }

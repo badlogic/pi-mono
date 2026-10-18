@@ -8,6 +8,7 @@ import {
 	type HarnessSettings,
 	type Registry,
 	type RegistryReader,
+	type ReportInfo,
 	type Storage,
 } from "@earendil-works/pi-durable";
 import { context, flush } from "./session-support.ts";
@@ -60,7 +61,7 @@ export async function settled(promise: Promise<unknown>): Promise<boolean> {
 	return done;
 }
 
-/** Open a Harness whose registry holds `tasks`; failures passed to `onReport` are collected. */
+/** Open a Harness whose registry holds `tasks`; failures passed to `onReport` are collected, their infos in `infos`. */
 export async function openTasks(
 	storage: Storage,
 	tasks: readonly AnyTask[],
@@ -71,16 +72,25 @@ export async function openTasks(
 		readonly onWake?: HarnessOptions["onWake"];
 		readonly setTimer?: HarnessOptions["setTimer"];
 	} = {},
-): Promise<{ readonly harness: Harness; readonly registry: Registry; readonly reports: unknown[] }> {
+): Promise<{
+	readonly harness: Harness;
+	readonly registry: Registry;
+	readonly reports: unknown[];
+	readonly infos: ReportInfo[];
+}> {
 	const registry = options.registry ?? createRegistry();
 	if (tasks.length > 0) registry.install(defineExtension({ name: "tasks", tasks }));
 	const reports: unknown[] = [];
+	const infos: ReportInfo[] = [];
 	const harness = await Harness.open(
 		storage,
 		{
 			models: createModels(),
 			registry,
-			onReport: (error) => reports.push(error),
+			onReport: (error, info) => {
+				reports.push(error);
+				infos.push(info);
+			},
 			...(options.now === undefined ? {} : { now: options.now }),
 			...(options.settings === undefined ? {} : { settings: options.settings }),
 			...(options.onWake === undefined ? {} : { onWake: options.onWake }),
@@ -88,7 +98,7 @@ export async function openTasks(
 		},
 		context,
 	);
-	return { harness, registry, reports };
+	return { harness, registry, reports, infos };
 }
 
 /** Next state that completes a task with `result`. */

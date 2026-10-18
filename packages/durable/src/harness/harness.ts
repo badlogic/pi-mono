@@ -212,7 +212,7 @@ class HarnessImpl<Tool extends ToolRegistration> extends SessionImpl implements 
 			env: (id, callContext) => this.buildEnv(id, callContext),
 			now,
 			onWake: options.onWake,
-			timers: hostTimers(options.setTimer, (error) => report(error, { source: "timer" })),
+			timers: hostTimers(options.setTimer, (error) => report(error, { type: "host_error", callback: "setTimer" })),
 			writeAtClose: (writes) => this.writeAtClose(writes),
 			report: this.#report,
 			settleOutcome: settleSchedulerOutcome,
@@ -248,7 +248,7 @@ class HarnessImpl<Tool extends ToolRegistration> extends SessionImpl implements 
 		const registry = snapshot ?? this.#options.registry.snapshot();
 		const state = await this.snapshot(AgentDoc, id, context);
 		return resolveAgent(state, registry, resolveSettings(this.#hostSettings()), (error, extension) =>
-			this.#report(error, { source: "extension", conversationId: id, extension }),
+			this.#report(error, { type: "extension_error", conversationId: id, extension }),
 		);
 	}
 
@@ -365,7 +365,7 @@ class HarnessImpl<Tool extends ToolRegistration> extends SessionImpl implements 
 		return this.#create({ kind: "independent", ownership: options.ownership }, options, context);
 	}
 
-	override report(error: unknown, info: ReportInfo = { source: "listener" }): void {
+	override report(error: unknown, info: ReportInfo = { type: "listener_error" }): void {
 		this.#report(error, info);
 	}
 
@@ -436,7 +436,7 @@ export function safeNow(
 			// Set first: a report handler that reads the clock again must not report again.
 			if (!reported) {
 				reported = true;
-				report(error, { source: "host" });
+				report(error, { type: "host_error", callback: "now" });
 			}
 			return Date.now();
 		}
