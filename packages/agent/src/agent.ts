@@ -118,6 +118,7 @@ export interface AgentOptions {
 	streamFn: StreamFn;
 	getApiKey?: (provider: string) => Promise<string | undefined> | string | undefined;
 	onPayload?: SimpleStreamOptions["onPayload"];
+	onServerCompaction?: SimpleStreamOptions["onServerCompaction"];
 	onResponse?: SimpleStreamOptions["onResponse"];
 	onProviderStreamEvent?: SimpleStreamOptions["onProviderStreamEvent"];
 	beforeToolCall?: (context: BeforeToolCallContext, signal?: AbortSignal) => Promise<BeforeToolCallResult | undefined>;
@@ -196,6 +197,8 @@ export class Agent {
 	public streamFunction: StreamFn;
 	public getApiKey?: (provider: string) => Promise<string | undefined> | string | undefined;
 	public onPayload?: SimpleStreamOptions["onPayload"];
+	public onServerCompaction?: SimpleStreamOptions["onServerCompaction"];
+	public contextManagement?: SimpleStreamOptions["contextManagement"];
 	public onResponse?: SimpleStreamOptions["onResponse"];
 	public onProviderStreamEvent?: SimpleStreamOptions["onProviderStreamEvent"];
 	public beforeToolCall?: (
@@ -236,6 +239,7 @@ export class Agent {
 		this.streamFunction = runtimeOptions.streamFn ?? getDefaultStreamFn();
 		this.getApiKey = runtimeOptions.getApiKey;
 		this.onPayload = runtimeOptions.onPayload;
+		this.onServerCompaction = runtimeOptions.onServerCompaction;
 		this.onResponse = runtimeOptions.onResponse;
 		this.onProviderStreamEvent = runtimeOptions.onProviderStreamEvent;
 		this.beforeToolCall = runtimeOptions.beforeToolCall;
@@ -471,6 +475,8 @@ export class Agent {
 			reasoning: this._state.thinkingLevel === "off" ? undefined : this._state.thinkingLevel,
 			sessionId: this.sessionId,
 			onPayload: this.onPayload,
+			onServerCompaction: this.onServerCompaction,
+			contextManagement: this.contextManagement,
 			onResponse: this.onResponse,
 			onProviderStreamEvent: this.onProviderStreamEvent,
 			transport: this.transport,

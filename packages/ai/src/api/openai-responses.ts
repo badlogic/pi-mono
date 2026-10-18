@@ -25,7 +25,12 @@ import { getDeclaredTools, resolveTranscript, resolveTranscriptTools } from "../
 import { createGrammarToolInputProperties } from "./constrained-sampling.ts";
 import { buildCopilotDynamicHeaders, hasCopilotVisionInput } from "./github-copilot-headers.ts";
 import { clampOpenAIPromptCacheKey } from "./openai-prompt-cache.ts";
-import { convertResponsesMessages, convertResponsesTools, processResponsesStream } from "./openai-responses-shared.ts";
+import {
+	convertResponsesMessages,
+	convertResponsesTools,
+	processResponsesStream,
+	type ResponsesItemCounts,
+} from "./openai-responses-shared.ts";
 import { buildBaseOptions, resolveSamplingParams } from "./simple-options.ts";
 
 const OPENAI_TOOL_CALL_PROVIDERS = new Set(["openai", "openai-codex", "opencode"]);
@@ -94,6 +99,7 @@ function getCompat(model: Model<"openai-responses">): Required<OpenAIResponsesCo
 		supportsExplicitPromptCacheMode: model.compat?.supportsExplicitPromptCacheMode ?? false,
 		supportsMaxOutputTokens: model.compat?.supportsMaxOutputTokens ?? true,
 		supportsMidConvoEffort: model.compat?.supportsMidConvoEffort ?? false,
+		serverSideCompaction: model.compat?.serverSideCompaction ?? false,
 	};
 }
 
@@ -192,7 +198,7 @@ export const stream: StreamFunction<"openai-responses", OpenAIResponsesOptions> 
 				options?.fetch,
 				cacheSessionId,
 			);
-			let params = buildParams(
+			const builtParams = buildParams(
 				model,
 				normalizedContext,
 				options,
@@ -200,6 +206,7 @@ export const stream: StreamFunction<"openai-responses", OpenAIResponsesOptions> 
 				grammarToolInputProperties,
 				configurationUpdateEffort,
 			);
+			let params = builtParams.params;
 			const nextParams = await options?.onPayload?.(params, model);
 			if (nextParams !== undefined) {
 				params = nextParams as ResponseCreateParamsStreaming;
@@ -222,6 +229,8 @@ export const stream: StreamFunction<"openai-responses", OpenAIResponsesOptions> 
 
 			await processResponsesStream(openaiStream, output, stream, model, {
 				onProviderStreamEvent: options?.onProviderStreamEvent,
+				onServerCompaction: options?.onServerCompaction,
+				requestItemCounts: builtParams.itemCounts,
 				serviceTier: options?.serviceTier,
 				grammarToolInputProperties,
 				applyServiceTierPricing: (usage, serviceTier) => applyServiceTierPricing(usage, serviceTier, model),
@@ -335,22 +344,29 @@ function buildParams(
 	compat: Required<OpenAIResponsesCompat>,
 	grammarToolInputProperties: ReadonlyMap<string, string>,
 	configurationUpdateEffort: string | undefined,
-) {
+): { params: ResponseCreateParamsStreaming; itemCounts: number[] } {
 	const transcriptTools = resolveTranscriptTools(
 		context.messages,
 		compat.supportsAdditionalTools || compat.supportsToolSearch,
 	);
-	const messages = convertResponsesMessages(model, context, OPENAI_TOOL_CALL_PROVIDERS, {
-		grammarToolInputProperties,
-		supportsMidConvoSystemMessages: compat.supportsMidConvoSystemMessages,
-		supportsAdditionalTools: compat.supportsAdditionalTools,
-		supportsToolSearch: compat.supportsToolSearch,
-		toolOptions: {
-			supportsStrictMode: compat.supportsStrictMode,
-			supportsOpenAIGrammarTools: compat.supportsOpenAIGrammarTools,
+	const itemCounter: ResponsesItemCounts = { counts: [] };
+	const messages = convertResponsesMessages(
+		model,
+		context,
+		OPENAI_TOOL_CALL_PROVIDERS,
+		{
+			grammarToolInputProperties,
+			supportsMidConvoSystemMessages: compat.supportsMidConvoSystemMessages,
+			supportsAdditionalTools: compat.supportsAdditionalTools,
+			supportsToolSearch: compat.supportsToolSearch,
+			toolOptions: {
+				supportsStrictMode: compat.supportsStrictMode,
+				supportsOpenAIGrammarTools: compat.supportsOpenAIGrammarTools,
+			},
+			configurationUpdateEffort,
 		},
-		configurationUpdateEffort,
-	});
+		itemCounter,
+	);
 
 	const cacheRetention = resolveCacheRetention(options?.cacheRetention, options?.env);
 	// Sign in with ChatGPT rejects these request fields.
@@ -414,7 +430,16 @@ function buildParams(
 		Object.assign(params, samplingParams);
 	}
 
-	return params;
+	// Server-side compaction: the provider owns summarization and returns a
+	// compaction output item when the rendered input crosses the threshold.
+	// Only emitted for models that opt in via compat.
+	if (compat.serverSideCompaction && typeof options?.contextManagement?.compactThreshold === "number") {
+		params.context_management = [
+			{ type: "compaction", compact_threshold: options.contextManagement.compactThreshold },
+		];
+	}
+
+	return { params, itemCounts: itemCounter.counts };
 }
 
 function getServiceTierCostMultiplier(

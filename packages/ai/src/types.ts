@@ -209,12 +209,61 @@ export interface ProviderRequestOptions<TModel = Model<Api>> {
 	maxRetryDelayMs?: number;
 }
 
+/**
+ * A server-side compaction reported by a Responses-API provider: the server
+ * summarized part of the input for this one request (OpenAI Responses
+ * `context_management`) and returned a compaction output item instead of
+ * echoing it. The payload carries enough metadata for the caller to adopt the
+ * compaction into session state.
+ *
+ * Providers may embed adoption metadata as a non-standard `pi` object on the
+ * compaction output item (`input_tokens`, `items_compacted`, `items_retained`).
+ * `itemsCompacted` (the number of input items the server summarized) is
+ * required for pi's session adoption; providers that omit it still trigger the
+ * callback, but pi's coding agent skips auto-adoption (the summary may be an
+ * opaque provider checkpoint that is only valid replayed as a compaction item).
+ */
+export interface ServerCompaction {
+	/** Provider compaction item id (e.g. cmpct_...). */
+	id: string;
+	/** The server-generated summary or opaque checkpoint content. */
+	summary: string;
+	/** Server-rendered token count of the full input before compaction, when reported. */
+	inputTokens?: number;
+	/** Number of input items the server summarized, when reported. */
+	itemsCompacted?: number;
+	/** Number of input items the server retained verbatim (the tail), when reported. */
+	itemsRetained?: number;
+	/**
+	 * For this request's input, the per-LLM-message count of Responses input
+	 * items (parallel to the transcript sent). Lets the caller map the
+	 * server's item-based cut point back to transcript message indexes.
+	 * Set by the adapter, not by the provider.
+	 */
+	inputItemCounts?: number[];
+}
+
 export interface StreamOptions extends ProviderRequestOptions<Model<Api>> {
 	/**
 	 * Optional callback invoked after an HTTP response is received and before
 	 * its body stream is consumed.
 	 */
 	onResponse?: (response: ProviderResponse, model: Model<Api>) => void | Promise<void>;
+	/**
+	 * Optional callback invoked when the provider reports a server-side
+	 * compaction for this request (OpenAI Responses `context_management`
+	 * compaction output item). Adapter support is explicit; unsupported
+	 * adapters do not invoke it.
+	 */
+	onServerCompaction?: (compaction: ServerCompaction, model: Model<Api>) => void | Promise<void>;
+	/**
+	 * Request the provider to compact the input server-side when its token
+	 * count crosses the threshold (emitted as OpenAI Responses
+	 * `context_management`). Only the openai-responses adapter implements
+	 * this, and only for models that opt in via `compat.serverSideCompaction`;
+	 * otherwise it is ignored.
+	 */
+	contextManagement?: { compactThreshold: number };
 	/**
 	 * Optional observer for each parsed provider stream event before Pi normalization.
 	 * Event data is adapter-owned and must be treated as read-only.

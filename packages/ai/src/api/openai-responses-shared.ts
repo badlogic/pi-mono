@@ -1,6 +1,7 @@
 import type OpenAI from "openai";
 import type {
 	Tool as OpenAITool,
+	ResponseCompactionItem,
 	ResponseConfigurationUpdateItemParam,
 	ResponseCreateParamsStreaming,
 	ResponseInput,
@@ -20,6 +21,7 @@ import type {
 	AssistantMessage,
 	ImageContent,
 	Model,
+	ServerCompaction,
 	StopReason,
 	StreamOptions,
 	SystemMessage,
@@ -110,6 +112,14 @@ function convertToolResultOutput<TApi extends Api>(
 
 export interface OpenAIResponsesStreamOptions {
 	onProviderStreamEvent?: StreamOptions["onProviderStreamEvent"];
+	/**
+	 * Optional callback invoked when the provider reports a server-side
+	 * compaction for this request (a compaction output item in the response
+	 * stream or the terminal response). Adapter support is explicit.
+	 */
+	onServerCompaction?: (compaction: ServerCompaction, model: Model<any>) => void | Promise<void>;
+	/** Per-LLM-message count of input items for this request (for adoption bookkeeping). */
+	requestItemCounts?: number[];
 	serviceTier?: ResponseCreateParamsStreaming["service_tier"];
 	grammarToolInputProperties?: ReadonlyMap<string, string>;
 	resolveServiceTier?: (
@@ -153,11 +163,22 @@ export interface ConvertResponsesToolsOptions {
 // Message conversion
 // =============================================================================
 
+/**
+ * Per-LLM-message count of Responses input items, parallel to the item array
+ * returned by {@link convertResponsesMessages}. Groups are in collapsed-transcript
+ * order (the same order the adapter sends). Used to map a server-side
+ * compaction cut point (item index) back to a transcript message index.
+ */
+export interface ResponsesItemCounts {
+	counts: number[];
+}
+
 export function convertResponsesMessages<TApi extends Api>(
 	model: Model<TApi>,
 	context: TranscriptContext,
 	allowedToolCallProviders: ReadonlySet<string>,
 	options?: ConvertResponsesMessagesOptions,
+	itemCounts?: ResponsesItemCounts,
 ): ResponseInput {
 	const normalizedContext = resolveTranscript(context, options?.supportsMidConvoSystemMessages);
 	const messages: ResponseInput = [];
@@ -235,6 +256,7 @@ export function convertResponsesMessages<TApi extends Api>(
 	let sourceIndex = 0;
 	for (const msg of transformedMessages) {
 		const isLeadingSystemMessage = sourceIndex++ === 0 && msg.role === "system";
+		const itemsBefore = messages.length;
 		if (msg.role === "system") {
 			if (!isLeadingSystemMessage) appendSystemToolAdditions(msg, `system:${msgIndex}`);
 			if (!isLeadingSystemMessage || includeInitialSystemMessage) {
@@ -372,6 +394,7 @@ export function convertResponsesMessages<TApi extends Api>(
 			}
 		}
 		if (!isLeadingSystemMessage) msgIndex++;
+		if (itemCounts) itemCounts.counts.push(messages.length - itemsBefore);
 	}
 	if (options?.configurationUpdateEffort !== undefined) pushConfigurationUpdate(options.configurationUpdateEffort);
 
@@ -465,6 +488,33 @@ export async function processResponsesStream<TApi extends Api>(
 	let sawTerminalResponseEvent = false;
 	const outputSlots = new Map<number, ResponsesOutputSlot>();
 	const reasoningBlocksById = new Map<string, ThinkingContent>();
+	// Server-side compaction, if the provider emitted one for this request.
+	// Adoption metadata, when the provider supports it, is carried in a
+	// non-standard `pi` object on the compaction item.
+	let serverCompaction: ServerCompaction | undefined;
+	const captureServerCompaction = (item: ResponseCompactionItem & { pi?: unknown }): void => {
+		if (serverCompaction) return;
+		const metadata =
+			item.pi && typeof item.pi === "object" && !Array.isArray(item.pi)
+				? (item.pi as Record<string, unknown>)
+				: undefined;
+		const num = (v: unknown): number | undefined => (typeof v === "number" && Number.isFinite(v) ? v : undefined);
+		serverCompaction = {
+			id: item.id,
+			// OpenAI compaction checkpoints are encrypted_content; local providers may
+			// carry a readable summary here instead. Either way the caller adopts the
+			// opaque value; pi never parses it.
+			summary: typeof item.encrypted_content === "string" ? item.encrypted_content : "",
+			...(metadata !== undefined
+				? {
+						inputTokens: num(metadata.input_tokens) ?? undefined,
+						itemsCompacted: num(metadata.items_compacted) ?? undefined,
+						itemsRetained: num(metadata.items_retained) ?? undefined,
+					}
+				: {}),
+			...(options?.requestItemCounts ? { inputItemCounts: options.requestItemCounts } : {}),
+		};
+	};
 	const applyMessagePhaseStopReason = (item: ResponseOutputItem): void => {
 		if (item.type === "message" && item.phase === "final_answer") {
 			output.stopReason = "stop";
@@ -626,7 +676,12 @@ export async function processResponsesStream<TApi extends Api>(
 		if (event.type === "response.created") {
 			output.responseId = event.response.id;
 		} else if (event.type === "response.output_item.added") {
-			createSlot(event.output_index, event.item);
+			if (event.item.type === "compaction") {
+				// Opaque to pi content (server checkpoint); do not create a content slot.
+				captureServerCompaction(event.item as ResponseCompactionItem & { pi?: unknown });
+			} else {
+				createSlot(event.output_index, event.item);
+			}
 		} else if (event.type === "response.reasoning_summary_text.delta") {
 			const slot = getSlot(event.output_index, "thinking");
 			if (!slot) continue;
@@ -766,7 +821,15 @@ export async function processResponsesStream<TApi extends Api>(
 				outputSlots.delete(event.output_index);
 			}
 		} else if (event.type === "response.completed" || event.type === "response.incomplete") {
+			// Prefer the terminal response's output array: it is the authoritative
+			// item list (gateways may omit fields on individual output_item events).
+			for (const item of event.response?.output ?? []) {
+				if (item.type === "compaction") captureServerCompaction(item as ResponseCompactionItem & { pi?: unknown });
+			}
 			finalizeResponse(event.response);
+			if (serverCompaction && options?.onServerCompaction) {
+				await options.onServerCompaction(serverCompaction, model);
+			}
 		} else if (event.type === "error") {
 			throw new Error(`Error Code ${event.code}: ${event.message}` || "Unknown error");
 		} else if (event.type === "response.failed") {

@@ -13,11 +13,12 @@ For TypeScript definitions in your project, inspect `node_modules/@earendil-work
 
 ## Overview
 
-Pi has two summarization mechanisms:
+Pi has summarization mechanisms for keeping long sessions within the context window:
 
 | Mechanism | Trigger | Purpose |
 |-----------|---------|---------|
-| Compaction | Context exceeds threshold, or `/compact` | Summarize old messages to free up context |
+| Compaction (client-side) | Context exceeds threshold, or `/compact` | Pi summarizes old messages to free up context |
+| Compaction (server-side) | Context exceeds threshold, on opted-in models | The provider summarizes the input during the request and pi adopts the result |
 | Branch summarization | `/tree` navigation | Preserve context when switching branches |
 
 Both use closely related structured formats and track file operations cumulatively. Summarization requests disable prompt-cache writes because these one-off prompts are unlikely to be reused.
@@ -81,6 +82,18 @@ What the LLM sees:
 ```
 
 On repeated compactions, the summarized span starts at the previous compaction's kept boundary (`firstKeptEntryId`), not at the compaction entry itself, falling back to the entry after the previous compaction if that kept entry cannot be found in the path. A retain-none compaction records its own ID as `firstKeptEntryId`; repeated compaction starts after that entry. This preserves messages that survived the earlier compaction by including them in the next summarization pass as well. Pi also recalculates `tokensBefore` from the rebuilt, context-edited session projection before writing the new `CompactionEntry`, so the token count reflects the actual pre-compaction context being replaced. Omitted raw entries remain stored but do not affect cut selection, summaries, checkpoints, or token estimates.
+
+### Server-Side Compaction
+
+Instead of pi spending an extra summarization LLM call when the threshold is crossed, a provider can perform the compaction itself during the normal request. This is available on OpenAI Responses API models that declare `compat.serverSideCompaction: true` (see [Models Configuration](models-configuration.md#compatibility)) and requires the provider to support OpenAI Responses `context_management`.
+
+When active for the current model, pi:
+
+1. Sends `context_management: [{ type: "compaction", compact_threshold: <contextWindow - reserveTokens> }]` with each conversational request, using the same reserve tokens that gate client-side compaction.
+2. Skips its own pre-request client-side compaction while the provider compacts.
+3. When the provider returns a `compaction` output item, pi maps the server's cut point back to the request transcript (via the per-message input item counts the adapter records for the request), keeps the whole session entry containing the first retained message, and appends a normal `CompactionEntry` with `details.source: "server"` — emitting `compaction_end` as with any compaction.
+
+Adoption is best-effort: the summary is used verbatim (it may be an opaque provider checkpoint on some providers), pi never parses it, and any mapping mismatch aborts adoption silently so the existing client-side compaction remains the fallback for the next request. Models that do not opt in, virtual/routed models, and non-Responses APIs are unaffected. Manual `/compact` always uses the client-side path.
 
 ### Overflow and Length Recovery Ordering
 

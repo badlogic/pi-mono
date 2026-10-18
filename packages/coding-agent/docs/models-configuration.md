@@ -154,6 +154,7 @@ Also applies to `azure-openai-responses` and `openai-codex-responses`.
 | `supportsToolSearch` | boolean | `false` | Whether the model supports client-executed tool search for transcript-anchored additions. |
 | `supportsExplicitPromptCacheMode` | boolean | `false` | Whether the model accepts prompt_cache_options. Older OpenAI models reject the parameter. |
 | `supportsMidConvoEffort` | boolean | `false` | Whether thinking level changes are sent as configuration_update input items instead of changing reasoning.effort, so a change keeps the prompt cache. Only used by the openai-responses API, and ignored with Sign in with ChatGPT on the openai provider. |
+| `serverSideCompaction` | boolean | `false` | Whether the provider supports OpenAI Responses context_management compaction and returns a compaction output item when the rendered input crosses the threshold. When true, pi requests context_management on requests for the model and adopts the returned compaction into session state. Off by default and not set on the generated catalog. |
 | `supportsMaxOutputTokens` | boolean | `true` | Whether the provider accepts max_output_tokens. Some Codex-protocol gateways reject it. |
 
 ### `anthropic-messages`

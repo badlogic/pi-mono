@@ -403,6 +403,13 @@ export const OpenAIResponsesCompatSchema = Type.Object(
 				default: false,
 			}),
 		),
+		serverSideCompaction: Type.Optional(
+			Type.Boolean({
+				description:
+					"Whether the provider supports OpenAI Responses context_management compaction and returns a compaction output item when the rendered input crosses the threshold. When true, pi requests context_management on requests for the model and adopts the returned compaction into session state. Off by default and not set on the generated catalog.",
+				default: false,
+			}),
+		),
 		supportsMaxOutputTokens: Type.Optional(
 			Type.Boolean({
 				description: "Whether the provider accepts max_output_tokens. Some Codex-protocol gateways reject it.",
