@@ -1,4 +1,4 @@
-import { mkdtemp, readdir, readFile, rm } from "node:fs/promises";
+import { mkdtemp, readdir, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import type { Context } from "@earendil-works/chord";
@@ -24,6 +24,7 @@ import {
 import type { CodemodeNamespace } from "../src/codemode/describe.ts";
 import { NodeExecutionEnv } from "../src/env/node.ts";
 import { openNodeSqliteStorage } from "../src/storage/sqlite/node.ts";
+import { createReadTool } from "../src/tools/read.ts";
 import { allEntries, type ChatSetup, chatSetup, openChat } from "./chat-support.ts";
 import { addHooks, addTool } from "./harness-support.ts";
 import { ControlledStorage, context } from "./session-support.ts";
@@ -943,10 +944,15 @@ describe("durable code mode", () => {
 
 describe("durable code mode output and tool search", () => {
 	/** Run `code` once in a chat with a Node environment; the result's content and details. */
-	async function runScript(code: string, chat = codemodeChat()) {
+	async function runScript(
+		code: string,
+		chat = codemodeChat(),
+		prepare: (cwd: string) => Promise<void> = async () => {},
+	) {
 		chat.holds.block = false;
 		const cwd = await mkdtemp(join(tmpdir(), "pi-codemode-env-"));
 		directories.add(cwd);
+		await prepare(cwd);
 		chat.setup.faux.setResponses([script(code), DONE]);
 		const { harness, root } = await openChat(await openNodeSqliteStorage(await sqlitePath()), chat.setup, {
 			env: new NodeExecutionEnv({ cwd }),
@@ -1042,6 +1048,39 @@ describe("durable code mode output and tool search", () => {
 		expect(saved).not.toBeNull();
 		expect((await readFile(saved![1]!)).toString("base64")).toBe(png);
 		expect(message.content.some((item) => item.type === "image")).toBe(true);
+	});
+
+	it("resolves a nested read of an image to the image block that image() shows", async () => {
+		const chat = codemodeChat();
+		addTool(chat.setup.registry, createReadTool());
+		const png = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==";
+		const { text, message } = await runScript(
+			`const file = await tools.read({ path: "pixel.png" }); text(file.type); image(file);`,
+			chat,
+			async (cwd) => {
+				await writeFile(join(cwd, "pixel.png"), Buffer.from(png, "base64"));
+			},
+		);
+		expect(message.isError).toBe(false);
+		expect(text).toContain("image");
+		const images = (message.content as { type: string; data?: string }[]).filter((item) => item.type === "image");
+		expect(images).toHaveLength(1);
+		expect(images[0]!.data).toBe(png);
+	});
+
+	it("resolves a nested read of a text file to its text", async () => {
+		const chat = codemodeChat();
+		addTool(chat.setup.registry, createReadTool());
+		const { text, message } = await runScript(
+			`return await tools.read({ path: "notes.txt" });`,
+			chat,
+			async (cwd) => {
+				await writeFile(join(cwd, "notes.txt"), "hello\nthere");
+			},
+		);
+		expect(message.isError).toBe(false);
+		expect(text).toContain("hello");
+		expect(text).toContain("there");
 	});
 
 	it("calls a deferred tool the model is not offered, and finds it in ALL_TOOLS", async () => {

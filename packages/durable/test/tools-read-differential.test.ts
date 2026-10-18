@@ -19,6 +19,7 @@ function referenceRead(bytes: Uint8Array, path: string, offset: number | undefin
 	if (mimeType) {
 		return {
 			output: [{ type: "image", data: Buffer.from(bytes).toString("base64"), mimeType }],
+			structuredOutput: { type: "image", data: Buffer.from(bytes).toString("base64"), mimeType },
 			diagnostics: [{ severity: "info", code: "image", message: `Read image file [${mimeType}].` }],
 		};
 	}
@@ -73,6 +74,7 @@ function referenceRead(bytes: Uint8Array, path: string, offset: number | undefin
 	}
 	return {
 		output: outputText === "" ? [] : [{ type: "text", text: outputText }],
+		structuredOutput: outputText,
 		...(details === undefined ? {} : { details }),
 		diagnostics,
 	};

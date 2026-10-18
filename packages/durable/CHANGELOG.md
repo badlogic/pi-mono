@@ -36,6 +36,7 @@
 
 - In Cloudflare Workers with `nodejs_compat`, the timers that evict idle documents and contexts were armed, since timers there have an `unref()`; a pending one kept a Durable Object from hibernating and blocked its eviction. They are now declined in Workers, and memory is freed at later commits.
 - The README's Errors section now limits the `StorageRequestError` exemption to reads: a `StorageRequestError` thrown by `commit()` or `mintId()` fails the Harness like any other storage error ([#11014](https://github.com/earendil-works/pi/issues/11014)).
+- The built-in `read` tool declares a structured output schema, so a code mode script's nested `read` of an image resolves with the image block that `image()` shows instead of an empty string ([#11015](https://github.com/earendil-works/pi/issues/11015)).
 
 ## [1.3.0] - 2026-10-15
 

@@ -315,6 +315,41 @@ describe("durable tools", () => {
 			expect(result.isError).toBeUndefined();
 			expect(diagnosticText(result)).toBe("Read image file [image/png].");
 		});
+
+		it("gives programs the image block itself, so a codemode script can pass it to image()", async () => {
+			const env = createEnv();
+			const data =
+				"iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGNgYGD4DwABBAEAX+XDSwAAAABJRU5ErkJggg==";
+			getOrThrow(await env.writeFile("image.txt", Uint8Array.from(Buffer.from(data, "base64")), BACKGROUND_CONTEXT));
+			const result = await run(createReadTool(), { path: "image.txt" }, env);
+			expect(result.structuredOutput).toEqual({ type: "image", data, mimeType: "image/png" });
+		});
+
+		it("gives programs the text of a text file", async () => {
+			const env = createEnv();
+			getOrThrow(await env.writeFile("notes.txt", "hello\nthere", BACKGROUND_CONTEXT));
+			const result = await run(createReadTool(), { path: "notes.txt" }, env);
+			expect(result.structuredOutput).toBe("hello\nthere");
+		});
+
+		it("keeps no value on a failed read, so a program's call rejects", async () => {
+			const env = createEnv();
+			// A 1x1 24bpp BMP: an image `read` can detect but cannot send without an image processor.
+			const bmp = Buffer.alloc(58);
+			bmp.write("BM", 0, "ascii");
+			bmp.writeUInt32LE(bmp.length, 2);
+			bmp.writeUInt32LE(54, 10);
+			bmp.writeUInt32LE(40, 14);
+			bmp.writeInt32LE(1, 18);
+			bmp.writeInt32LE(1, 22);
+			bmp.writeUInt16LE(1, 26);
+			bmp.writeUInt16LE(24, 28);
+			bmp[56] = 0xff;
+			getOrThrow(await env.writeFile("image.bmp", bmp, BACKGROUND_CONTEXT));
+			const result = await run(createReadTool(), { path: "image.bmp" }, env);
+			expect(result.isError).toBe(true);
+			expect(result.structuredOutput).toBeUndefined();
+		});
 	});
 
 	describe("write", () => {

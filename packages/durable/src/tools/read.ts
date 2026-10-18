@@ -39,6 +39,18 @@ const readSchema = Type.Object({
 
 export type ReadToolInput = Static<typeof readSchema>;
 
+/**
+ * The value programs get from `read`: the text for text files, and an image block for images, which codemode's
+ * `image()` accepts. Declaring it makes a nested call resolve with the block itself instead of codemode's text
+ * projection, which drops images (a schema-less tool resolves with its text output, images left out).
+ */
+const readStructuredOutputSchema = Type.Union([
+	Type.String(),
+	Type.Object({ type: Type.Literal("image"), data: Type.String(), mimeType: Type.String() }),
+]);
+
+export type ReadToolStructuredOutput = Static<typeof readStructuredOutputSchema>;
+
 export type ReadToolDetails = {
 	/** How the shown text was cut; the text itself is the result content. */
 	truncation?: Omit<TruncationResult, "content">;
@@ -92,6 +104,7 @@ export function createReadTool(options: ReadToolOptions = {}): ToolRegistration<
 		name: "read",
 		description: `Read the contents of a file. Supports text files and images (${formats}). Images are sent as attachments. For text files, output is truncated to ${DEFAULT_MAX_LINES} lines or ${DEFAULT_MAX_BYTES / 1024}KB (whichever is hit first). Use offset/limit for large files. When you need the full file, continue with offset until complete.`,
 		parameters: readSchema,
+		structuredOutputSchema: readStructuredOutputSchema,
 		async execute(args, api, context) {
 			const { path, offset, limit } = args;
 			const env = requireEnv(api);
@@ -120,7 +133,8 @@ export function createReadTool(options: ReadToolOptions = {}): ToolRegistration<
 								);
 					const after = getOrThrow(await reader.info(context));
 					const unchanged = after.size === before.size && after.mtimeMs === before.mtimeMs;
-					if (unchanged || (mimeType === undefined && after.size > before.size)) return result;
+					if (unchanged || (mimeType === undefined && after.size > before.size))
+						return withStructuredOutput(result);
 					if (attempt === 1) throw new Error(`${path} changed while it was read`);
 				}
 			} finally {
@@ -213,6 +227,21 @@ async function imageModel(api: ToolExecutionApi, context: Context): Promise<Imag
 
 function imageError(message: string): ToolExecutionResult<ReadToolDetails> {
 	return { output: [], isError: true, diagnostics: [{ severity: "error", code: "unsupported_image", message }] };
+}
+
+/**
+ * The result with the value programs get: the image block for images, else the text. An error result keeps no value, so
+ * a program's call rejects with the result's diagnostics instead of resolving with an empty string.
+ */
+function withStructuredOutput(result: ToolExecutionResult<ReadToolDetails>): ToolExecutionResult<ReadToolDetails> {
+	if (result.isError === true) return result;
+	const output = result.output ?? [];
+	const image = output.find((block) => block.type === "image");
+	if (image !== undefined) {
+		return { ...result, structuredOutput: { type: "image", data: image.data, mimeType: image.mimeType } };
+	}
+	const text = output.find((block) => block.type === "text");
+	return { ...result, structuredOutput: text?.type === "text" ? text.text : "" };
 }
 
 /**
