@@ -15,6 +15,7 @@ import type {
 	HookRunner,
 	JsonObject,
 	NextTaskState,
+	ReportInfo,
 	RunningTask,
 	Storage,
 	TaskDefinition,
@@ -24,7 +25,7 @@ import type {
 	TaskRuntime,
 	TaskState,
 } from "../types.ts";
-import { agentHooks } from "./agent.ts";
+import { agentHooks, DEFAULT_RESTART_LIMIT } from "./agent.ts";
 import { type ContextRange, readContextFrom } from "./context.ts";
 import type {
 	Agent,
@@ -54,8 +55,11 @@ type ErasedRunningTask = RunningTask<JsonValue, Checkpoint, JsonValue>;
 const SCAN_PAGE_SIZE = 256;
 const LIVE_STATUSES = ["pending", "running", "waiting", "sleeping", "completing"] as const;
 
-/** Why a pending task cannot be reserved under a registry snapshot. Derived, never persisted. */
-type BlockedReason = "missing_task" | "task_too_old" | "migration_failed";
+/**
+ * Why a task cannot be reserved: no registered definition can take it, or it was cut off `restartLimit` times in a row.
+ * Derived from the registry, the settings, and the record's `restarts`.
+ */
+export type BlockedReason = "missing_task" | "task_too_old" | "migration_failed" | "restart_limit";
 
 type Resolution =
 	| { readonly kind: "ready"; readonly task: AnyTask; readonly record: RunnableTaskRecord }
@@ -69,6 +73,7 @@ type Fit =
 /** One in-memory execution of a task in run or abort mode. */
 type Invocation = {
 	readonly taskId: TaskId;
+	readonly kind: string;
 	readonly conversationId: ConversationId;
 	readonly mode: "run" | "abort";
 	readonly controller: AbortController;
@@ -167,7 +172,7 @@ export type TaskSchedulerOptions = {
 	readonly onWake: ((wake: Wake) => void) | undefined;
 	/** The host's timers (`HarnessOptions.setTimer`). */
 	readonly timers: Timers;
-	readonly report: (error: unknown) => void;
+	readonly report: (error: unknown, info: ReportInfo) => void;
 	/** Harness cleanup staged in the commit that makes an outcome the scheduler wrote itself terminal. */
 	readonly settleOutcome: (tx: Transaction, record: AnyTaskRecord, outcome: SchedulerOutcome) => Promise<void>;
 	/** Withdraw a conversation's queued inputs, for conversation abort and abort cascades. */
@@ -215,7 +220,7 @@ export class TaskScheduler {
 	readonly #now: () => number;
 	readonly #onWake: ((wake: Wake) => void) | undefined;
 	readonly #timers: Timers;
-	readonly #report: (error: unknown) => void;
+	readonly #report: (error: unknown, info: ReportInfo) => void;
 	readonly #settleOutcome: TaskSchedulerOptions["settleOutcome"];
 	readonly #withdrawInputs: TaskSchedulerOptions["withdrawInputs"];
 	readonly #conversation: TaskSchedulerOptions["conversation"];
@@ -277,6 +282,7 @@ export class TaskScheduler {
 	/** Last value given to `onWake`, so an unchanged one is not repeated. */
 	#lastWake: Wake | undefined;
 	#wakeScheduled = false;
+	readonly #blockedListeners = new Set<() => void>();
 	#reconcileScheduled = false;
 	#sweepScheduled = false;
 	#cascadePending = false;
@@ -304,11 +310,19 @@ export class TaskScheduler {
 		this.#context = options.context;
 	}
 
-	/** Load live tasks and change surviving `running` tasks back to `pending`. Dispatches nothing. */
+	/**
+	 * Load live tasks and change surviving `running` tasks back to `pending`, counting the restart. Dispatches nothing. A
+	 * task that reaches the restart limit this way is parked and reported.
+	 */
 	async open(context: Context): Promise<void> {
 		this.#session.observeCommits((publication) => this.#observe(publication));
 		this.#session.subscribeClose(() => this.#seal());
-		this.#unsubscribeRegistry = this.#registry.subscribe(() => this.#kick());
+		this.#unsubscribeRegistry = this.#registry.subscribe(() => {
+			this.#notifyBlocked();
+			this.#kick();
+		});
+		const limit = this.#restartLimit();
+		const parked: AnyTaskRecord[] = [];
 		await this.#session.commitWith(async (tx) => {
 			// Every table read before the first write.
 			const scans = [];
@@ -320,7 +334,10 @@ export class TaskScheduler {
 					this.#track(undefined, record);
 					if (record.abandonOnRestart === true) this.#abandoned.add(record.id);
 					if (record.state.status === "running") {
-						tx.setTask(withState(record, { status: "pending", checkpoint: record.state.checkpoint }));
+						const restarts = (record.restarts ?? 0) + 1;
+						const pending = withState(record, { status: "pending", checkpoint: record.state.checkpoint });
+						tx.setTask({ ...pending, restarts } as AnyTaskRecord);
+						if (restarts >= limit && !record.abortRequested) parked.push(record);
 					}
 					if (record.state.status === "waiting" && record.state.policy === "failFast") {
 						this.#failFastChecks.add(record.id);
@@ -328,6 +345,14 @@ export class TaskScheduler {
 				}
 			}
 		}, context);
+		for (const record of parked) {
+			const restarts = (record.restarts ?? 0) + 1;
+			const error = new Error(
+				`Task ${record.id} (${record.kind}) was cut off ${restarts} times without progress; it is parked until retryTask()`,
+				{ cause: "restart_limit" },
+			);
+			this.#report(error, taskInfo({ taskId: record.id, kind: record.kind, conversationId: record.conversationId }));
+		}
 		// Derive abort marks a crash left unapplied below cancelled owners, and finalize held outcomes.
 		this.#cascadePending = true;
 		this.#scheduleReconcile();
@@ -342,6 +367,48 @@ export class TaskScheduler {
 		this.#enabled = true;
 		this.#wakeDue();
 		this.#kick();
+	}
+
+	/**
+	 * Run a task parked by the restart limit again: clears its restart count and enables scheduling. Does nothing for a
+	 * task that is not parked; rejects for an unknown one.
+	 */
+	async retry(id: TaskId, context: Context): Promise<void> {
+		await this.#session.commitWith(async (tx) => {
+			const current = await tx.task(id);
+			if (current === undefined) throw new Error(`Task ${id} does not exist`);
+			if (current.state.status === "terminal" || current.restarts === undefined) return;
+			tx.setTask(progressed(current));
+		}, context);
+		this.resume();
+	}
+
+	/**
+	 * Why a live task cannot run here, if it cannot: its definition (missing, too old, failed migration) or the restart
+	 * limit. A running task, an abort-marked one, and one holding its outcome are never blocked.
+	 */
+	blockedReason(record: AnyTaskRecord): BlockedReason | undefined {
+		const status = record.state.status;
+		if (status === "running" || status === "completing" || status === "terminal" || record.abortRequested) {
+			return undefined;
+		}
+		if (this.#parked(record)) return "restart_limit";
+		let snapshot: RegistrySnapshot;
+		try {
+			snapshot = this.#registry.snapshot();
+		} catch (error) {
+			this.#report(error, HOST);
+			return undefined;
+		}
+		const fit = this.#fit(record, snapshot.task(record.kind));
+		if ("reason" in fit) return fit.reason;
+		return fit.migrates && fit.task.definition.migrate === undefined ? "migration_failed" : undefined;
+	}
+
+	/** Call `listener` when blocked reasons may have changed without a commit: a registry change or a failed migration. */
+	subscribeBlocked(listener: () => void): () => void {
+		this.#blockedListeners.add(listener);
+		return () => this.#blockedListeners.delete(listener);
 	}
 
 	/**
@@ -364,6 +431,7 @@ export class TaskScheduler {
 				continue;
 			}
 			if (active) continue;
+			if (this.#parked(record)) continue;
 			// An abort invocation waits for the live work below it, which counts itself.
 			if (record.abortRequested && this.#waitingOn(record, true).length > 0) continue;
 			// A task no definition can take waits for a registry change, except an abort-marked one, which is orphaned.
@@ -373,7 +441,7 @@ export class TaskScheduler {
 						snapshot = this.#registry.snapshot();
 					} catch (error) {
 						snapshotFailed = true;
-						this.#report(error);
+						this.#report(error, HOST);
 					}
 				}
 				if (snapshot !== undefined && "reason" in this.#fit(record, snapshot.task(record.kind))) continue;
@@ -566,7 +634,7 @@ export class TaskScheduler {
 		try {
 			return this.#settings().contextRetentionMs;
 		} catch (error) {
-			this.#report(error);
+			this.#report(error, HOST);
 			return 0;
 		}
 	}
@@ -1138,7 +1206,7 @@ export class TaskScheduler {
 		try {
 			this.#unsubscribeRegistry();
 		} catch (error) {
-			this.#report(error);
+			this.#report(error, HOST);
 		}
 		const error = closedError(this.#session);
 		this.#taskWaiters.rejectAll(error);
@@ -1169,7 +1237,7 @@ export class TaskScheduler {
 				// Only a delivered wake counts: after a throw, the next change or kick offers it again.
 				this.#lastWake = wake;
 			} catch (error) {
-				this.#report(error);
+				this.#report(error, { source: "wake" });
 			}
 		});
 	}
@@ -1197,6 +1265,31 @@ export class TaskScheduler {
 		for (const id of this.#sleeping) {
 			const record = this.#live.get(id);
 			if (record !== undefined && !this.#notDue(record)) this.#runnable.add(id);
+		}
+	}
+
+	/** A task cut off `restartLimit` times in a row; an abort mark still runs its abort handler. */
+	#parked(record: AnyTaskRecord): boolean {
+		return !record.abortRequested && record.restarts !== undefined && record.restarts >= this.#restartLimit();
+	}
+
+	/** `settings.restartLimit`, or the default when the host's settings throw. */
+	#restartLimit(): number {
+		try {
+			return this.#settings().restartLimit;
+		} catch (error) {
+			this.#report(error, HOST);
+			return DEFAULT_RESTART_LIMIT;
+		}
+	}
+
+	#notifyBlocked(): void {
+		for (const listener of [...this.#blockedListeners]) {
+			try {
+				listener();
+			} catch (error) {
+				this.#report(error, { source: "listener" });
+			}
 		}
 	}
 
@@ -1273,6 +1366,11 @@ export class TaskScheduler {
 						this.#runnable.delete(id);
 						continue;
 					}
+					// It returns when `retry()` clears its restart count.
+					if (this.#parked(record)) {
+						this.#runnable.delete(id);
+						continue;
+					}
 					const runnable = record as RunnableTaskRecord;
 					const mode = record.abortRequested ? "abort" : "run";
 					// Work below an owner with cancellation intent waits for its cascade mark instead of running a phase; schedule
@@ -1346,7 +1444,8 @@ export class TaskScheduler {
 			return { kind: "ready", task: fit.task, record: migratedRecord as RunnableTaskRecord };
 		} catch (error) {
 			this.#failedMigrations.set(record.id, { task: fit.task, error });
-			this.#report(error);
+			queueMicrotask(() => this.#notifyBlocked());
+			this.#report(error, taskInfo({ taskId: record.id, kind: record.kind, conversationId: record.conversationId }));
 			return { kind: "blocked", reason: "migration_failed" };
 		}
 	}
@@ -1399,6 +1498,7 @@ export class TaskScheduler {
 		const on = this.#waitingOn(record);
 		if (on.length > 0) return { kind: "waiting", on };
 		if (this.#notDue(record)) return { kind: "sleeping", until: record.state.until };
+		if (this.#parked(record)) return { kind: "blocked", reason: "restart_limit" };
 		const fit = this.#fit(record, snapshot.task(record.kind));
 		if ("reason" in fit) return { kind: "blocked", ...fit };
 		if (fit.migrates && fit.task.definition.migrate === undefined) {
@@ -1412,6 +1512,7 @@ export class TaskScheduler {
 		const { promise: done, resolve: finish } = Promise.withResolvers<void>();
 		const invocation: Invocation = {
 			taskId: record.id,
+			kind: record.kind,
 			conversationId: record.conversationId,
 			mode,
 			controller,
@@ -1433,7 +1534,7 @@ export class TaskScheduler {
 				if (invocation.mode === "run") await this.#run(reservation);
 				else await this.#runAbort(reservation);
 			} catch (error) {
-				this.#report(error);
+				this.#report(error, taskInfo(invocation));
 			} finally {
 				this.#end(invocation);
 				invocation.finish();
@@ -1504,6 +1605,7 @@ export class TaskScheduler {
 				const cause = next === undefined ? "missing_task" : "incompatible_task";
 				this.#report(
 					new Error(`Task ${current.id} keeps running under its old ${current.kind} definition`, { cause }),
+					taskInfo({ taskId: current.id, kind: current.kind, conversationId: current.conversationId }),
 				);
 			}
 		}
@@ -1537,19 +1639,24 @@ export class TaskScheduler {
 		invocation: Invocation,
 		decide: (tx: Transaction, current: ErasedRunningTask) => Decision,
 	): Promise<ErasedRunningTask | undefined> {
+		let fault: { readonly error: unknown } | undefined;
 		try {
-			return await this.#session.commitWith(async (tx) => {
+			const continued = await this.#session.commitWith(async (tx) => {
 				const found = this.#live.get(invocation.taskId);
 				const current = found?.state.status === "running" ? (found as ErasedRunningTask) : undefined;
 				const decision = current !== undefined && !this.#closing ? decide(tx, current) : false;
 				if (decision === true) return current;
 				this.#end(invocation);
 				if (decision !== false) {
+					fault = { error: decision.fault };
 					const message = errorMessage(decision.fault);
 					await this.#terminate(tx, current!, { status: "faulted", error: { message } });
 				}
 				return undefined;
 			}, this.#context);
+			// Reported once the fault is durable: a host may count it, for example toward a breaker.
+			if (fault !== undefined) this.#report(fault.error, { ...taskInfo(invocation), faulted: true });
+			return continued;
 		} catch (error) {
 			// The step writes the scheduler's own decision, a fault or a terminal record; a throw there would otherwise
 			// leave the task running, to be reserved and run again.
@@ -1591,11 +1698,12 @@ export class TaskScheduler {
 			await this.#loadScopes(false);
 			for (const record of overlay.tasks.values()) await this.#loadChain(parentOf(record), overlay);
 			if (this.#hasOwnedLive(current.id, overlay)) {
-				tx.setTask(withState(current, { status: "completing", outcome: next.outcome }));
+				tx.setTask(withState(progressed(current), { status: "completing", outcome: next.outcome }));
 				return;
 			}
 		}
-		tx.setTask(withState(current, next));
+		// A state the task committed is progress: its restart count starts over.
+		tx.setTask(withState(progressed(current), next));
 	}
 
 	/**
@@ -1738,7 +1846,7 @@ export class TaskScheduler {
 						await invoke(handler.bind(handlers));
 					} catch (error) {
 						if (invocation.controller.signal.aborted) throw error;
-						this.#report(error);
+						this.#report(error, { ...taskInfo(invocation), source: "extension" });
 					}
 				}
 			},
@@ -1924,7 +2032,7 @@ export class TaskScheduler {
 			},
 			report: (error) => {
 				if (invocation.ended) throw endedError(invocation);
-				this.#report(error);
+				this.#report(error, taskInfo(invocation));
 			},
 		};
 	}
@@ -1972,6 +2080,17 @@ export class TaskScheduler {
 		void watch.closed.then(() => invocation.watches.delete(watch));
 		return watch;
 	}
+}
+
+const HOST: ReportInfo = { source: "host" };
+
+/** The report info of a failure of a task. */
+function taskInfo(task: {
+	readonly taskId: TaskId;
+	readonly kind: string;
+	readonly conversationId: ConversationId;
+}): ReportInfo {
+	return { source: "task", taskId: task.taskId, taskKind: task.kind, conversationId: task.conversationId };
 }
 
 /** The record with an abort mark: `restart` for an abandonment; without a reason, a request, which replaces `restart`. */
@@ -2046,6 +2165,13 @@ function erased(task: AnyTask): ErasedDefinition {
 
 function endedError(invocation: Invocation): Error {
 	return new Error(`Task ${invocation.taskId} invocation has ended`);
+}
+
+/** The record without its restart count, as after a state the task committed. */
+function progressed(record: AnyTaskRecord): AnyTaskRecord {
+	if (record.restarts === undefined) return record;
+	const { restarts: _restarts, ...rest } = record;
+	return rest as AnyTaskRecord;
 }
 
 /** Replace a live record's state; memos disappear once an outcome is decided. */

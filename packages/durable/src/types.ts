@@ -134,6 +134,29 @@ export type TaskDocFamilyToken<T extends JsonObject, I extends JsonValue> = DocF
 >;
 
 /**
+ * Where a reported failure came from (`HarnessOptions.onReport`):
+ * - `session`: the error failed the Session, which closes (a Storage error, or the Session's own bookkeeping).
+ * - `task`: a task's phase faulted, a task's runtime reported it, or a task cannot run; `taskId` names it.
+ * - `extension`: extension code other than a task phase: a hook, a system prompt section, or a wrapper.
+ * - `listener`: a commit, close, watch, view, or document listener.
+ * - `host`: a host callback: the clock, the settings, the registry, or the environment builder.
+ * - `timer`: `HarnessOptions.setTimer`.
+ * - `wake`: `HarnessOptions.onWake`.
+ */
+export type ReportSource = "session" | "task" | "extension" | "listener" | "host" | "timer" | "wake";
+
+/** What a report is about: its source and, when a task is involved, the task. */
+export type ReportInfo = {
+	readonly source: ReportSource;
+	readonly taskId?: TaskId;
+	/** The task's registered name. */
+	readonly taskKind?: string;
+	readonly conversationId?: ConversationId;
+	/** Set when the error ended its task `faulted`. */
+	readonly faulted?: true;
+};
+
+/**
  * A host timer, given as `HarnessOptions.setTimer`: call `callback` once, about `delayMs` from now, and return
  * a function that disarms it. `background` timers only free memory, and a host may decline one by returning
  * `undefined`, for example where a pending timer keeps the process from hibernating; the Harness then frees that memory
@@ -605,6 +628,11 @@ type TaskRecordBase<I, R> = {
 	readonly startedAt?: number;
 	/** Wall-clock milliseconds of the change to `terminal`, stamped by the Session; absent while live. */
 	readonly endedAt?: number;
+	/**
+	 * How many times in a row a crash or close cut the task off while it ran, without the task changing its state since
+	 * (open counts them). At `HarnessSettings.restartLimit` the task is parked as blocked until `Harness.retryTask()`.
+	 */
+	readonly restarts?: number;
 };
 
 /** Complete replacement record for one durable task state machine. */

@@ -28,6 +28,7 @@ import type {
 	EntryRecord,
 	JsonObject,
 	Page,
+	ReportInfo,
 	Session,
 	SetTimer,
 	SubmissionId,
@@ -560,7 +561,22 @@ export type HarnessSettings = {
 	 * after use; `Infinity` keeps them. Anything else that is not a number of milliseconds means the default.
 	 */
 	readonly documentRetentionMs?: number;
+	/**
+	 * What a run that fails (`model_error`, `no_model`) does with the inputs queued behind it: `keep` leaves them
+	 * queued until the next input or queued write, `continue` starts the next run with them, as an answer would, and
+	 * `withdraw` settles them `unanswered` with reason `run_failed`. Default `keep`.
+	 */
+	readonly afterFailedRun?: AfterFailedRun;
+	/**
+	 * How many times in a row a task may be cut off by a crash or close without changing its state before it is parked
+	 * as blocked (`restart_limit`) instead of run again; `Harness.retryTask()` runs it again. Default 5;
+	 * `Infinity` never parks.
+	 */
+	readonly restartLimit?: number;
 };
+
+/** What a failed run does with the inputs queued behind it (`HarnessSettings.afterFailedRun`). */
+export type AfterFailedRun = "keep" | "continue" | "withdraw";
 
 /** Resolved settings: every field over its built-in default, object fields merged. */
 export type Settings = {
@@ -576,6 +592,8 @@ export type Settings = {
 	readonly followUpMode: QueueMode;
 	readonly contextRetentionMs: number;
 	readonly documentRetentionMs: number;
+	readonly afterFailedRun: AfterFailedRun;
+	readonly restartLimit: number;
 };
 
 /** What `HarnessOptions.env` builds an environment for. */
@@ -626,10 +644,12 @@ export type HarnessOptions<Tool extends ToolRegistration = ToolRegistration> = {
 	 */
 	readonly onWake?: (wake: Wake) => void;
 	/**
-	 * Receives failures that do not fail the calling operation, such as a throwing hook or listener, and the error that
-	 * fails the Session, once. Its own throw or rejection is dropped.
+	 * Receives failures that do not fail the calling operation, such as a throwing hook or listener, a task that faulted,
+	 * and the error that fails the Session, once. `info` says where it came from: a host can tell a failed Session
+	 * (`source: "session"`, often a platform reset) from a faulted task (`source: "task"`, `faulted`). Its own throw or
+	 * rejection is dropped.
 	 */
-	readonly onReport?: (error: unknown) => void;
+	readonly onReport?: (error: unknown, info: ReportInfo) => void;
 };
 
 /**
@@ -656,10 +676,13 @@ export type TaskInspection = {
 		| { readonly kind: "sleeping"; readonly until: number }
 		/** Outcome held until its ordinary owned work drains. */
 		| { readonly kind: "completing" }
-		/** No registered definition can take it; aborting it settles it as `orphaned`. */
+		/**
+		 * Cannot run here: no registered definition can take it (aborting it settles it as `orphaned`), or it is parked by
+		 * the restart limit (`retryTask()` runs it again).
+		 */
 		| {
 				readonly kind: "blocked";
-				readonly reason: "missing_task" | "task_too_old" | "migration_failed";
+				readonly reason: "missing_task" | "task_too_old" | "migration_failed" | "restart_limit";
 				readonly error?: unknown;
 		  };
 };
@@ -784,6 +807,11 @@ export interface Harness extends Session {
 	 * definition cannot take it settles as `orphaned` instead.
 	 */
 	abortTask(id: TaskId, context: Context): Promise<"marked" | "terminal">;
+	/**
+	 * Run a task parked by `settings.restartLimit` again: clears its restart count and enables scheduling. Does nothing
+	 * for a task that is not parked; rejects for an unknown one.
+	 */
+	retryTask(id: TaskId, context: Context): Promise<void>;
 	/** Resolve with the terminal receipt; cancelling `context` cancels only this wait. */
 	waitForTask<R>(id: TaskId<R>, context: Context): Promise<SettledTask<R>>;
 	/** Resolve when the ordinary ownership scope of every ownerless conversation has no live non-background task. */

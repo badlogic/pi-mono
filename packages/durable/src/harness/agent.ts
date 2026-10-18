@@ -53,6 +53,14 @@ export const AgentDoc = defineDoc<AgentState>({
 /** Default `settings.contextRetentionMs`: ten minutes. */
 const DEFAULT_CONTEXT_RETENTION_MS = 600_000;
 
+/** Default `settings.restartLimit`. */
+export const DEFAULT_RESTART_LIMIT = 5;
+
+/** A restart limit as given when it is a number of restarts, `1` or more (`Infinity` never parks); else the default. */
+function restartLimit(limit: number | undefined): number {
+	return typeof limit === "number" && limit >= 1 ? limit : DEFAULT_RESTART_LIMIT;
+}
+
 /** Resolve the host settings: every field over its built-in default, object fields merged. */
 export function resolveSettings(settings: HarnessSettings | undefined): Settings {
 	const extensions = settings?.extensions;
@@ -71,6 +79,8 @@ export function resolveSettings(settings: HarnessSettings | undefined): Settings
 		followUpMode: settings?.followUpMode ?? "one-at-a-time",
 		contextRetentionMs: settings?.contextRetentionMs ?? DEFAULT_CONTEXT_RETENTION_MS,
 		documentRetentionMs: documentRetention(settings?.documentRetentionMs),
+		afterFailedRun: settings?.afterFailedRun ?? "keep",
+		restartLimit: restartLimit(settings?.restartLimit),
 	};
 }
 

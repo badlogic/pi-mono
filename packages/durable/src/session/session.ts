@@ -35,6 +35,7 @@ import type {
 	Id,
 	JsonObject,
 	Page,
+	ReportInfo,
 	RewindableConversationDocFamilyToken,
 	RewindableConversationDocToken,
 	Seq,
@@ -63,6 +64,9 @@ import {
 	RETIREMENT_OPERATIONS,
 } from "./observation.ts";
 import { type LoadedDocument, Transaction, type TransactionHost, type TransactionScope } from "./transaction.ts";
+
+/** The default source of a report: a listener, which never fails what ran it. */
+const LISTENER: ReportInfo = { source: "listener" };
 
 /**
  * Open a Session kernel over one storage backend. `now` is the wall clock for task times; default `Date.now`.
@@ -164,7 +168,7 @@ export class SessionImpl implements Session {
 		// Waits race it; none has to.
 		this.#failed.promise.catch(() => {});
 		this.#storage = new GuardedStorage(storage, this);
-		this.#timers = hostTimers(setTimer, (error) => this.report(error));
+		this.#timers = hostTimers(setTimer, (error) => this.report(error, { source: "timer" }));
 		// Cache bookkeeping must never change the outcome of the operation it follows: a clock or a retention setting
 		// that throws counts as now, and as the default.
 		this.#clock = () => {
@@ -222,7 +226,7 @@ export class SessionImpl implements Session {
 		// Seal first, so a report handler that calls back finds the Session failed. Closing runs the close listeners
 		// synchronously; a failing backend close is the caller's to see, and here nobody waits.
 		this.close(BACKGROUND_CONTEXT).catch(() => {});
-		this.report(error);
+		this.report(error, { source: "session" });
 	}
 
 	/**
@@ -507,7 +511,7 @@ export class SessionImpl implements Session {
 							// A Storage that cannot close is a failed one; an earlier failure stays the cause.
 							if (this.#failure === undefined) {
 								this.#failure = { error };
-								this.report(error);
+								this.report(error, { source: "session" });
 							}
 							throw error;
 						}
@@ -533,8 +537,11 @@ export class SessionImpl implements Session {
 		for (const listener of listeners) contained(listener, (error) => this.report(error));
 	}
 
-	/** Internal: the Session's failure, and errors of listeners, which never fail what ran them. A plain Session drops them. */
-	report(_error: unknown): void {}
+	/**
+	 * Internal: the Session's failure, and errors of listeners, which never fail what ran them; `info` defaults to a
+	 * listener. A plain Session drops them.
+	 */
+	report(_error: unknown, _info: ReportInfo = LISTENER): void {}
 
 	/**
 	 * Runs inside every transaction that creates or forks a conversation, after the conversation record is staged. A

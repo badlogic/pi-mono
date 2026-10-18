@@ -160,6 +160,10 @@ export class Session extends DurableObject<Env> {
 	constructor(ctx: DurableObjectState, env: Env) {
 		super(ctx, env);
 		void ctx.blockConcurrencyWhile(async () => {
+			// A fallback before anything can throw: an object whose open or recovery fails is started again.
+			const fallback = Date.now() + 60_000;
+			const current = await ctx.storage.getAlarm();
+			if (current === null || current > fallback) await ctx.storage.setAlarm(fallback);
 			const storage = await openDurableObjectSqliteStorage(ctx.storage);
 			const onWake = (wake: Wake) =>
 				// A failed alarm write resets the object; it arms again when it next starts.
@@ -194,6 +198,16 @@ export class Session extends DurableObject<Env> {
 ```
 
 The default `setTimer` declines the timers that only free memory in Workers, so no pending timer keeps the object from hibernating or being evicted; memory is then freed at later commits.
+
+### When Work Keeps Failing
+
+Work that deterministically crashes its process, by exhausting memory or CPU before its next checkpoint, would otherwise be resumed and crash again forever. Open counts each task a crash or close cut off; a state the task commits itself starts the count over. Once the count reaches `settings.restartLimit` (default 5; `Infinity` never parks), the task is parked: `inspect()` and the task graph show it as blocked with reason `restart_limit`, `wake()` does not count it as active, and `onReport` gets it once. `harness.retryTask(id)` runs it again; `abortTask()` still runs its abort handler.
+
+Every report says where it came from: `onReport(error, info)` gets `info.source`, which is `session` for the error that failed the Harness (a Storage error, often a platform reset), `task` for a task that faulted (`faulted: true`) or reported a failure, with `taskId`, `taskKind`, and `conversationId`, and `extension`, `listener`, `host`, `timer`, or `wake` for the rest. A host can feed task faults of one kind to its own breaker.
+
+A run that fails with a model error leaves the inputs queued behind it waiting until the next input arrives. `settings.afterFailedRun` changes that: `continue` starts the next run with them, as after an answer, and `withdraw` settles them `unanswered` with reason `run_failed`.
+
+Tasks blocked on a missing or unmigratable definition show their reason in the task graph too, and a registry change that unblocks them makes `onWake` report the Session active, so a host need not poll them.
 
 ## Extensions
 

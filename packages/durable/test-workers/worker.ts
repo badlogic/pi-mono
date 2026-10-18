@@ -50,6 +50,10 @@ export class TestSession extends DurableObject {
 		super(ctx, env);
 		this.#state = ctx;
 		void ctx.blockConcurrencyWhile(async () => {
+			// A fallback before anything can throw: an object whose open or recovery fails is started again.
+			const fallback = Date.now() + HEARTBEAT_MS;
+			const current = await ctx.storage.getAlarm();
+			if (current === null || current > fallback) await ctx.storage.setAlarm(fallback);
 			this.#offset = ctx.storage.kv.get<number>("offset") ?? 0;
 			const faux = fauxProvider();
 			faux.setResponses(Array.from({ length: 8 }, () => this.#step()));

@@ -8,6 +8,7 @@
 - Tasks have a `sleeping` status, so code that handles every `TaskState`, `TaskGraphState`, or `TaskInspection` state needs a case for it.
 - Opening a SQLite storage migrates it to schema version 2 automatically, rebuilding its task table. A migrated database cannot be opened by 1.3.0 or earlier, so a deployment cannot roll back past this release. JSONL storage needs no migration, but 1.3.0 or earlier never resumes a sleeping task it finds (a run's conversation stays busy).
 - `TaskRuntime` has `sleepUntil()` and `setTimer()`, and `ToolExecutionApi` has `now()`: code that builds either object by hand, such as a test fake or a tool wrapper that does not spread the original, must add them.
+- A task cut off by a crash or close 5 times in a row without committing a new state is parked as blocked (`restart_limit`) instead of run again; set `settings.restartLimit` to `Infinity` to keep the old behavior. `TaskInspection`'s blocked reasons include `restart_limit`.
 
 ### Added
 
@@ -15,6 +16,10 @@
 - Durable sleeps: a sleeping task holds no invocation, survives restarts, and resumes at its checkpoint once the Harness clock reaches `until`.
 - `HarnessOptions.setTimer` arms the timers of the Session, the scheduler, and its tasks (progress throttles, idle-memory eviction, sleeps), also for `createSession()`; with `now`, they run on a host or fake clock. A foreground timer the host throws on or declines falls back to `setTimeout`. `ToolExecutionApi.now()` reads the Harness clock.
 - `Harness.wake()` and `HarnessOptions.onWake` tell a host when the Session next needs a process: `active` while work can run, `at` for the earliest sleep. With `onWake`, the Harness keeps no timer for sleeps, so a Cloudflare Durable Object can hibernate and wake on its alarm, calling `resume()`.
+- Crash-loop guard: open counts the restarts of each task that a crash or close cut off (`TaskRecord.restarts`), and a state the task commits starts the count over. At `settings.restartLimit` the task is parked: blocked with reason `restart_limit` in `inspect()` and the task graph, not active in `wake()`, and reported once. `Harness.retryTask(id)` runs it again.
+- `onReport(error, info)`: `info` (`ReportInfo`) says where a failure came from, `session` for the error that failed the Session, `task` with the task's ID, kind, and conversation (and `faulted` for a phase that faulted the task, which is now reported too), or `extension`, `listener`, `host`, `timer`, or `wake`.
+- `settings.afterFailedRun`: a run that fails with `model_error` or `no_model` keeps the inputs queued behind it (`keep`, the default), starts the next run with them (`continue`), or settles them `unanswered` with reason `run_failed` (`withdraw`).
+- The task graph shows why a task cannot run (`TaskGraphNode.blocked`: `missing_task`, `task_too_old`, `migration_failed`, or `restart_limit`) and follows registry changes and failed migrations.
 - `HarnessOptions.models` and `HarnessOptions.settings` also accept a function returning the current value, like `env`. Generation, compaction, hooks and tools call it at each use (`api.models` reads the current value at each access), so a host can replace its model configuration or settings without reopening the Harness. A plain object still works.
 
 ### Changed

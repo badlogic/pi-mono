@@ -20,6 +20,7 @@ import type {
 	EntryId,
 	NextTaskState,
 	SubmissionId,
+	SubmissionSettlement,
 	TaskId,
 	TaskOutcome,
 	TaskRuntime,
@@ -28,13 +29,14 @@ import type {
 } from "../types.ts";
 import { addTools } from "./agent.ts";
 import { compactionPolicy, createCompaction, estimateContext, selectCut } from "./compaction.ts";
-import { applyBoundary, prepareBoundary } from "./inbox.ts";
+import { applyBoundary, type Boundary, prepareBoundary, withdrawQueuedInputs } from "./inbox.ts";
 import { assignJson } from "./json.ts";
 import { endRun, LiveDoc, type LiveState, type ToolSlot } from "./live.ts";
 import { planSystemEntries, renderSections, replaySections } from "./prompt.ts";
 import { ensureProviderSessionId } from "./provider.ts";
 import { appendToolResult, harnessError, ToolTask, type ToolTaskResult } from "./tool.ts";
 import type {
+	AfterFailedRun,
 	CompactionPolicy,
 	CompactionResult,
 	ContextView,
@@ -356,8 +358,9 @@ function compactionFailure(outcome: Exclude<TaskOutcome<CompactionResult>, { sta
 /** Settle the run's inputs `unanswered` with `model_error` and fail with `text`. */
 async function failModelError(runtime: Runtime, text: string, context: Context): Promise<void> {
 	await runtime.commit(async (tx) => {
+		const failure = await prepareFailure(tx, runtime);
 		const live = await tx.doc(LiveDoc, runtime.conversationId);
-		endRun(tx, live, runtime.taskId, { status: "unanswered", reason: "model_error", detail: text });
+		await endFailedRun(tx, runtime, live, failure, { status: "unanswered", reason: "model_error", detail: text });
 		return {
 			status: "terminal",
 			outcome: { status: "failed", error: { message: text, detail: { reason: "model_error" } } },
@@ -370,10 +373,40 @@ async function failNoModel(runtime: Runtime, ref: ModelRef | undefined, context:
 	const message =
 		ref === undefined ? "No model is configured" : `Model ${ref.provider}/${ref.modelId} is not available`;
 	await runtime.commit(async (tx) => {
+		const failure = await prepareFailure(tx, runtime);
 		const live = await tx.doc(LiveDoc, runtime.conversationId);
-		endRun(tx, live, runtime.taskId, { status: "unanswered", reason: "no_model" });
+		await endFailedRun(tx, runtime, live, failure, { status: "unanswered", reason: "no_model" });
 		return { status: "terminal", outcome: { status: "failed", error: { message, detail: { reason: "no_model" } } } };
 	}, context);
+}
+
+/** What a failed run's end needs from the table, read before the commit's first table write. */
+type Failure = { readonly policy: AfterFailedRun; readonly boundary?: Boundary };
+
+async function prepareFailure(tx: Tx, runtime: Runtime): Promise<Failure> {
+	const settings = runtime.settings;
+	const policy = settings.afterFailedRun;
+	if (policy !== "continue") return { policy };
+	return { policy, boundary: await prepareBoundary(tx, runtime.conversationId, settings) };
+}
+
+/**
+ * End a failed run, settling its inputs with `settlement`, and do with the inputs queued behind it what
+ * `settings.afterFailedRun` says (spec §6): keep them, start the next run with them, or withdraw them.
+ */
+async function endFailedRun(
+	tx: Tx,
+	runtime: Runtime,
+	live: Draft<LiveState>,
+	failure: Failure,
+	settlement: SubmissionSettlement,
+): Promise<void> {
+	const conversationId = runtime.conversationId;
+	endRun(tx, live, runtime.taskId, settlement);
+	if (failure.policy === "withdraw") await withdrawQueuedInputs(tx, conversationId, "run_failed");
+	if (failure.boundary === undefined) return;
+	const { users } = await applyBoundary(tx, failure.boundary, "final", runtime.now());
+	if (users.length > 0) await startRun(tx, conversationId, live, users);
 }
 
 /**
@@ -515,9 +548,11 @@ async function classify(
 		attempt <= policy.maxRetries;
 	const until = retry ? runtime.now() + retryDelayMs(policy, attempt) : 0;
 	await runtime.commit(async (tx): Promise<Next> => {
+		// Read before the first table write; only a failure uses it.
+		const failure = retry ? undefined : await prepareFailure(tx, runtime);
 		const live = await tx.doc(LiveDoc, conversationId);
 		await appendAssistant(tx, conversationId, message);
-		if (retry) {
+		if (failure === undefined) {
 			live.generation = { attempt, retry: { at: until, error: message.errorMessage ?? "" } };
 			const checkpoint = {
 				phase: "retry",
@@ -528,7 +563,7 @@ async function classify(
 			return { status: "sleeping", checkpoint, until };
 		}
 		const text = message.errorMessage ?? `Model response ended with stop reason ${message.stopReason}`;
-		endRun(tx, live, runtime.taskId, { status: "unanswered", reason: "model_error", detail: text });
+		await endFailedRun(tx, runtime, live, failure, { status: "unanswered", reason: "model_error", detail: text });
 		return {
 			status: "terminal",
 			outcome: { status: "failed", error: { message: text, detail: { reason: "model_error" } } },
