@@ -96,6 +96,8 @@ type Fit =
 type Invocation = {
 	readonly taskId: TaskId;
 	readonly kind: string;
+	/** The extension that installed the definition this invocation runs, as of its reservation; none for a built-in. */
+	readonly extension: string | undefined;
 	readonly conversationId: ConversationId;
 	readonly mode: "run" | "abort";
 	readonly controller: AbortController;
@@ -194,8 +196,8 @@ export type TaskSchedulerOptions = {
 	readonly onWake: ((wake: Wake) => void) | undefined;
 	/** The host's timers (`HarnessOptions.setTimer`). */
 	readonly timers: Timers;
-	/** Write records straight to Storage while closing, after admission is sealed. */
-	readonly writeAtClose: (writes: readonly StorageWrite[]) => Promise<void>;
+	/** While closing, on the line after admitted commits settle, write what the callback returns straight to Storage. */
+	readonly writeAtClose: (writes: () => readonly StorageWrite[]) => Promise<void>;
 	readonly report: (error: unknown, info: ReportInfo) => void;
 	/** Harness cleanup staged in the commit that makes an outcome the scheduler wrote itself terminal. */
 	readonly settleOutcome: (tx: Transaction, record: AnyTaskRecord, outcome: SchedulerOutcome) => Promise<void>;
@@ -244,7 +246,7 @@ export class TaskScheduler {
 	readonly #now: () => number;
 	readonly #onWake: ((wake: Wake) => void) | undefined;
 	readonly #timers: Timers;
-	readonly #writeAtClose: (writes: readonly StorageWrite[]) => Promise<void>;
+	readonly #writeAtClose: (writes: () => readonly StorageWrite[]) => Promise<void>;
 	readonly #report: (error: unknown, info: ReportInfo) => void;
 	readonly #settleOutcome: TaskSchedulerOptions["settleOutcome"];
 	readonly #withdrawInputs: TaskSchedulerOptions["withdrawInputs"];
@@ -313,8 +315,8 @@ export class TaskScheduler {
 	/** Tasks a pass left out as parked; each pass checks them again, as `settings.restartLimit` may have risen. */
 	readonly #parkedTasks = new Set<TaskId>();
 	#reconcileScheduled = false;
-	/** Reconcile passes underway (they may overlap): their commits finalize held outcomes and mark cascades, recovery work. */
-	#reconciling = 0;
+	/** Reconcile passes underway with work (they may overlap): their commits finalize held outcomes and mark cascades. */
+	#reconcilingWork = 0;
 	#sweepScheduled = false;
 	#cascadePending = false;
 	#unsubscribeRegistry: () => void = () => {};
@@ -410,7 +412,8 @@ export class TaskScheduler {
 		await this.#session.commitWith(async (tx) => {
 			const current = await tx.task(id);
 			if (current === undefined) throw new Error(`Task ${id} does not exist`);
-			if (!this.#parked(current)) return;
+			const status = current.state.status;
+			if (status === "terminal" || status === "completing" || !this.#parked(current)) return;
 			tx.setTask(progressed(current));
 		}, context);
 		this.resume();
@@ -451,9 +454,9 @@ export class TaskScheduler {
 	 */
 	wake(): Wake {
 		const now = this.#now();
-		// A reconcile pass scheduled or underway is work too: it may finalize held outcomes and mark cascades, at open as
-		// recovery. A process that dies before it lands must be woken again.
-		let active = this.#invocations.size > 0 || this.#reconcileScheduled || this.#reconciling > 0;
+		// A reconcile pass with work to do is work too: it finalizes held outcomes and marks cascades, at open as
+		// recovery. A process that dies before it lands must be woken again. A pass with nothing to do is not.
+		let active = this.#invocations.size > 0 || this.#reconcilingWork > 0 || this.#reconcileWork();
 		let at: number | undefined;
 		let snapshot: RegistrySnapshot | undefined;
 		let snapshotFailed = false;
@@ -496,15 +499,18 @@ export class TaskScheduler {
 		const stopped = [...this.#invocations.values()];
 		for (const invocation of stopped) invocation.controller.abort();
 		await Promise.allSettled(stopped.map((invocation) => invocation.done));
-		// A close is not a crash: a task it stopped is `pending` again, so the next open counts no restart for it.
-		const released = stopped.flatMap((invocation) => {
-			const record = this.#live.get(invocation.taskId);
-			if (record?.state.status !== "running") return [];
-			return [withState(record, { status: "pending", checkpoint: record.state.checkpoint })];
-		});
-		if (released.length === 0) return;
-		// A failure leaves them `running`, counted as if cut off; the Storage guard fails the Session and reports it.
-		await this.#writeAtClose(released.map((value) => ({ type: "task", value }) as const)).catch(() => {});
+		if (stopped.length === 0) return;
+		// A close is not a crash: a task it stopped is `pending` again, so the next open counts no restart for it. Read
+		// on the line after commits admitted before the seal, such as an abort mark, so the write keeps them. A failure
+		// leaves them `running`, counted as if cut off; the Storage guard fails the Session and reports it.
+		await this.#writeAtClose(() =>
+			stopped.flatMap((invocation) => {
+				const record = this.#live.get(invocation.taskId);
+				if (record?.state.status !== "running") return [];
+				const value = withState(record, { status: "pending", checkpoint: record.state.checkpoint });
+				return [{ type: "task", value } as const];
+			}),
+		).catch(() => {});
 	}
 
 	/**
@@ -747,7 +753,8 @@ export class TaskScheduler {
 	 */
 	async #reconcile(): Promise<void> {
 		this.#reconcileScheduled = false;
-		this.#reconciling++;
+		const work = this.#reconcileWork();
+		if (work) this.#reconcilingWork++;
 		const cascade = this.#cascadePending;
 		this.#cascadePending = false;
 		const checks = [...this.#failFastChecks];
@@ -794,9 +801,14 @@ export class TaskScheduler {
 			// running the pass again, so it fails the Session, which reports it.
 			this.#failSession(error);
 		}
-		this.#reconciling--;
+		if (work) this.#reconcilingWork--;
 		this.#scheduleWake();
 		this.#settleIdle();
+	}
+
+	/** Whether a reconcile pass would have work: a cascade to derive, held outcomes to check, or `failFast` waits. */
+	#reconcileWork(): boolean {
+		return this.#cascadePending || this.#finalizeChecks.size > 0 || this.#failFastChecks.size > 0;
 	}
 
 	/** Whether any of `ids` holds or ended with an outcome other than `completed`. */
@@ -1331,19 +1343,19 @@ export class TaskScheduler {
 		readonly taskId: TaskId;
 		readonly kind: string;
 		readonly conversationId: ConversationId;
+		/** The installer of the definition whose code ran (an invocation's); absent: the current one's. */
+		readonly extension?: string | undefined;
 	}): ReportInfo {
 		const info = taskInfo(task);
 		let extension: string | undefined;
-		try {
-			const snapshot = this.#registry.snapshot();
-			const definition = snapshot.task(task.kind);
-			if (definition !== undefined) {
-				extension = snapshot
-					.installed()
-					.findLast((installed) => installed.tasks?.includes(definition) === true)?.name;
+		if ("extension" in task) extension = task.extension;
+		else {
+			try {
+				const snapshot = this.#registry.snapshot();
+				extension = installerOf(snapshot, snapshot.task(task.kind));
+			} catch {
+				// A registry that throws is reported where it is read for scheduling; a report goes out without the name.
 			}
-		} catch {
-			// A registry that throws is reported where it is read for scheduling; a report goes out without the name.
 		}
 		return extension === undefined ? info : { ...info, extension };
 	}
@@ -1504,7 +1516,7 @@ export class TaskScheduler {
 					// Registered on the line, so marks and later reservations see it and close joins it; `#end` makes it a
 					// candidate again.
 					this.#runnable.delete(id);
-					const invocation = this.#createInvocation(record, mode);
+					const invocation = this.#createInvocation(record, mode, installerOf(snapshot, resolution.task));
 					reservations.push({ invocation, task: resolution.task, snapshot });
 				}
 			}, this.#context);
@@ -1559,9 +1571,10 @@ export class TaskScheduler {
 			// Blocked now without a commit: the graph and the host's wake must hear it.
 			queueMicrotask(() => this.#notifyBlocked());
 			this.#scheduleWake();
+			const extension = installerOf(snapshot, fit.task);
 			this.#report(
 				error,
-				this.#taskInfo({ taskId: record.id, kind: record.kind, conversationId: record.conversationId }),
+				this.#taskInfo({ taskId: record.id, kind: record.kind, conversationId: record.conversationId, extension }),
 			);
 			return { kind: "blocked", reason: "migration_failed" };
 		}
@@ -1624,12 +1637,13 @@ export class TaskScheduler {
 		return { kind: "ready", migrates: fit.migrates };
 	}
 
-	#createInvocation(record: AnyTaskRecord, mode: "run" | "abort"): Invocation {
+	#createInvocation(record: AnyTaskRecord, mode: "run" | "abort", extension: string | undefined): Invocation {
 		const controller = new AbortController();
 		const { promise: done, resolve: finish } = Promise.withResolvers<void>();
 		const invocation: Invocation = {
 			taskId: record.id,
 			kind: record.kind,
+			extension,
 			conversationId: record.conversationId,
 			mode,
 			controller,
@@ -1668,7 +1682,9 @@ export class TaskScheduler {
 		const runtime = this.#runtime(invocation, phase);
 		let previous: PhaseResult | undefined;
 		for (;;) {
-			const current = await this.#step(invocation, (tx, current) => this.#decide(tx, current, previous, state));
+			const current = await this.#step(invocation, (tx, current) =>
+				this.#decide(tx, current, previous, state, invocation.extension),
+			);
 			// Close may seal between the decision and dispatch.
 			if (current === undefined || this.#closing) return;
 			const checkpoint = current.state.checkpoint;
@@ -1692,6 +1708,7 @@ export class TaskScheduler {
 		current: ErasedRunningTask,
 		previous: PhaseResult | undefined,
 		state: { task: AnyTask; snapshot: RegistrySnapshot; reported: ReportedTask },
+		extension: string | undefined,
 	): Decision {
 		// 3. abort mark: end; a fresh abort invocation starts once the task's ordinary owned work is gone.
 		if (current.abortRequested) return false;
@@ -1722,7 +1739,12 @@ export class TaskScheduler {
 				const cause = next === undefined ? "missing_task" : "incompatible_task";
 				this.#report(
 					new Error(`Task ${current.id} keeps running under its old ${current.kind} definition`, { cause }),
-					this.#taskInfo({ taskId: current.id, kind: current.kind, conversationId: current.conversationId }),
+					this.#taskInfo({
+						taskId: current.id,
+						kind: current.kind,
+						conversationId: current.conversationId,
+						extension,
+					}),
 				);
 			}
 		}
@@ -2207,6 +2229,12 @@ export class TaskScheduler {
 
 const HOST: ReportInfo = { source: "host" };
 
+/** The extension that installed `task` in `snapshot`, the last one that lists it; none for a built-in task. */
+function installerOf(snapshot: RegistrySnapshot, task: AnyTask | undefined): string | undefined {
+	if (task === undefined) return undefined;
+	return snapshot.installed().findLast((installed) => installed.tasks?.includes(task) === true)?.name;
+}
+
 /** The report info of a failure of a task. */
 function taskInfo(task: {
 	readonly taskId: TaskId;
@@ -2300,10 +2328,10 @@ function progressed(record: AnyTaskRecord): AnyTaskRecord {
 	return rest as AnyTaskRecord;
 }
 
-/** Replace a live record's state; memos disappear once an outcome is decided. */
+/** Replace a live record's state; memos and the restart count disappear once an outcome is decided. */
 function withState(record: AnyTaskRecord, state: TaskState<JsonValue, JsonValue>): AnyTaskRecord {
 	if (state.status !== "terminal" && state.status !== "completing") return { ...record, state } as AnyTaskRecord;
-	const { memos: _memos, ...rest } = record;
+	const { memos: _memos, restarts: _restarts, ...rest } = record;
 	return { ...rest, state };
 }
 

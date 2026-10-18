@@ -561,7 +561,11 @@ async function finalResult(
 		} else {
 			// The model never sees structured output, so its call stands; the host learns of the broken tool.
 			final = rest;
-			const extension = toolExtension(await runtime.agent(context), tool.name);
+			// Only names the extension: a failed resolution leaves the report without the name.
+			const extension = await runtime.agent(context).then(
+				(agent) => toolExtension(agent, tool.name),
+				() => undefined,
+			);
 			runtime.report(new Error(broken), { source: "extension", ...(extension === undefined ? {} : { extension }) });
 		}
 	}

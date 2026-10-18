@@ -6,17 +6,23 @@ import {
 	defineExtension,
 	defineTask,
 	type Registry,
+	type Storage,
 	type TaskId,
 	type Wake,
 } from "@earendil-works/pi-durable";
 import { afterEach, describe, expect, it } from "vitest";
 import { openNodeSqliteStorage } from "../src/storage/sqlite/node.ts";
 import { context, flush } from "./session-support.ts";
-import { completed, eventually, openTasks } from "./task-support.ts";
+import { completed, deferred, eventually, openTasks } from "./task-support.ts";
 
 const directories = new Set<string>();
 
+/** Storages of killed Harnesses, never closed by them: closed after each test. */
+const killed = new Set<Storage>();
+
 afterEach(async () => {
+	for (const storage of killed) await storage.close(context).catch(() => {});
+	killed.clear();
 	for (const directory of directories) await rm(directory, { recursive: true, force: true });
 	directories.clear();
 });
@@ -67,6 +73,7 @@ async function openWith(path: string, registry: Registry, settings: { restartLim
 	});
 	const kill = (): void => {
 		dead = true;
+		killed.add(inner);
 	};
 	return { harness, wakes, reports, kill };
 }
@@ -134,7 +141,7 @@ describe("tasks that cannot run", () => {
 		let opened = await openWith(path, registry, { restartLimit: 3 });
 		const root = await opened.harness.root(context);
 		const id = await root.commit((tx) => tx.createTask(Loop, null, { ownership: { kind: "conversation" } }), context);
-		// Each open runs the phase, and each close cuts it off: three restarts.
+		// Each open runs the phase, and each crash cuts it off: three restarts.
 		for (let run = 1; run <= 3; run++) {
 			opened.harness.resume();
 			await eventually(() => state.started === run);
@@ -189,6 +196,33 @@ describe("tasks that cannot run", () => {
 		await opened.harness.close(context);
 	});
 
+	it("keeps an abort mark admitted before close in the record close writes back", async () => {
+		const path = await sqlitePath();
+		const state = { crashing: true, started: 0 };
+		const registry = createRegistry();
+		const Loop = crashLoop(state);
+		registry.install(defineExtension({ name: "loop", tasks: [Loop] }));
+		const { harness } = await openWith(path, registry);
+		const root = await harness.root(context);
+		const id = await root.commit((tx) => tx.createTask(Loop, null, { ownership: { kind: "conversation" } }), context);
+		harness.resume();
+		await eventually(() => state.started === 1);
+		// Hold the line; the abort mark is admitted behind it, then close begins.
+		const gate = deferred();
+		const holding = root.commit(() => gate.promise, context);
+		const aborting = harness.abortTask(id, context);
+		const closing = harness.close(context);
+		// The invocation ends while the line is held; its write-back waits behind the abort mark.
+		await flush();
+		gate.resolve();
+		await holding;
+		expect(await aborting).toBe("marked");
+		await closing;
+		const raw = await openNodeSqliteStorage(path);
+		expect(await raw.task(id, context)).toMatchObject({ abortRequested: true, state: { status: "pending" } });
+		await raw.close(context);
+	});
+
 	it("faults a task whose abort handler is cut off restartLimit times", async () => {
 		const path = await sqlitePath();
 		let aborts = 0;
@@ -222,6 +256,8 @@ describe("tasks that cannot run", () => {
 			status: "faulted",
 			error: { detail: { reason: "restart_limit" } },
 		});
+		// The receipt keeps no restart count.
+		expect(settled.restarts).toBeUndefined();
 		expect(aborts).toBe(1);
 		await eventually(() => opened.reports.length > 0);
 		expect(opened.reports.map((error) => (error as Error).cause)).toEqual(["restart_limit"]);

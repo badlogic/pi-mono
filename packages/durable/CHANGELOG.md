@@ -9,7 +9,6 @@
 - Opening a SQLite storage migrates it to schema version 2 automatically, rebuilding its task table. A migrated database cannot be opened by 1.3.0 or earlier, so a deployment cannot roll back past this release. JSONL storage needs no migration, but 1.3.0 or earlier never resumes a sleeping task it finds (a run's conversation stays busy).
 - `TaskRuntime` has `sleepUntil()` and `setTimer()`, and `ToolExecutionApi` has `now()`: code that builds either object by hand, such as a test fake or a tool wrapper that does not spread the original, must add them.
 - A task cut off by a crash 5 times in a row without committing a new state is parked instead of run again (see the crash-loop guard under Added); set `settings.restartLimit` to `Infinity` to keep the old behavior. `TaskInspection`'s blocked reasons include `restart_limit`.
-- `onReport` gets a second argument, `info` (see below), and `TaskRuntime.report()` takes an optional `from`; an `onReport` written for one argument still works.
 
 ### Added
 
@@ -26,6 +25,7 @@
 ### Changed
 
 - A task phase that faults is reported through `onReport` (with `faulted: true`), not only recorded in its outcome.
+- `onReport` gets a second argument, `info`, and `TaskRuntime.report()` takes an optional `from` (see Added); an `onReport` written for one argument still works.
 - Generation retry backoffs, deferred-response polls, and compaction retry backoffs sleep instead of waiting in a running phase, so a process can stop or hibernate during them. A record an earlier version stored mid-backoff sleeps again when it resumes before its time. A deferred poll whose model is gone after a reopen now fails `no_model` once the poll is due, not at once.
 - Code mode measures script deadlines and wall time on the Harness clock (`HarnessOptions.now`) instead of `Date.now()`.
 - SQLite drivers, portable interfaces, and the generic migration runner now come from `@earendil-works/chord/sqlite`. Existing Durable SQLite entry points keep re-exporting their public names; storage helpers and Durable schema migrations stay here.

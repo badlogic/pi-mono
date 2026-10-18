@@ -17,7 +17,7 @@ import {
 import { describe, expect, it } from "vitest";
 import { chatSetup } from "./chat-support.ts";
 import { ControlledStorage, context } from "./session-support.ts";
-import { completed, eventually } from "./task-support.ts";
+import { completed, deferred, eventually } from "./task-support.ts";
 
 type Report = { readonly message: string; readonly info: ReportInfo };
 
@@ -72,6 +72,43 @@ describe("reports", () => {
 			{ message: "noted", info: task },
 			{ message: "broken", info: { ...task, faulted: true } },
 		]);
+		await harness.close(context);
+	});
+
+	it("name the extension whose definition ran, also after another one replaced it", async () => {
+		const gate = deferred();
+		const started = deferred();
+		const definition = (name: string) =>
+			defineTask<null, { phase: "run" }, null>({
+				name: "test.replaced",
+				version: 1,
+				initial: () => ({ phase: "run" }),
+				phases: {
+					run: async () => {
+						started.resolve();
+						await gate.promise;
+						throw new Error(`broken in ${name}`);
+					},
+				},
+				abort: async () => {},
+			});
+		const Old = definition("old");
+		const { harness, registry, reports } = await open([]);
+		const old = defineExtension({ name: "old-extension", tasks: [Old] });
+		registry.install(old);
+		const root = await harness.root(context);
+		const id = await root.commit((tx) => tx.createTask(Old, null, { ownership: { kind: "conversation" } }), context);
+		harness.resume();
+		await started.promise;
+		registry.uninstall(old);
+		registry.install(defineExtension({ name: "new-extension", tasks: [definition("new")] }));
+		gate.resolve();
+		await harness.waitForTask(id, context);
+		await eventually(() => reports.some((report) => report.info.faulted === true));
+		expect(reports.find((report) => report.info.faulted === true)).toMatchObject({
+			message: "broken in old",
+			info: { extension: "old-extension" },
+		});
 		await harness.close(context);
 	});
 

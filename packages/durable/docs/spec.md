@@ -5323,20 +5323,26 @@ dropped, since nothing is left to report it to. A throwing `now()` is reported
 once, and `Date.now` serves instead.
 
 **Every report says where it came from.** `onReport(error, info)` gets a
-`ReportInfo`: `source` is `session` for the error that failed the Session (a
-Storage error, often a platform reset, or the Session's own bookkeeping),
-`task` for a task's phase that faulted (`faulted: true`), a task's
-`runtime.report()`, a failed migration, or a task parked by the restart limit
-(`blocked: "restart_limit"`), with `taskId`, `taskKind`, and `conversationId`; `extension` for hooks,
-wrappers, system prompt sections, and a tool's invalid structured output;
-`listener`; `host` for the clock, settings, registry, environment builder, and
-model provider calls such as cancelling a deferred response; an `extension`
-report names the extension (`extension`) when the failing code is known to
-belong to one: the hook's, the wrapper's, or the last selected extension that
-provides or wraps the section or tool. A `task` report names the extension that
-installed the task's definition; built-in tasks have none; `timer` for `setTimer`; and `wake` for `onWake`. A host acts on them
-outside the scheduler, for example counting faults of one task kind toward a
-breaker.
+`ReportInfo` whose `source` is one of:
+
+- `session`: the error that failed the Session (a Storage error, often a
+  platform reset, or the Session's own bookkeeping);
+- `task`: a task's phase that faulted (`faulted: true`), a task's
+  `runtime.report()`, a failed migration, or a task parked or faulted by the
+  restart limit (`blocked: "restart_limit"`), with `taskId`, `taskKind`, and
+  `conversationId`;
+- `extension`: hooks, wrappers, system prompt sections, and a tool's invalid
+  structured output;
+- `listener`; `host` for the clock, settings, registry, environment builder, and
+  model provider calls such as cancelling a deferred response; `timer` for
+  `setTimer`; and `wake` for `onWake`.
+
+`extension` names the extension whose code failed, when known. A `task` report
+names the extension that installed the definition the task ran, as of its
+reservation; built-in tasks have none. An `extension` report names the hook's or
+the wrapper's extension, or the last selected extension that provides or wraps
+the section or tool. A host acts on reports outside the scheduler, for example
+counting faults of one task kind toward a breaker.
 
 ## 11. Backends
 

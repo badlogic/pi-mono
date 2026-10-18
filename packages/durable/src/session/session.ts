@@ -552,14 +552,15 @@ export class SessionImpl implements Session {
 	}
 
 	/**
-	 * Internal, for `beforeClose()`: write records straight to Storage, on the line, after admission is sealed. Nothing
-	 * is published, since the Session is closing; a failed Session writes nothing.
+	 * Internal, for `beforeClose()`: on the line, after every commit admitted before the seal has settled, write what
+	 * `writes()` returns then straight to Storage. Nothing is published, since the Session is closing; a failed Session
+	 * writes nothing.
 	 */
-	protected writeAtClose(writes: readonly StorageWrite[]): Promise<void> {
-		if (writes.length === 0) return Promise.resolve();
+	protected writeAtClose(writes: () => readonly StorageWrite[]): Promise<void> {
 		return this.#enqueue(async () => {
 			if (this.#failure !== undefined) return;
-			await this.#storage.commit(writes, BACKGROUND_CONTEXT);
+			const batch = writes();
+			if (batch.length > 0) await this.#storage.commit(batch, BACKGROUND_CONTEXT);
 		});
 	}
 
