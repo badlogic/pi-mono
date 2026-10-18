@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- Fixed fullscreen double-click word selection dropping the leading `~` of a home-directory path such as `~/Downloads`; `~` now joins a path like `/` and `-` ([#10980](https://github.com/earendil-works/pi/issues/10980)).
+
 ## [1.3.0] - 2026-10-15
 
 ## [1.2.0] - 2026-10-12
