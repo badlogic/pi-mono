@@ -27,7 +27,7 @@ import type {
 	Tx,
 	TypedEntry,
 } from "../types.ts";
-import { addTools } from "./agent.ts";
+import { addTools, sectionExtension } from "./agent.ts";
 import { compactionPolicy, createCompaction, estimateContext, selectCut } from "./compaction.ts";
 import { applyBoundary, type Boundary, prepareBoundary, withdrawQueuedInputs } from "./inbox.ts";
 import { assignJson } from "./json.ts";
@@ -152,16 +152,25 @@ export const GenerationTask = defineTask<GenerationInput, GenerationCheckpoint, 
 			}
 			const view = await runtime.context(conversationId, context);
 			const shown = replaySections(view.messages);
-			const report = (error: unknown) => runtime.report(error);
 			let env: ExecutionEnv | undefined;
 			try {
 				env = await runtime.env(context);
 			} catch (error) {
 				if (context.abortSignal?.aborted) throw error;
-				report(error);
+				runtime.report(error, { source: "host" });
 			}
 			const input: PromptInput = { conversationId, agent, env, shown: Object.fromEntries(shown), read: runtime };
-			const desired = await renderSections(agent.sections, input, shown, report, context);
+			const desired = await renderSections(
+				agent.sections,
+				input,
+				shown,
+				(error, section) =>
+					runtime.report(error, {
+						source: "extension",
+						...optionalExtension(sectionExtension(agent, section.key)),
+					}),
+				context,
+			);
 			const entries = planSystemEntries(view, desired, agent.tools, runtime.now());
 			const threshold =
 				compacted === undefined
@@ -274,7 +283,7 @@ export const GenerationTask = defineTask<GenerationInput, GenerationCheckpoint, 
 				try {
 					await runtime.models.cancelDeferred(model, checkpoint.handle, { signal: runtime.signal });
 				} catch (error) {
-					runtime.report(error);
+					runtime.report(error, { source: "host" });
 				}
 			}
 		}
@@ -749,4 +758,9 @@ function createGeneration(tx: Tx, conversationId: ConversationId): Promise<TaskI
 /** Hand run control from `from` to `to`; the run's inputs move with it. */
 export function handOver(live: Draft<LiveState>, from: TaskId, to: TaskId): void {
 	if (live.run?.taskId === from) live.run.taskId = to;
+}
+
+/** `{ extension }` when the extension is known. */
+function optionalExtension(extension: string | undefined): { readonly extension?: string } {
+	return extension === undefined ? {} : { extension };
 }

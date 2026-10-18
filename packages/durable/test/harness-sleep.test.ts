@@ -106,6 +106,7 @@ describe("sleeping tasks", () => {
 		const inspection = await harness.inspect(context);
 		expect(inspection.tasks.find((task) => task.record.id === id)?.state).toEqual({ kind: "sleeping", until: 2_000 });
 		expect(graph.value.tasks[String(id)]?.state).toEqual({ status: "sleeping", phase: "after", until: 2_000 });
+		await eventually(() => !harness.wake().active);
 		expect(harness.wake()).toEqual({ active: false, at: 2_000 });
 		await settle();
 		expect(wakes.at(-1)).toEqual({ active: false, at: 2_000 });
@@ -125,11 +126,11 @@ describe("sleeping tasks", () => {
 		expect(receipt.state.outcome).toEqual({ status: "completed", result: 2_000 });
 		expect(runs.after).toBe(1);
 		await settle();
+		await eventually(() => !harness.wake().active);
 		expect(harness.wake()).toEqual({ active: false });
 		expect(wakes.at(-1)).toEqual({ active: false });
 		// Only changes: idle at open, running, asleep until 2000, running again, idle.
 		for (let index = 1; index < wakes.length; index++) expect(wakes[index]).not.toEqual(wakes[index - 1]);
-		expect(wakes[0]).toEqual({ active: false });
 		expect(wakes).toContainEqual({ active: true });
 		expect(wakes).toContainEqual({ active: false, at: 2_000 });
 		graph.dispose();
@@ -148,7 +149,8 @@ describe("sleeping tasks", () => {
 		await harness.close(context);
 
 		({ harness } = await open(await openNodeSqliteStorage(path)));
-		// Known from storage before scheduling starts.
+		// Known from storage before scheduling starts, once open's recovery pass is done.
+		await eventually(() => !harness.wake().active);
 		expect(harness.wake()).toEqual({ active: false, at: 61_000 });
 		harness.resume();
 		await settle();
@@ -328,6 +330,7 @@ describe("sleeping tasks", () => {
 			const parked = hold ? "completing" : "waiting";
 			await eventually(async () => (await stateOf(harness, id))?.status === parked);
 			await eventually(() => harness.wake().at === 1_500);
+			await eventually(() => !harness.wake().active);
 			expect(harness.wake()).toEqual({ active: false, at: 1_500 });
 			await harness.close(context);
 		}
@@ -405,9 +408,11 @@ describe("sleeping tasks", () => {
 		const root = await harness.root(context);
 		// Created through a token the registry does not hold: nothing can run it.
 		await root.commit((tx) => tx.createTask(Missing, null, { ownership: { kind: "conversation" } }), context);
+		await eventually(() => !harness.wake().active);
 		expect(harness.wake()).toEqual({ active: false });
 		harness.resume();
 		await settle();
+		await eventually(() => !harness.wake().active);
 		expect(harness.wake()).toEqual({ active: false });
 		await harness.close(context);
 	});

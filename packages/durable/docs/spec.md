@@ -391,8 +391,10 @@ type HarnessOptions<Tool extends ToolRegistration = ToolRegistration> = {
    * changes, off the Session line; the host arms its own wakeup and calls `resume()` when it fires.
    */
   readonly onWake?: (wake: Wake) => void;
-  /** Failures that do not fail the calling operation, and the Session's failure, once (section 10.1). */
-  /** `info` says where it came from: a failed Session, a task (with `faulted` when it ended one), extension code, and so on (section 10.1). */
+  /**
+   * Failures that do not fail the calling operation, and the Session's failure, once; `info` says where each came
+   * from (section 10.1).
+   */
   readonly onReport?: (error: unknown, info: ReportInfo) => void;
 };
 
@@ -600,7 +602,9 @@ type ReportInfo = {
   readonly taskId?: TaskId;
   readonly taskKind?: string;
   readonly conversationId?: ConversationId;
+  readonly extension?: string;
   readonly faulted?: true;
+  readonly blocked?: "restart_limit";
 };
 
 type HarnessInspection = {
@@ -1027,7 +1031,9 @@ joins task, tool, and hook invocations, including code that ignores its signal,
 then closes Storage. Once `close()` resolves, no invocation code of this Harness
 runs and no handler holds Storage, so a new Harness may open the same Storage.
 Already-running watch callbacks remain caller-owned and may finish
-independently. Close writes no task outcome. Cancelling a `close()` call cancels
+independently. Close writes no task outcome; it writes the tasks it stopped
+back as `pending`, so a reopen counts no restart for them (section 5.4).
+Cancelling a `close()` call cancels
 only that wait; shutdown continues, and every later `close()` awaits the same
 shutdown.
 
@@ -1764,7 +1770,7 @@ type TaskRecord<I, S, R> = {
   readonly startedAt?: number;
   /** Wall clock at the change to `terminal`. */
   readonly endedAt?: number;
-  /** Times in a row a crash or close cut it off without a state change since (section 5.4). */
+  /** Times in a row a crash cut it off without a state change since; a close does not count (section 5.4). */
   readonly restarts?: number;
 } & (
   | {
@@ -1842,7 +1848,11 @@ interface TaskRuntime<I, S, R, H extends object> extends DocumentObserver, Docum
   /** The Harness clock. */
   now(): number;
   /** Forward a non-fatal failure to `HarnessOptions.onReport`. */
-  report(error: unknown): void;
+  /** `from`: whose code failed, the task's own (default), an extension's (with its name), or a `host` callback's. */
+  report(
+    error: unknown,
+    from?: { source: "task" } | { source: "extension"; extension?: string } | { source: "host" },
+  ): void;
   /** Commit `{ status: "sleeping", until, checkpoint }`; resolves once stored (section 5.6). */
   sleepUntil(until: number, checkpoint: S, context: Context): Promise<void>;
   /** A `HarnessOptions.setTimer` timer for pacing work in a phase; the invocation's end disarms it. */
@@ -1994,7 +2004,9 @@ definition is installed or the task is aborted (section 5.4).
 `close()` marks the runtime closing, seals admission and reservation, signals
 invocations, and ends states and watches. Outside the Session line it settles admitted
 commits and joins invocations before closing storage. Already-running watch callbacks remain
-caller-owned. Later runtime commits reject, and close writes no task outcome. Closing
+caller-owned. Later runtime commits reject, and close writes no task outcome; after
+joining, it writes the tasks it stopped back as `pending`, straight to Storage, with
+nothing published. Closing
 starts no fresh phase or abort invocation. It does not set abort marks,
 terminalize tasks, retire task documents, or publish document retirement. The
 hosting layer stops exposing Harness state to clients before it closes the
@@ -2152,17 +2164,26 @@ equal version                       -> commit running
 ```
 
 **Restarts.** Open counts every surviving `running` task as cut off: it writes
-the task back as `pending` with `restarts` one higher. Any state the task commits
-itself (a new checkpoint, a wait, a sleep, an outcome) is progress and removes
-the count; memos and document writes are not. Once `restarts` reaches
+the task back as `pending` with `restarts` one higher. A close is not a crash:
+after joining the invocations it stopped, close writes those tasks back as
+`pending` without a count, so only a process that died, was evicted, or was
+reset leaves `running` records. A state the task commits
+itself that differs from its current one (a new checkpoint, a wait, a sleep, an
+outcome) is progress and removes the count; the same checkpoint committed again,
+memos, and document writes are not. Once `restarts` reaches
 `settings.restartLimit` (default 5; `Infinity` never parks), the task is parked:
 blocked with reason `restart_limit`, reported once through `onReport` at the open
 that parks it, shown in `inspect()` and the task graph, and not active in
 `wake()`. Work that deterministically exhausts memory or CPU before its next
-checkpoint thus stops after a few attempts instead of running forever.
-`Harness.retryTask(id)` removes the count and runs the task again; it does
-nothing for a task that is not parked. An abort mark still runs a parked task's
-abort handler.
+checkpoint thus stops after a few attempts instead of running forever. Every
+task running when a process dies is counted, not only the one that killed it,
+so a long stream next to the culprit can be parked too; a host shows parked
+tasks and offers `Harness.retryTask(id)`, which removes the count and runs the
+task again, and does nothing for a task that is not parked. A run task that is
+parked keeps its conversation busy. An abort mark starts the count over and
+still runs a parked task's abort handler; an abort handler cut off
+`restartLimit` times is not run again, and the task ends `faulted` with detail
+`{ reason: "restart_limit" }`, reported with `blocked: "restart_limit"`.
 
 An abort invocation resolves the definition the same way. When the definition
 can take the task, its abort handler runs; otherwise the task is orphaned as
@@ -2411,7 +2432,9 @@ paused, when the Session next needs a running process:
 
 - `active`: some task can run now or is running: a pending task that is not
   blocked, a running invocation, a waiting task whose `on` is settled, a due
-  sleep, or an abort-marked task whose owned work drained. A host keeps a
+  sleep, or an abort-marked task whose owned work drained; also while a
+  reconcile pass (section 5.5) is scheduled or underway, such as open's
+  recovery, since it may finalize held outcomes and mark cascades. A host keeps a
   recovery wakeup armed while it is set, so work cut off by a crash resumes.
 - `at`: the earliest sleep not yet due.
 
@@ -2516,6 +2539,8 @@ own inputs: `keep` (the default) leaves them queued; `continue` applies the
 final boundary, so the next run starts with them, as after an answer;
 `withdraw` settles them `unanswered` with reason `run_failed`, keeping queued
 writes. A run whose task is aborted, faults, or is orphaned keeps its inbox.
+With `continue`, a cause that persists, such as a missing model, fails the next
+run too, so the queue drains one failed run per input.
 
 An idle conversation with a non-empty inbox, for example after a failed run,
 queues every new input and every write that is not display-only behind the
@@ -5301,10 +5326,15 @@ once, and `Date.now` serves instead.
 `ReportInfo`: `source` is `session` for the error that failed the Session (a
 Storage error, often a platform reset, or the Session's own bookkeeping),
 `task` for a task's phase that faulted (`faulted: true`), a task's
-`runtime.report()`, a failed migration, or a task parked by the restart limit,
-with `taskId`, `taskKind`, and `conversationId`; `extension` for hooks and
-wrappers; `listener`; `host` for the clock, settings, registry, and environment
-builder; `timer` for `setTimer`; and `wake` for `onWake`. A host acts on them
+`runtime.report()`, a failed migration, or a task parked by the restart limit
+(`blocked: "restart_limit"`), with `taskId`, `taskKind`, and `conversationId`; `extension` for hooks,
+wrappers, system prompt sections, and a tool's invalid structured output;
+`listener`; `host` for the clock, settings, registry, environment builder, and
+model provider calls such as cancelling a deferred response; an `extension`
+report names the extension (`extension`) when the failing code is known to
+belong to one: the hook's, the wrapper's, or the last selected extension that
+provides or wraps the section or tool. A `task` report names the extension that
+installed the task's definition; built-in tasks have none; `timer` for `setTimer`; and `wake` for `onWake`. A host acts on them
 outside the scheduler, for example counting faults of one task kind toward a
 breaker.
 

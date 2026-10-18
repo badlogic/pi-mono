@@ -199,15 +199,15 @@ export class Session extends DurableObject<Env> {
 
 The default `setTimer` declines the timers that only free memory in Workers, so no pending timer keeps the object from hibernating or being evicted; memory is then freed at later commits.
 
-### When Work Keeps Failing
+### Failures and Recovery
 
-Work that deterministically crashes its process, by exhausting memory or CPU before its next checkpoint, would otherwise be resumed and crash again forever. Open counts each task a crash or close cut off; a state the task commits itself starts the count over. Once the count reaches `settings.restartLimit` (default 5; `Infinity` never parks), the task is parked: `inspect()` and the task graph show it as blocked with reason `restart_limit`, `wake()` does not count it as active, and `onReport` gets it once. `harness.retryTask(id)` runs it again; `abortTask()` still runs its abort handler.
+**Crash loops.** Work that deterministically crashes its process, by exhausting memory or CPU before its next checkpoint, would otherwise be resumed and crash again forever. Open counts each task a crash, eviction, or reset cut off; a close is not counted, and a new state the task commits starts the count over. Once the count reaches `settings.restartLimit` (default 5; `Infinity` never parks), the task is parked: `inspect()` and the task graph show it as blocked with reason `restart_limit`, `wake()` does not count it as active, and `onReport` gets it once. Every task running when a process dies is counted, so show parked tasks and offer `harness.retryTask(id)`, which runs one again. `abortTask()` still runs its abort handler; an abort handler cut off that many times ends the task `faulted`.
 
-Every report says where it came from: `onReport(error, info)` gets `info.source`, which is `session` for the error that failed the Harness (a Storage error, often a platform reset), `task` for a task that faulted (`faulted: true`) or reported a failure, with `taskId`, `taskKind`, and `conversationId`, and `extension`, `listener`, `host`, `timer`, or `wake` for the rest. A host can feed task faults of one kind to its own breaker.
+**Reports.** `onReport(error, info)` says where a failure came from: `info.source` is `session` for the error that failed the Harness (a Storage error, often a platform reset), `task` for a task that faulted (`faulted: true`), reported a failure, or was parked (`blocked: "restart_limit"`), with `taskId`, `taskKind`, `conversationId`, and the name of the extension that installed the task in `info.extension`, `extension` for hooks, sections, wrappers, and tools, again with the extension's name, and `listener`, `host`, `timer`, or `wake` for the rest. A host can feed task faults of one kind to its own breaker.
 
-A run that fails with a model error leaves the inputs queued behind it waiting until the next input arrives. `settings.afterFailedRun` changes that: `continue` starts the next run with them, as after an answer, and `withdraw` settles them `unanswered` with reason `run_failed`.
+**Queued inputs after a failed run.** A run that fails with a model error leaves the inputs queued behind it waiting until the next input arrives. `settings.afterFailedRun` changes that: `continue` starts the next run with them, as after an answer, and `withdraw` settles them `unanswered` with reason `run_failed`.
 
-Tasks blocked on a missing or unmigratable definition show their reason in the task graph too, and a registry change that unblocks them makes `onWake` report the Session active, so a host need not poll them.
+**Blocked tasks.** Tasks blocked on a missing or unmigratable definition show their reason in the task graph too, and a registry change that unblocks them makes `onWake` report the Session active, so a host need not poll them.
 
 ## Extensions
 

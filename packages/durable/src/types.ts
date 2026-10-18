@@ -145,6 +145,12 @@ export type TaskDocFamilyToken<T extends JsonObject, I extends JsonValue> = DocF
  */
 export type ReportSource = "session" | "task" | "extension" | "listener" | "host" | "timer" | "wake";
 
+/** Whose code a task's `runtime.report()` is about: its own (default), an extension's, or the host's. */
+export type ReportFrom =
+	| { readonly source: "task" }
+	| { readonly source: "extension"; readonly extension?: string }
+	| { readonly source: "host" };
+
 /** What a report is about: its source and, when a task is involved, the task. */
 export type ReportInfo = {
 	readonly source: ReportSource;
@@ -152,8 +158,15 @@ export type ReportInfo = {
 	/** The task's registered name. */
 	readonly taskKind?: string;
 	readonly conversationId?: ConversationId;
+	/**
+	 * The extension whose code failed, when known: the one that installed a failing task's definition, or a hook's, a
+	 * section's, a wrapper's, or a tool's. Built-in tasks have none.
+	 */
+	readonly extension?: string;
 	/** Set when the error ended its task `faulted`. */
 	readonly faulted?: true;
+	/** Set when the report is about the task being parked by `settings.restartLimit`, or faulted at it. */
+	readonly blocked?: "restart_limit";
 };
 
 /**
@@ -279,8 +292,12 @@ export interface TaskRuntime<I, S, R, H extends object> extends DocumentObserver
 	 * nothing is armed. Returns a function that disarms it. Wait for time between phases with `sleepUntil()`.
 	 */
 	setTimer(callback: () => void, delayMs: number): () => void;
-	/** Forward a non-fatal failure to `HarnessOptions.onReport`. */
-	report(error: unknown): void;
+	/**
+	 * Forward a non-fatal failure to `HarnessOptions.onReport`, with this task in its info. `from` says whose code
+	 * failed: the task's own (default), `extension` code it called, such as a section, with the extension's name when
+	 * known, or a `host` callback, such as the environment builder.
+	 */
+	report(error: unknown, from?: ReportFrom): void;
 	/**
 	 * Commit a sleep: the task holds no invocation until the Harness clock reaches `until`, then resumes at `checkpoint`.
 	 * Resolves once the sleep is stored, not when the time comes; the phase returns right after. Returning
@@ -629,8 +646,9 @@ type TaskRecordBase<I, R> = {
 	/** Wall-clock milliseconds of the change to `terminal`, stamped by the Session; absent while live. */
 	readonly endedAt?: number;
 	/**
-	 * How many times in a row a crash or close cut the task off while it ran, without the task changing its state since
-	 * (open counts them). At `HarnessSettings.restartLimit` the task is parked as blocked until `Harness.retryTask()`.
+	 * How many times in a row a crash, eviction, or reset cut the task off while it ran, without the task changing its
+	 * state since; open counts them, and a close does not. At `HarnessSettings.restartLimit` the task is parked as blocked
+	 * until `Harness.retryTask()`.
 	 */
 	readonly restarts?: number;
 };

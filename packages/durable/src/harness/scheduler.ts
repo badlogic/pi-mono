@@ -18,6 +18,7 @@ import type {
 	ReportInfo,
 	RunningTask,
 	Storage,
+	StorageWrite,
 	TaskDefinition,
 	TaskId,
 	TaskOutcome,
@@ -54,6 +55,27 @@ type ErasedRunningTask = RunningTask<JsonValue, Checkpoint, JsonValue>;
 
 const SCAN_PAGE_SIZE = 256;
 const LIVE_STATUSES = ["pending", "running", "waiting", "sleeping", "completing"] as const;
+
+/** What `blockedReason()` reads of a task: the task graph keeps only this of each record. */
+export type BlockedSubject = Pick<
+	AnyTaskRecord,
+	"id" | "kind" | "version" | "abortRequested" | "abortReason" | "restarts"
+> & {
+	readonly status: TaskState<JsonValue, JsonValue>["status"];
+};
+
+/** The part of a record `blockedReason()` reads. */
+export function blockedSubject(record: AnyTaskRecord): BlockedSubject {
+	return {
+		id: record.id,
+		kind: record.kind,
+		version: record.version,
+		abortRequested: record.abortRequested,
+		...(record.abortReason === undefined ? {} : { abortReason: record.abortReason }),
+		...(record.restarts === undefined ? {} : { restarts: record.restarts }),
+		status: record.state.status,
+	};
+}
 
 /**
  * Why a task cannot be reserved: no registered definition can take it, or it was cut off `restartLimit` times in a row.
@@ -172,6 +194,8 @@ export type TaskSchedulerOptions = {
 	readonly onWake: ((wake: Wake) => void) | undefined;
 	/** The host's timers (`HarnessOptions.setTimer`). */
 	readonly timers: Timers;
+	/** Write records straight to Storage while closing, after admission is sealed. */
+	readonly writeAtClose: (writes: readonly StorageWrite[]) => Promise<void>;
 	readonly report: (error: unknown, info: ReportInfo) => void;
 	/** Harness cleanup staged in the commit that makes an outcome the scheduler wrote itself terminal. */
 	readonly settleOutcome: (tx: Transaction, record: AnyTaskRecord, outcome: SchedulerOutcome) => Promise<void>;
@@ -220,6 +244,7 @@ export class TaskScheduler {
 	readonly #now: () => number;
 	readonly #onWake: ((wake: Wake) => void) | undefined;
 	readonly #timers: Timers;
+	readonly #writeAtClose: (writes: readonly StorageWrite[]) => Promise<void>;
 	readonly #report: (error: unknown, info: ReportInfo) => void;
 	readonly #settleOutcome: TaskSchedulerOptions["settleOutcome"];
 	readonly #withdrawInputs: TaskSchedulerOptions["withdrawInputs"];
@@ -283,7 +308,13 @@ export class TaskScheduler {
 	#lastWake: Wake | undefined;
 	#wakeScheduled = false;
 	readonly #blockedListeners = new Set<() => void>();
+	/** A registry snapshot that threw for the task graph was reported; it is read per record, so only once. */
+	#snapshotReported = false;
+	/** Tasks a pass left out as parked; each pass checks them again, as `settings.restartLimit` may have risen. */
+	readonly #parkedTasks = new Set<TaskId>();
 	#reconcileScheduled = false;
+	/** Reconcile passes underway (they may overlap): their commits finalize held outcomes and mark cascades, recovery work. */
+	#reconciling = 0;
 	#sweepScheduled = false;
 	#cascadePending = false;
 	#unsubscribeRegistry: () => void = () => {};
@@ -303,6 +334,7 @@ export class TaskScheduler {
 		this.#now = options.now;
 		this.#onWake = options.onWake;
 		this.#timers = options.timers;
+		this.#writeAtClose = options.writeAtClose;
 		this.#report = options.report;
 		this.#settleOutcome = options.settleOutcome;
 		this.#withdrawInputs = options.withdrawInputs;
@@ -351,7 +383,8 @@ export class TaskScheduler {
 				`Task ${record.id} (${record.kind}) was cut off ${restarts} times without progress; it is parked until retryTask()`,
 				{ cause: "restart_limit" },
 			);
-			this.#report(error, taskInfo({ taskId: record.id, kind: record.kind, conversationId: record.conversationId }));
+			const info = this.#taskInfo({ taskId: record.id, kind: record.kind, conversationId: record.conversationId });
+			this.#report(error, { ...info, blocked: "restart_limit" });
 		}
 		// Derive abort marks a crash left unapplied below cancelled owners, and finalize held outcomes.
 		this.#cascadePending = true;
@@ -377,7 +410,7 @@ export class TaskScheduler {
 		await this.#session.commitWith(async (tx) => {
 			const current = await tx.task(id);
 			if (current === undefined) throw new Error(`Task ${id} does not exist`);
-			if (current.state.status === "terminal" || current.restarts === undefined) return;
+			if (!this.#parked(current)) return;
 			tx.setTask(progressed(current));
 		}, context);
 		this.resume();
@@ -387,17 +420,18 @@ export class TaskScheduler {
 	 * Why a live task cannot run here, if it cannot: its definition (missing, too old, failed migration) or the restart
 	 * limit. A running task, an abort-marked one, and one holding its outcome are never blocked.
 	 */
-	blockedReason(record: AnyTaskRecord): BlockedReason | undefined {
-		const status = record.state.status;
-		if (status === "running" || status === "completing" || status === "terminal" || record.abortRequested) {
-			return undefined;
-		}
+	blockedReason(record: BlockedSubject): BlockedReason | undefined {
+		const status = record.status;
+		if (status === "running" || status === "completing" || status === "terminal") return undefined;
+		// An abort request runs its handler or orphans the task; a `restart` mark waits for the definition, blocked.
+		if (record.abortRequested && record.abortReason === undefined) return undefined;
 		if (this.#parked(record)) return "restart_limit";
 		let snapshot: RegistrySnapshot;
 		try {
 			snapshot = this.#registry.snapshot();
 		} catch (error) {
-			this.#report(error, HOST);
+			if (!this.#snapshotReported) this.#report(error, HOST);
+			this.#snapshotReported = true;
 			return undefined;
 		}
 		const fit = this.#fit(record, snapshot.task(record.kind));
@@ -417,7 +451,9 @@ export class TaskScheduler {
 	 */
 	wake(): Wake {
 		const now = this.#now();
-		let active = this.#invocations.size > 0;
+		// A reconcile pass scheduled or underway is work too: it may finalize held outcomes and mark cascades, at open as
+		// recovery. A process that dies before it lands must be woken again.
+		let active = this.#invocations.size > 0 || this.#reconcileScheduled || this.#reconciling > 0;
 		let at: number | undefined;
 		let snapshot: RegistrySnapshot | undefined;
 		let snapshotFailed = false;
@@ -452,12 +488,23 @@ export class TaskScheduler {
 	}
 
 	/**
-	 * Signal every invocation and wait for them; writes nothing. Close calls this after every close listener has run, so
-	 * waits, watches, and streams a task holds end with the Session's reason, not as cancelled by its signal.
+	 * Signal every invocation and wait for them, then write the tasks they ran back as `pending` (`writeAtClose`), as a
+	 * close is not a crash. Close calls this after every close listener has run, so waits, watches, and streams a task
+	 * holds end with the Session's reason, not as cancelled by its signal.
 	 */
 	async join(): Promise<void> {
-		for (const invocation of this.#invocations.values()) invocation.controller.abort();
-		await Promise.allSettled([...this.#invocations.values()].map((invocation) => invocation.done));
+		const stopped = [...this.#invocations.values()];
+		for (const invocation of stopped) invocation.controller.abort();
+		await Promise.allSettled(stopped.map((invocation) => invocation.done));
+		// A close is not a crash: a task it stopped is `pending` again, so the next open counts no restart for it.
+		const released = stopped.flatMap((invocation) => {
+			const record = this.#live.get(invocation.taskId);
+			if (record?.state.status !== "running") return [];
+			return [withState(record, { status: "pending", checkpoint: record.state.checkpoint })];
+		});
+		if (released.length === 0) return;
+		// A failure leaves them `running`, counted as if cut off; the Storage guard fails the Session and reports it.
+		await this.#writeAtClose(released.map((value) => ({ type: "task", value }) as const)).catch(() => {});
 	}
 
 	/**
@@ -700,6 +747,7 @@ export class TaskScheduler {
 	 */
 	async #reconcile(): Promise<void> {
 		this.#reconcileScheduled = false;
+		this.#reconciling++;
 		const cascade = this.#cascadePending;
 		this.#cascadePending = false;
 		const checks = [...this.#failFastChecks];
@@ -746,6 +794,8 @@ export class TaskScheduler {
 			// running the pass again, so it fails the Session, which reports it.
 			this.#failSession(error);
 		}
+		this.#reconciling--;
+		this.#scheduleWake();
 		this.#settleIdle();
 	}
 
@@ -1269,8 +1319,47 @@ export class TaskScheduler {
 	}
 
 	/** A task cut off `restartLimit` times in a row; an abort mark still runs its abort handler. */
-	#parked(record: AnyTaskRecord): boolean {
+	#parked(record: Pick<AnyTaskRecord, "abortRequested" | "restarts">): boolean {
 		return !record.abortRequested && record.restarts !== undefined && record.restarts >= this.#restartLimit();
+	}
+
+	/**
+	 * The report info of a task's failure, with the extension that installed its definition: the code that failed is
+	 * that extension's. Built-in tasks have none.
+	 */
+	#taskInfo(task: {
+		readonly taskId: TaskId;
+		readonly kind: string;
+		readonly conversationId: ConversationId;
+	}): ReportInfo {
+		const info = taskInfo(task);
+		let extension: string | undefined;
+		try {
+			const snapshot = this.#registry.snapshot();
+			const definition = snapshot.task(task.kind);
+			if (definition !== undefined) {
+				extension = snapshot
+					.installed()
+					.findLast((installed) => installed.tasks?.includes(definition) === true)?.name;
+			}
+		} catch {
+			// A registry that throws is reported where it is read for scheduling; a report goes out without the name.
+		}
+		return extension === undefined ? info : { ...info, extension };
+	}
+
+	/** Make parked tasks that a raised `settings.restartLimit` no longer parks candidates again, and tell the graph. */
+	#unparkRaised(): void {
+		let unparked = false;
+		for (const id of this.#parkedTasks) {
+			const record = this.#live.get(id);
+			if (record !== undefined && this.#parked(record)) continue;
+			this.#parkedTasks.delete(id);
+			if (record === undefined) continue;
+			this.#runnable.add(id);
+			unparked = true;
+		}
+		if (unparked) queueMicrotask(() => this.#notifyBlocked());
 	}
 
 	/** `settings.restartLimit`, or the default when the host's settings throw. */
@@ -1332,6 +1421,7 @@ export class TaskScheduler {
 	 */
 	async #reserve(): Promise<Reservation[]> {
 		const reservations: Reservation[] = [];
+		const faulted: { readonly record: AnyTaskRecord; readonly message: string }[] = [];
 		let abandoned: TaskId[] = [];
 		try {
 			await this.#session.commitWith(async (tx) => {
@@ -1348,6 +1438,7 @@ export class TaskScheduler {
 				// Every pass picks up sleeps whose time has come: a pass started by any change may be the first to run after
 				// a deadline, and the wake it schedules no longer keeps a timer for a due sleep.
 				this.#wakeDue();
+				this.#unparkRaised();
 				// Taken once per pass, and only when some task is a candidate.
 				let snapshot: RegistrySnapshot | undefined;
 				for (const id of [...this.#runnable]) {
@@ -1366,9 +1457,12 @@ export class TaskScheduler {
 						this.#runnable.delete(id);
 						continue;
 					}
-					// It returns when `retry()` clears its restart count.
+					// It returns when `retry()` clears its restart count, or at a pass after `settings.restartLimit` rose.
 					if (this.#parked(record)) {
 						this.#runnable.delete(id);
+						// Newly parked without a commit, as after a lowered limit: the graph must hear it.
+						if (!this.#parkedTasks.has(id)) queueMicrotask(() => this.#notifyBlocked());
+						this.#parkedTasks.add(id);
 						continue;
 					}
 					const runnable = record as RunnableTaskRecord;
@@ -1378,6 +1472,16 @@ export class TaskScheduler {
 					if (mode === "run" && !record.background && this.#belowCancelled(parentOf(record))) {
 						this.#cascadePending = true;
 						this.#scheduleReconcile();
+						continue;
+					}
+					// An abort handler cut off `restartLimit` times in a row would run forever; nothing is left to park it for.
+					if (mode === "abort" && (record.restarts ?? 0) >= this.#restartLimit()) {
+						const message = `Abort handler of task ${id} (${record.kind}) was cut off ${record.restarts} times`;
+						await this.#terminate(tx, record, {
+							status: "faulted",
+							error: { message, detail: { reason: "restart_limit" } },
+						});
+						faulted.push({ record, message });
 						continue;
 					}
 					snapshot ??= this.#registry.snapshot();
@@ -1412,6 +1516,14 @@ export class TaskScheduler {
 			}
 			throw error;
 		}
+		for (const { record, message } of faulted) {
+			const info = this.#taskInfo({ taskId: record.id, kind: record.kind, conversationId: record.conversationId });
+			this.#report(new Error(message, { cause: "restart_limit" }), {
+				...info,
+				faulted: true,
+				blocked: "restart_limit",
+			});
+		}
 		// Marked, or already marked or gone: done with them. Reserve again, now seeing the marks.
 		for (const id of abandoned) this.#abandoned.delete(id);
 		if (abandoned.length > 0) this.#dirty = true;
@@ -1444,13 +1556,18 @@ export class TaskScheduler {
 			return { kind: "ready", task: fit.task, record: migratedRecord as RunnableTaskRecord };
 		} catch (error) {
 			this.#failedMigrations.set(record.id, { task: fit.task, error });
+			// Blocked now without a commit: the graph and the host's wake must hear it.
 			queueMicrotask(() => this.#notifyBlocked());
-			this.#report(error, taskInfo({ taskId: record.id, kind: record.kind, conversationId: record.conversationId }));
+			this.#scheduleWake();
+			this.#report(
+				error,
+				this.#taskInfo({ taskId: record.id, kind: record.kind, conversationId: record.conversationId }),
+			);
 			return { kind: "blocked", reason: "migration_failed" };
 		}
 	}
 
-	#fit(record: AnyTaskRecord, task: AnyTask | undefined): Fit {
+	#fit(record: Pick<AnyTaskRecord, "id" | "version">, task: AnyTask | undefined): Fit {
 		if (task === undefined) return { reason: "missing_task" };
 		const version = task.definition.version;
 		if (version === record.version) return { task, migrates: false };
@@ -1534,7 +1651,7 @@ export class TaskScheduler {
 				if (invocation.mode === "run") await this.#run(reservation);
 				else await this.#runAbort(reservation);
 			} catch (error) {
-				this.#report(error, taskInfo(invocation));
+				this.#report(error, this.#taskInfo(invocation));
 			} finally {
 				this.#end(invocation);
 				invocation.finish();
@@ -1605,7 +1722,7 @@ export class TaskScheduler {
 				const cause = next === undefined ? "missing_task" : "incompatible_task";
 				this.#report(
 					new Error(`Task ${current.id} keeps running under its old ${current.kind} definition`, { cause }),
-					taskInfo({ taskId: current.id, kind: current.kind, conversationId: current.conversationId }),
+					this.#taskInfo({ taskId: current.id, kind: current.kind, conversationId: current.conversationId }),
 				);
 			}
 		}
@@ -1655,7 +1772,7 @@ export class TaskScheduler {
 				return undefined;
 			}, this.#context);
 			// Reported once the fault is durable: a host may count it, for example toward a breaker.
-			if (fault !== undefined) this.#report(fault.error, { ...taskInfo(invocation), faulted: true });
+			if (fault !== undefined) this.#report(fault.error, { ...this.#taskInfo(invocation), faulted: true });
 			return continued;
 		} catch (error) {
 			// The step writes the scheduler's own decision, a fault or a terminal record; a throw there would otherwise
@@ -1702,8 +1819,10 @@ export class TaskScheduler {
 				return;
 			}
 		}
-		// A state the task committed is progress: its restart count starts over.
-		tx.setTask(withState(progressed(current), next));
+		// A state the task committed that differs from its current one is progress: its restart count starts over. The
+		// same checkpoint committed again, for example as intent before an effect, is not.
+		const same = jsonEqual(current.state as unknown as JsonValue, next as unknown as JsonValue);
+		tx.setTask(withState(same ? current : progressed(current), next));
 	}
 
 	/**
@@ -1839,14 +1958,14 @@ export class TaskScheduler {
 		};
 		const hooks: HookRunner<Record<string, unknown>> = {
 			each: async (name, invoke) => {
-				for (const handlers of agentHooks(await agent(), phase.task().definition.name)) {
+				for (const { extension, handlers } of agentHooks(await agent(), phase.task().definition.name)) {
 					const handler = (handlers as Record<string, unknown>)[name];
 					if (typeof handler !== "function") continue;
 					try {
 						await invoke(handler.bind(handlers));
 					} catch (error) {
 						if (invocation.controller.signal.aborted) throw error;
-						this.#report(error, { ...taskInfo(invocation), source: "extension" });
+						this.#report(error, { ...taskInfo(invocation), source: "extension", extension });
 					}
 				}
 			},
@@ -2030,9 +2149,13 @@ export class TaskScheduler {
 					disarm();
 				};
 			},
-			report: (error) => {
+			report: (error, from = { source: "task" }) => {
 				if (invocation.ended) throw endedError(invocation);
-				this.#report(error, taskInfo(invocation));
+				// The task's own failure names the task's extension; any other names whose code failed, if anyone's.
+				this.#report(
+					error,
+					from.source === "task" ? this.#taskInfo(invocation) : { ...taskInfo(invocation), ...from },
+				);
 			},
 		};
 	}
@@ -2093,9 +2216,12 @@ function taskInfo(task: {
 	return { source: "task", taskId: task.taskId, taskKind: task.kind, conversationId: task.conversationId };
 }
 
-/** The record with an abort mark: `restart` for an abandonment; without a reason, a request, which replaces `restart`. */
+/**
+ * The record with an abort mark: `restart` for an abandonment; without a reason, a request, which replaces `restart`.
+ * The restart count starts over: it now counts cut-offs of the abort handler.
+ */
 function withAbortMark(record: AnyTaskRecord, reason?: "restart"): AnyTaskRecord {
-	const { abortReason: _reason, ...rest } = record;
+	const { abortReason: _reason, restarts: _restarts, ...rest } = record;
 	return { ...rest, abortRequested: true, ...(reason === undefined ? {} : { abortReason: reason }) } as AnyTaskRecord;
 }
 

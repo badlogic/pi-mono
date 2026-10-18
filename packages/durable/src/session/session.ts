@@ -551,6 +551,18 @@ export class SessionImpl implements Session {
 		return Promise.resolve();
 	}
 
+	/**
+	 * Internal, for `beforeClose()`: write records straight to Storage, on the line, after admission is sealed. Nothing
+	 * is published, since the Session is closing; a failed Session writes nothing.
+	 */
+	protected writeAtClose(writes: readonly StorageWrite[]): Promise<void> {
+		if (writes.length === 0) return Promise.resolve();
+		return this.#enqueue(async () => {
+			if (this.#failure !== undefined) return;
+			await this.#storage.commit(writes, BACKGROUND_CONTEXT);
+		});
+	}
+
 	/** Runs after close seals admission and before the line closes Storage; must not reject. */
 	protected beforeClose(): Promise<void> {
 		return Promise.resolve();

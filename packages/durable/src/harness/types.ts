@@ -568,9 +568,9 @@ export type HarnessSettings = {
 	 */
 	readonly afterFailedRun?: AfterFailedRun;
 	/**
-	 * How many times in a row a task may be cut off by a crash or close without changing its state before it is parked
-	 * as blocked (`restart_limit`) instead of run again; `Harness.retryTask()` runs it again. Default 5;
-	 * `Infinity` never parks.
+	 * How many times in a row a task may be cut off by a crash, eviction, or reset (a close does not count) without
+	 * changing its state before it is parked as blocked (`restart_limit`) instead of run again; `Harness.retryTask()`
+	 * runs it again. Default 5; `Infinity` never parks.
 	 */
 	readonly restartLimit?: number;
 };
@@ -653,8 +653,9 @@ export type HarnessOptions<Tool extends ToolRegistration = ToolRegistration> = {
 };
 
 /**
- * When a Session next needs a running process (`Harness.wake()`). `active`: some task can run now or is running, so a
- * process that dies must be woken again soon, for example by a recovery alarm. `at`: the earliest sleep not yet due,
+ * When a Session next needs a running process (`Harness.wake()`). `active`: some task can run now or is running, or a
+ * reconcile pass such as open's recovery has not landed yet, so a process that dies must be woken again soon, for
+ * example by a recovery alarm. `at`: the earliest sleep not yet due,
  * when there is one. Neither: nothing needs a process until new work is submitted. Tasks blocked on a missing or
  * unmigratable definition, `completing` tasks, and waits on live tasks do not count; the work they wait for does.
  */

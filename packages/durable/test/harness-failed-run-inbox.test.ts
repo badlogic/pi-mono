@@ -53,6 +53,27 @@ describe("inputs queued behind a failed run", () => {
 		await harness.close(context);
 	});
 
+	it("place queued writes, and keep them with withdraw", async () => {
+		for (const policy of ["continue", "withdraw"] as const) {
+			const setup = chatSetup();
+			setup.settings.afterFailedRun = policy;
+			const failing = failingOnce();
+			setup.faux.setResponses([failing.step, fauxAssistantMessage("second answer")]);
+			const { harness, root } = await openChat(new MemoryStorage(), setup);
+			const first = await root.submit({ type: "input", content: "first" }, context);
+			await failing.reached.promise;
+			const note = { role: "user", content: "a note the model sees", timestamp: 1 } as const;
+			const write = await root.submit({ type: "write", entry: { kind: "test.note", model: [note] } }, context);
+			expect(await write.status(context)).toMatchObject({ status: "queued" });
+			failing.gate.resolve();
+			await first.wait(context);
+			await harness.waitForIdle(context);
+			// `continue` places the write at the failed run's boundary; `withdraw` withdraws inputs only.
+			expect(await write.status(context)).toMatchObject({ status: policy === "continue" ? "done" : "queued" });
+			await harness.close(context);
+		}
+	});
+
 	it("settle unanswered with run_failed with withdraw", async () => {
 		const { harness, second } = await failWithQueuedInput("withdraw");
 		expect(await second.wait(context)).toMatchObject({ status: "unanswered", reason: "run_failed" });

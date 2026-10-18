@@ -1,17 +1,21 @@
-import { createModels, Type } from "@earendil-works/pi-ai";
+import { createModels, fauxAssistantMessage, Type } from "@earendil-works/pi-ai";
 import {
 	type AnyTask,
 	createRegistry,
 	defineExtension,
 	defineTask,
 	defineTool,
+	GenerationTask,
 	Harness,
+	hook,
 	MemoryStorage,
 	type ReportInfo,
 	type SetTimer,
+	section,
 	wrapTool,
 } from "@earendil-works/pi-durable";
 import { describe, expect, it } from "vitest";
+import { chatSetup } from "./chat-support.ts";
 import { ControlledStorage, context } from "./session-support.ts";
 import { completed, eventually } from "./task-support.ts";
 
@@ -62,11 +66,63 @@ describe("reports", () => {
 		harness.resume();
 		expect((await harness.waitForTask(id, context)).state.outcome.status).toBe("faulted");
 		await eventually(() => reports.length === 2);
-		const task = { source: "task", taskId: id, taskKind: "test.faulty", conversationId: root.id };
+		// The task's own failures name the extension that installed it.
+		const task = { source: "task", taskId: id, taskKind: "test.faulty", conversationId: root.id, extension: "test" };
 		expect(reports).toEqual([
 			{ message: "noted", info: task },
 			{ message: "broken", info: { ...task, faulted: true } },
 		]);
+		await harness.close(context);
+	});
+
+	it("name the extension of a failing section or hook, and tell them from a failing environment builder", async () => {
+		const setup = chatSetup();
+		setup.faux.setResponses([fauxAssistantMessage("answer")]);
+		setup.registry.install(
+			defineExtension({
+				name: "sections",
+				sections: [
+					section("broken", () => {
+						throw new Error("section");
+					}),
+				],
+			}),
+		);
+		setup.registry.install(
+			defineExtension({
+				name: "hooks",
+				hooks: [
+					hook(GenerationTask, {
+						afterResponse: () => {
+							throw new Error("hook");
+						},
+					}),
+				],
+			}),
+		);
+		const reports: Report[] = [];
+		const harness = await Harness.open(
+			new MemoryStorage(),
+			{
+				models: setup.models,
+				registry: setup.registry,
+				env: () => {
+					throw new Error("env");
+				},
+				onReport: (error, info) => reports.push({ message: (error as Error).message, info }),
+			},
+			context,
+		);
+		const root = await harness.root(context, { agent: { model: { provider: "faux", modelId: "faux-1" } } });
+		await (await root.submit({ type: "input", content: "hi" }, context)).wait(context);
+		const infoOf = (message: string) => reports.find((report) => report.message === message)?.info;
+		expect(infoOf("env")).toMatchObject({ source: "host", taskKind: "pi.generation", conversationId: root.id });
+		expect(infoOf("section")).toMatchObject({
+			source: "extension",
+			extension: "sections",
+			taskKind: "pi.generation",
+		});
+		expect(infoOf("hook")).toMatchObject({ source: "extension", extension: "hooks", taskKind: "pi.generation" });
 		await harness.close(context);
 	});
 
@@ -116,7 +172,11 @@ describe("reports", () => {
 			["alarm", "no timers"].every((message) => reports.some((report) => report.message === message)),
 		);
 		const infoOf = (message: string) => reports.find((report) => report.message === message)?.info;
-		expect(infoOf("Wrapper renamed echo to renamed")).toEqual({ source: "extension", conversationId: root.id });
+		expect(infoOf("Wrapper renamed echo to renamed")).toEqual({
+			source: "extension",
+			conversationId: root.id,
+			extension: "wraps",
+		});
 		expect(infoOf("listener")).toEqual({ source: "listener" });
 		expect(infoOf("alarm")).toEqual({ source: "wake" });
 		expect(infoOf("no timers")).toEqual({ source: "timer" });

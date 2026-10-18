@@ -9,7 +9,7 @@ import { openNodeSqliteStorage } from "../src/storage/sqlite/node.ts";
 import { allEntries, type ChatSetup, chatSetup, openChat, textOf, unanswered, waitFor } from "./chat-support.ts";
 import { addSection } from "./harness-support.ts";
 import { context } from "./session-support.ts";
-import { aborted, deferred } from "./task-support.ts";
+import { aborted, deferred, eventually } from "./task-support.ts";
 
 const directories = new Set<string>();
 
@@ -188,6 +188,7 @@ describe("generation recovery", () => {
 			checkpoint: { phase: "retry", attempt: 1, until: 61_000 },
 			until: 61_000,
 		});
+		await eventually(() => !opened.harness.wake().active);
 		expect(opened.harness.wake()).toEqual({ active: false, at: 61_000 });
 		// An early wake retries nothing.
 		opened.harness.resume();
@@ -274,6 +275,7 @@ describe("generation recovery", () => {
 			status: "sleeping",
 			until: 61_000,
 		});
+		await eventually(() => !opened.harness.wake().active);
 		expect(opened.harness.wake()).toEqual({ active: false, at: 61_000 });
 		now = 61_000;
 		opened.harness.resume();

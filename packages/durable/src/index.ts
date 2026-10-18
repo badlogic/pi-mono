@@ -169,6 +169,7 @@ export type {
 	NextTaskState,
 	Page,
 	PhaseHandler,
+	ReportFrom,
 	ReportInfo,
 	ReportSource,
 	RewindableConversationDocFamilyToken,

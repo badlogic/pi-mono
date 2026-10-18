@@ -1145,7 +1145,14 @@ describe("task close", () => {
 		proceed.resolve();
 		await closing;
 		expect(await aborting).toBe("marked");
-		expect(storage.commits.length).toBe(commits);
+		// No outcome: close writes only the stopped task back as pending, so a reopen counts no restart.
+		expect(storage.commits.length).toBe(commits + 1);
+		expect(storage.commits.at(-1)).toMatchObject([
+			{
+				type: "task",
+				value: { id, abortRequested: true, state: { status: "pending", checkpoint: { phase: "two" } } },
+			},
+		]);
 		expect(phases).toEqual(["one"]);
 		expect(abortRan).toBe(false);
 		expect(record).toMatchObject({
@@ -1212,9 +1219,11 @@ describe("task close", () => {
 		const taskWrites = storage.commits.flatMap((writes) =>
 			writes.filter((write) => write.type === "task" && write.value.id === id),
 		);
+		// Created, reserved, and written back as pending by close: no fault.
 		expect(taskWrites.map((write) => (write.type === "task" ? write.value.state.status : ""))).toEqual([
 			"pending",
 			"running",
+			"pending",
 		]);
 	});
 
@@ -1238,8 +1247,12 @@ describe("task close", () => {
 		held.release();
 		await closing;
 		expect(ran).toBe(false);
-		const writes = storage.commits.at(-1)!.filter((write) => write.type === "task");
-		expect(writes).toMatchObject([{ value: { id, abortRequested: true, state: { status: "running" } } }]);
+		// The reservation landed; close wrote the task back as pending.
+		const reserved = storage.commits.at(-2)!.filter((write) => write.type === "task");
+		expect(reserved).toMatchObject([{ value: { id, abortRequested: true, state: { status: "running" } } }]);
+		expect(storage.commits.at(-1)).toMatchObject([
+			{ type: "task", value: { id, abortRequested: true, state: { status: "pending" } } },
+		]);
 	});
 
 	it("rejects a runtime commit that was queued on the line when close sealed it", async () => {
@@ -1272,7 +1285,12 @@ describe("task close", () => {
 		const taskWrites = storage.commits.flatMap((writes) =>
 			writes.filter((write) => write.type === "task" && write.value.id === id),
 		);
-		expect(taskWrites).toHaveLength(2);
+		// Created, reserved, and written back as pending by close; the queued outcome never landed.
+		expect(taskWrites.map((write) => (write.type === "task" ? write.value.state.status : ""))).toEqual([
+			"pending",
+			"running",
+			"pending",
+		]);
 	});
 
 	it("starts no next phase when close seals during a step that decided to continue", async () => {
@@ -1334,7 +1352,9 @@ describe("task close", () => {
 		held.release();
 		await closing;
 		expect(ran).toBe(false);
-		const writes = storage.commits.at(-1)!.filter((write) => write.type === "task");
-		expect(writes).toMatchObject([{ type: "task", value: { id, state: { status: "running" } } }]);
+		// The reservation landed; close wrote the task back as pending.
+		const reserved = storage.commits.at(-2)!.filter((write) => write.type === "task");
+		expect(reserved).toMatchObject([{ type: "task", value: { id, state: { status: "running" } } }]);
+		expect(storage.commits.at(-1)).toMatchObject([{ type: "task", value: { id, state: { status: "pending" } } }]);
 	});
 });

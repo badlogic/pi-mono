@@ -213,6 +213,7 @@ class HarnessImpl<Tool extends ToolRegistration> extends SessionImpl implements 
 			now,
 			onWake: options.onWake,
 			timers: hostTimers(options.setTimer, (error) => report(error, { source: "timer" })),
+			writeAtClose: (writes) => this.writeAtClose(writes),
 			report: this.#report,
 			settleOutcome: settleSchedulerOutcome,
 			withdrawInputs: withdrawQueuedInputs,
@@ -246,8 +247,8 @@ class HarnessImpl<Tool extends ToolRegistration> extends SessionImpl implements 
 	): Promise<Agent<Tool>> {
 		const registry = snapshot ?? this.#options.registry.snapshot();
 		const state = await this.snapshot(AgentDoc, id, context);
-		return resolveAgent(state, registry, resolveSettings(this.#hostSettings()), (error) =>
-			this.#report(error, { source: "extension", conversationId: id }),
+		return resolveAgent(state, registry, resolveSettings(this.#hostSettings()), (error, extension) =>
+			this.#report(error, { source: "extension", conversationId: id, extension }),
 		);
 	}
 

@@ -30,6 +30,7 @@ import type {
 	Tx,
 	TypedEntry,
 } from "../types.ts";
+import { toolExtension } from "./agent.ts";
 import { assignJson } from "./json.ts";
 import {
 	clearProgress,
@@ -560,7 +561,8 @@ async function finalResult(
 		} else {
 			// The model never sees structured output, so its call stands; the host learns of the broken tool.
 			final = rest;
-			runtime.report(new Error(broken));
+			const extension = toolExtension(await runtime.agent(context), tool.name);
+			runtime.report(new Error(broken), { source: "extension", ...(extension === undefined ? {} : { extension }) });
 		}
 	}
 	// Programs get the tool's own value: without a schema, its output. The model reads only `output`, so model-issued

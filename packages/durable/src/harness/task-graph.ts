@@ -13,7 +13,7 @@ import type {
 	TaskRecord,
 	WatchHandle,
 } from "../types.ts";
-import type { BlockedReason } from "./scheduler.ts";
+import { type BlockedReason, type BlockedSubject, blockedSubject } from "./scheduler.ts";
 import { closedError, scanAll } from "./util.ts";
 
 /** A live task's durable status without its checkpoint and outcome payloads (spec §9.5). */
@@ -61,13 +61,13 @@ type Observer = CommittedStateSource<TaskGraph> | CommittedWatch<TaskGraph>;
 type Mount = {
 	value: TaskGraph;
 	readonly observers: Set<Observer>;
-	/** The live records behind the nodes, so a registry change can derive their blocked reasons again. */
-	readonly records: Map<string, AnyTaskRecord>;
+	/** What the blocked reason reads of each live task, so a registry change can derive it again without payloads. */
+	readonly records: Map<string, BlockedSubject>;
 };
 
-/** What the graph asks the scheduler: a record's blocked reason, and when reasons may change without a commit. */
+/** What the graph asks the scheduler: a task's blocked reason, and when reasons may change without a commit. */
 export type TaskGraphBlocking = {
-	readonly blocked: (record: AnyTaskRecord) => BlockedReason | undefined;
+	readonly blocked: (record: BlockedSubject) => BlockedReason | undefined;
 	readonly subscribeBlocked: (listener: () => void) => () => void;
 };
 
@@ -179,7 +179,7 @@ export class TaskGraphView {
 
 	async #build(context: Context): Promise<Omit<Mount, "observers">> {
 		const tasks: Record<string, TaskGraphNode> = {};
-		const live = new Map<string, AnyTaskRecord>();
+		const live = new Map<string, BlockedSubject>();
 		const records: AnyTaskRecord[] = [];
 		for (const status of LIVE_STATUSES) {
 			records.push(
@@ -192,8 +192,9 @@ export class TaskGraphView {
 				this.#storage.scanConversations({ ownerTaskId: record.id }, SCAN_PAGE_SIZE, cursor, context),
 			);
 			const conversations = owned.map((conversation) => conversation.id).sort((a, b) => a - b);
-			tasks[String(record.id)] = nodeOf(record, conversations, this.#blocking.blocked(record));
-			live.set(String(record.id), record);
+			const subject = blockedSubject(record);
+			tasks[String(record.id)] = nodeOf(record, conversations, this.#blocking.blocked(subject));
+			live.set(String(record.id), subject);
 		}
 		return { value: { tasks }, records: live };
 	}
@@ -227,8 +228,9 @@ function advance(
 			changed.set(key, undefined);
 			continue;
 		}
-		mount.records.set(key, record);
-		const next = nodeOf(record, previous?.conversations ?? [], blocked(record));
+		const subject = blockedSubject(record);
+		mount.records.set(key, subject);
+		const next = nodeOf(record, previous?.conversations ?? [], blocked(subject));
 		if (previous !== undefined && JSON.stringify(next) === JSON.stringify(previous)) continue;
 		ops.push(["s", ["tasks", key], next as unknown as JsonValue]);
 		changed.set(key, next);
