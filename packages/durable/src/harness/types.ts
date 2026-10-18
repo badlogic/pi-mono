@@ -604,12 +604,25 @@ export type EnvTarget = {
 	readonly read: DocumentReader;
 };
 
+/** Identity of the task invocation asking for model access. Not a provider request or billing ID. */
+export type TaskModelScope = {
+	readonly taskId: TaskId;
+	readonly conversationId: ConversationId;
+	readonly taskKind: string;
+	readonly signal: AbortSignal;
+};
+
 export type HarnessOptions<Tool extends ToolRegistration = ToolRegistration> = {
 	/**
 	 * pi-ai model access used by generation, compaction, hooks and tools: a `Models`, or a function returning the current
 	 * one, called at each use, so a host can replace its model configuration without reopening the Harness.
 	 */
 	readonly models: Models | (() => Models);
+	/** Wrap current model access for an exact task invocation, including recovered compaction.
+	 * Called on each TaskRuntime.models access. Must not mutate the shared Models object.
+	 * This supplies identity, not atomic provider dispatch or exactly-once accounting.
+	 */
+	readonly taskModels?: (scope: TaskModelScope, models: Models) => Models;
 	readonly registry: RegistryReader<Tool>;
 	/** Run settings, or a function returning the current ones; read at each use either way. */
 	readonly settings?: HarnessSettings | (() => HarnessSettings | undefined);

@@ -207,6 +207,7 @@ class HarnessImpl<Tool extends ToolRegistration> extends SessionImpl implements 
 			storage,
 			registry: options.registry,
 			models: currentModels(options.models),
+			taskModels: options.taskModels,
 			agent: (id, snapshot, callContext) => this.resolveAgent(id, snapshot as RegistrySnapshot<Tool>, callContext),
 			settings,
 			env: (id, callContext) => this.buildEnv(id, callContext),

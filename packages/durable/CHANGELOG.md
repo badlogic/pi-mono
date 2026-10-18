@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Added
+
+- `HarnessOptions.taskModels` wraps model access with the exact task, conversation and invocation signal, including compaction checkpoint recovery.
+
 ### Breaking Changes
 
 - `TaskRuntime.sleep()` is removed: it waited inside a phase, which holds an invocation and, after a restart, reruns the phase and restarts the wait. A task now ends its phase asleep with `runtime.sleepUntil(until, checkpoint, context)` or by returning `{ status: "sleeping", until, checkpoint }` from `runtime.commit()`; move the work after the wait into the next phase and carry what it needs in the checkpoint. `TaskRuntime.setTimer()` paces work inside a phase without waiting for it.
