@@ -6,6 +6,8 @@ This package provides:
 
 - an explicit, callback-based `TelemetryContext` / `TelemetrySpan` contract;
 - a shared `NOOP_TELEMETRY_CONTEXT`;
+- opaque cross-process propagation and span links;
+- counters, up-down counters, histograms, and typed metric schemas;
 - a reference `InMemoryTelemetryContext` implementation;
 - serializable schema definitions with inferred TypeScript types;
 - no exporter, global current-span state, or dependency on a telemetry backend.
@@ -18,6 +20,8 @@ Applications can use the in-memory reference or provide an adapter for OpenTelem
 - [Telemetry Concepts](#telemetry-concepts)
 - [Core Context API](#core-context-api)
 - [Adapter Contract](#adapter-contract)
+- [Propagation and Span Links](#propagation-and-span-links)
+- [Metrics](#metrics)
 - [No-op Context](#no-op-context)
 - [In-Memory Reference Adapter](#in-memory-reference-adapter)
 - [Adapter Conformance](#adapter-conformance)
@@ -131,6 +135,105 @@ An adapter implements `TelemetryContext` and bridges the generic API to its back
 
 Adapters may activate backend-native ambient context internally for automatic instrumentation, but pi code always propagates the parent through `TelemetryContext` arguments. Exporter buffering, flushing, sampling, backend IDs, and backend-specific context objects belong to the adapter. Use the [adapter conformance suite](#adapter-conformance) to check these observable semantics.
 
+## Propagation and Span Links
+
+An adapter may also implement `TelemetryPropagation`. Keep that capability on the one adapter configured by the application, not on every context:
+
+```typescript
+interface TelemetryPropagation {
+  inject(context: TelemetryContext): TelemetryCarrier | undefined;
+  extract(carrier: TelemetryCarrier | undefined): TelemetryContext;
+}
+type TelemetryCarrier = Record<string, string>;
+```
+
+A carrier is an opaque JSON-safe string map. Adapters own its format; W3C `traceparent` and `tracestate` fit without requiring them. Transport code sends only the carrier, never a context or span:
+
+```typescript
+const caller = new InMemoryTelemetryContext();
+const provider = new InMemoryTelemetryContext();
+await caller.startSpan({ name: 'rpc.client' }, async (span) => {
+  const wire = JSON.stringify(caller.inject(span));
+  await provider.extract(JSON.parse(wire)).startSpan(
+    { name: 'rpc.server' },
+    (serverSpan) => handleRequest(serverSpan),
+  );
+});
+```
+
+Injection returns a detached carrier or `undefined` for roots, no-op contexts, and unsupported contexts. Extraction returns a receiver-owned parent. Absent, invalid, unknown, or unreadable carriers fall back to the adapter's root, so incoming work is still recorded. Both methods are synchronous, passive, and non-throwing. Trace metadata is untrusted diagnostics, never authorization. Transport boundaries own carrier size limits.
+
+A link relates work without changing its parent. Use `SpanOptions.links` when the target is known at creation, or `span.addLink()` after the span has started:
+
+```typescript
+await telemetry.startSpan(
+  { name: 'activation', links: [{ context: firstGetter, attributes: { reason: 'trigger' } }] },
+  async (activation) => {
+    laterGetter.addLink({ context: activation });
+    await activate();
+  },
+);
+```
+
+Link targets are `TelemetryContext` handles, including spans and extracted remote parents. For a remote link, first call `adapter.extract(carrier)`. A settled target remains linkable and injectable; a settled source ignores `addLink()`. Links append in order, copy attributes, and ignore root, no-op, unsupported, or malformed targets. Failed link calls are atomic and never throw. The typed span starter's callback also supports `addLink()`; initial links use the low-level `startSpan()` API.
+
+`NOOP_TELEMETRY_PROPAGATION` never inspects its arguments: injection returns `undefined`, extraction returns `NOOP_TELEMETRY_CONTEXT`.
+
+## Metrics
+
+An adapter may implement `TelemetryMetrics` alongside `TelemetryContext` and `TelemetryPropagation`. Applications configure one adapter, not separate backends for each capability:
+
+```typescript
+const bytes = telemetry.counter('network.bytes', {
+  description: 'Encoded WebSocket bytes', unit: 'By',
+});
+bytes.add(encodedSize, { direction: 'out' });
+
+const active = telemetry.upDownCounter('calls.active');
+active.add(1);
+active.add(-1);
+
+const duration = telemetry.histogram('call.duration', {
+  unit: 'ms', boundaries: [1, 10, 100, 1000],
+});
+duration.record(elapsedMs, { method: 'read' }, currentSpan);
+```
+
+Factories take an instrument name and optional `InstrumentOptions` (`description`, `unit`). Histograms additionally accept `HistogramOptions.boundaries`: finite, strictly increasing bucket hints. Backends own aggregation and may translate these hints. Counters accept non-negative finite increments; up-down counters and histograms accept finite signed values. Histogram `record(value, attributes?, context?)` optionally correlates a measurement with a span, called an exemplar. Counter `add(value, attributes?)` has no context argument.
+
+Factories and recording methods are synchronous, passive, and non-throwing. Invalid measurements, unreadable metadata/attributes, or invalid boundaries are ignored atomically. `NOOP_TELEMETRY_METRICS` returns shared frozen instruments without inspecting inputs. Record only values already available to business code; do not serialize or measure extra data for telemetry.
+
+Use only low-cardinality attributes: bounded values such as direction or method, not request IDs, user IDs, prompts, or arbitrary paths. The low-level attribute bag remains open; instrumentation owns this policy, not backend-specific heuristics.
+
+### Typed metric schemas
+
+`TelemetrySchemaDefinition.metrics` optionally declares instrument names, kinds, metadata, and required/optional attributes. `createTypedMetrics()` combines one or more schemas and rejects duplicate metric names, incorrect instrument kinds, unknown attributes, and missing required attributes:
+
+```typescript
+const schema = defineTelemetrySchema({
+  version: 1,
+  spans: {},
+  metrics: {
+    'network.bytes': {
+      kind: 'counter', description: 'Encoded bytes', unit: 'By',
+      attributes: {
+        direction: {
+          type: 'string', required: true, values: ['in', 'out'],
+          description: 'Direction', cardinality: 'low',
+        },
+      },
+    },
+  },
+} as const);
+
+const metrics = createTypedMetrics(telemetry, [schema]);
+metrics.counter('network.bytes').add(encodedSize, { direction: 'out' });
+```
+
+Metric definitions use `kind: 'counter' | 'upDownCounter' | 'histogram'`; only histograms may declare `boundaries`. Metric attributes use the same scalar/array definitions as spans, but reject `cardinality: 'high'`. Omitting the cardinality annotation does not waive the low-cardinality policy. Unlike the typed span starter, the metric helper reads and retains schema instrument metadata at runtime. It performs no runtime attribute validation.
+
+`InMemoryTelemetryContext.getMetrics()` returns ordered, detached `RecordedTelemetryMeasurement` snapshots: `kind`, `name`, optional `description`/`unit`/`boundaries`, `value`, copied `attributes`, and a carrier-shaped exemplar `context` or `null`. This is a measurement log, not aggregated counters or buckets; storage is unbounded and records no timestamps.
+
 ## No-op Context
 
 Use `NOOP_TELEMETRY_CONTEXT` when telemetry is optional:
@@ -171,7 +274,9 @@ await telemetry.startSpan(
 console.log(telemetry.getSpans());
 ```
 
-`getSpans()` returns detached snapshots in span-start order. Each `RecordedTelemetrySpan` contains a deterministic numeric ID, parent ID, merged attributes, ordered events, final status, settlement state, and deterministic end sequence. It records no timestamps.
+`getSpans()` returns detached snapshots in span-start order. Each `RecordedTelemetrySpan` contains a deterministic numeric ID, local parent ID, carrier-shaped `context` and `parentContext` snapshots, ordered `links`, merged attributes, ordered events, final status, settlement state, and deterministic end sequence. It records no timestamps. A remote parent has `parentId: null` but a non-null `parentContext`; a root has both null. A `RecordedTelemetryLink` contains a target carrier and copied attributes.
+
+The adapter implements `TelemetryPropagation` with its own small carrier codec: a unique recorder scope and a deterministic numeric span ID. The carrier survives JSON round trips and works across independent processes without a shared registry. Its keys are an implementation detail, not a public wire format for other adapters.
 
 The adapter is safe to use as an ordinary `TelemetryContext`, but storage is unbounded and process-local. Create a fresh instance to isolate tests or recording scopes, and do not capture sensitive attributes unless the caller's data policy allows them.
 
@@ -206,7 +311,7 @@ for (const group of new Set(conformance.map((testCase) => testCase.group))) {
 }
 ```
 
-The suite checks synchronous single admission, result and rejection identity, automatic and explicit status, attribute merging, event ordering, inert post-settlement calls, nested and concurrent parentage, and suppression of unreadable telemetry payload failures. `getSpans()` may flush an asynchronous exporter before returning. The testing subpath uses Node's assertion APIs; the root telemetry package remains runtime-neutral.
+The suite checks synchronous single admission, result and rejection identity, automatic and explicit status, attribute merging, event ordering, inert post-settlement calls, nested and concurrent parentage, links, and suppression of unreadable telemetry payload failures. Fixtures may supply `propagation` to additionally check JSON round trips, multiple adapter hops, and safe fallback for malformed carriers. Fixtures may also supply `metrics` and `getMetrics()` to check ordered measurements, histogram exemplars, input copying, and atomic suppression of invalid metadata or measurements. `getSpans()` may flush an asynchronous exporter before returning. The testing subpath uses Node's assertion APIs; the root telemetry package remains runtime-neutral.
 
 ## Typed Schemas
 
@@ -384,7 +489,7 @@ The pi schemas use pi-owned `pi.ai.*`, `pi.harness.*`, and `pi.session.*` names.
 
 ## Security and Portability
 
-Telemetry is process-local diagnostics, not durable application state. Do not persist a `TelemetryContext`, `TelemetrySpan`, or backend-native trace object in records, messages, snapshots, or deferred handles.
+Telemetry is diagnostics, not durable application state. Do not persist a `TelemetryContext`, `TelemetrySpan`, or backend-native trace object in records, messages, snapshots, or deferred handles. An injected `TelemetryCarrier` may cross a transport or be stored as optional diagnostic correlation data. It is best effort: an adapter change may lose correlation, but must not prevent work.
 
 Attribute values are intentionally limited to primitive scalars and arrays. Domain instrumentation should avoid prompts, completions, tool arguments or output, file contents, provider payloads, headers, credentials, and free-form error details unless its schema and data policy explicitly allow them.
 
@@ -398,13 +503,24 @@ The package does not use `AsyncLocalStorage` or another runtime-specific ambient
 |---|---|
 | `TelemetryContext` | Starts callback-managed child spans |
 | `TelemetrySpan` | Records attributes, events, and status; also acts as a child context |
-| `SpanOptions` | Span name and optional start attributes |
+| `SpanOptions` | Span name, optional start attributes and links |
+| `SpanLink` | Context target and optional link attributes |
+| `TelemetryCarrier` | Opaque JSON-safe string map |
+| `TelemetryPropagation` | Optional adapter injection and extraction capability |
+| `NOOP_TELEMETRY_PROPAGATION` | Shared passive propagation for disabled telemetry |
+| `TelemetryMetrics` | Optional adapter instrument factories |
+| `TelemetryCounter` / `TelemetryUpDownCounter` | Instruments with `add()` |
+| `TelemetryHistogram` | Instrument with `record()` and optional exemplar context |
+| `InstrumentOptions` / `HistogramOptions` | Description, unit, and histogram boundary hints |
+| `NOOP_TELEMETRY_METRICS` | Shared passive metric instruments |
+| `RecordedTelemetryMeasurement` | Captured measurement and optional exemplar |
 | `SpanAttributes` / `AttributeValue` | Open adapter-level attribute bag and supported values |
 | `SpanStatus` | Explicit `ok` or `error` status |
 | `NOOP_TELEMETRY_CONTEXT` | Shared passive context for disabled telemetry |
 | `InMemoryTelemetryContext` | Reference adapter with deterministic process-local recording |
 | `RecordedTelemetrySpan` | Normalized captured span snapshot |
 | `RecordedTelemetryEvent` | Normalized captured event snapshot |
+| `RecordedTelemetryLink` | Captured target carrier and link attributes |
 
 ### Schema definitions and inference
 
@@ -412,6 +528,9 @@ The package does not use `AsyncLocalStorage` or another runtime-specific ambient
 |---|---|
 | `defineTelemetrySchema()` | Typed identity helper for serializable schema data |
 | `createTypedSpanStarter()` | Binds a parent context to one or more schema vocabularies |
+| `createTypedMetrics()` / `TypedTelemetryMetrics` | Binds metric names, kinds, metadata, and attributes to schemas |
+| `TelemetryMetricDefinition` / `TelemetryMetricAttributeDefinition` | Serializable instrument metadata and low-cardinality attribute definitions |
+| `SchemaTelemetryCounter` / `SchemaTelemetryHistogram` | Schema-constrained recording methods |
 | `TypedSpanStarter` | Exact starter type with recursively child-bound callbacks |
 | `TelemetrySchemaDefinition` | Top-level schema shape |
 | `TelemetrySpanDefinition` | Span metadata, parents, attributes, events, and status rule |

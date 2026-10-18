@@ -16,7 +16,7 @@ Contracts are runtime values described with [TypeBox](https://github.com/sinclai
 |--------|----------|---------|
 | `@earendil-works/chord` | Contracts (`local`, `remote`, `method`, `opaque`), declarations (through the factory's `self`: `state`, `derive`, `resource`, `on`, `task`), hosts (`createHost`, `defineFacet`, `defineRegistry`), links (`memoryLinkPair`, `ipcLink`, `webSocketLink`, `acceptWebSockets`), errors (`ChordError`, `isChordError`, `forbidden`, `invalid`). Also the shared base: `Context`, `JsonValue`, `JsonRepresentation`, `Draft`, `copyJson`, `isJsonValue`, and `replicatedState` with its types. | Node and browsers |
 | `@earendil-works/chord/node` | Child host processes: `createHostManager`, `forkDriver`, `childControl`, `processLock`; the facet module loader `nodeLoader`. | Node |
-| `@earendil-works/chord/context` | Explicit cancellation and invocation values: `BACKGROUND_CONTEXT`, `withCancel`, `withAbortSignal`, `withoutAbortSignal`, `withContextValue`, `awaitWithContext`. | Node and browsers |
+| `@earendil-works/chord/context` | Explicit cancellation, telemetry, and invocation values: `BACKGROUND_CONTEXT`, `withCancel`, `withAbortSignal`, `withoutAbortSignal`, `withTelemetry`, `traceIn`, `withContextValue`, `awaitWithContext`. | Node and browsers |
 | `@earendil-works/chord/delta` | The transactional JSON tracker, structural diff, immutable apply, and the wire encoder/decoder for operation batches. | Node and browsers |
 | `@earendil-works/chord/output` | Bounded output streams and paced progress: `OutputBuffer` (head or tail window of a stream, `OutputLimits`, `OutputSkip`), `boundOutput`, `sanitizeOutput`, `utf8ByteLength`, and `Progress` (adaptive commits of a changing value). | Node and browsers |
 | `@earendil-works/chord/sqlite` | Portable `SqliteDatabase`, `SqliteExecutor`, and `SqliteValue`, atomic `applySqliteMigrations(database, migrations, { table })`, and `validateSqliteSchemaPrefix`. The metadata table must be a valid, non-reserved SQLite identifier; migration versions start at 1 and are contiguous. | Any SQLite adapter |
@@ -68,6 +68,26 @@ await host.root(async (ctx) => {
 - [Usage guide](docs/guide.md): API reference for contracts, objects, state, roots, lifetime, plugins, hot reload, hosts, and links.
 - [Specification](docs/spec.md): compatibility, lifetime, and reload semantics, plus known limitations and implementation decisions.
 - [Delta guide](src/delta/README.md): ownership, lifecycle, operation, and replica contracts of `@earendil-works/chord/delta`.
+
+## Explicit Context telemetry
+
+`Context` has a fixed `telemetry: TelemetryContext` member, alongside `abortSignal`. It is never undefined: `BACKGROUND_CONTEXT` and `TODO_CONTEXT` use `NOOP_TELEMETRY_CONTEXT` from `@earendil-works/pi-telemetry`.
+
+```ts
+import { BACKGROUND_CONTEXT, traceIn, withTelemetry } from '@earendil-works/chord/context';
+import { InMemoryTelemetryContext } from '@earendil-works/pi-telemetry';
+
+const telemetry = new InMemoryTelemetryContext();
+const context = withTelemetry(telemetry, BACKGROUND_CONTEXT);
+await traceIn(context, { name: 'app.load' }, async (child) => {
+  child.telemetry.addEvent('cache.miss');
+  return traceIn(child, { name: 'app.read' }, (nested) => readAccount(nested));
+});
+```
+
+`withTelemetry(telemetry, context)` derives a new context; it never changes its parent, cancellation, or typed values. `traceIn(context, options, fn)` creates a callback-managed child span, and `fn` receives the derived context with `telemetry` narrowed to `TelemetrySpan`, including `addLink()`. Values, cancellation, callback results, and rejection identities are preserved. Concurrent calls keep independent parents; there is no ambient current span. `value()`, `ContextKey`, and `withContextValue()` remain supported.
+
+These helpers operate on the standalone `Context` API. They do not yet instrument Chord hosts, methods, or network frames.
 
 ## Tracking JSON deltas
 

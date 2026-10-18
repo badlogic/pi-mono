@@ -1,13 +1,16 @@
+import { InMemoryTelemetryContext, NOOP_TELEMETRY_CONTEXT } from "@earendil-works/pi-telemetry";
 import { describe, expect, it, vi } from "vitest";
 import {
 	awaitWithContext,
 	BACKGROUND_CONTEXT,
 	createContextKey,
 	TODO_CONTEXT,
+	traceIn,
 	withAbortSignal,
 	withCancel,
 	withContextValue,
 	withoutAbortSignal,
+	withTelemetry,
 } from "../src/context/index.ts";
 
 describe("Context", () => {
@@ -16,6 +19,8 @@ describe("Context", () => {
 
 		expect(TODO_CONTEXT).not.toBe(BACKGROUND_CONTEXT);
 		expect(TODO_CONTEXT.abortSignal).toBeUndefined();
+		expect(TODO_CONTEXT.telemetry).toBe(NOOP_TELEMETRY_CONTEXT);
+		expect(BACKGROUND_CONTEXT.telemetry).toBe(NOOP_TELEMETRY_CONTEXT);
 		expect(TODO_CONTEXT.value(key)).toBeUndefined();
 		expect(String(BACKGROUND_CONTEXT)).toBe("[Context BACKGROUND_CONTEXT]");
 		expect(String(TODO_CONTEXT)).toBe("[Context TODO_CONTEXT]");
@@ -68,6 +73,75 @@ describe("Context", () => {
 		expect(context.abortSignal?.aborted).toBe(true);
 		expect(cleanup.abortSignal).toBeUndefined();
 		expect(cleanup.value(key)).toBe("preserved");
+	});
+
+	it("derives telemetry independently from values and cancellation", async () => {
+		const telemetry = new InMemoryTelemetryContext();
+		const other = new InMemoryTelemetryContext();
+		const key = createContextKey<string>("principal");
+		const controller = new AbortController();
+		const base = withContextValue(key, "owner", withAbortSignal(controller.signal, BACKGROUND_CONTEXT));
+		const context = withTelemetry(telemetry, base);
+		const replaced = withTelemetry(other, context);
+		expect(base.telemetry).toBe(NOOP_TELEMETRY_CONTEXT);
+		expect(context.telemetry).toBe(telemetry);
+		expect(replaced.telemetry).toBe(other);
+		expect(replaced.value(key)).toBe("owner");
+		expect(replaced.abortSignal).toBe(base.abortSignal);
+		expect(withoutAbortSignal(context).telemetry).toBe(telemetry);
+		await traceIn(context, { name: "outer" }, async (child) => {
+			expect(child.value(key)).toBe("owner");
+			expect(child.abortSignal).toBe(context.abortSignal);
+			child.telemetry.addEvent("started");
+			await traceIn(child, { name: "inner" }, (nested) => {
+				nested.telemetry.addLink({ context: child.telemetry });
+				return 42;
+			});
+		});
+		const [outer, inner] = telemetry.getSpans();
+		expect(outer?.parentId).toBeNull();
+		expect(inner?.parentId).toBe(outer?.id);
+		expect(inner?.links[0]?.context).toEqual(outer?.context);
+		expect(context.telemetry).toBe(telemetry);
+		controller.abort();
+		expect(context.abortSignal?.aborted).toBe(true);
+	});
+
+	it("isolates concurrent traceIn branches and preserves callback results and errors", async () => {
+		const telemetry = new InMemoryTelemetryContext();
+		const context = withTelemetry(telemetry, BACKGROUND_CONTEXT);
+		let release: (() => void) | undefined;
+		const gate = new Promise<void>((resolve) => {
+			release = resolve;
+		});
+		const first = traceIn(context, { name: "first" }, async (child) => {
+			await gate;
+			return traceIn(child, { name: "first.child" }, () => "first");
+		});
+		const second = traceIn(context, { name: "second" }, async (child) => {
+			const result = await traceIn(child, { name: "second.child" }, () => "second");
+			release?.();
+			return result;
+		});
+		expect(await Promise.all([first, second])).toEqual(["first", "second"]);
+		const spans = telemetry.getSpans();
+		for (const name of ["first", "second"]) {
+			const parent = spans.find((span) => span.name === name);
+			expect(spans.find((span) => span.name === `${name}.child`)?.parentId).toBe(parent?.id);
+		}
+		const failure = { reason: "same value" };
+		await expect(
+			traceIn(context, { name: "throw" }, () => {
+				throw failure;
+			}),
+		).rejects.toBe(failure);
+		await expect(traceIn(context, { name: "reject" }, () => Promise.reject(failure))).rejects.toBe(failure);
+		expect(
+			await traceIn(BACKGROUND_CONTEXT, { name: "noop" }, (child) => {
+				child.telemetry.addLink({ context: telemetry });
+				return 42;
+			}),
+		).toBe(42);
 	});
 
 	it("stops waiting when the invocation is cancelled", async () => {

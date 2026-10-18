@@ -1,4 +1,5 @@
-import type { SpanOptions, TelemetryContext, TelemetrySpan } from "./index.ts";
+import type { SpanOptions, TelemetryContext, TelemetryPropagation, TelemetrySpan } from "./index.ts";
+import type { TelemetryCounter, TelemetryHistogram, TelemetryMetrics, TelemetryUpDownCounter } from "./metrics.ts";
 
 function startNoopSpan<T>(_options: SpanOptions, callback: (span: TelemetrySpan) => T | Promise<T>): Promise<T> {
 	try {
@@ -10,6 +11,7 @@ function startNoopSpan<T>(_options: SpanOptions, callback: (span: TelemetrySpan)
 
 const noopTelemetrySpan: TelemetrySpan = {
 	startSpan: startNoopSpan,
+	addLink: () => {},
 	addEvent: () => {},
 	setAttributes: () => {},
 	setStatus: () => {},
@@ -18,3 +20,20 @@ Object.freeze(noopTelemetrySpan);
 
 /** Shared telemetry context used when an application does not provide one. */
 export const NOOP_TELEMETRY_CONTEXT: TelemetryContext = noopTelemetrySpan;
+
+/** Shared propagation capability that neither inspects nor retains its inputs. */
+export const NOOP_TELEMETRY_PROPAGATION: TelemetryPropagation = Object.freeze({
+	inject: () => undefined,
+	extract: () => NOOP_TELEMETRY_CONTEXT,
+});
+
+const noopCounter: TelemetryCounter = Object.freeze({ add: () => {} });
+const noopUpDownCounter: TelemetryUpDownCounter = Object.freeze({ add: () => {} });
+const noopHistogram: TelemetryHistogram = Object.freeze({ record: () => {} });
+
+/** Shared instruments that never inspect or retain metadata, measurements, or contexts. */
+export const NOOP_TELEMETRY_METRICS: TelemetryMetrics = Object.freeze({
+	counter: () => noopCounter,
+	upDownCounter: () => noopUpDownCounter,
+	histogram: () => noopHistogram,
+});

@@ -1,5 +1,13 @@
 import { deepStrictEqual, doesNotThrow, fail, ok, strictEqual } from "node:assert/strict";
-import type { SpanAttributes, SpanOptions, SpanStatus, TelemetrySpan } from "../index.ts";
+import {
+	NOOP_TELEMETRY_CONTEXT,
+	type SpanAttributes,
+	type SpanLink,
+	type SpanOptions,
+	type SpanStatus,
+	type TelemetryCarrier,
+	type TelemetrySpan,
+} from "../index.ts";
 import type { RecordedTelemetrySpan } from "../memory.ts";
 import type {
 	TelemetryAdapterConformanceCase,
@@ -62,6 +70,173 @@ export function createTelemetryAdapterConformance(
 	factory: TelemetryAdapterFixtureFactory,
 ): readonly TelemetryAdapterConformanceCase[] {
 	return [
+		createCase(
+			factory,
+			"metrics",
+			"records ordered measurements and optional histogram exemplars",
+			async (fixture) => {
+				if (!fixture.metrics) return;
+				ok(fixture.getMetrics, "Metrics fixtures require a normalized measurement reader");
+				fixture.metrics
+					.counter("bytes", { description: "Encoded bytes", unit: "By" })
+					.add(12, { direction: "out" });
+				const active = fixture.metrics.upDownCounter("active");
+				active.add(1);
+				active.add(-1);
+				const histogram = fixture.metrics.histogram("duration", { unit: "ms", boundaries: [1, 10] });
+				await fixture.context.startSpan({ name: "measured" }, (span) =>
+					histogram.record(5, { method: "read" }, span),
+				);
+				const measurements = await fixture.getMetrics();
+				deepStrictEqual(
+					measurements.map((measurement) => [measurement.kind, measurement.name, measurement.value]),
+					[
+						["counter", "bytes", 12],
+						["upDownCounter", "active", 1],
+						["upDownCounter", "active", -1],
+						["histogram", "duration", 5],
+					],
+				);
+				deepStrictEqual(measurements[0]?.attributes, { direction: "out" });
+				strictEqual(measurements[0]?.description, "Encoded bytes");
+				strictEqual(measurements[0]?.unit, "By");
+				deepStrictEqual(measurements[3]?.boundaries, [1, 10]);
+				deepStrictEqual(measurements[3]?.context, findSpan(await fixture.getSpans(), "measured").context);
+			},
+		),
+		createCase(
+			factory,
+			"metrics",
+			"copies inputs and suppresses invalid measurements atomically",
+			async (fixture) => {
+				if (!fixture.metrics) return;
+				ok(fixture.getMetrics, "Metrics fixtures require a normalized measurement reader");
+				const boundaries = [1, 10];
+				const options = { description: "Original", boundaries };
+				const histogram = fixture.metrics.histogram("snapshot", options);
+				boundaries.push(100);
+				options.description = "Changed";
+				const attributes = { tags: ["original"] };
+				histogram.record(-1, attributes);
+				attributes.tags.push("changed");
+				const counter = fixture.metrics.counter("invalid");
+				for (const value of [NaN, Infinity, -Infinity, -1]) doesNotThrow(() => counter.add(value));
+				doesNotThrow(() => counter.add(1, { partial: true, broken: unreadable(["value"]) }));
+				doesNotThrow(() => fixture.metrics?.histogram("bad-options", unreadable({ unit: "ms" })).record(1));
+				doesNotThrow(() => fixture.metrics?.histogram("bad-boundaries", { boundaries: [2, 1] }).record(1));
+				const measurements = await fixture.getMetrics();
+				strictEqual(measurements.length, 1);
+				deepStrictEqual(measurements[0]?.attributes, { tags: ["original"] });
+				deepStrictEqual(measurements[0]?.boundaries, [1, 10]);
+				strictEqual(measurements[0]?.description, "Original");
+				strictEqual(measurements[0]?.context, null);
+			},
+		),
+		createCase(factory, "links", "records initial and late links without changing parents", async (fixture) => {
+			let target: TelemetrySpan | undefined;
+			await fixture.context.startSpan({ name: "target" }, (span) => {
+				target = span;
+			});
+			if (!target) throw new Error("Expected target span");
+			const targetSpan = target;
+			const attributes = { reason: ["initial"] };
+			await fixture.context.startSpan({ name: "linked", links: [{ context: target, attributes }] }, (span) => {
+				attributes.reason.push("mutated");
+				span.addLink({ context: targetSpan, attributes: { reason: "late" } });
+				span.addLink({ context: NOOP_TELEMETRY_CONTEXT });
+			});
+			const spans = await fixture.getSpans();
+			const linked = findSpan(spans, "linked");
+			strictEqual(linked.parentId, null);
+			strictEqual(linked.parentContext, null);
+			deepStrictEqual(linked.links, [
+				{ context: findSpan(spans, "target").context, attributes: { reason: ["initial"] } },
+				{ context: findSpan(spans, "target").context, attributes: { reason: "late" } },
+			]);
+		}),
+		createCase(
+			factory,
+			"links",
+			"suppresses malformed links atomically and ignores settled sources",
+			async (fixture) => {
+				let source: TelemetrySpan | undefined;
+				await fixture.context.startSpan({ name: "link-source" }, (span) => {
+					source = span;
+					doesNotThrow(() => span.addLink(unreadable<SpanLink>({ context: span })));
+					doesNotThrow(() =>
+						span.addLink({ context: span, attributes: { partial: true, broken: unreadable(["value"]) } }),
+					);
+				});
+				if (!source) throw new Error("Expected source span");
+				const sourceSpan = source;
+				doesNotThrow(() => sourceSpan.addLink({ context: sourceSpan }));
+				deepStrictEqual(findSpan(await fixture.getSpans(), "link-source").links, []);
+			},
+		),
+		createCase(
+			factory,
+			"propagation",
+			"roundtrips parent identity through JSON without retaining the carrier",
+			async (fixture) => {
+				if (!fixture.propagation) return;
+				const propagation = fixture.propagation;
+				await fixture.context.startSpan({ name: "sender" }, async (span) => {
+					const carrier = propagation.inject(span);
+					ok(carrier);
+					const wire = JSON.parse(JSON.stringify(carrier)) as TelemetryCarrier;
+					const parent = propagation.extract(wire);
+					for (const key of Object.keys(wire)) wire[key] = "mutated";
+					await parent.startSpan({ name: "receiver" }, () => 42);
+					deepStrictEqual(propagation.inject(span), carrier);
+				});
+				const spans = await fixture.getSpans();
+				deepStrictEqual(findSpan(spans, "receiver").parentContext, findSpan(spans, "sender").context);
+			},
+		),
+		createCase(factory, "propagation", "unknown and unreadable carriers produce recorded roots", async (fixture) => {
+			if (!fixture.propagation) return;
+			strictEqual(fixture.propagation.inject(NOOP_TELEMETRY_CONTEXT), undefined);
+			for (const [index, carrier] of [
+				undefined,
+				{},
+				{ unknown: "format" },
+				unreadable<TelemetryCarrier>({ bad: "value" }),
+			].entries()) {
+				let result = 0;
+				doesNotThrow(() => {
+					const context = fixture.propagation?.extract(carrier);
+					if (!context) throw new Error("Expected root context");
+					void context.startSpan({ name: `fallback-${index}` }, () => {
+						result = 42;
+					});
+				});
+				strictEqual(result, 42);
+			}
+			for (const span of await fixture.getSpans()) strictEqual(span.parentContext, null);
+		}),
+		createCase(factory, "propagation", "propagates across fresh adapters and multiple hops", async (fixture) => {
+			if (!fixture.propagation) return;
+			await using receiver = await factory();
+			await using worker = await factory();
+			if (!receiver.propagation || !worker.propagation) throw new Error("Expected propagation on each fixture");
+			let senderCarrier: TelemetryCarrier | undefined;
+			await fixture.context.startSpan({ name: "sender" }, (span) => {
+				senderCarrier = fixture.propagation?.inject(span);
+			});
+			ok(senderCarrier);
+			let receiverCarrier: TelemetryCarrier | undefined;
+			await receiver.propagation
+				.extract(JSON.parse(JSON.stringify(senderCarrier)) as TelemetryCarrier)
+				.startSpan({ name: "receiver" }, (span) => {
+					receiverCarrier = receiver.propagation?.inject(span);
+				});
+			ok(receiverCarrier);
+			await worker.propagation
+				.extract(JSON.parse(JSON.stringify(receiverCarrier)) as TelemetryCarrier)
+				.startSpan({ name: "worker" }, () => {});
+			deepStrictEqual(findSpan(await receiver.getSpans(), "receiver").parentContext, senderCarrier);
+			deepStrictEqual(findSpan(await worker.getSpans(), "worker").parentContext, receiverCarrier);
+		}),
 		createCase(
 			factory,
 			"callback lifecycle",

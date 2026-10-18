@@ -75,7 +75,9 @@ What happened:
 - `submit()` durably admits your input and returns a `Submission`. A built-in generation task calls the model and appends the answer.
 - `wait()` resolves once the input is answered (`done`) or has failed (`unanswered`, with a reason).
 
-Every async call takes a Chord `Context`, which carries cancellation. `BACKGROUND_CONTEXT` never cancels. Cancelling a wait only cancels that wait, never the work.
+Every async call takes a Chord `Context`, which carries cancellation and explicit telemetry. `BACKGROUND_CONTEXT` never cancels and uses no-op telemetry. Cancelling a wait only cancels that wait, never the work.
+
+`HarnessOptions.telemetry` accepts a host-owned `TelemetryContext` adapter, optionally implementing `TelemetryPropagation` and `TelemetryMetrics`, from `@earendil-works/pi-telemetry`. This reserves the adapter configuration boundary; Durable currently emits no spans or metrics and does not persist carriers. Its instrumentation and schema are separate work.
 
 ## Concepts
 

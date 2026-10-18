@@ -1,3 +1,10 @@
+import {
+	NOOP_TELEMETRY_CONTEXT,
+	type SpanOptions,
+	type TelemetryContext,
+	type TelemetrySpan,
+} from "@earendil-works/pi-telemetry";
+
 /** Typed identity for one value carried by a {@link Context}. */
 export interface ContextKey<T> {
 	readonly token: symbol;
@@ -8,6 +15,7 @@ export interface ContextKey<T> {
 /** Immutable invocation-scoped values passed explicitly through operations. */
 export interface Context {
 	readonly abortSignal: AbortSignal | undefined;
+	readonly telemetry: TelemetryContext;
 	value<T>(key: ContextKey<T>): T | undefined;
 	toString(): string;
 }
@@ -16,12 +24,20 @@ const ABORT_SIGNAL_CONTEXT_KEY: ContextKey<AbortSignal | undefined> = Object.fre
 	token: Symbol("chord.abortSignal"),
 });
 
+const TELEMETRY_CONTEXT_KEY: ContextKey<TelemetryContext> = Object.freeze({
+	token: Symbol("chord.telemetry"),
+});
+
 abstract class BaseContext implements Context {
 	abstract value<T>(key: ContextKey<T>): T | undefined;
 	abstract toString(): string;
 
 	get abortSignal(): AbortSignal | undefined {
 		return this.value(ABORT_SIGNAL_CONTEXT_KEY);
+	}
+
+	get telemetry(): TelemetryContext {
+		return this.value(TELEMETRY_CONTEXT_KEY) ?? NOOP_TELEMETRY_CONTEXT;
 	}
 }
 
@@ -74,6 +90,23 @@ export function createContextKey<T>(description: string): ContextKey<T> {
 /** Derive a context containing one additional or replaced value. */
 export function withContextValue<T>(key: ContextKey<T>, value: T, parent: Context): Context {
 	return new ContextValue(parent, key, value);
+}
+
+/** Derive an explicit telemetry parent without changing cancellation or application values. */
+export function withTelemetry<T extends TelemetryContext>(
+	telemetry: T,
+	context: Context,
+): Context & { readonly telemetry: T } {
+	return withContextValue(TELEMETRY_CONTEXT_KEY, telemetry, context) as Context & { readonly telemetry: T };
+}
+
+/** Run a child span with a derived context whose telemetry member is that span. */
+export function traceIn<T>(
+	context: Context,
+	options: SpanOptions,
+	fn: (context: Context & { readonly telemetry: TelemetrySpan }) => T | Promise<T>,
+): Promise<T> {
+	return context.telemetry.startSpan(options, (span) => fn(withTelemetry(span, context)));
 }
 
 /**

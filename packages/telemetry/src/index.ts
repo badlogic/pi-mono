@@ -1,12 +1,29 @@
+import type { TelemetryMetricDefinition } from "./metrics.ts";
+
 export type AttributeValue = string | number | boolean | readonly string[] | readonly number[] | readonly boolean[];
 
 export interface SpanAttributes {
 	[name: string]: AttributeValue | undefined;
 }
 
+/** Opaque, JSON-serializable adapter-owned propagation data. */
+export type TelemetryCarrier = Record<string, string>;
+
+/** Optional transport capability implemented by the application's telemetry adapter. */
+export interface TelemetryPropagation {
+	inject(context: TelemetryContext): TelemetryCarrier | undefined;
+	extract(carrier: TelemetryCarrier | undefined): TelemetryContext;
+}
+
+export interface SpanLink {
+	context: TelemetryContext;
+	attributes?: SpanAttributes;
+}
+
 export interface SpanOptions {
 	name: string;
 	attributes?: SpanAttributes;
+	links?: readonly SpanLink[];
 }
 
 export type SpanStatus = { status: "ok" } | { status: "error"; error?: { name: string; message: string } };
@@ -16,12 +33,27 @@ export interface TelemetryContext {
 }
 
 export interface TelemetrySpan extends TelemetryContext {
+	addLink(link: SpanLink): void;
 	addEvent(name: string, attributes?: SpanAttributes): void;
 	setAttributes(attributes: SpanAttributes): void;
 	setStatus(status: SpanStatus): void;
 }
 
-export { NOOP_TELEMETRY_CONTEXT } from "./noop.ts";
+export type {
+	HistogramOptions,
+	InstrumentOptions,
+	SchemaTelemetryCounter,
+	SchemaTelemetryHistogram,
+	TelemetryCounter,
+	TelemetryHistogram,
+	TelemetryMetricAttributeDefinition,
+	TelemetryMetricDefinition,
+	TelemetryMetrics,
+	TelemetryUpDownCounter,
+	TypedTelemetryMetrics,
+} from "./metrics.ts";
+export { createTypedMetrics } from "./metrics.ts";
+export { NOOP_TELEMETRY_CONTEXT, NOOP_TELEMETRY_METRICS, NOOP_TELEMETRY_PROPAGATION } from "./noop.ts";
 
 export type TelemetryAttributeType = "string" | "number" | "boolean" | "string[]" | "number[]" | "boolean[]";
 
@@ -66,6 +98,7 @@ export interface TelemetrySpanDefinition {
 export interface TelemetrySchemaDefinition {
 	version: number;
 	spans: Record<string, TelemetrySpanDefinition>;
+	metrics?: Record<string, TelemetryMetricDefinition>;
 }
 
 /** Typed identity helper for serializable telemetry schema data. */
@@ -353,5 +386,10 @@ export function createTypedSpanStarter<const Schemas extends TelemetrySchemaTupl
 	return bindTypedSpanStarter<Schemas>(telemetryContext);
 }
 
-export type { RecordedTelemetryEvent, RecordedTelemetrySpan } from "./memory.ts";
+export type {
+	RecordedTelemetryEvent,
+	RecordedTelemetryLink,
+	RecordedTelemetryMeasurement,
+	RecordedTelemetrySpan,
+} from "./memory.ts";
 export { InMemoryTelemetryContext } from "./memory.ts";
