@@ -27,6 +27,7 @@ const context = BACKGROUND_CONTEXT;
 
 // The current plan of a conversation. A fork keeps the plan it had at the fork entry.
 const PlanDoc = defineDoc<{ steps: string[] }>({
+	checkpointWhen: () => false,
 	kind: "app.plan",
 	version: 1,
 	scope: "conversation",

@@ -13,6 +13,7 @@ export interface InstrumentOptions {
 }
 
 export interface HistogramOptions extends InstrumentOptions {
+	/** Bucket hints; callers supply finite, strictly increasing values. */
 	boundaries?: readonly number[];
 }
 
@@ -28,7 +29,11 @@ export interface TelemetryHistogram {
 	record(value: number, attributes?: SpanAttributes, context?: TelemetryContext): void;
 }
 
-/** Optional adapter capability. Factories and recording methods are synchronous and non-throwing. */
+/**
+ * Optional adapter capability with synchronous factories and recording methods.
+ * Typed inputs are trusted; callers supply finite measurements and nonnegative counter increments.
+ * Malformed input behavior is unspecified.
+ */
 export interface TelemetryMetrics {
 	counter(name: string, options?: InstrumentOptions): TelemetryCounter;
 	upDownCounter(name: string, options?: InstrumentOptions): TelemetryUpDownCounter;

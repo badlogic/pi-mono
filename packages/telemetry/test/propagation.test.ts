@@ -11,14 +11,6 @@ import {
 	type TelemetrySpan,
 } from "../src/index.ts";
 
-function unreadable<T extends object>(value: T): T {
-	return new Proxy(value, {
-		get() {
-			throw new Error("unreadable");
-		},
-	});
-}
-
 describe("propagation and links", () => {
 	it("continues a parent in another Node process without shared recorder state", async () => {
 		const telemetry = new InMemoryTelemetryContext();
@@ -121,15 +113,27 @@ describe("propagation and links", () => {
 		]);
 	});
 
-	it("rejects malformed memory carriers and never inspects no-op payloads", async () => {
+	it("uses the root for absent and unknown carriers", async () => {
 		const telemetry = new InMemoryTelemetryContext();
-		for (const carrier of [{ "pi-memory-scope": "bad", "pi-memory-span": "1" }, unreadable({ bad: "value" })]) {
+		const carriers: readonly (TelemetryCarrier | undefined)[] = [undefined, {}, { unknown: "format" }];
+		for (const carrier of carriers) {
 			expect(telemetry.extract(carrier)).toBe(telemetry);
 		}
-		expect(NOOP_TELEMETRY_PROPAGATION.inject(unreadable(NOOP_TELEMETRY_CONTEXT))).toBeUndefined();
-		expect(NOOP_TELEMETRY_PROPAGATION.extract(unreadable({ bad: "value" }))).toBe(NOOP_TELEMETRY_CONTEXT);
+		expect(NOOP_TELEMETRY_PROPAGATION.inject(NOOP_TELEMETRY_CONTEXT)).toBeUndefined();
+		expect(NOOP_TELEMETRY_PROPAGATION.extract({ unknown: "format" })).toBe(NOOP_TELEMETRY_CONTEXT);
 		await NOOP_TELEMETRY_CONTEXT.startSpan({ name: "noop" }, (span) => {
-			expect(() => span.addLink(unreadable({ context: span }))).not.toThrow();
+			span.addLink({ context: span });
 		});
+	});
+
+	it("treats recognized carrier identifiers as opaque strings", async () => {
+		const telemetry = new InMemoryTelemetryContext();
+		const carrier = {
+			"pi-memory-scope": "external-recorder",
+			"pi-memory-span": "external-span",
+			"pi-memory-trace": "external-trace",
+		};
+		await telemetry.extract(carrier).startSpan({ name: "receiver" }, () => {});
+		expect(telemetry.getSpans()[0]?.parentContext).toEqual(carrier);
 	});
 });

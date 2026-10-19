@@ -7,26 +7,9 @@ import {
 	NOOP_TELEMETRY_METRICS,
 	NOOP_TELEMETRY_PROPAGATION,
 	type SchemaTelemetrySpan,
-	type SpanAttributes,
-	type SpanOptions,
-	type SpanStatus,
 	type TelemetrySchemaSpanStartAttributes,
 	type TelemetrySpan,
 } from "../src/index.ts";
-
-function unreadable<T extends object>(value: T): T {
-	return new Proxy(value, {
-		get: () => {
-			throw new Error("read");
-		},
-		getOwnPropertyDescriptor: () => {
-			throw new Error("inspect");
-		},
-		ownKeys: () => {
-			throw new Error("enumerate");
-		},
-	});
-}
 
 describe("telemetry schemas", () => {
 	it("preserves serializable definitions and infers exact attributes", () => {
@@ -121,9 +104,6 @@ describe("telemetry schemas", () => {
 		const requestSpan = spans.find((span) => span.name === "request");
 		expect(operationSpan?.parentId).toBeNull();
 		expect(requestSpan?.parentId).toBe(operationSpan?.id);
-		expect(() =>
-			createTypedSpanStarter(telemetryContext, unreadable([operationSchema, requestSchema] as const)),
-		).not.toThrow();
 
 		const syncError = { kind: "sync" };
 		const syncResult = startSpan("operation", { kind: "write" }, () => {
@@ -190,14 +170,17 @@ describe("NOOP_TELEMETRY_CONTEXT", () => {
 		await expect(asyncResult).rejects.toBe(asyncError);
 	});
 
-	it("does not inspect or retain telemetry payloads", async () => {
-		const options = unreadable<SpanOptions>({ name: "operation", attributes: { secret: "prompt content" } });
-		await NOOP_TELEMETRY_CONTEXT.startSpan(options, (span) => {
-			const attributes = unreadable<SpanAttributes>({ secret: "content" });
-			const status = unreadable<SpanStatus>({ status: "ok" });
-			expect(() => span.addEvent("event", attributes)).not.toThrow();
-			expect(() => span.setAttributes(attributes)).not.toThrow();
-			expect(() => span.setStatus(status)).not.toThrow();
-		});
+	it("ignores typed recording payloads", async () => {
+		const result = await NOOP_TELEMETRY_CONTEXT.startSpan(
+			{ name: "operation", attributes: { kind: "test" } },
+			(span) => {
+				span.addEvent("event", { count: 1 });
+				span.setAttributes({ complete: true });
+				span.setStatus({ status: "error", error: { name: "Expected", message: "test" } });
+				span.addLink({ context: span });
+				return 42;
+			},
+		);
+		expect(result).toBe(42);
 	});
 });

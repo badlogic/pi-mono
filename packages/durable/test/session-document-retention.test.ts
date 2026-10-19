@@ -22,6 +22,7 @@ import { deferred, eventually } from "./task-support.ts";
 
 type Counter = { count: number };
 const CounterDoc = defineDoc<Counter>({
+	checkpointWhen: () => false,
 	kind: "test.retention.counter",
 	version: 1,
 	scope: "conversation",
@@ -30,6 +31,7 @@ const CounterDoc = defineDoc<Counter>({
 	initial: () => ({ count: 0 }),
 });
 const RewindableDoc = defineDoc<Counter>({
+	checkpointWhen: () => false,
 	kind: "test.retention.rewindable",
 	version: 1,
 	scope: "conversation",
@@ -39,6 +41,7 @@ const RewindableDoc = defineDoc<Counter>({
 });
 /** A third-party conversation family: one member per event. */
 const EventDoc = defineDocFamily<{ seq: number }, number>({
+	checkpointWhen: () => false,
 	kind: "test.retention.event",
 	version: 1,
 	scope: "conversation",
@@ -48,6 +51,7 @@ const EventDoc = defineDocFamily<{ seq: number }, number>({
 	initial: (seq) => ({ seq }),
 });
 const SessionCounterDoc = defineDoc<Counter>({
+	checkpointWhen: () => false,
 	kind: "test.retention.session-counter",
 	version: 1,
 	scope: "session",
@@ -73,6 +77,7 @@ const defaultForRun =
 
 /** A conversation document any Harness test can read. */
 const TestDoc = defineDoc<Counter>({
+	checkpointWhen: () => false,
 	kind: "test.retention.harness",
 	version: 1,
 	scope: "conversation",
@@ -396,6 +401,7 @@ describe("document cache retention", () => {
 
 	it("migrates a document again after its eviction", async () => {
 		const V1 = defineDoc<{ count: number }>({
+			checkpointWhen: () => false,
 			kind: "test.retention.migrating",
 			version: 1,
 			scope: "session",
@@ -403,6 +409,7 @@ describe("document cache retention", () => {
 		});
 		let migrations = 0;
 		const V2 = defineDoc<{ count: number; migrated: boolean }>({
+			checkpointWhen: () => false,
 			kind: "test.retention.migrating",
 			version: 2,
 			scope: "session",
@@ -538,12 +545,14 @@ describe("document cache retention", () => {
 
 	it("keeps a reloaded newer version cached while an observer of the older one is attached", async () => {
 		const V1 = defineDoc<Counter>({
+			checkpointWhen: () => false,
 			kind: "test.retention.versioned",
 			version: 1,
 			scope: "session",
 			initial: () => ({ count: 3 }),
 		});
 		const V2 = defineDoc<Counter & { v2: true }>({
+			checkpointWhen: () => false,
 			kind: "test.retention.versioned",
 			version: 2,
 			scope: "session",

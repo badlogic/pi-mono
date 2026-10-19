@@ -1,12 +1,8 @@
 import type { SpanOptions, TelemetryPropagation, TelemetrySpan } from "./index.ts";
 import type { TelemetryCounter, TelemetryHistogram, TelemetryMetrics, TelemetryUpDownCounter } from "./metrics.ts";
 
-function startNoopSpan<T>(_options: SpanOptions, callback: (span: TelemetrySpan) => T | Promise<T>): Promise<T> {
-	try {
-		return Promise.resolve(callback(noopTelemetrySpan));
-	} catch (error) {
-		return Promise.reject(error);
-	}
+async function startNoopSpan<T>(_options: SpanOptions, callback: (span: TelemetrySpan) => T | Promise<T>): Promise<T> {
+	return callback(noopTelemetrySpan);
 }
 
 const noopCounter: TelemetryCounter = Object.freeze({ add: () => {} });

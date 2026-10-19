@@ -20,6 +20,7 @@ const context = BACKGROUND_CONTEXT;
 // A todo list per conversation. Rewindable with `asOf`, so a fork starts with
 // the todos its parent had at the fork entry.
 const Todos = defineDoc<{ items: string[] }>({
+	checkpointWhen: () => false,
 	kind: "example.todos",
 	version: 1,
 	scope: "conversation",

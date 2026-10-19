@@ -8,6 +8,7 @@
 
 ### Added
 
+- `@earendil-works/chord/telemetry-sqlite`: portable SQLite telemetry recording with bounded settled-span queues, ten-second metric aggregates, periodic flushes, and retention cleanup.
 - `Context.telemetry` is an explicit, non-optional telemetry parent (no-op by default). `withTelemetry(telemetry, context)` derives it without changing values or cancellation; `traceIn(context, options, fn)` starts a child span and passes its derived context to the callback.
 - `@earendil-works/chord/sqlite`: portable SQLite interfaces, atomic migration runner, and schema-prefix validation, with Node (`/sqlite/node`) and Cloudflare Durable Object (`/sqlite/cloudflare`) drivers. Moved from Durable, which keeps its storage implementations and re-exports the moved public names.
 - `@earendil-works/chord/output`: `Progress` takes an optional `ProgressClock` (`now`, `setTimer`) to pace commits on, by default `Date.now` and `setTimeout`.

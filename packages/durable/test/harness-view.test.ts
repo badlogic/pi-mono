@@ -326,6 +326,7 @@ describe("conversation view", () => {
 	it("publishes one frame for a commit that appends several entries and edits a document", async () => {
 		const { harness, root } = await openChat(new MemoryStorage(), chatSetup());
 		const Other = defineDoc<{ n: number }>({
+			checkpointWhen: () => false,
 			kind: "app.other",
 			version: 1,
 			scope: "conversation",

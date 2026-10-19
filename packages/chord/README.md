@@ -19,6 +19,7 @@ Contracts are runtime values described with [TypeBox](https://github.com/sinclai
 | `@earendil-works/chord/context` | Explicit cancellation, telemetry, and invocation values: `BACKGROUND_CONTEXT`, `withCancel`, `withAbortSignal`, `withoutAbortSignal`, `withTelemetry`, `traceIn`, `withContextValue`, `awaitWithContext`. | Node and browsers |
 | `@earendil-works/chord/delta` | The transactional JSON tracker, structural diff, immutable apply, and the wire encoder/decoder for operation batches. | Node and browsers |
 | `@earendil-works/chord/output` | Bounded output streams and paced progress: `OutputBuffer` (head or tail window of a stream, `OutputLimits`, `OutputSkip`), `boundOutput`, `sanitizeOutput`, `utf8ByteLength`, and `Progress` (adaptive commits of a changing value). | Node and browsers |
+| `@earendil-works/chord/telemetry-sqlite` | `createSqliteTelemetry(db, { retentionMs?, maxQueuedSpans? })`: buffered recording and backend-independent `TelemetryStore` queries. | Any SQLite adapter |
 | `@earendil-works/chord/sqlite` | Portable `SqliteDatabase`, `SqliteExecutor`, and `SqliteValue`, atomic `applySqliteMigrations(database, migrations, { table })`, and `validateSqliteSchemaPrefix`. The metadata table must be a valid, non-reserved SQLite identifier; migration versions start at 1 and are contiguous. | Any SQLite adapter |
 | `@earendil-works/chord/sqlite/node` | `NodeSqliteDatabase`, `openNodeSqliteDatabase`, and `NodeSqliteDatabaseOptions`. | Node |
 | `@earendil-works/chord/sqlite/cloudflare` | `DurableObjectSqliteDatabase` and the structural `DurableObjectSqliteStorage` binding type. | Cloudflare Durable Objects |
@@ -90,6 +91,34 @@ await telemetry.startSpan({ name: 'app.request' }, async (span) => {
 `withTelemetry(span, context)` derives a new context; it never changes its parent, cancellation, or typed values. `traceIn(context, options, fn)` creates a callback-managed child span, and `fn` receives its derived context. Every context already supports `telemetry.addEvent()` and `telemetry.addLink()`. Values, cancellation, callback results, and rejection identities are preserved. Concurrent calls keep independent parents; there is no ambient current span. `value()`, `ContextKey`, and `withContextValue()` remain supported.
 
 These helpers operate on the standalone `Context` API. They do not yet instrument Chord hosts, methods, or network frames.
+
+## SQLite telemetry
+
+```ts
+import { createSqliteTelemetry } from '@earendil-works/chord/telemetry-sqlite';
+import { openNodeSqliteDatabase } from '@earendil-works/chord/sqlite/node';
+import { renderTrace } from '@earendil-works/pi-telemetry/render';
+
+const db = await openNodeSqliteDatabase('telemetry.db');
+const telemetry = await createSqliteTelemetry(db);
+try {
+  await telemetry.startSpan({ name: 'app.request' }, async (span) => {
+    span.addEvent('request.accepted');
+    await span.startSpan({ name: 'app.read' }, () => readAccount());
+  });
+  await telemetry.flush();
+  const { traces } = await telemetry.findTraces({ name: 'app.request', limit: 10 });
+  for (const trace of traces) console.log(renderTrace(trace.spans));
+} finally {
+  try { await telemetry.close(); } finally { await db.close(); }
+}
+```
+
+The adapter is portable over `SqliteDatabase` and owns no connection. Recording performs no SQL. A one-second timer flushes settled spans and completed ten-second metric intervals in one transaction, including retention cleanup. Metrics retain count, sum, minimum, and maximum per name/kind/unit/attribute series, not raw samples, buckets, or exemplars. `close()` stops recording and drains partial metric intervals without waiting for business callbacks or closing the database. Late span completions are ignored.
+
+Retention defaults to seven days. `maxQueuedSpans` defaults to 10,000 and counts settled spans awaiting commit, including an in-flight batch. The same limit independently bounds pending metric interval/series pairs. Overflow increments `droppedSpans` or `droppedMeasurements`; the limits bound counts, not bytes or active spans. A write failure stops recording permanently: `flush()` and `close()` reject with the original error without retrying.
+
+The adapter implements `TelemetryStore`: `findTraces()`, `getTrace()`, and `findMetrics()` read committed rows, including after adapter close while the database remains open. See [stored telemetry](../telemetry/README.md#stored-telemetry) for filters, pagination, and cross-process trace assembly. Schema tables are `telemetry_spans`, `telemetry_metrics`, and `telemetry_schema`.
 
 ## Tracking JSON deltas
 
