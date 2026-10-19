@@ -204,7 +204,7 @@ Notification handlers should not perform slow work on a streaming event. Transfo
 
 `provider_stream_event` fires for each parsed provider stream event before Pi normalizes it. The event identifies the provider, API, and model; `event.data` is the earliest structured value available to Pi, not necessarily the original HTTP bytes or SSE frame. Treat it as read-only because mutation can affect normalization. The event is notification-only and is not persisted.
 
-Handlers are awaited in stream order, so slow handlers delay stream consumption. Handler errors are reported without changing the provider response. See [`debug-provider.ts`](../examples/extensions/debug-provider.ts) for an opt-in viewer that groups raw events by assistant message.
+Handlers are awaited in stream order, so slow handlers delay stream consumption. Handler errors are reported without changing the provider response. See [`debug-provider.ts`](../packages/coding-agent/examples/extensions/debug-provider.ts) for an opt-in viewer that groups raw events by assistant message.
 
 <a id="context_with_system"></a>
 
@@ -243,7 +243,7 @@ Declare `outputSchema` and return a matching `structuredContent` when the result
 
 A tool can run other tools with `ctx.executeTool(name, args, { signal, onUpdate })`. Nested calls go through argument validation and the `tool_call` and `tool_result` handlers like model-issued calls, and emit `tool_execution_start`, `tool_execution_update`, and `tool_execution_end`; all of these events carry `parentToolCallId`, and their `toolCallId` is assigned by pi as `<parent id>/<n>`. These ids do not appear as tool calls or tool results in the transcript. Nested calls do not add transcript entries: their results only reach the calling tool, which reports them itself, for example through `onUpdate` and `details`. The session keeps a bounded record of them (name, arguments, status, duration, error; never results) as `nestedCalls` on the calling tool's result message. It is used for compaction file lists and shown in HTML exports. Arguments over 8 KiB per call or 32 KiB per tool result are omitted, at most 256 calls are kept, and `complete: false` marks a record that lost anything. The `usage` of nested results, at every depth, is added to the calling tool's result `usage`, so a tool reports only its own usage, not that of the tools it called. `ctx.tools` lists the tools `ctx.executeTool()` can call. `tool_result` handlers that redact `content` should also replace `structuredContent`; replacing only `content` drops it.
 
-See [`hello.ts`](../examples/extensions/hello.ts), [`todo.ts`](../examples/extensions/todo.ts), [`dynamic-tools.ts`](../examples/extensions/dynamic-tools.ts), and [`truncated-tool.ts`](../examples/extensions/truncated-tool.ts).
+See [`hello.ts`](../packages/coding-agent/examples/extensions/hello.ts), [`todo.ts`](../packages/coding-agent/examples/extensions/todo.ts), [`dynamic-tools.ts`](../packages/coding-agent/examples/extensions/dynamic-tools.ts), and [`truncated-tool.ts`](../packages/coding-agent/examples/extensions/truncated-tool.ts).
 
 ### Tool exposure
 
@@ -366,18 +366,18 @@ Use `ctx.shutdown()` to request an orderly process shutdown.
 
 ## Examples and reference
 
-The checked [extension examples](../examples/extensions/) are the implementation reference. Start with the smallest example matching the behavior you need:
+The checked [extension examples](../packages/coding-agent/examples/extensions/) are the implementation reference. Start with the smallest example matching the behavior you need:
 
 | Goal | Start with | Why |
 |---|---|---|
-| Confirm or block tool calls | [`permission-gate.ts`](../examples/extensions/permission-gate.ts) | Combines `tool_call`, mode-aware UI, and fail-closed behavior. |
-| Modify prompt sections for a run | [`prompt-customizer.ts`](../examples/extensions/prompt-customizer.ts) | Uses structured prompt options instead of replacing the complete prompt. |
-| Keep branch-aware tool state | [`todo.ts`](../examples/extensions/todo.ts) | Reconstructs state from persisted entries and renders it in the TUI. |
-| Register tools after startup | [`dynamic-tools.ts`](../examples/extensions/dynamic-tools.ts) | Shares registration logic between lifecycle and command handlers. |
-| Run cancellable model work from a command | [`qna.ts`](../examples/extensions/qna.ts) | Combines nested model calls, cancellation, and custom UI. |
-| Replace the main editor | [`modal-editor.ts`](../examples/extensions/modal-editor.ts) | Extends `CustomEditor` while preserving application controls. |
-| Run finalization at shutdown | [`auto-commit-on-exit.ts`](../examples/extensions/auto-commit-on-exit.ts) | Uses the session shutdown hook for finalization work. |
-| Route built-in tools to another machine | [`ssh.ts`](../examples/extensions/ssh.ts) | Reuses tool operation interfaces instead of recreating tool contracts. |
-| Add OAuth and provider-specific streaming | [`custom-provider-gitlab-duo/`](../examples/extensions/custom-provider-gitlab-duo/) | Shows a complete provider integration while delegating supported protocols. |
+| Confirm or block tool calls | [`permission-gate.ts`](../packages/coding-agent/examples/extensions/permission-gate.ts) | Combines `tool_call`, mode-aware UI, and fail-closed behavior. |
+| Modify prompt sections for a run | [`prompt-customizer.ts`](../packages/coding-agent/examples/extensions/prompt-customizer.ts) | Uses structured prompt options instead of replacing the complete prompt. |
+| Keep branch-aware tool state | [`todo.ts`](../packages/coding-agent/examples/extensions/todo.ts) | Reconstructs state from persisted entries and renders it in the TUI. |
+| Register tools after startup | [`dynamic-tools.ts`](../packages/coding-agent/examples/extensions/dynamic-tools.ts) | Shares registration logic between lifecycle and command handlers. |
+| Run cancellable model work from a command | [`qna.ts`](../packages/coding-agent/examples/extensions/qna.ts) | Combines nested model calls, cancellation, and custom UI. |
+| Replace the main editor | [`modal-editor.ts`](../packages/coding-agent/examples/extensions/modal-editor.ts) | Extends `CustomEditor` while preserving application controls. |
+| Run finalization at shutdown | [`auto-commit-on-exit.ts`](../packages/coding-agent/examples/extensions/auto-commit-on-exit.ts) | Uses the session shutdown hook for finalization work. |
+| Route built-in tools to another machine | [`ssh.ts`](../packages/coding-agent/examples/extensions/ssh.ts) | Reuses tool operation interfaces instead of recreating tool contracts. |
+| Add OAuth and provider-specific streaming | [`custom-provider-gitlab-duo/`](../packages/coding-agent/examples/extensions/custom-provider-gitlab-duo/) | Shows a complete provider integration while delegating supported protocols. |
 
 Use [Custom Providers](custom-provider.md) for model-service integrations, [Terminal UI](tui.md) for custom components, and [Pi Packages](packages.md) to install or distribute extensions with other resources. Use the exported declarations for exact signatures, payloads, and result schemas; this guide focuses on lifecycle choices, composition, and durable implementation patterns.
