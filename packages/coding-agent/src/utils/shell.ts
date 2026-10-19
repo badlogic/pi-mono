@@ -1,4 +1,4 @@
-import { existsSync } from "node:fs";
+import { accessSync, constants } from "node:fs";
 import { delimiter, join } from "node:path";
 import { spawn, spawnSync } from "child_process";
 import { getBinDir } from "../config.ts";
@@ -21,9 +21,22 @@ function getBashShellConfig(shell: string): ShellConfig {
 	return isLegacyWslBashPath(shell) ? { shell, args: ["-s"], commandTransport: "stdin" } : { shell, args: ["-c"] };
 }
 
+// Matches harness-v2's pathExists (packages/durable/src/env/node.ts).
+// On Unix this is identical to existsSync() (both are access(F_OK)), just
+// spelled with try/catch. On Windows we explicitly avoid existsSync(): its
+// extra stat check rejects runnable Store aliases (nodejs/node#36790).
+function shellPathExists(path: string): boolean {
+	try {
+		accessSync(path, constants.F_OK);
+		return true;
+	} catch {
+		return false;
+	}
+}
+
 function findExecutableOnPath(executable: string): string | null {
 	if (process.platform === "win32") {
-		// Windows: Use 'where' and verify file exists (where can return non-existent paths)
+		// Windows: use 'where' and check the returned path.
 		try {
 			const result = spawnSync("where", [executable], {
 				encoding: "utf-8",
@@ -32,7 +45,7 @@ function findExecutableOnPath(executable: string): string | null {
 			});
 			if (result.status === 0 && result.stdout) {
 				const firstMatch = result.stdout.trim().split(/\r?\n/)[0];
-				if (firstMatch && existsSync(firstMatch)) {
+				if (firstMatch && shellPathExists(firstMatch)) {
 					return firstMatch;
 				}
 			}
@@ -67,7 +80,7 @@ function findExecutableOnPath(executable: string): string | null {
 export function getShellConfig(customShellPath?: string): ShellConfig {
 	// 1. Check user-specified shell path
 	if (customShellPath) {
-		if (existsSync(customShellPath)) {
+		if (shellPathExists(customShellPath)) {
 			return getBashShellConfig(customShellPath);
 		}
 		throw new Error(`Custom shell path not found: ${customShellPath}`);
@@ -86,7 +99,7 @@ export function getShellConfig(customShellPath?: string): ShellConfig {
 		}
 
 		for (const path of paths) {
-			if (existsSync(path)) {
+			if (shellPathExists(path)) {
 				return getBashShellConfig(path);
 			}
 		}
@@ -107,7 +120,7 @@ export function getShellConfig(customShellPath?: string): ShellConfig {
 	}
 
 	// Unix: try /bin/bash, then bash on PATH, then fallback to sh
-	if (existsSync("/bin/bash")) {
+	if (shellPathExists("/bin/bash")) {
 		return getBashShellConfig("/bin/bash");
 	}
 
