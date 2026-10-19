@@ -1,13 +1,18 @@
 import type {
-	AttributeValue,
+	MetricQuery,
 	SpanAttributes,
 	SpanLink,
 	SpanOptions,
 	SpanStatus,
+	StoredMetric,
+	StoredSpan,
+	StoredTrace,
 	TelemetryCarrier,
 	TelemetryContext,
 	TelemetryPropagation,
 	TelemetrySpan,
+	TelemetryStore,
+	TraceQuery,
 } from "./index.ts";
 import type {
 	HistogramOptions,
@@ -56,11 +61,15 @@ export interface RecordedTelemetryMeasurement {
 }
 
 interface MutableRecordedTelemetryEvent {
+	timeMs: number;
 	name: string;
 	attributes: SpanAttributes;
 }
 
 interface MutableRecordedTelemetrySpan {
+	startedMs: number;
+	clock: number;
+	endedMs?: number;
 	id: number;
 	parentId: number | null;
 	context: TelemetryCarrier;
@@ -81,6 +90,10 @@ interface InMemoryParent {
 	span?: MutableRecordedTelemetrySpan;
 }
 
+function carrierId(carrier: Readonly<TelemetryCarrier>): string {
+	return `${carrier["pi-memory-scope"]}:${carrier["pi-memory-span"]}`;
+}
+
 // Identity survives settlement without exposing backend IDs on the generic context contract.
 const contextCarriers = new WeakMap<TelemetryContext, TelemetryCarrier>();
 
@@ -89,40 +102,22 @@ interface InMemoryTelemetryState {
 	propagation: TelemetryPropagation;
 	scope: string;
 	spans: MutableRecordedTelemetrySpan[];
-	measurements: RecordedTelemetryMeasurement[];
+	measurements: { intervalMs: number; measurement: RecordedTelemetryMeasurement }[];
 	nextSpanId: number;
 	nextEndSequence: number;
 }
 
-function copyAttributeValue(value: AttributeValue): AttributeValue {
-	return Array.isArray(value) ? ([...value] as AttributeValue) : value;
-}
-
 function copyAttributes(attributes?: SpanAttributes): SpanAttributes {
-	const copy: SpanAttributes = {};
-	if (!attributes) return copy;
-	for (const [name, value] of Object.entries(attributes)) {
-		if (value !== undefined) copy[name] = copyAttributeValue(value);
-	}
-	return copy;
-}
-
-function mergeAttributes(current: SpanAttributes, attributes: SpanAttributes): SpanAttributes {
-	const merged = copyAttributes(current);
-	for (const [name, value] of Object.entries(attributes)) {
-		if (value !== undefined) merged[name] = copyAttributeValue(value);
-	}
-	return merged;
+	return Object.fromEntries(
+		Object.entries(attributes ?? {})
+			.filter(([, value]) => value !== undefined)
+			.map(([name, value]) => [name, Array.isArray(value) ? [...value] : value]),
+	);
 }
 
 function copyLink(link: SpanLink): RecordedTelemetryLink | undefined {
-	try {
-		const context = contextCarriers.get(link.context);
-		if (!context) return undefined;
-		return { context: { ...context }, attributes: copyAttributes(link.attributes) };
-	} catch {
-		return undefined;
-	}
+	const context = contextCarriers.get(link.context);
+	return context ? { context: { ...context }, attributes: copyAttributes(link.attributes) } : undefined;
 }
 
 function copyStatus(status: SpanStatus): SpanStatus {
@@ -130,29 +125,6 @@ function copyStatus(status: SpanStatus): SpanStatus {
 	return status.error
 		? { status: "error", error: { name: status.error.name, message: status.error.message } }
 		: { status: "error" };
-}
-
-function automaticErrorStatus(error: unknown): SpanStatus {
-	try {
-		if (error instanceof Error) {
-			return { status: "error", error: { name: error.name, message: error.message } };
-		}
-	} catch {
-		// Error inspection is passive. Fall through to an error status without details.
-	}
-	return { status: "error" };
-}
-
-function settleSpan(
-	state: InMemoryTelemetryState,
-	span: MutableRecordedTelemetrySpan,
-	failed: boolean,
-	error?: unknown,
-): void {
-	if (span.settled) return;
-	if (failed && !span.explicitStatus) span.status = automaticErrorStatus(error);
-	span.settled = true;
-	span.endSequence = state.nextEndSequence++;
 }
 
 function createSpan(
@@ -163,19 +135,21 @@ function createSpan(
 	const name = options.name;
 	const attributes = copyAttributes(options.attributes);
 	const links: RecordedTelemetryLink[] = [];
-	try {
-		for (const link of options.links ?? []) {
-			const copy = copyLink(link);
-			if (copy) links.push(copy);
-		}
-	} catch {
-		// An unreadable link list must not suppress the operation's span.
+	for (const link of options.links ?? []) {
+		const copy = copyLink(link);
+		if (copy) links.push(copy);
 	}
 	const id = state.nextSpanId++;
 	return {
+		startedMs: Date.now(),
+		clock: performance.now(),
 		id,
 		parentId: parent?.localId ?? null,
-		context: { "pi-memory-scope": state.scope, "pi-memory-span": String(id) },
+		context: {
+			"pi-memory-scope": state.scope,
+			"pi-memory-span": String(id),
+			"pi-memory-trace": parent?.context["pi-memory-trace"] ?? `${state.scope}:${id}`,
+		},
 		parentContext: parent ? { ...parent.context } : null,
 		links,
 		name,
@@ -205,7 +179,7 @@ function startInertSpan<T>(
 	);
 }
 
-function startInMemorySpan<T>(
+async function startInMemorySpan<T>(
 	state: InMemoryTelemetryState,
 	parent: InMemoryParent | undefined,
 	options: SpanOptions,
@@ -213,13 +187,8 @@ function startInMemorySpan<T>(
 ): Promise<T> {
 	if (parent?.span?.settled) return startInertSpan(state, options, callback);
 
-	let recordedSpan: MutableRecordedTelemetrySpan;
-	try {
-		recordedSpan = createSpan(state, parent, options);
-		state.spans.push(recordedSpan);
-	} catch {
-		return startInertSpan(state, options, callback);
-	}
+	const recordedSpan = createSpan(state, parent, options);
+	state.spans.push(recordedSpan);
 
 	const span: TelemetrySpan = {
 		metrics: state.metrics,
@@ -241,51 +210,39 @@ function startInMemorySpan<T>(
 		},
 		addEvent(name, attributes) {
 			if (recordedSpan.settled) return;
-			try {
-				recordedSpan.events.push({ name, attributes: copyAttributes(attributes) });
-			} catch {
-				// Recording is passive. Ignore malformed or unreadable telemetry payloads.
-			}
+			recordedSpan.events.push({
+				name,
+				timeMs: performance.now() - recordedSpan.clock,
+				attributes: copyAttributes(attributes),
+			});
 		},
 		setAttributes(attributes) {
 			if (recordedSpan.settled) return;
-			try {
-				recordedSpan.attributes = mergeAttributes(recordedSpan.attributes, attributes);
-			} catch {
-				// Recording is passive. Ignore malformed or unreadable telemetry payloads.
-			}
+			recordedSpan.attributes = { ...recordedSpan.attributes, ...copyAttributes(attributes) };
 		},
 		setStatus(status) {
 			if (recordedSpan.settled) return;
-			try {
-				recordedSpan.status = copyStatus(status);
-				recordedSpan.explicitStatus = true;
-			} catch {
-				// Recording is passive. Ignore malformed or unreadable telemetry payloads.
-			}
+			recordedSpan.status = copyStatus(status);
+			recordedSpan.explicitStatus = true;
 		},
 	};
 
 	contextCarriers.set(span, recordedSpan.context);
 
-	let result: T | Promise<T>;
 	try {
-		result = callback(span);
+		return await callback(span);
 	} catch (error) {
-		settleSpan(state, recordedSpan, true, error);
-		return Promise.reject(error);
+		if (!recordedSpan.explicitStatus)
+			recordedSpan.status =
+				error instanceof Error
+					? { status: "error", error: { name: error.name, message: error.message } }
+					: { status: "error" };
+		throw error;
+	} finally {
+		recordedSpan.settled = true;
+		recordedSpan.endedMs = recordedSpan.startedMs + performance.now() - recordedSpan.clock;
+		recordedSpan.endSequence = state.nextEndSequence++;
 	}
-
-	return Promise.resolve(result).then(
-		(value) => {
-			settleSpan(state, recordedSpan, false);
-			return value;
-		},
-		(error: unknown) => {
-			settleSpan(state, recordedSpan, true, error);
-			throw error;
-		},
-	);
 }
 
 function createMeasurementRecorder(
@@ -294,50 +251,37 @@ function createMeasurementRecorder(
 	name: string,
 	options?: HistogramOptions,
 ): (value: number, attributes?: SpanAttributes, context?: TelemetryContext) => void {
-	try {
-		const description = options?.description;
-		const unit = options?.unit;
-		const boundaries =
-			kind === "histogram" && options?.boundaries !== undefined ? [...options.boundaries] : undefined;
-		if (
-			typeof name !== "string" ||
-			(description !== undefined && typeof description !== "string") ||
-			(unit !== undefined && typeof unit !== "string")
-		)
-			return () => {};
-		if (boundaries?.some((value, index) => !Number.isFinite(value) || (index > 0 && value <= boundaries[index - 1]!)))
-			return () => {};
-		const metadata = {
-			kind,
-			name,
-			...(description === undefined ? {} : { description }),
-			...(unit === undefined ? {} : { unit }),
-			...(boundaries === undefined ? {} : { boundaries }),
-		};
-		return (value, attributes, context) => {
-			if (!Number.isFinite(value) || (kind === "counter" && value < 0)) return;
-			try {
-				const carrier = context === undefined ? undefined : contextCarriers.get(context);
-				state.measurements.push({
-					...metadata,
-					value,
-					attributes: copyAttributes(attributes),
-					context: carrier ? { ...carrier } : null,
-				});
-			} catch {
-				// Measurements are passive; discard the whole failed call.
-			}
-		};
-	} catch {
-		return () => {};
-	}
+	const description = options?.description;
+	const unit = options?.unit;
+	const boundaries = kind === "histogram" && options?.boundaries !== undefined ? [...options.boundaries] : undefined;
+	const metadata = {
+		kind,
+		name,
+		...(description === undefined ? {} : { description }),
+		...(unit === undefined ? {} : { unit }),
+		...(boundaries === undefined ? {} : { boundaries }),
+	};
+	return (value, attributes, context) => {
+		const carrier = context === undefined ? undefined : contextCarriers.get(context);
+		state.measurements.push({
+			intervalMs: Math.floor(Date.now() / 10_000) * 10_000,
+			measurement: {
+				...metadata,
+				value,
+				attributes: copyAttributes(attributes),
+				context: carrier ? { ...carrier } : null,
+			},
+		});
+	};
 }
 
 /**
  * Backend-neutral reference implementation that records spans in process memory.
  * Create a fresh instance to isolate tests or independent recording scopes.
  */
-export class InMemoryTelemetryContext implements TelemetryContext, TelemetryPropagation, TelemetryMetrics {
+export class InMemoryTelemetryContext
+	implements TelemetryContext, TelemetryPropagation, TelemetryMetrics, TelemetryStore
+{
 	readonly metrics: TelemetryMetrics = this;
 	readonly propagation: TelemetryPropagation = this;
 	private readonly state: InMemoryTelemetryState = {
@@ -360,34 +304,22 @@ export class InMemoryTelemetryContext implements TelemetryContext, TelemetryProp
 		return carrier ? { ...carrier } : undefined;
 	}
 
-	/** Unrecognized or unreadable carriers fall back to this recorder's root context. */
+	/** Missing or non-string carrier identities fall back to this recorder's root context. */
 	extract(carrier: TelemetryCarrier | undefined): TelemetryContext {
-		try {
-			if (!carrier || typeof carrier !== "object" || Array.isArray(carrier)) return this;
-			if (!Object.hasOwn(carrier, "pi-memory-scope") || !Object.hasOwn(carrier, "pi-memory-span")) return this;
-			if (Object.values(carrier).some((value) => typeof value !== "string")) return this;
-			const scope = carrier["pi-memory-scope"];
-			const span = carrier["pi-memory-span"];
-			if (typeof scope !== "string" || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(scope))
-				return this;
-			if (typeof span !== "string" || !/^[1-9][0-9]*$/.test(span) || !Number.isSafeInteger(Number(span)))
-				return this;
-			const context = { "pi-memory-scope": scope, "pi-memory-span": span };
-			const localId =
-				scope === this.state.scope && this.state.spans.some((candidate) => candidate.id === Number(span))
-					? Number(span)
-					: null;
-			const parent: TelemetryContext = {
-				metrics: this,
-				propagation: this,
-				startSpan: <T>(options: SpanOptions, callback: (span: TelemetrySpan) => T | Promise<T>) =>
-					startInMemorySpan(this.state, { context, localId }, options, callback),
-			};
-			contextCarriers.set(parent, context);
-			return parent;
-		} catch {
-			return this;
-		}
+		const scope = carrier?.["pi-memory-scope"];
+		const span = carrier?.["pi-memory-span"];
+		const traceId = carrier?.["pi-memory-trace"];
+		if (typeof scope !== "string" || typeof span !== "string" || typeof traceId !== "string") return this;
+		const context = { "pi-memory-scope": scope, "pi-memory-span": span, "pi-memory-trace": traceId };
+		const localId = scope === this.state.scope ? Number(span) : null;
+		const parent: TelemetryContext = {
+			metrics: this,
+			propagation: this,
+			startSpan: <T>(options: SpanOptions, callback: (span: TelemetrySpan) => T | Promise<T>) =>
+				startInMemorySpan(this.state, { context, localId }, options, callback),
+		};
+		contextCarriers.set(parent, context);
+		return parent;
 	}
 
 	counter(name: string, options?: InstrumentOptions): TelemetryCounter {
@@ -402,9 +334,103 @@ export class InMemoryTelemetryContext implements TelemetryContext, TelemetryProp
 		return { record: createMeasurementRecorder(this.state, "histogram", name, options) };
 	}
 
+	private storedSpans(): StoredSpan[] {
+		return this.state.spans
+			.filter((span) => span.settled)
+			.map((span) => ({
+				id: carrierId(span.context),
+				traceId: span.context["pi-memory-trace"]!,
+				...(span.parentContext ? { parentId: carrierId(span.parentContext) } : {}),
+				name: span.name,
+				startedMs: span.startedMs,
+				endedMs: span.endedMs!,
+				attributes: copyAttributes(span.attributes),
+				events: span.events.map((event) => ({
+					name: event.name,
+					timeMs: event.timeMs,
+					attributes: copyAttributes(event.attributes),
+				})),
+				links: span.links.map((link) => ({
+					traceId: link.context["pi-memory-trace"]!,
+					spanId: carrierId(link.context),
+					attributes: copyAttributes(link.attributes),
+				})),
+				status: copyStatus(span.status),
+			}))
+			.sort((a, b) => a.startedMs - b.startedMs || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
+	}
+
+	async getTrace(traceId: string): Promise<StoredTrace | undefined> {
+		const spans = this.storedSpans().filter((span) => span.traceId === traceId);
+		return spans.length ? { traceId, spans } : undefined;
+	}
+
+	async findTraces(query: TraceQuery = {}): Promise<{ traces: readonly StoredTrace[]; cursor?: string }> {
+		const limit = query.limit ?? 20;
+		const after = query.cursor === undefined ? undefined : (JSON.parse(query.cursor) as [number, string]);
+		const grouped = new Map<string, { traceId: string; spans: StoredSpan[] }>();
+		for (const span of this.storedSpans()) {
+			let trace = grouped.get(span.traceId);
+			if (!trace) {
+				trace = { traceId: span.traceId, spans: [] };
+				grouped.set(span.traceId, trace);
+			}
+			trace.spans.push(span);
+		}
+		const matches = [...grouped.values()]
+			.filter((trace) => {
+				const first = trace.spans[0]!;
+				return (
+					(query.name === undefined || first.name === query.name) &&
+					(query.startMin === undefined || first.startedMs >= query.startMin) &&
+					(query.startMax === undefined || first.startedMs <= query.startMax) &&
+					(!after || first.startedMs < after[0] || (first.startedMs === after[0] && trace.traceId > after[1])) &&
+					(!query.errors || trace.spans.some((span) => span.status.status === "error")) &&
+					(!query.attributes ||
+						trace.spans.some((span) =>
+							Object.entries(query.attributes!).every(([key, value]) => span.attributes[key] === value),
+						))
+				);
+			})
+			.sort(
+				(a, b) =>
+					b.spans[0]!.startedMs - a.spans[0]!.startedMs ||
+					(a.traceId < b.traceId ? -1 : a.traceId > b.traceId ? 1 : 0),
+			);
+		const traces = matches.slice(0, limit);
+		const last = traces.at(-1)!;
+		return {
+			traces,
+			...(matches.length > limit ? { cursor: JSON.stringify([last.spans[0]!.startedMs, last.traceId]) } : {}),
+		};
+	}
+
+	/** Read raw measurements as count-one rows, without changing getMetrics() snapshots. */
+	async findMetrics(query: MetricQuery): Promise<readonly StoredMetric[]> {
+		return this.state.measurements
+			.filter(
+				({ intervalMs, measurement }) =>
+					measurement.name === query.name &&
+					(query.startMin === undefined || intervalMs >= query.startMin) &&
+					(query.startMax === undefined || intervalMs <= query.startMax) &&
+					Object.entries(query.attributes ?? {}).every(([key, value]) => measurement.attributes[key] === value),
+			)
+			.map(({ intervalMs, measurement }) => ({
+				intervalMs,
+				name: measurement.name,
+				kind: measurement.kind,
+				...(measurement.unit === undefined ? {} : { unit: measurement.unit }),
+				attributes: copyAttributes(measurement.attributes),
+				count: 1,
+				sum: measurement.value,
+				min: measurement.value,
+				max: measurement.value,
+			}));
+	}
+
 	/** Returns detached measurements in recording order, without aggregation. */
 	getMetrics(): readonly RecordedTelemetryMeasurement[] {
-		return this.state.measurements.map((measurement) => ({
+		return this.state.measurements.map(({ measurement }) => ({
 			...measurement,
 			...(measurement.boundaries === undefined ? {} : { boundaries: [...measurement.boundaries] }),
 			attributes: copyAttributes(measurement.attributes),

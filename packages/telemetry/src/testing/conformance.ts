@@ -1,14 +1,5 @@
-import { deepStrictEqual, doesNotThrow, fail, ok, strictEqual } from "node:assert/strict";
-import {
-	NOOP_TELEMETRY_CONTEXT,
-	type SpanAttributes,
-	type SpanLink,
-	type SpanOptions,
-	type SpanStatus,
-	type TelemetryCarrier,
-	type TelemetryContext,
-	type TelemetrySpan,
-} from "../index.ts";
+import { deepStrictEqual, fail, ok, strictEqual } from "node:assert/strict";
+import { NOOP_TELEMETRY_CONTEXT, type TelemetryCarrier, type TelemetryContext, type TelemetrySpan } from "../index.ts";
 import type { RecordedTelemetrySpan } from "../memory.ts";
 import type {
 	TelemetryAdapterConformanceCase,
@@ -47,23 +38,6 @@ async function rejectsWithSameValue(operation: Promise<unknown>, expected: unkno
 	} catch (error) {
 		strictEqual(error, expected);
 	}
-}
-
-function unreadable<T extends object>(value: T): T {
-	return new Proxy(value, {
-		get: () => {
-			throw new Error("read");
-		},
-		getOwnPropertyDescriptor: () => {
-			throw new Error("inspect");
-		},
-		getPrototypeOf: () => {
-			throw new Error("prototype");
-		},
-		ownKeys: () => {
-			throw new Error("enumerate");
-		},
-	});
 }
 
 /** Creates runner-independent cases for the callback telemetry adapter contract. */
@@ -132,34 +106,24 @@ export function createTelemetryAdapterConformance(
 				deepStrictEqual(measurements[3]?.context, findSpan(await fixture.getSpans(), "measured").context);
 			},
 		),
-		createCase(
-			factory,
-			"metrics",
-			"copies inputs and suppresses invalid measurements atomically",
-			async (fixture) => {
-				if (!fixture.metrics) return;
-				ok(fixture.getMetrics, "Metrics fixtures require a normalized measurement reader");
-				const boundaries = [1, 10];
-				const options = { description: "Original", boundaries };
-				const histogram = fixture.metrics.histogram("snapshot", options);
-				boundaries.push(100);
-				options.description = "Changed";
-				const attributes = { tags: ["original"] };
-				histogram.record(-1, attributes);
-				attributes.tags.push("changed");
-				const counter = fixture.metrics.counter("invalid");
-				for (const value of [NaN, Infinity, -Infinity, -1]) doesNotThrow(() => counter.add(value));
-				doesNotThrow(() => counter.add(1, { partial: true, broken: unreadable(["value"]) }));
-				doesNotThrow(() => fixture.metrics?.histogram("bad-options", unreadable({ unit: "ms" })).record(1));
-				doesNotThrow(() => fixture.metrics?.histogram("bad-boundaries", { boundaries: [2, 1] }).record(1));
-				const measurements = await fixture.getMetrics();
-				strictEqual(measurements.length, 1);
-				deepStrictEqual(measurements[0]?.attributes, { tags: ["original"] });
-				deepStrictEqual(measurements[0]?.boundaries, [1, 10]);
-				strictEqual(measurements[0]?.description, "Original");
-				strictEqual(measurements[0]?.context, null);
-			},
-		),
+		createCase(factory, "metrics", "copies instrument metadata and measurement attributes", async (fixture) => {
+			if (!fixture.metrics) return;
+			ok(fixture.getMetrics, "Metrics fixtures require a normalized measurement reader");
+			const boundaries = [1, 10];
+			const options = { description: "Original", boundaries };
+			const histogram = fixture.metrics.histogram("snapshot", options);
+			boundaries.push(100);
+			options.description = "Changed";
+			const attributes = { tags: ["original"] };
+			histogram.record(-1, attributes);
+			attributes.tags.push("changed");
+			const measurements = await fixture.getMetrics();
+			strictEqual(measurements.length, 1);
+			deepStrictEqual(measurements[0]?.attributes, { tags: ["original"] });
+			deepStrictEqual(measurements[0]?.boundaries, [1, 10]);
+			strictEqual(measurements[0]?.description, "Original");
+			strictEqual(measurements[0]?.context, null);
+		}),
 		createCase(factory, "links", "records initial and late links without changing parents", async (fixture) => {
 			let target: TelemetrySpan | undefined;
 			await fixture.context.startSpan({ name: "target" }, (span) => {
@@ -182,25 +146,16 @@ export function createTelemetryAdapterConformance(
 				{ context: findSpan(spans, "target").context, attributes: { reason: "late" } },
 			]);
 		}),
-		createCase(
-			factory,
-			"links",
-			"suppresses malformed links atomically and ignores settled sources",
-			async (fixture) => {
-				let source: TelemetrySpan | undefined;
-				await fixture.context.startSpan({ name: "link-source" }, (span) => {
-					source = span;
-					doesNotThrow(() => span.addLink(unreadable<SpanLink>({ context: span })));
-					doesNotThrow(() =>
-						span.addLink({ context: span, attributes: { partial: true, broken: unreadable(["value"]) } }),
-					);
-				});
-				if (!source) throw new Error("Expected source span");
-				const sourceSpan = source;
-				doesNotThrow(() => sourceSpan.addLink({ context: sourceSpan }));
-				deepStrictEqual(findSpan(await fixture.getSpans(), "link-source").links, []);
-			},
-		),
+		createCase(factory, "links", "ignores links added after source settlement", async (fixture) => {
+			let source: TelemetrySpan | undefined;
+			await fixture.context.startSpan({ name: "link-source" }, (span) => {
+				source = span;
+			});
+			if (!source) throw new Error("Expected source span");
+			source.addLink({ context: source });
+			deepStrictEqual(findSpan(await fixture.getSpans(), "link-source").links, []);
+		}),
+
 		createCase(
 			factory,
 			"propagation",
@@ -221,27 +176,17 @@ export function createTelemetryAdapterConformance(
 				deepStrictEqual(findSpan(spans, "receiver").parentContext, findSpan(spans, "sender").context);
 			},
 		),
-		createCase(factory, "propagation", "unknown and unreadable carriers produce recorded roots", async (fixture) => {
+		createCase(factory, "propagation", "absent and unknown carriers produce recorded roots", async (fixture) => {
 			if (!fixture.propagation) return;
 			strictEqual(fixture.propagation.inject(NOOP_TELEMETRY_CONTEXT), undefined);
-			for (const [index, carrier] of [
-				undefined,
-				{},
-				{ unknown: "format" },
-				unreadable<TelemetryCarrier>({ bad: "value" }),
-			].entries()) {
-				let result = 0;
-				doesNotThrow(() => {
-					const context = fixture.propagation?.extract(carrier);
-					if (!context) throw new Error("Expected root context");
-					void context.startSpan({ name: `fallback-${index}` }, () => {
-						result = 42;
-					});
-				});
-				strictEqual(result, 42);
+			const carriers: readonly (TelemetryCarrier | undefined)[] = [undefined, {}, { unknown: "format" }];
+			for (const [index, carrier] of carriers.entries()) {
+				const context = fixture.propagation.extract(carrier);
+				strictEqual(await context.startSpan({ name: `fallback-${index}` }, () => 42), 42);
 			}
 			for (const span of await fixture.getSpans()) strictEqual(span.parentContext, null);
 		}),
+
 		createCase(factory, "propagation", "propagates across fresh adapters and multiple hops", async (fixture) => {
 			if (!fixture.propagation) return;
 			await using receiver = await factory();
@@ -313,30 +258,8 @@ export function createTelemetryAdapterConformance(
 					undefined,
 				);
 
-				const unreadableError = unreadable({ kind: "unreadable" });
-				await rejectsWithSameValue(
-					fixture.context.startSpan({ name: "unreadable-error" }, () => {
-						throw unreadableError;
-					}),
-					unreadableError,
-				);
-
-				const asyncUnreadableError = unreadable({ kind: "async-unreadable" });
-				await rejectsWithSameValue(
-					fixture.context.startSpan({ name: "async-unreadable-error" }, () =>
-						Promise.reject(asyncUnreadableError),
-					),
-					asyncUnreadableError,
-				);
-
 				const spans = await fixture.getSpans();
-				for (const name of [
-					"sync-error",
-					"async-error",
-					"undefined-error",
-					"unreadable-error",
-					"async-unreadable-error",
-				]) {
+				for (const name of ["sync-error", "async-error", "undefined-error"]) {
 					strictEqual(findSpan(spans, name).status.status, "error");
 				}
 			},
@@ -406,20 +329,6 @@ export function createTelemetryAdapterConformance(
 			]);
 		}),
 
-		createCase(factory, "recording", "ignores failed attribute calls atomically", async (fixture) => {
-			await fixture.context.startSpan({ name: "atomic-attributes", attributes: { retained: "value" } }, (span) => {
-				const attributes: SpanAttributes = {
-					partial: "must not survive",
-					unreadable: unreadable(["value"]),
-				};
-				doesNotThrow(() => span.setAttributes(attributes));
-			});
-
-			deepStrictEqual(findSpan(await fixture.getSpans(), "atomic-attributes").attributes, {
-				retained: "value",
-			});
-		}),
-
 		createCase(factory, "recording", "makes calls after settlement inert", async (fixture) => {
 			let settledSpan: TelemetrySpan | undefined;
 			await fixture.context.startSpan({ name: "settled", attributes: { value: "initial" } }, (span) => {
@@ -428,9 +337,9 @@ export function createTelemetryAdapterConformance(
 			const capturedSpan = settledSpan;
 			if (!capturedSpan) throw new Error("Expected callback span");
 
-			doesNotThrow(() => capturedSpan.setAttributes({ value: "late" }));
-			doesNotThrow(() => capturedSpan.addEvent("late", { value: true }));
-			doesNotThrow(() => capturedSpan.setStatus({ status: "error" }));
+			capturedSpan.setAttributes({ value: "late" });
+			capturedSpan.addEvent("late", { value: true });
+			capturedSpan.setStatus({ status: "error" });
 			let childAdmitted = false;
 			const childResult = capturedSpan.startSpan({ name: "late-child" }, () => {
 				childAdmitted = true;
@@ -472,47 +381,6 @@ export function createTelemetryAdapterConformance(
 			ok(second.endSequence !== undefined && first.endSequence !== undefined && parent.endSequence !== undefined);
 			ok(second.endSequence < first.endSequence);
 			ok(first.endSequence < parent.endSequence);
-		}),
-
-		createCase(factory, "passivity", "suppresses unreadable telemetry payload failures", async (fixture) => {
-			let calls = 0;
-			const options = unreadable<SpanOptions>({ name: "unreadable-options", attributes: { secret: "value" } });
-			const result = fixture.context.startSpan(options, () => {
-				calls++;
-				return 9;
-			});
-
-			strictEqual(calls, 1);
-			strictEqual(await result, 9);
-			deepStrictEqual(await fixture.getSpans(), []);
-
-			await fixture.context.startSpan({ name: "unreadable-recording" }, (span) => {
-				const attributes = unreadable<SpanAttributes>({ secret: "value" });
-				const status = unreadable<SpanStatus>({ status: "ok" });
-				doesNotThrow(() => span.setAttributes(attributes));
-				doesNotThrow(() => span.addEvent("unreadable-event", attributes));
-				doesNotThrow(() => span.setStatus(status));
-			});
-
-			const recorded = await fixture.getSpans();
-			strictEqual(recorded.length, 1);
-			deepStrictEqual(recorded[0]?.attributes, {});
-			deepStrictEqual(recorded[0]?.events, []);
-			deepStrictEqual(recorded[0]?.status, { status: "ok" });
-		}),
-
-		createCase(factory, "passivity", "ignores failed status calls atomically", async (fixture) => {
-			const rejection = new Error("rejected after unreadable status");
-			await rejectsWithSameValue(
-				fixture.context.startSpan({ name: "unreadable-status" }, (span) => {
-					const status = unreadable<SpanStatus>({ status: "ok" });
-					doesNotThrow(() => span.setStatus(status));
-					return Promise.reject(rejection);
-				}),
-				rejection,
-			);
-
-			strictEqual(findSpan(await fixture.getSpans(), "unreadable-status").status.status, "error");
 		}),
 	];
 }

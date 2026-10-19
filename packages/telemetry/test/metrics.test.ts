@@ -2,26 +2,13 @@ import { describe, expect, expectTypeOf, it } from "vitest";
 import {
 	createTypedMetrics,
 	defineTelemetrySchema,
-	type HistogramOptions,
 	InMemoryTelemetryContext,
-	type InstrumentOptions,
 	NOOP_TELEMETRY_CONTEXT,
 	NOOP_TELEMETRY_METRICS,
 	type SpanAttributes,
 	type TelemetryCarrier,
 	type TelemetryMetricDefinition,
 } from "../src/index.ts";
-
-function unreadable<T extends object>(value: T): T {
-	return new Proxy(value, {
-		get() {
-			throw new Error("read");
-		},
-		ownKeys() {
-			throw new Error("enumerate");
-		},
-	});
-}
 
 const traffic = defineTelemetrySchema({
 	version: 1,
@@ -161,27 +148,9 @@ describe("metrics", () => {
 		});
 	});
 
-	it("ignores malformed metadata, nonfinite values, and unreadable attributes", () => {
-		const telemetry = new InMemoryTelemetryContext();
-		telemetry.counter("bad", unreadable<InstrumentOptions>({ unit: "By" })).add(1);
-		telemetry.histogram("bad", unreadable<HistogramOptions>({ boundaries: [1] })).record(1);
-		for (const boundaries of [[1, 1], [2, 1], [NaN], [Infinity]])
-			telemetry.histogram("bad", { boundaries }).record(1);
-		for (const value of [NaN, Infinity, -Infinity]) {
-			telemetry.counter("bad").add(value);
-			telemetry.upDownCounter("bad").add(value);
-			telemetry.histogram("bad").record(value);
-		}
-		telemetry.counter("bad").add(-1);
-		telemetry.histogram("bad").record(1, unreadable({ tag: "value" }));
-		expect(telemetry.getMetrics()).toEqual([]);
-		telemetry.histogram("valid").record(-1, {}, NOOP_TELEMETRY_CONTEXT);
-		expect(telemetry.getMetrics()[0]?.context).toBeNull();
-	});
-
-	it("shares frozen no-op instruments without inspecting arguments", () => {
-		const options = unreadable<HistogramOptions>({ unit: "By" });
-		const attributes = unreadable<SpanAttributes>({ secret: "value" });
+	it("shares frozen no-op instruments", () => {
+		const options = { unit: "By" };
+		const attributes = { direction: "out" };
 		const counter = NOOP_TELEMETRY_METRICS.counter("bytes", options);
 		const active = NOOP_TELEMETRY_METRICS.upDownCounter("active", options);
 		const histogram = NOOP_TELEMETRY_METRICS.histogram("duration", options);
@@ -189,8 +158,8 @@ describe("metrics", () => {
 		expect(Object.isFrozen(counter)).toBe(true);
 		expect(Object.isFrozen(active)).toBe(true);
 		expect(Object.isFrozen(histogram)).toBe(true);
-		expect(() => counter.add(1, attributes)).not.toThrow();
-		expect(() => active.add(-1, attributes)).not.toThrow();
-		expect(() => histogram.record(1, attributes, unreadable(NOOP_TELEMETRY_CONTEXT))).not.toThrow();
+		counter.add(1, attributes);
+		active.add(-1, attributes);
+		histogram.record(1, attributes, NOOP_TELEMETRY_CONTEXT);
 	});
 });
