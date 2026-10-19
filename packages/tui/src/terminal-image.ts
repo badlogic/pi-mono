@@ -92,6 +92,12 @@ function detectCapabilitiesFromEnvironment(tmuxForwardsHyperlink: () => boolean)
 		return { images: "kitty", trueColor: hasTrueColorHint, hyperlinks: true };
 	}
 
+	// Rex supports OSC 8 hyperlinks but only partially implements the Kitty graphics protocol
+	// (no Unicode placeholders), so leave images off. Check it before outer-terminal detection.
+	if (termProgram === "rex") {
+		return { images: null, trueColor: true, hyperlinks: true };
+	}
+
 	if (process.env.KITTY_WINDOW_ID || termProgram === "kitty") {
 		return { images: "kitty", trueColor: true, hyperlinks: true };
 	}
