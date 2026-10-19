@@ -2,6 +2,7 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { Context, JsonValue } from "@earendil-works/chord";
+import { withAbortSignal } from "@earendil-works/chord/context";
 import { createModels, fauxAssistantMessage, fauxText, fauxToolCall, Type } from "@earendil-works/pi-ai";
 import {
 	type Conversation,
@@ -55,7 +56,7 @@ function unloadDocuments(harness: Harness): Promise<void> {
 }
 
 function withSignal(signal: AbortSignal): Context {
-	return { ...context, abortSignal: signal };
+	return withAbortSignal(signal, context);
 }
 
 /** Whether a raw Storage read still succeeds, as code of a joined invocation relies on. */

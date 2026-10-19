@@ -1,5 +1,5 @@
 import type { Context } from "@earendil-works/chord";
-import { withCancel } from "@earendil-works/chord/context";
+import { withAbortSignal, withCancel } from "@earendil-works/chord/context";
 import { createModels, Type } from "@earendil-works/pi-ai";
 import {
 	type Conversation,
@@ -79,7 +79,7 @@ async function markDurably(
 }
 
 function withSignal(signal: AbortSignal): Context {
-	return { ...context, abortSignal: signal };
+	return withAbortSignal(signal, context);
 }
 
 describe("task phases", () => {

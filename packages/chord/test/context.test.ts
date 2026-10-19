@@ -78,70 +78,76 @@ describe("Context", () => {
 	it("derives telemetry independently from values and cancellation", async () => {
 		const telemetry = new InMemoryTelemetryContext();
 		const other = new InMemoryTelemetryContext();
-		const key = createContextKey<string>("principal");
-		const controller = new AbortController();
-		const base = withContextValue(key, "owner", withAbortSignal(controller.signal, BACKGROUND_CONTEXT));
-		const context = withTelemetry(telemetry, base);
-		const replaced = withTelemetry(other, context);
-		expect(base.telemetry).toBe(NOOP_TELEMETRY_CONTEXT);
-		expect(context.telemetry).toBe(telemetry);
-		expect(replaced.telemetry).toBe(other);
-		expect(replaced.value(key)).toBe("owner");
-		expect(replaced.abortSignal).toBe(base.abortSignal);
-		expect(withoutAbortSignal(context).telemetry).toBe(telemetry);
-		await traceIn(context, { name: "outer" }, async (child) => {
-			expect(child.value(key)).toBe("owner");
-			expect(child.abortSignal).toBe(context.abortSignal);
-			child.telemetry.addEvent("started");
-			await traceIn(child, { name: "inner" }, (nested) => {
-				nested.telemetry.addLink({ context: child.telemetry });
-				return 42;
-			});
-		});
-		const [outer, inner] = telemetry.getSpans();
-		expect(outer?.parentId).toBeNull();
-		expect(inner?.parentId).toBe(outer?.id);
-		expect(inner?.links[0]?.context).toEqual(outer?.context);
-		expect(context.telemetry).toBe(telemetry);
-		controller.abort();
-		expect(context.abortSignal?.aborted).toBe(true);
+		await telemetry.startSpan({ name: "caller" }, (parent) =>
+			other.startSpan({ name: "other" }, async (otherSpan) => {
+				const key = createContextKey<string>("principal");
+				const controller = new AbortController();
+				const base = withContextValue(key, "owner", withAbortSignal(controller.signal, BACKGROUND_CONTEXT));
+				const context = withTelemetry(parent, base);
+				const replaced = withTelemetry(otherSpan, context);
+				expect(base.telemetry).toBe(NOOP_TELEMETRY_CONTEXT);
+				expect(context.telemetry).toBe(parent);
+				expect(replaced.telemetry).toBe(otherSpan);
+				expect(replaced.value(key)).toBe("owner");
+				expect(replaced.abortSignal).toBe(base.abortSignal);
+				expect(withoutAbortSignal(context).telemetry).toBe(parent);
+				await traceIn(context, { name: "outer" }, async (child) => {
+					expect(child.value(key)).toBe("owner");
+					expect(child.abortSignal).toBe(context.abortSignal);
+					child.telemetry.addEvent("started");
+					await traceIn(child, { name: "inner" }, (nested) => {
+						nested.telemetry.addLink({ context: child.telemetry });
+						return 42;
+					});
+				});
+				const [caller, outer, inner] = telemetry.getSpans();
+				expect(outer?.parentId).toBe(caller?.id);
+				expect(inner?.parentId).toBe(outer?.id);
+				expect(inner?.links[0]?.context).toEqual(outer?.context);
+				expect(context.telemetry).toBe(parent);
+				controller.abort();
+				expect(context.abortSignal?.aborted).toBe(true);
+			}),
+		);
 	});
 
 	it("isolates concurrent traceIn branches and preserves callback results and errors", async () => {
 		const telemetry = new InMemoryTelemetryContext();
-		const context = withTelemetry(telemetry, BACKGROUND_CONTEXT);
-		let release: (() => void) | undefined;
-		const gate = new Promise<void>((resolve) => {
-			release = resolve;
+		await telemetry.startSpan({ name: "caller" }, async (parent) => {
+			const context = withTelemetry(parent, BACKGROUND_CONTEXT);
+			let release: (() => void) | undefined;
+			const gate = new Promise<void>((resolve) => {
+				release = resolve;
+			});
+			const first = traceIn(context, { name: "first" }, async (child) => {
+				await gate;
+				return traceIn(child, { name: "first.child" }, () => "first");
+			});
+			const second = traceIn(context, { name: "second" }, async (child) => {
+				const result = await traceIn(child, { name: "second.child" }, () => "second");
+				release?.();
+				return result;
+			});
+			expect(await Promise.all([first, second])).toEqual(["first", "second"]);
+			const spans = telemetry.getSpans();
+			for (const name of ["first", "second"]) {
+				const parent = spans.find((span) => span.name === name);
+				expect(spans.find((span) => span.name === `${name}.child`)?.parentId).toBe(parent?.id);
+			}
+			const failure = { reason: "same value" };
+			await expect(
+				traceIn(context, { name: "throw" }, () => {
+					throw failure;
+				}),
+			).rejects.toBe(failure);
+			await expect(traceIn(context, { name: "reject" }, () => Promise.reject(failure))).rejects.toBe(failure);
+			expect(
+				await traceIn(BACKGROUND_CONTEXT, { name: "noop" }, (child) => {
+					child.telemetry.addLink({ context: parent });
+					return 42;
+				}),
+			).toBe(42);
 		});
-		const first = traceIn(context, { name: "first" }, async (child) => {
-			await gate;
-			return traceIn(child, { name: "first.child" }, () => "first");
-		});
-		const second = traceIn(context, { name: "second" }, async (child) => {
-			const result = await traceIn(child, { name: "second.child" }, () => "second");
-			release?.();
-			return result;
-		});
-		expect(await Promise.all([first, second])).toEqual(["first", "second"]);
-		const spans = telemetry.getSpans();
-		for (const name of ["first", "second"]) {
-			const parent = spans.find((span) => span.name === name);
-			expect(spans.find((span) => span.name === `${name}.child`)?.parentId).toBe(parent?.id);
-		}
-		const failure = { reason: "same value" };
-		await expect(
-			traceIn(context, { name: "throw" }, () => {
-				throw failure;
-			}),
-		).rejects.toBe(failure);
-		await expect(traceIn(context, { name: "reject" }, () => Promise.reject(failure))).rejects.toBe(failure);
-		expect(
-			await traceIn(BACKGROUND_CONTEXT, { name: "noop" }, (child) => {
-				child.telemetry.addLink({ context: telemetry });
-				return 42;
-			}),
-		).toBe(42);
 	});
 
 	it("stops waiting when the invocation is cancelled", async () => {

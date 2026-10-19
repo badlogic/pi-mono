@@ -34,6 +34,7 @@ Unified LLM API with provider collections, automatic auth resolution, token and 
   - [Provider-Specific Options](#provider-specific-options-streamcomplete)
   - [Streaming Thinking Content](#streaming-thinking-content)
 - [Stop Reasons](#stop-reasons)
+- [Telemetry](#telemetry)
 - [Error Handling](#error-handling)
   - [Aborting Requests](#aborting-requests)
   - [Continuing After Abort](#continuing-after-abort)
@@ -1069,6 +1070,40 @@ Every `AssistantMessage` includes a `stopReason` field that indicates how the ge
 - `"aborted"` - Request was cancelled via abort signal
 
 `AssistantMessage` may also include `responseId`, a provider-specific upstream response or message identifier when the underlying API exposes one. Do not assume it is always present across providers.
+
+## Telemetry
+
+Pass an explicit parent span (`TelemetrySpan`, not an adapter) through `telemetry`; omitting it uses the no-op span:
+
+```typescript
+import { InMemoryTelemetryContext } from '@earendil-works/pi-telemetry';
+
+const telemetry = new InMemoryTelemetryContext();
+await telemetry.startSpan({ name: 'application.turn' }, async (span) => {
+  await models.completeSimple(model, context, { telemetry: span });
+});
+```
+
+`Models.stream()` and `streamSimple()` create `pi.ai.request`; `streamDeferred()` creates one `pi.ai.poll` per poll. Their completion helpers use the same spans. These spans include auth/setup, end at the terminal result, and do not require the caller to consume events. Direct provider/API calls are not instrumented.
+
+`AI_TELEMETRY_SCHEMA`, exported from the root and `@earendil-works/pi-ai/models`, defines the typed Pi-owned vocabulary:
+
+- Start attributes: `provider`, `api`, `model`, and `reasoning` only when `options.reasoning` is a string. Provider-native reasoning objects are ignored.
+- End attributes: `stop`, `usage.input`, `usage.output`, `usage.cache_read`, `usage.cache_write`, `cost.total`, and optional `response.id`. `stop: "error"` sets error status with the fixed category `provider_error` and `AssistantMessage.errorMessage` truncated to 500 characters (empty when absent). Cancellation keeps status `ok` with `stop: "aborted"`.
+- `pi.ai.first_chunk` marks the first normalized event, including setup errors. Each completed text, thinking, or tool-call block emits `pi.ai.block` with `type`, `index`, and `chars`; only tool calls include `tool`. Character counts use JavaScript string length; tool counts sum argument delta lengths without serializing arguments.
+
+When `options.telemetry.metrics` is available, the same requests record metrics:
+
+| Metric | Unit | Attributes |
+| --- | --- | --- |
+| `pi.ai.request.duration` | `ms` | `provider`, `model`, `stop` |
+| `pi.ai.first_chunk.duration` | `ms` | `provider`, `model` |
+| `pi.ai.tokens` | `token` | `provider`, `model`, `kind` (`input`, `output`, `cache_read`, `cache_write`) |
+| `pi.ai.cost` | `USD` | `provider`, `model` |
+
+Durations use `performance.now()`. Pending/deferred polls do not add tokens or cost; final completed/error polls do. A parent span without metric capabilities remains valid and simply records no metrics. Adapter-created spans carry the same optional metric and propagation capabilities as their root.
+
+Telemetry does not record prompts, generated text, reasoning content, or arguments in attributes/events. Error status includes up to 500 characters of provider error text, which may contain sensitive data; apply your export policy accordingly. Telemetry observes the existing forwarding path without another stream consumer or per-delta events. Response identifiers and error messages never become metric attributes.
 
 ## Error Handling
 

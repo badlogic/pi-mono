@@ -4,6 +4,8 @@ import {
 	defineTelemetrySchema,
 	InMemoryTelemetryContext,
 	NOOP_TELEMETRY_CONTEXT,
+	NOOP_TELEMETRY_METRICS,
+	NOOP_TELEMETRY_PROPAGATION,
 	type SchemaTelemetrySpan,
 	type SpanAttributes,
 	type SpanOptions,
@@ -168,6 +170,10 @@ describe("NOOP_TELEMETRY_CONTEXT", () => {
 		expect(admitted).toBe(true);
 		expect(await result).toBe(42);
 		expect(Object.isFrozen(firstSpan)).toBe(true);
+		expect(NOOP_TELEMETRY_CONTEXT.metrics).toBe(NOOP_TELEMETRY_METRICS);
+		expect(NOOP_TELEMETRY_CONTEXT.propagation).toBe(NOOP_TELEMETRY_PROPAGATION);
+		expect(firstSpan?.metrics).toBe(NOOP_TELEMETRY_METRICS);
+		expect(firstSpan?.propagation).toBe(NOOP_TELEMETRY_PROPAGATION);
 	});
 
 	it("preserves synchronous and asynchronous rejection values", async () => {

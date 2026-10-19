@@ -2,6 +2,15 @@
 
 ## [Unreleased]
 
+### Breaking Changes
+
+- Renamed provider request option `telemetryContext` to `telemetry?: TelemetrySpan`, without a compatibility alias. Pass a parent span, not an adapter.
+
+### Added
+
+- Added `AI_TELEMETRY_SCHEMA` and opt-in `pi.ai.request`/`pi.ai.poll` tracing around Models requests, with content-free first-event, block-size, and final usage attributes, plus duration, token, and USD cost metrics through `telemetry.metrics`.
+- Failed model request spans report `provider_error` status with up to 500 error-message characters; cancelled requests keep `ok` status with `stop: "aborted"`.
+
 ### Fixed
 
 - Fixed whitespace-only tool output (for example a bare `\r\n` from bash) being sent as-is to OpenAI Completions, OpenAI Responses, and Google providers; it now uses the same placeholder as empty output, since some providers reject whitespace-only tool content with a 400 ([#8720](https://github.com/earendil-works/pi/issues/8720))

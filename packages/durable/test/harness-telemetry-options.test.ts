@@ -11,7 +11,7 @@ describe("HarnessOptions.telemetry", () => {
 		expect(full.telemetry).toBe(adapter);
 		expect(contextOnly.telemetry).toBe(NOOP_TELEMETRY_CONTEXT);
 		expect(omitted.telemetry).toBeUndefined();
-		expectTypeOf(full.telemetry?.inject).toExtend<
+		expectTypeOf(full.telemetry?.propagation?.inject).toExtend<
 			((context: NonNullable<HarnessOptions["telemetry"]>) => unknown) | undefined
 		>();
 		const compileTimeFailures = () => {

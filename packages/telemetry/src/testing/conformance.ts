@@ -6,6 +6,7 @@ import {
 	type SpanOptions,
 	type SpanStatus,
 	type TelemetryCarrier,
+	type TelemetryContext,
 	type TelemetrySpan,
 } from "../index.ts";
 import type { RecordedTelemetrySpan } from "../memory.ts";
@@ -70,6 +71,33 @@ export function createTelemetryAdapterConformance(
 	factory: TelemetryAdapterFixtureFactory,
 ): readonly TelemetryAdapterConformanceCase[] {
 	return [
+		createCase(
+			factory,
+			"capabilities",
+			"carries adapter capabilities through contexts and spans",
+			async (fixture) => {
+				const metrics = fixture.metrics ?? fixture.context.metrics;
+				const propagation = fixture.propagation ?? fixture.context.propagation;
+				const assertCapabilities = (context: TelemetryContext): void => {
+					strictEqual(context.metrics, metrics);
+					strictEqual(context.propagation, propagation);
+				};
+				assertCapabilities(fixture.context);
+				let settled: TelemetrySpan | undefined;
+				await fixture.context.startSpan({ name: "capabilities" }, async (span) => {
+					settled = span;
+					assertCapabilities(span);
+					await span.startSpan({ name: "capabilities.child" }, assertCapabilities);
+					if (propagation) {
+						const parent = propagation.extract(propagation.inject(span));
+						assertCapabilities(parent);
+						await parent.startSpan({ name: "capabilities.extracted" }, assertCapabilities);
+					}
+				});
+				ok(settled);
+				await settled.startSpan({ name: "capabilities.inert" }, assertCapabilities);
+			},
+		),
 		createCase(
 			factory,
 			"metrics",

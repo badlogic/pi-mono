@@ -1,6 +1,13 @@
 import { type Context, copyJson, type JsonValue } from "@earendil-works/chord";
-import { awaitWithContext, withAbortSignal } from "@earendil-works/chord/context";
+import { awaitWithContext, withAbortSignal, withoutAbortSignal, withTelemetry } from "@earendil-works/chord/context";
 import type { Models } from "@earendil-works/pi-ai";
+import {
+	createTypedMetrics,
+	createTypedSpanStarter,
+	NOOP_TELEMETRY_CONTEXT,
+	NOOP_TELEMETRY_METRICS,
+	type TelemetryCarrier,
+} from "@earendil-works/pi-telemetry";
 import type { ExecutionEnv } from "../env/index.ts";
 import { errorMessage } from "../errors.ts";
 import type { SessionImpl } from "../session/session.ts";
@@ -29,11 +36,13 @@ import type {
 } from "../types.ts";
 import { agentHooks, DEFAULT_RESTART_LIMIT } from "./agent.ts";
 import { type ContextRange, readContextFrom } from "./context.ts";
+import { DURABLE_TELEMETRY_SCHEMA } from "./telemetry.ts";
 import type {
 	Agent,
 	AnyTask,
 	ConversationHandle,
 	HarnessInspection,
+	HarnessOptions,
 	RegistryReader,
 	RegistrySnapshot,
 	Settings,
@@ -49,7 +58,7 @@ type RunnableTaskRecord = Extract<
 	AnyTaskRecord,
 	{ readonly state: { readonly status: "pending" | "running" | "waiting" | "sleeping" } }
 >;
-type Checkpoint = { readonly phase: string };
+type Checkpoint = { readonly phase: string; readonly attempt?: number };
 type ErasedDefinition = TaskDefinition<JsonValue, Checkpoint, JsonValue, object>;
 type ErasedRuntime = TaskRuntime<JsonValue, Checkpoint, JsonValue, object>;
 type ErasedRunningTask = RunningTask<JsonValue, Checkpoint, JsonValue>;
@@ -102,8 +111,12 @@ type Invocation = {
 	readonly conversationId: ConversationId;
 	readonly mode: "run" | "abort";
 	readonly controller: AbortController;
+	links?: readonly TelemetryCarrier[];
 	/** Context passed to handlers; cancelled by `controller`. */
-	readonly context: Context;
+	context: Context;
+	/** Keeps the terminal state available after it leaves the live index. Released when the invocation finishes. */
+	record?: TaskRecord<JsonValue, Checkpoint, JsonValue>;
+	fault?: Extract<TaskOutcome<JsonValue>, { readonly status: "faulted" }>;
 	/** Watches acquired through the runtime; stopped at invocation end. */
 	readonly watches: Set<DocumentWatch<JsonObject>>;
 	/** Timers armed through the runtime; disarmed at invocation end. */
@@ -181,6 +194,7 @@ function parentNode(node: TaskNode): Node {
 type Scope = { readonly conversation: ConversationId } | { readonly roots: true };
 
 export type TaskSchedulerOptions = {
+	readonly telemetry?: HarnessOptions["telemetry"];
 	readonly session: SessionImpl;
 	readonly storage: Storage;
 	readonly registry: RegistryReader;
@@ -199,7 +213,7 @@ export type TaskSchedulerOptions = {
 	readonly timers: Timers;
 	/** While closing, on the line after admitted commits settle, write what the callback returns straight to Storage. */
 	readonly writeAtClose: (writes: () => readonly StorageWrite[]) => Promise<void>;
-	readonly report: (error: unknown, info: ReportInfo) => void;
+	readonly report: (error: unknown, info: ReportInfo, context?: Context) => void;
 	/** Harness cleanup staged in the commit that makes an outcome the scheduler wrote itself terminal. */
 	readonly settleOutcome: (tx: Transaction, record: AnyTaskRecord, outcome: SchedulerOutcome) => Promise<void>;
 	/** Withdraw a conversation's queued inputs, for conversation abort and abort cascades. */
@@ -237,6 +251,10 @@ export type TaskSchedulerOptions = {
  * step that decides its end, so a runtime commit it queued either lands before that decision or is rejected.
  */
 export class TaskScheduler {
+	readonly #telemetry: NonNullable<HarnessOptions["telemetry"]>;
+	readonly #activeMetric;
+	readonly #durationMetric;
+	readonly #resumed = new Set<TaskId>();
 	readonly #session: SessionImpl;
 	readonly #storage: Storage;
 	readonly #registry: RegistryReader;
@@ -248,7 +266,7 @@ export class TaskScheduler {
 	readonly #onWake: ((wake: Wake) => void) | undefined;
 	readonly #timers: Timers;
 	readonly #writeAtClose: (writes: () => readonly StorageWrite[]) => Promise<void>;
-	readonly #report: (error: unknown, info: ReportInfo) => void;
+	readonly #report: (error: unknown, info: ReportInfo, context?: Context) => void;
 	readonly #settleOutcome: TaskSchedulerOptions["settleOutcome"];
 	readonly #withdrawInputs: TaskSchedulerOptions["withdrawInputs"];
 	readonly #conversation: TaskSchedulerOptions["conversation"];
@@ -327,6 +345,10 @@ export class TaskScheduler {
 	#draining = false;
 
 	constructor(options: TaskSchedulerOptions) {
+		this.#telemetry = options.telemetry ?? NOOP_TELEMETRY_CONTEXT;
+		const metrics = createTypedMetrics(this.#telemetry.metrics ?? NOOP_TELEMETRY_METRICS, [DURABLE_TELEMETRY_SCHEMA]);
+		this.#activeMetric = metrics.upDownCounter("pi.durable.tasks.active");
+		this.#durationMetric = metrics.histogram("pi.durable.phase.duration");
 		this.#session = options.session;
 		this.#storage = options.storage;
 		this.#registry = options.registry;
@@ -367,6 +389,7 @@ export class TaskScheduler {
 			for (const records of scans) {
 				for (const record of records) {
 					this.#track(undefined, record);
+					this.#resumed.add(record.id);
 					if (record.abandonOnRestart === true) this.#abandoned.add(record.id);
 					if (record.state.status === "running") {
 						const restarts = (record.restarts ?? 0) + 1;
@@ -980,6 +1003,14 @@ export class TaskScheduler {
 	 */
 	#track(previous: AnyTaskRecord | undefined, record: AnyTaskRecord): void {
 		const id = record.id;
+		const invocation = this.#invocations.get(id);
+		if (invocation !== undefined) invocation.record = record as TaskRecord<JsonValue, Checkpoint, JsonValue>;
+		if (record.state.status === "terminal") {
+			if (previous !== undefined && !this.#closing) this.#activeMetric.add(-1, { task: record.kind });
+			this.#resumed.delete(id);
+		} else if (previous === undefined && !this.#closing) {
+			this.#activeMetric.add(1, { task: record.kind });
+		}
 		if (previous?.state.status === "waiting") for (const on of previous.state.on) deleteFrom(this.#waiters, on, id);
 		if (record.state.status === "terminal") {
 			const node = nodeOf(record);
@@ -1257,12 +1288,14 @@ export class TaskScheduler {
 	}
 
 	/** Fail the Session, which reports it, for a throw in one of the scheduler's own commits; ignored once closing. */
-	#failSession(error: unknown): void {
-		if (!this.#closing) this.#session.fail(error);
+	#failSession(error: unknown, context?: Context): void {
+		if (!this.#closing) this.#session.fail(error, context);
 	}
 
 	/** Close listener: runs synchronously once admission is sealed, before `join()`, or when the Session fails. */
 	#seal(): void {
+		for (const record of this.#live.values()) this.#activeMetric.add(-1, { task: record.kind });
+		this.#resumed.clear();
 		this.#closing = true;
 		try {
 			this.#unsubscribeRegistry();
@@ -1515,7 +1548,7 @@ export class TaskScheduler {
 					// Registered on the line, so marks and later reservations see it and close joins it; `#end` makes it a
 					// candidate again.
 					this.#runnable.delete(id);
-					const invocation = this.#createInvocation(record, mode, installerOf(snapshot, resolution.task));
+					const invocation = this.#createInvocation(runnable, mode, installerOf(snapshot, resolution.task));
 					reservations.push({ invocation, task: resolution.task, snapshot });
 				}
 			}, this.#context);
@@ -1632,7 +1665,7 @@ export class TaskScheduler {
 		return { kind: "ready", migrates: fit.migrates };
 	}
 
-	#createInvocation(record: AnyTaskRecord, mode: "run" | "abort", extension: string | undefined): Invocation {
+	#createInvocation(record: RunnableTaskRecord, mode: "run" | "abort", extension: string | undefined): Invocation {
 		const controller = new AbortController();
 		const { promise: done, resolve: finish } = Promise.withResolvers<void>();
 		const invocation: Invocation = {
@@ -1642,7 +1675,9 @@ export class TaskScheduler {
 			conversationId: record.conversationId,
 			mode,
 			controller,
+			links: record.startedAt === undefined ? record.links : undefined,
 			context: withAbortSignal(controller.signal, this.#context),
+			record: record as TaskRecord<JsonValue, Checkpoint, JsonValue>,
 			watches: new Set(),
 			timers: new Set(),
 			ended: false,
@@ -1660,9 +1695,12 @@ export class TaskScheduler {
 				if (invocation.mode === "run") await this.#run(reservation);
 				else await this.#runAbort(reservation);
 			} catch (error) {
-				this.#report(error, { type: "task_error", ...this.#aboutTask(invocation) });
+				this.#report(error, { type: "task_error", ...this.#aboutTask(invocation) }, invocation.context);
 			} finally {
 				this.#end(invocation);
+				invocation.record = undefined;
+				invocation.links = undefined;
+				invocation.fault = undefined;
 				invocation.finish();
 				this.#kick();
 			}
@@ -1675,23 +1713,93 @@ export class TaskScheduler {
 		const state = { task: reservation.task, snapshot: reservation.snapshot, reported: undefined as ReportedTask };
 		const phase: Phase = { snapshot: () => state.snapshot, task: () => state.task, agent: undefined };
 		const runtime = this.#runtime(invocation, phase);
-		let previous: PhaseResult | undefined;
-		for (;;) {
-			const current = await this.#step(invocation, (tx, current) =>
-				this.#decide(tx, current, previous, state, invocation.extension),
-			);
-			// Close may seal between the decision and dispatch.
-			if (current === undefined || this.#closing) return;
-			const checkpoint = current.state.checkpoint;
-			// Each phase handler resolves its agent afresh, at first use.
-			phase.agent = undefined;
-			try {
-				await erased(state.task).phases[checkpoint.phase]!(current, runtime, invocation.context);
-				previous = { checkpoint };
-			} catch (error) {
-				previous = { checkpoint, failure: { error } };
-			}
+		let current = await this.#step(invocation, (tx, next) =>
+			this.#decide(tx, next, undefined, state, invocation.extension, invocation.context),
+		);
+		while (current !== undefined && !this.#closing) {
+			const task = current;
+			current = await this.#phase(invocation, task, async () => {
+				const checkpoint = task.state.checkpoint;
+				// Each phase handler resolves its agent afresh, at first use.
+				phase.agent = undefined;
+				let previous: PhaseResult;
+				try {
+					await erased(state.task).phases[checkpoint.phase]!(task, runtime, invocation.context);
+					previous = { checkpoint };
+				} catch (error) {
+					previous = { checkpoint, failure: { error } };
+				}
+				return this.#step(invocation, (tx, next) =>
+					this.#decide(tx, next, previous, state, invocation.extension, invocation.context),
+				);
+			});
 		}
+	}
+
+	/** A phase owns its decision commit, not the next handler, a durable wait, or recovery. */
+	#phase<T>(invocation: Invocation, task: ErasedRunningTask, run: () => Promise<T>): Promise<T> {
+		const parent =
+			task.trace === undefined
+				? this.#telemetry
+				: (this.#telemetry.propagation?.extract(task.trace) ?? this.#telemetry);
+		const checkpoint = task.state.checkpoint;
+		const attempt = checkpoint.attempt;
+		const resumed = this.#resumed.delete(task.id);
+		return createTypedSpanStarter(parent, [DURABLE_TELEMETRY_SCHEMA])(
+			"pi.durable.phase",
+			{
+				"task.id": task.id,
+				"task.name": task.kind,
+				phase: checkpoint.phase,
+				kind: invocation.mode,
+				resumed,
+				...(attempt === undefined ? {} : { attempt }),
+			},
+			async (span) => {
+				if (span.propagation !== undefined && invocation.links !== undefined) {
+					for (const carrier of invocation.links) span.addLink({ context: span.propagation.extract(carrier) });
+				}
+				const previous = invocation.context;
+				invocation.context = withTelemetry(span, previous);
+				const started = performance.now();
+				try {
+					return await run();
+				} finally {
+					invocation.context = previous;
+					const state = invocation.record!.state;
+					const terminal =
+						invocation.fault ??
+						(state.status === "terminal" || state.status === "completing" ? state.outcome : undefined);
+					const outcome =
+						terminal !== undefined
+							? terminal.status === "completed"
+								? "done"
+								: terminal.status === "aborted"
+									? "aborted"
+									: "faulted"
+							: state.status === "waiting" || state.status === "sleeping"
+								? state.status
+								: invocation.ended || this.#closing
+									? "aborted"
+									: `next=${state.checkpoint!.phase}`;
+					span.setAttributes({ outcome });
+					if (terminal?.status === "faulted" || terminal?.status === "failed" || terminal?.status === "orphaned") {
+						const message = terminal.status === "orphaned" ? terminal.reason : terminal.error.message;
+						span.setStatus({
+							status: "error",
+							error: { name: `task_${terminal.status}`, message: message.slice(0, 500) },
+						});
+					} else if (outcome === "aborted") {
+						span.setStatus({ status: "ok" });
+					}
+					this.#durationMetric.record(
+						performance.now() - started,
+						{ task: task.kind, phase: checkpoint.phase, outcome },
+						span,
+					);
+				}
+			},
+		);
 	}
 
 	/**
@@ -1704,6 +1812,7 @@ export class TaskScheduler {
 		previous: PhaseResult | undefined,
 		state: { task: AnyTask; snapshot: RegistrySnapshot; reported: ReportedTask },
 		extension: string | undefined,
+		context: Context,
 	): Decision {
 		// 3. abort mark: end; a fresh abort invocation starts once the task's ordinary owned work is gone.
 		if (current.abortRequested) return false;
@@ -1731,11 +1840,15 @@ export class TaskScheduler {
 			}
 			if (state.reported === undefined || state.reported.task !== next) {
 				state.reported = { task: next };
-				this.#report(new Error(`Task ${current.id} keeps running under its old ${current.kind} definition`), {
-					type: "task_outdated",
-					...this.#aboutTask({ ...recordTask(current), extension }),
-					reason: next === undefined ? "missing_task" : "incompatible_task",
-				});
+				this.#report(
+					new Error(`Task ${current.id} keeps running under its old ${current.kind} definition`),
+					{
+						type: "task_outdated",
+						...this.#aboutTask({ ...recordTask(current), extension }),
+						reason: next === undefined ? "missing_task" : "incompatible_task",
+					},
+					context,
+				);
 			}
 		}
 		return true;
@@ -1746,16 +1859,22 @@ export class TaskScheduler {
 		const invocation = reservation.invocation;
 		const current = this.#live.get(invocation.taskId) as ErasedRunningTask | undefined;
 		if (current === undefined || this.#closing) return;
-		let failure: { readonly error: unknown } | undefined;
-		try {
-			const phase: Phase = { snapshot: () => reservation.snapshot, task: () => reservation.task, agent: undefined };
-			const runtime = this.#runtime(invocation, phase);
-			await erased(reservation.task).abort(current, runtime, invocation.context);
-		} catch (error) {
-			failure = { error };
-		}
-		const message = `Abort handler of task ${invocation.taskId} returned without a terminal outcome`;
-		await this.#step(invocation, () => ({ fault: failure?.error ?? new Error(message) }));
+		await this.#phase(invocation, current, async () => {
+			let failure: { readonly error: unknown } | undefined;
+			try {
+				const phase: Phase = {
+					snapshot: () => reservation.snapshot,
+					task: () => reservation.task,
+					agent: undefined,
+				};
+				const runtime = this.#runtime(invocation, phase);
+				await erased(reservation.task).abort(current, runtime, invocation.context);
+			} catch (error) {
+				failure = { error };
+			}
+			const message = `Abort handler of task ${invocation.taskId} returned without a terminal outcome`;
+			await this.#step(invocation, () => ({ fault: failure?.error ?? new Error(message) }));
+		});
 	}
 
 	/**
@@ -1779,19 +1898,24 @@ export class TaskScheduler {
 				if (decision !== false) {
 					fault = { error: decision.fault };
 					const message = errorMessage(decision.fault);
-					await this.#terminate(tx, current!, { status: "faulted", error: { message } });
+					invocation.fault = { status: "faulted", error: { message } };
+					await this.#terminate(tx, current!, invocation.fault);
 				}
 				return undefined;
-			}, this.#context);
+			}, withoutAbortSignal(invocation.context));
 			// Reported once the fault is durable: a host may count it, for example toward a breaker.
 			if (fault !== undefined)
-				this.#report(fault.error, { type: "task_faulted", ...this.#aboutTask(invocation), reason: "threw" });
+				this.#report(
+					fault.error,
+					{ type: "task_faulted", ...this.#aboutTask(invocation), reason: "threw" },
+					invocation.context,
+				);
 			return continued;
 		} catch (error) {
 			// The step writes the scheduler's own decision, a fault or a terminal record; a throw there would otherwise
 			// leave the task running, to be reserved and run again.
 			this.#end(invocation);
-			this.#failSession(error);
+			this.#failSession(error, invocation.context);
 			return undefined;
 		}
 	}
@@ -1978,7 +2102,11 @@ export class TaskScheduler {
 						await invoke(handler.bind(handlers));
 					} catch (error) {
 						if (invocation.controller.signal.aborted) throw error;
-						this.#report(error, { type: "extension_error", extension, task: reportTask(invocation) });
+						this.#report(
+							error,
+							{ type: "extension_error", extension, task: reportTask(invocation) },
+							invocation.context,
+						);
 					}
 				}
 			},
@@ -2002,15 +2130,25 @@ export class TaskScheduler {
 			get registry() {
 				return phase.snapshot();
 			},
-			commit: (change, context) =>
-				this.#gated(
+			commit: async (change, context) => {
+				let checkpoint: string | undefined;
+				await this.#gated(
 					invocation,
 					async (tx, current) => {
 						const next = await change(tx, current);
 						if (next !== undefined) await this.#commitState(tx, invocation, current, next);
+						if (next?.status === "running" && current.state.checkpoint.phase !== next.checkpoint.phase) {
+							checkpoint = next.checkpoint.phase;
+						}
 					},
 					context,
-				),
+				);
+				if (checkpoint !== undefined) {
+					invocation.context.telemetry.addEvent("pi.durable.checkpoint", {
+						phase: checkpoint,
+					});
+				}
+			},
 			memo: ((name: string, ...rest: readonly unknown[]) => {
 				if (rest.length === 1) {
 					return this.#read(invocation, async () => memoOf(this.#live.get(invocation.taskId), name));
@@ -2173,6 +2311,7 @@ export class TaskScheduler {
 						: from.type === "extension"
 							? { type: "extension_error", task, ...optionalExtension(from.extension) }
 							: { type: "host_error", callback: from.callback, task },
+					invocation.context,
 				);
 			},
 		};

@@ -219,14 +219,14 @@ export class SessionImpl implements Session {
 	 * now; they read the error from `failure`. The Storage guard calls this; the Harness also calls it for a throw in its
 	 * scheduler's own commits.
 	 */
-	fail(error: unknown): void {
+	fail(error: unknown, context?: Context): void {
 		if (this.#failure !== undefined) return;
 		this.#failure = { error };
 		this.#failed.reject(new SessionFailed(error));
 		// Seal first, so a report handler that calls back finds the Session failed. Closing runs the close listeners
 		// synchronously; a failing backend close is the caller's to see, and here nobody waits.
 		this.close(BACKGROUND_CONTEXT).catch(() => {});
-		this.report(error, { type: "session_failed" });
+		this.report(error, { type: "session_failed" }, context);
 	}
 
 	/**
@@ -541,7 +541,7 @@ export class SessionImpl implements Session {
 	 * Internal: the Session's failure, and errors of listeners, which never fail what ran them; `info` defaults to a
 	 * listener. A plain Session drops them.
 	 */
-	report(_error: unknown, _info: ReportInfo = LISTENER): void {}
+	report(_error: unknown, _info: ReportInfo = LISTENER, _context?: Context): void {}
 
 	/**
 	 * Runs inside every transaction that creates or forks a conversation, after the conversation record is staged. A
@@ -773,30 +773,46 @@ export class SessionImpl implements Session {
 		documents: readonly DocumentCommitChange[],
 		context: Context,
 	): void {
-		if (this.#commitListeners.size === 0 && this.#internalListeners.size === 0) return;
-		const changes: CommitChange[] = [];
+		const changes: CommitChange[] | undefined =
+			this.#commitListeners.size > 0 || this.#internalListeners.size > 0 ? [] : undefined;
 		for (const write of writes) {
 			switch (write.type) {
-				case "conversation":
 				case "entry":
-				case "task":
+					context.telemetry.addEvent("pi.durable.entry", {
+						"entry.id": write.value.id,
+						"entry.kind": write.value.kind,
+					});
+					changes?.push(write);
+					break;
 				case "submission":
-					changes.push(write);
+					if (write.value.status === "done" || write.value.status === "unanswered") {
+						context.telemetry.addEvent("pi.durable.submission", {
+							"submission.id": write.value.id,
+							status: write.value.status,
+							"answer.entry_id": write.value.answer,
+						});
+					}
+					changes?.push(write);
+					break;
+				case "conversation":
+				case "task":
+					changes?.push(write);
 			}
 		}
+		if (changes === undefined) return;
 		for (const document of documents) changes.push(document);
 		const publication: CommitPublication = { seq, changes };
 		// The commit is durable: a failing listener neither fails the commit nor skips the others.
 		for (const listener of [...this.#internalListeners]) {
 			contained(
 				() => listener(publication, context),
-				(error) => this.fail(error),
+				(error) => this.fail(error, context),
 			);
 		}
 		for (const listener of [...this.#commitListeners]) {
 			contained(
 				() => listener(publication, context),
-				(error) => this.report(error),
+				(error) => this.report(error, LISTENER, context),
 			);
 		}
 	}

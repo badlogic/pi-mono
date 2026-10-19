@@ -85,6 +85,8 @@ interface InMemoryParent {
 const contextCarriers = new WeakMap<TelemetryContext, TelemetryCarrier>();
 
 interface InMemoryTelemetryState {
+	metrics: TelemetryMetrics;
+	propagation: TelemetryPropagation;
 	scope: string;
 	spans: MutableRecordedTelemetrySpan[];
 	measurements: RecordedTelemetryMeasurement[];
@@ -185,23 +187,43 @@ function createSpan(
 	};
 }
 
+function startInertSpan<T>(
+	state: InMemoryTelemetryState,
+	options: SpanOptions,
+	callback: (span: TelemetrySpan) => T | Promise<T>,
+): Promise<T> {
+	return NOOP_TELEMETRY_CONTEXT.startSpan(options, (noop) =>
+		callback({
+			...noop,
+			metrics: state.metrics,
+			propagation: state.propagation,
+			startSpan: <Result>(
+				childOptions: SpanOptions,
+				childCallback: (span: TelemetrySpan) => Result | Promise<Result>,
+			) => startInertSpan(state, childOptions, childCallback),
+		}),
+	);
+}
+
 function startInMemorySpan<T>(
 	state: InMemoryTelemetryState,
 	parent: InMemoryParent | undefined,
 	options: SpanOptions,
 	callback: (span: TelemetrySpan) => T | Promise<T>,
 ): Promise<T> {
-	if (parent?.span?.settled) return NOOP_TELEMETRY_CONTEXT.startSpan(options, callback);
+	if (parent?.span?.settled) return startInertSpan(state, options, callback);
 
 	let recordedSpan: MutableRecordedTelemetrySpan;
 	try {
 		recordedSpan = createSpan(state, parent, options);
 		state.spans.push(recordedSpan);
 	} catch {
-		return NOOP_TELEMETRY_CONTEXT.startSpan(options, callback);
+		return startInertSpan(state, options, callback);
 	}
 
 	const span: TelemetrySpan = {
+		metrics: state.metrics,
+		propagation: state.propagation,
 		startSpan: <Result>(
 			childOptions: SpanOptions,
 			childCallback: (child: TelemetrySpan) => Result | Promise<Result>,
@@ -316,7 +338,11 @@ function createMeasurementRecorder(
  * Create a fresh instance to isolate tests or independent recording scopes.
  */
 export class InMemoryTelemetryContext implements TelemetryContext, TelemetryPropagation, TelemetryMetrics {
+	readonly metrics: TelemetryMetrics = this;
+	readonly propagation: TelemetryPropagation = this;
 	private readonly state: InMemoryTelemetryState = {
+		metrics: this,
+		propagation: this,
 		scope: crypto.randomUUID(),
 		spans: [],
 		measurements: [],
@@ -352,6 +378,8 @@ export class InMemoryTelemetryContext implements TelemetryContext, TelemetryProp
 					? Number(span)
 					: null;
 			const parent: TelemetryContext = {
+				metrics: this,
+				propagation: this,
 				startSpan: <T>(options: SpanOptions, callback: (span: TelemetrySpan) => T | Promise<T>) =>
 					startInMemorySpan(this.state, { context, localId }, options, callback),
 			};

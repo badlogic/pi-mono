@@ -1,4 +1,4 @@
-import type { SpanOptions, TelemetryContext, TelemetryPropagation, TelemetrySpan } from "./index.ts";
+import type { SpanOptions, TelemetryPropagation, TelemetrySpan } from "./index.ts";
 import type { TelemetryCounter, TelemetryHistogram, TelemetryMetrics, TelemetryUpDownCounter } from "./metrics.ts";
 
 function startNoopSpan<T>(_options: SpanOptions, callback: (span: TelemetrySpan) => T | Promise<T>): Promise<T> {
@@ -8,24 +8,6 @@ function startNoopSpan<T>(_options: SpanOptions, callback: (span: TelemetrySpan)
 		return Promise.reject(error);
 	}
 }
-
-const noopTelemetrySpan: TelemetrySpan = {
-	startSpan: startNoopSpan,
-	addLink: () => {},
-	addEvent: () => {},
-	setAttributes: () => {},
-	setStatus: () => {},
-};
-Object.freeze(noopTelemetrySpan);
-
-/** Shared telemetry context used when an application does not provide one. */
-export const NOOP_TELEMETRY_CONTEXT: TelemetryContext = noopTelemetrySpan;
-
-/** Shared propagation capability that neither inspects nor retains its inputs. */
-export const NOOP_TELEMETRY_PROPAGATION: TelemetryPropagation = Object.freeze({
-	inject: () => undefined,
-	extract: () => NOOP_TELEMETRY_CONTEXT,
-});
 
 const noopCounter: TelemetryCounter = Object.freeze({ add: () => {} });
 const noopUpDownCounter: TelemetryUpDownCounter = Object.freeze({ add: () => {} });
@@ -37,3 +19,23 @@ export const NOOP_TELEMETRY_METRICS: TelemetryMetrics = Object.freeze({
 	upDownCounter: () => noopUpDownCounter,
 	histogram: () => noopHistogram,
 });
+
+/** Shared propagation capability that neither inspects nor retains its inputs. */
+export const NOOP_TELEMETRY_PROPAGATION: TelemetryPropagation = Object.freeze({
+	inject: () => undefined,
+	extract: () => NOOP_TELEMETRY_CONTEXT,
+});
+
+const noopTelemetrySpan: TelemetrySpan = {
+	metrics: NOOP_TELEMETRY_METRICS,
+	propagation: NOOP_TELEMETRY_PROPAGATION,
+	startSpan: startNoopSpan,
+	addLink: () => {},
+	addEvent: () => {},
+	setAttributes: () => {},
+	setStatus: () => {},
+};
+Object.freeze(noopTelemetrySpan);
+
+/** Shared telemetry context used when an application does not provide one. */
+export const NOOP_TELEMETRY_CONTEXT: TelemetrySpan = noopTelemetrySpan;

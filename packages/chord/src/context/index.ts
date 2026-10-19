@@ -1,9 +1,4 @@
-import {
-	NOOP_TELEMETRY_CONTEXT,
-	type SpanOptions,
-	type TelemetryContext,
-	type TelemetrySpan,
-} from "@earendil-works/pi-telemetry";
+import { NOOP_TELEMETRY_CONTEXT, type SpanOptions, type TelemetrySpan } from "@earendil-works/pi-telemetry";
 
 /** Typed identity for one value carried by a {@link Context}. */
 export interface ContextKey<T> {
@@ -15,7 +10,7 @@ export interface ContextKey<T> {
 /** Immutable invocation-scoped values passed explicitly through operations. */
 export interface Context {
 	readonly abortSignal: AbortSignal | undefined;
-	readonly telemetry: TelemetryContext;
+	readonly telemetry: TelemetrySpan;
 	value<T>(key: ContextKey<T>): T | undefined;
 	toString(): string;
 }
@@ -24,7 +19,7 @@ const ABORT_SIGNAL_CONTEXT_KEY: ContextKey<AbortSignal | undefined> = Object.fre
 	token: Symbol("chord.abortSignal"),
 });
 
-const TELEMETRY_CONTEXT_KEY: ContextKey<TelemetryContext> = Object.freeze({
+const TELEMETRY_CONTEXT_KEY: ContextKey<TelemetrySpan> = Object.freeze({
 	token: Symbol("chord.telemetry"),
 });
 
@@ -36,7 +31,7 @@ abstract class BaseContext implements Context {
 		return this.value(ABORT_SIGNAL_CONTEXT_KEY);
 	}
 
-	get telemetry(): TelemetryContext {
+	get telemetry(): TelemetrySpan {
 		return this.value(TELEMETRY_CONTEXT_KEY) ?? NOOP_TELEMETRY_CONTEXT;
 	}
 }
@@ -93,7 +88,7 @@ export function withContextValue<T>(key: ContextKey<T>, value: T, parent: Contex
 }
 
 /** Derive an explicit telemetry parent without changing cancellation or application values. */
-export function withTelemetry<T extends TelemetryContext>(
+export function withTelemetry<T extends TelemetrySpan>(
 	telemetry: T,
 	context: Context,
 ): Context & { readonly telemetry: T } {
@@ -104,7 +99,7 @@ export function withTelemetry<T extends TelemetryContext>(
 export function traceIn<T>(
 	context: Context,
 	options: SpanOptions,
-	fn: (context: Context & { readonly telemetry: TelemetrySpan }) => T | Promise<T>,
+	fn: (context: Context) => T | Promise<T>,
 ): Promise<T> {
 	return context.telemetry.startSpan(options, (span) => fn(withTelemetry(span, context)));
 }

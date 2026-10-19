@@ -71,21 +71,23 @@ await host.root(async (ctx) => {
 
 ## Explicit Context telemetry
 
-`Context` has a fixed `telemetry: TelemetryContext` member, alongside `abortSignal`. It is never undefined: `BACKGROUND_CONTEXT` and `TODO_CONTEXT` use `NOOP_TELEMETRY_CONTEXT` from `@earendil-works/pi-telemetry`.
+`Context` always carries a `telemetry: TelemetrySpan`, alongside `abortSignal`. `BACKGROUND_CONTEXT` and `TODO_CONTEXT` use the shared no-op span `NOOP_TELEMETRY_CONTEXT`. Adapters (`TelemetryContext`) belong to hosts and start root spans; adapters are never placed in a `Context`.
 
 ```ts
 import { BACKGROUND_CONTEXT, traceIn, withTelemetry } from '@earendil-works/chord/context';
 import { InMemoryTelemetryContext } from '@earendil-works/pi-telemetry';
 
 const telemetry = new InMemoryTelemetryContext();
-const context = withTelemetry(telemetry, BACKGROUND_CONTEXT);
-await traceIn(context, { name: 'app.load' }, async (child) => {
-  child.telemetry.addEvent('cache.miss');
-  return traceIn(child, { name: 'app.read' }, (nested) => readAccount(nested));
+await telemetry.startSpan({ name: 'app.request' }, async (span) => {
+  const context = withTelemetry(span, BACKGROUND_CONTEXT);
+  await traceIn(context, { name: 'app.load' }, async (child) => {
+    child.telemetry.addEvent('cache.miss');
+    return traceIn(child, { name: 'app.read' }, (nested) => readAccount(nested));
+  });
 });
 ```
 
-`withTelemetry(telemetry, context)` derives a new context; it never changes its parent, cancellation, or typed values. `traceIn(context, options, fn)` creates a callback-managed child span, and `fn` receives the derived context with `telemetry` narrowed to `TelemetrySpan`, including `addLink()`. Values, cancellation, callback results, and rejection identities are preserved. Concurrent calls keep independent parents; there is no ambient current span. `value()`, `ContextKey`, and `withContextValue()` remain supported.
+`withTelemetry(span, context)` derives a new context; it never changes its parent, cancellation, or typed values. `traceIn(context, options, fn)` creates a callback-managed child span, and `fn` receives its derived context. Every context already supports `telemetry.addEvent()` and `telemetry.addLink()`. Values, cancellation, callback results, and rejection identities are preserved. Concurrent calls keep independent parents; there is no ambient current span. `value()`, `ContextKey`, and `withContextValue()` remain supported.
 
 These helpers operate on the standalone `Context` API. They do not yet instrument Chord hosts, methods, or network frames.
 

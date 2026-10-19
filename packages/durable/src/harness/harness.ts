@@ -1,6 +1,13 @@
 import type { AttachedReplicatedState, Context, JsonValue } from "@earendil-works/chord";
 import { withAbortSignal, withoutAbortSignal } from "@earendil-works/chord/context";
 import type { Models } from "@earendil-works/pi-ai";
+import {
+	createTypedMetrics,
+	NOOP_TELEMETRY_CONTEXT,
+	NOOP_TELEMETRY_METRICS,
+	type SpanAttributes,
+	type TelemetryContext,
+} from "@earendil-works/pi-telemetry";
 import { ResetEntry } from "../entries.ts";
 import type { ExecutionEnv } from "../env/index.ts";
 import { contained, SessionImpl } from "../session/session.ts";
@@ -33,6 +40,7 @@ import { BUILTIN_TASKS } from "./registry.ts";
 import { type InvocationBinding, TaskScheduler } from "./scheduler.ts";
 import { Submissions } from "./submissions.ts";
 import { type TaskGraph, TaskGraphView, type TaskGraphWatch } from "./task-graph.ts";
+import { DURABLE_TELEMETRY_SCHEMA } from "./telemetry.ts";
 import type {
 	Agent,
 	AgentChange,
@@ -184,14 +192,14 @@ function currentSettings(settings: HarnessOptions["settings"]): () => HarnessSet
 class HarnessImpl<Tool extends ToolRegistration> extends SessionImpl implements HarnessType {
 	readonly #options: HarnessOptions<Tool>;
 	readonly #hostSettings: () => HarnessSettings | undefined;
-	readonly #report: (error: unknown, info: ReportInfo) => void;
+	readonly #report: (error: unknown, info: ReportInfo, context?: Context) => void;
 	readonly #host: ConversationHost<Tool>;
 	readonly #tasks: TaskScheduler;
 	readonly #submissions: Submissions;
 	readonly #taskGraph: TaskGraphView;
 
 	constructor(rawStorage: Storage, options: HarnessOptions<Tool>, context: Context) {
-		const report = safeReport(options.onReport);
+		const report = safeReport(options.onReport, options.telemetry ?? NOOP_TELEMETRY_CONTEXT);
 		const now = safeNow(options.now, report);
 		const hostSettings = currentSettings(options.settings);
 		// Read at each use, as all settings are, but only this field: it is read on every commit.
@@ -203,6 +211,7 @@ class HarnessImpl<Tool extends ToolRegistration> extends SessionImpl implements 
 		this.#hostSettings = hostSettings;
 		const settings = () => resolveSettings(hostSettings());
 		this.#tasks = new TaskScheduler({
+			telemetry: options.telemetry,
 			session: this,
 			storage,
 			registry: options.registry,
@@ -223,7 +232,7 @@ class HarnessImpl<Tool extends ToolRegistration> extends SessionImpl implements 
 			},
 			context: withoutAbortSignal(context),
 		});
-		this.#submissions = new Submissions(this, storage, now, settings, () => this.#tasks.resume());
+		this.#submissions = new Submissions(this, storage, now, settings, () => this.#tasks.resume(), options.telemetry);
 		this.#taskGraph = new TaskGraphView(this, storage, {
 			blocked: (record) => this.#tasks.blockedReason(record),
 			subscribeBlocked: (listener) => this.#tasks.subscribeBlocked(listener),
@@ -248,7 +257,7 @@ class HarnessImpl<Tool extends ToolRegistration> extends SessionImpl implements 
 		const registry = snapshot ?? this.#options.registry.snapshot();
 		const state = await this.snapshot(AgentDoc, id, context);
 		return resolveAgent(state, registry, resolveSettings(this.#hostSettings()), (error, extension) =>
-			this.#report(error, { type: "extension_error", conversationId: id, extension }),
+			this.#report(error, { type: "extension_error", conversationId: id, extension }, context),
 		);
 	}
 
@@ -365,8 +374,8 @@ class HarnessImpl<Tool extends ToolRegistration> extends SessionImpl implements 
 		return this.#create({ kind: "independent", ownership: options.ownership }, options, context);
 	}
 
-	override report(error: unknown, info: ReportInfo = { type: "listener_error" }): void {
-		this.#report(error, info);
+	override report(error: unknown, info: ReportInfo = { type: "listener_error" }, context?: Context): void {
+		this.#report(error, info, context);
 	}
 
 	/** Signal and join task invocations after the close listeners and before Storage closes; writes no task outcome. */
@@ -408,15 +417,43 @@ class HarnessImpl<Tool extends ToolRegistration> extends SessionImpl implements 
 	}
 }
 
-/** `onReport` that cannot fail: it is the last place an error goes, so its own throw or rejection is dropped. */
+/** Preserve the host callback's error containment; telemetry adapters are responsible for their own failures. */
 function safeReport(
 	onReport: ((error: unknown, info: ReportInfo) => void) | undefined,
-): (error: unknown, info: ReportInfo) => void {
-	return (error, info) =>
+	telemetry: TelemetryContext,
+): (error: unknown, info: ReportInfo, context?: Context) => void {
+	const reports = createTypedMetrics(telemetry.metrics ?? NOOP_TELEMETRY_METRICS, [DURABLE_TELEMETRY_SCHEMA]).counter(
+		"pi.durable.reports",
+	);
+	return (error, info, context) => {
 		contained(
 			() => onReport?.(error, info),
 			() => {},
 		);
+		const attributes: SpanAttributes = {
+			type: info.type,
+		};
+		switch (info.type) {
+			case "task_faulted":
+			case "task_outdated":
+				attributes.reason = info.reason;
+				attributes.extension = info.extension;
+				attributes["task.id"] = info.task.id;
+				break;
+			case "task_parked":
+			case "migration_failed":
+			case "task_error":
+			case "extension_error":
+				attributes.extension = info.extension;
+				attributes["task.id"] = info.task?.id;
+				break;
+			case "host_error":
+				attributes["task.id"] = info.task?.id;
+				break;
+		}
+		reports.add(1, { type: info.type });
+		context?.telemetry.addEvent("pi.durable.report", attributes);
+	};
 }
 
 /**

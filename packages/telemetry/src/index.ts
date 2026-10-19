@@ -1,4 +1,4 @@
-import type { TelemetryMetricDefinition } from "./metrics.ts";
+import type { TelemetryMetricDefinition, TelemetryMetrics } from "./metrics.ts";
 
 export type AttributeValue = string | number | boolean | readonly string[] | readonly number[] | readonly boolean[];
 
@@ -29,6 +29,9 @@ export interface SpanOptions {
 export type SpanStatus = { status: "ok" } | { status: "error"; error?: { name: string; message: string } };
 
 export interface TelemetryContext {
+	/** Adapter capabilities remain available on child spans and extracted parents. */
+	readonly metrics?: TelemetryMetrics;
+	readonly propagation?: TelemetryPropagation;
 	startSpan<T>(options: SpanOptions, callback: (span: TelemetrySpan) => T | Promise<T>): Promise<T>;
 }
 

@@ -67,7 +67,7 @@ A span is diagnostic data, not business state. Recording it must not change whet
 
 ## Core Context API
 
-A `TelemetryContext` starts a span around a callback. The callback receives a `TelemetrySpan`, which is also the explicit parent context for child spans.
+A `TelemetryContext` starts a span around a callback. The callback receives a `TelemetrySpan`, which is also the explicit parent context for child spans. Contexts optionally expose their adapter's `metrics?: TelemetryMetrics` and `propagation?: TelemetryPropagation` capabilities; child spans and extracted parents carry the same capabilities. A `TelemetryContext` adapter starts root spans; hosts retain this adapter. Invocation contexts and pi-ai request options carry a `TelemetrySpan`, never the adapter. A tracing adapter that only implements `startSpan()` is still valid.
 
 ```typescript
 import {
@@ -124,6 +124,7 @@ return telemetryContext.startSpan({ name: 'example.save' }, async (span) => {
 An adapter implements `TelemetryContext` and bridges the generic API to its backend. It must:
 
 - create a child span and invoke the callback synchronously, exactly once;
+- expose optional metric and propagation capabilities on its contexts, child spans, and extracted parents, including inert fallback spans;
 - preserve the callback's returned value and rejection value, returning a promise rejected with the same value after a synchronous throw;
 - keep the native span open until a returned promise settles;
 - treat normal completion as `ok` and throws/rejections as errors unless an explicit status was set;
@@ -137,7 +138,7 @@ Adapters may activate backend-native ambient context internally for automatic in
 
 ## Propagation and Span Links
 
-An adapter may also implement `TelemetryPropagation`. Keep that capability on the one adapter configured by the application, not on every context:
+An adapter may also implement `TelemetryPropagation`. Expose it through `context.propagation` so code can inject or extract using the context it already has. The root, spans, and extracted parents share the adapter's capability object:
 
 ```typescript
 interface TelemetryPropagation {
@@ -181,7 +182,7 @@ Link targets are `TelemetryContext` handles, including spans and extracted remot
 
 ## Metrics
 
-An adapter may implement `TelemetryMetrics` alongside `TelemetryContext` and `TelemetryPropagation`. Applications configure one adapter, not separate backends for each capability:
+An adapter may implement `TelemetryMetrics` alongside `TelemetryContext` and `TelemetryPropagation`. Applications configure one adapter, not separate backends for each capability. Expose the shared capability through `context.metrics`; child spans retain it, so nested model calls can record metrics without a separate configuration option. The in-memory adapter also implements the factory methods directly:
 
 ```typescript
 const bytes = telemetry.counter('network.bytes', {
@@ -252,6 +253,7 @@ The no-op context:
 - invokes callbacks synchronously;
 - preserves returned values and asynchronous rejections, and converts a synchronous throw to a promise rejected with the same value;
 - uses one shared frozen inert span, including for nested spans;
+- exposes `NOOP_TELEMETRY_METRICS` and `NOOP_TELEMETRY_PROPAGATION` on its root and spans;
 - does not inspect or retain names, attributes, events, or statuses.
 
 ## In-Memory Reference Adapter
@@ -311,7 +313,7 @@ for (const group of new Set(conformance.map((testCase) => testCase.group))) {
 }
 ```
 
-The suite checks synchronous single admission, result and rejection identity, automatic and explicit status, attribute merging, event ordering, inert post-settlement calls, nested and concurrent parentage, links, and suppression of unreadable telemetry payload failures. Fixtures may supply `propagation` to additionally check JSON round trips, multiple adapter hops, and safe fallback for malformed carriers. Fixtures may also supply `metrics` and `getMetrics()` to check ordered measurements, histogram exemplars, input copying, and atomic suppression of invalid metadata or measurements. `getSpans()` may flush an asynchronous exporter before returning. The testing subpath uses Node's assertion APIs; the root telemetry package remains runtime-neutral.
+The suite checks capability identity on roots, child spans, extracted parents and inert spans, synchronous single admission, result and rejection identity, automatic and explicit status, attribute merging, event ordering, inert post-settlement calls, nested and concurrent parentage, links, and suppression of unreadable telemetry payload failures. Fixtures may supply `propagation` to additionally check JSON round trips, multiple adapter hops, and safe fallback for malformed carriers. Fixtures may also supply `metrics` and `getMetrics()` to check ordered measurements, histogram exemplars, input copying, and atomic suppression of invalid metadata or measurements. `getSpans()` may flush an asynchronous exporter before returning. The testing subpath uses Node's assertion APIs; the root telemetry package remains runtime-neutral.
 
 ## Typed Schemas
 
@@ -472,20 +474,16 @@ Adapters do not need to understand schema objects. Instrumentation helpers and t
 Package ownership is intentionally split:
 
 - `@earendil-works/pi-telemetry` owns the vendor-neutral contract, no-op and in-memory reference contexts, schema utilities, and adapter conformance suite;
-- `@earendil-works/pi-ai` accepts and propagates `telemetryContext` in provider request options but owns no telemetry schema;
-- `@earendil-works/pi-agent-core` owns and exports the pi AI-request and harness schemas, their combined readonly schema tuple, and typed span helpers.
+- `@earendil-works/pi-ai` accepts a parent `TelemetrySpan` through `telemetry` in provider request options and exports `AI_TELEMETRY_SCHEMA` from its root and `./models` entry points;
+- `@earendil-works/pi-durable` exports `DURABLE_TELEMETRY_SCHEMA` for short task-handler and submission spans, events, and metrics;
+- `@earendil-works/pi-agent-core` retains its existing agent-loop and session instrumentation and schemas.
 
 ```typescript
-import {
-  AGENT_TELEMETRY_SCHEMAS,
-  AI_TELEMETRY_SCHEMA,
-  HARNESS_TELEMETRY_SCHEMA,
-  startAiSpan,
-  startHarnessSpan,
-} from '@earendil-works/pi-agent-core';
+import { AI_TELEMETRY_SCHEMA } from '@earendil-works/pi-ai/models';
+import { DURABLE_TELEMETRY_SCHEMA } from '@earendil-works/pi-durable';
 ```
 
-The pi schemas use pi-owned `pi.ai.*`, `pi.harness.*`, and `pi.session.*` names. Adapters may translate them to backend conventions without changing the emitted pi vocabulary.
+The AI and Durable schemas use pi-owned `pi.ai.*` and `pi.durable.*` names. Adapters may translate them to backend conventions without changing the emitted pi vocabulary.
 
 ## Security and Portability
 
@@ -501,7 +499,7 @@ The package does not use `AsyncLocalStorage` or another runtime-specific ambient
 
 | Export | Purpose |
 |---|---|
-| `TelemetryContext` | Starts callback-managed child spans |
+| `TelemetryContext` | Starts callback-managed child spans and optionally exposes adapter metrics/propagation |
 | `TelemetrySpan` | Records attributes, events, and status; also acts as a child context |
 | `SpanOptions` | Span name, optional start attributes and links |
 | `SpanLink` | Context target and optional link attributes |

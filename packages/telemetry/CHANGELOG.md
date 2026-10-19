@@ -5,12 +5,15 @@
 ### Breaking Changes
 
 - Adapters must implement `TelemetrySpan.addLink()`. Normalized span snapshots include carrier-shaped context and parent identities and ordered links.
+- Adapters with optional metric or propagation capabilities must carry them through `TelemetryContext.metrics` and `TelemetryContext.propagation` on roots, spans, and extracted parents.
 
 ### Added
 
 - Opaque string-map carriers and optional `TelemetryPropagation` injection/extraction, with passive root fallback for absent or invalid carriers and shared `NOOP_TELEMETRY_PROPAGATION`.
 - Initial `SpanOptions.links` and late `span.addLink()` with context targets and optional attributes, including settled target spans and extracted remote parents.
 - Optional `TelemetryMetrics` counters, up-down counters, and histograms with boundary hints and exemplar contexts, plus shared `NOOP_TELEMETRY_METRICS` instruments.
+- Optional context capability members, populated by the no-op and in-memory adapters and checked by adapter conformance.
+- `NOOP_TELEMETRY_CONTEXT` is typed as `TelemetrySpan`, matching the shared inert span it provides.
 - Metric schema definitions and `createTypedMetrics()` with exact instrument names, kinds, and required/optional low-cardinality attributes.
 - In-memory propagation across processes, link and measurement snapshots, and adapter conformance cases for propagation, links, and optional metrics.
 
