@@ -112,7 +112,7 @@ describe("session selector search", () => {
 		expect(result2.map((s) => s.id)).toEqual(["newer", "older"]);
 	});
 
-	it("ranks an unquoted title match above a later substring in a newer session", () => {
+	it("ranks a session-name match above a later message match in a newer session", () => {
 		const sessions = [
 			makeSession({
 				id: "newer",
