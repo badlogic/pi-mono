@@ -615,6 +615,11 @@ function createSummarizationOptions(
  * `terminated`, socket close) honor the configured retry policy instead of failing
  * the whole compaction on the first attempt. Deterministic errors and aborts return
  * immediately (see {@link retryAssistantCall}).
+ *
+ * Reasoning tokens count against the `maxTokens` cap. When a reasoning-capable model
+ * spends the budget on thinking, the summary is truncated (`stopReason: "length"`)
+ * and the whole compaction fails. In that case, retry once with reasoning disabled so
+ * the full budget is available for summary text before surfacing the failure.
  */
 export async function completeSummarization(
 	model: Model<any>,
@@ -631,11 +636,19 @@ export async function completeSummarization(
 		cacheRetention: "none",
 		sessionId: options.sessionId ?? uuidv7(),
 	};
-	const produce = async (): Promise<AssistantMessage> =>
-		streamFn
-			? (await streamFn(model, context, requestOptions)).result()
-			: completeSimple(model, context, requestOptions);
-	return retryAssistantCall(produce, retry, requestOptions.signal, callbacks);
+	const produce = async (callOptions: SimpleStreamOptions): Promise<AssistantMessage> =>
+		streamFn ? (await streamFn(model, context, callOptions)).result() : completeSimple(model, context, callOptions);
+	let response = await retryAssistantCall(
+		async () => produce(requestOptions),
+		retry,
+		requestOptions.signal,
+		callbacks,
+	);
+	if (response.stopReason === "length" && requestOptions.reasoning !== undefined) {
+		const plainOptions: SimpleStreamOptions = { ...requestOptions, reasoning: undefined };
+		response = await retryAssistantCall(async () => produce(plainOptions), retry, plainOptions.signal, callbacks);
+	}
+	return response;
 }
 
 /**

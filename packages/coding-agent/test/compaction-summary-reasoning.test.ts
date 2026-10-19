@@ -209,6 +209,62 @@ describe("generateSummary reasoning options", () => {
 		);
 	});
 
+	it("retries once without reasoning when reasoning burns the summary budget", async () => {
+		completeSimpleMock
+			.mockResolvedValueOnce({
+				...mockSummaryResponse,
+				stopReason: "length",
+				content: [{ type: "text", text: "partial" }],
+			})
+			.mockResolvedValueOnce(mockSummaryResponse);
+
+		const result = await generateSummaryWithUsage(
+			messages,
+			createModel(true),
+			2000,
+			"test-key",
+			undefined,
+			undefined,
+			undefined,
+			undefined,
+			"medium",
+		);
+
+		expect(result.text).toBe("## Goal\nTest summary");
+		expect(completeSimpleMock).toHaveBeenCalledTimes(2);
+		expect(completeSimpleMock.mock.calls[0][2]).toMatchObject({ reasoning: "medium" });
+		expect(completeSimpleMock.mock.calls[1][2]?.reasoning).toBeUndefined();
+		// The retry keeps routing and cache behavior identical apart from reasoning.
+		expect(completeSimpleMock.mock.calls[1][2]).toMatchObject({
+			sessionId: completeSimpleMock.mock.calls[0][2]?.sessionId,
+			cacheRetention: "none",
+		});
+	});
+
+	it("fails when the reasoning-free retry still hits the token cap", async () => {
+		completeSimpleMock.mockResolvedValue({
+			...mockSummaryResponse,
+			stopReason: "length",
+			content: [{ type: "text", text: "partial" }],
+		});
+
+		await expect(
+			generateSummaryWithUsage(
+				messages,
+				createModel(true),
+				2000,
+				"test-key",
+				undefined,
+				undefined,
+				undefined,
+				undefined,
+				"medium",
+			),
+		).rejects.toThrow("generation hit the token cap");
+
+		expect(completeSimpleMock).toHaveBeenCalledTimes(2);
+	});
+
 	it("does not set reasoning when thinking is off", async () => {
 		await generateSummary(
 			messages,
