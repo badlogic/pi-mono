@@ -210,28 +210,56 @@ export function hasNonAdditiveToolChanges(messages: TranscriptMessages): boolean
 	return false;
 }
 
+/**
+ * How a transport can express tool changes after the first request.
+ *
+ * - `"none"`: only the top-level tool list exists; it always holds the current tools.
+ * - `"additions"`: tools can be added at a later message, but not removed or redefined.
+ * - `"changes"`: every tool, including the initial ones, is declared in place, and a later
+ *   declaration under the same name replaces the earlier one. Removals are not expressible on
+ *   the wire, so the transport announces them as text and the removed tools stay declared.
+ */
+export type TranscriptToolSupport = "none" | "additions" | "changes";
+
 export interface TranscriptTools {
 	/** Tools sent in the top-level request field. */
 	requestTools: Tool[];
 	/**
-	 * Whether later system messages carry their own `toolsAdded` as in-place additions.
-	 * When false, `requestTools` already holds the complete current tool set.
+	 * Number of leading system messages whose tool changes `requestTools` already holds. Every
+	 * later system message carries its own tool changes in place.
 	 */
-	anchorsAdditions: boolean;
+	foldedSystemMessages: number;
 }
 
 /**
- * Split tool declarations between the top-level request field and in-place additions.
- * Transports that can anchor additions at a system message keep the initial tools at the
- * top and load later ones where they appear; that only works when no tool was removed or
- * redeclared, so everything else sends the current tool list.
+ * Split tool declarations between the top-level request field and in-place changes.
+ *
+ * With `"changes"`, the top-level list stays empty and every system message, including the
+ * leading one, declares its tools in place: an in-place declaration can replace an earlier
+ * in-place one, but not a top-level one. With `"additions"`, a removal or redefinition cannot be
+ * expressed in place, so the top-level list becomes the tool state after the last such change;
+ * later additions stay anchored, and the cached prefix is invalidated once per removal instead
+ * of on every later addition. With `"none"`, the top-level list is the current tool set.
  */
-export function resolveTranscriptTools(messages: TranscriptMessages, supportsToolAdditions: boolean): TranscriptTools {
-	const anchorsAdditions = supportsToolAdditions && !hasNonAdditiveToolChanges(messages);
-	return {
-		requestTools: anchorsAdditions
-			? (getInitialSystemMessage(messages)?.toolsAdded ?? [])
-			: getCurrentTools(messages),
-		anchorsAdditions,
-	};
+export function resolveTranscriptTools(messages: TranscriptMessages, support: TranscriptToolSupport): TranscriptTools {
+	const systemMessages = messages.filter(isSystemMessage);
+	if (support === "none") {
+		return { requestTools: getCurrentTools(systemMessages), foldedSystemMessages: systemMessages.length };
+	}
+	if (support === "changes") return { requestTools: [], foldedSystemMessages: 0 };
+	let folded = getInitialSystemMessage(messages) ? 1 : 0;
+	if (support === "additions") {
+		// A name declared before counts as a redeclaration even after its removal: Kimi K3 ignores a
+		// removed tool that a later tool message declares again (verified October 2026).
+		const declared = new Set<string>();
+		for (let index = 0; index < systemMessages.length; index++) {
+			const message = systemMessages[index];
+			const added = message.toolsAdded ?? [];
+			if ((message.toolsRemoved?.length ?? 0) > 0 || added.some((tool) => declared.has(tool.name))) {
+				folded = Math.max(folded, index + 1);
+			}
+			for (const tool of added) declared.add(tool.name);
+		}
+	}
+	return { requestTools: getCurrentTools(systemMessages.slice(0, folded)), foldedSystemMessages: folded };
 }
