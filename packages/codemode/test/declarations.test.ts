@@ -214,6 +214,15 @@ describe("schemaToType", () => {
 		expect(schemaToType({ type: "array" })).toBe("unknown[]");
 	});
 
+	it("renders draft 2020-12 tuples with items as the rest element", () => {
+		// #10740: a 2020-12 tuple must render as a tuple, not as `Array<items>`.
+		const pair = [{ type: "string" }, { type: "number" }];
+		expect(schemaToType({ type: "array", prefixItems: pair, items: false })).toBe("[string, number]");
+		expect(schemaToType({ type: "array", prefixItems: pair, items: { type: "boolean" } })).toBe(
+			"[string, number, ...Array<boolean>]",
+		);
+	});
+
 	it("renders types over the budget as unknown", () => {
 		const properties = Object.fromEntries(Array.from({ length: 50 }, (_, i) => [`field${i}`, { type: "string" }]));
 		const schema = { type: "object", properties };

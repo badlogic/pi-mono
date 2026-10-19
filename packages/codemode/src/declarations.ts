@@ -229,15 +229,23 @@ function toType(schema: CodemodeJsonSchema, context: SchemaContext): string {
 }
 
 function arrayType(schema: Record<string, unknown>, context: SchemaContext): string {
-	if (schema.items !== undefined && !Array.isArray(schema.items)) {
-		return `Array<${toType(schema.items as CodemodeJsonSchema, context)}>`;
-	}
+	// Draft 2020-12: next to `prefixItems`, `items` describes the elements after the tuple, not the array type.
 	const tuple = Array.isArray(schema.prefixItems)
 		? schema.prefixItems
 		: Array.isArray(schema.items)
 			? schema.items
 			: [];
-	if (tuple.length > 0) return `[${tuple.map((item) => toType(item as CodemodeJsonSchema, context)).join(", ")}]`;
+	if (tuple.length > 0) {
+		const members = tuple.map((item) => toType(item as CodemodeJsonSchema, context));
+		const rest = Array.isArray(schema.prefixItems) ? schema.items : undefined;
+		if (rest !== undefined && rest !== false) {
+			members.push(`...Array<${toType(rest as CodemodeJsonSchema, context)}>`);
+		}
+		return `[${members.join(", ")}]`;
+	}
+	if (schema.items !== undefined && !Array.isArray(schema.items)) {
+		return `Array<${toType(schema.items as CodemodeJsonSchema, context)}>`;
+	}
 	return "unknown[]";
 }
 
