@@ -126,6 +126,34 @@ describe("Coding Agent Tools", () => {
 			expect(output).toMatch(/\[Showing lines 1-\d+ of 500 \(.* limit\)\. Use offset=\d+ to continue\.\]/);
 		});
 
+		it("should honor custom maxLines and maxBytes options", async () => {
+			const testFile = join(testDir, "custom-caps.txt");
+			const lines = Array.from({ length: 100 }, (_, i) => `Line ${i + 1}: ${"x".repeat(80)}`);
+			writeFileSync(testFile, lines.join("\n"));
+
+			// Fits stock caps; truncates under a smaller custom byte cap.
+			const tool = createReadTool(process.cwd(), { maxLines: 50, maxBytes: 2 * 1024 });
+			const result = await tool.execute("test-call-custom-1", { path: testFile });
+			const output = getTextOutput(result);
+			expect(output).toContain("Line 1:");
+			expect(output).not.toContain("Line 30:");
+			expect(output).toContain("Use offset=");
+		});
+
+		it("should allow one-shot reads of 2000-line files with raised maxBytes", async () => {
+			const testFile = join(testDir, "monolith.txt");
+			const lines = Array.from({ length: 2000 }, (_, i) => `Line ${i + 1}: ${"x".repeat(60)}`);
+			writeFileSync(testFile, lines.join("\n"));
+
+			// ~85KB: stock 50KB cap truncates around 1000 lines.
+			const tool = createReadTool(process.cwd(), { maxBytes: 256 * 1024 });
+			const result = await tool.execute("test-call-custom-2", { path: testFile });
+			const output = getTextOutput(result);
+			expect(output).toContain("Line 1:");
+			expect(output).toContain("Line 2000:");
+			expect(output).not.toContain("Use offset=");
+		});
+
 		it("should handle offset parameter", async () => {
 			const testFile = join(testDir, "offset-test.txt");
 			const lines = Array.from({ length: 100 }, (_, i) => `Line ${i + 1}`);
