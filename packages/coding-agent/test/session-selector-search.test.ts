@@ -118,7 +118,7 @@ describe("session selector search", () => {
 				id: "newer",
 				name: "Other work",
 				modified: new Date("2026-01-03T00:00:00.000Z"),
-				allMessagesText: `${"unrelated content ".repeat(1000)}cache`,
+				allMessagesText: "A discussion mentioning cache.",
 			}),
 			makeSession({
 				id: "older",
