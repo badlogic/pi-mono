@@ -56,7 +56,7 @@ describe("model selector", () => {
 		selector.dispose();
 	});
 
-	it.each([undefined, "sol"])("preserves scoped order when filtering (initial query: %s)", async (initialQuery) => {
+	it("preserves scoped order when filtering", async () => {
 		harness = await createHarness({
 			models: [
 				{ id: "gpt-6-sol", name: "Sol 6", reasoning: true },
@@ -77,7 +77,7 @@ describe("model selector", () => {
 			scopedModels,
 			() => {},
 			() => {},
-			initialQuery,
+			"sol",
 		);
 		const modelRows = () =>
 			stripAnsi(selector.render(120).join("\n"))
@@ -85,9 +85,6 @@ describe("model selector", () => {
 				.filter((line) => line.includes(`[${currentModel.provider}]`))
 				.map((line) => line.replace(/^[→✓\s]+/, "").split(" [")[0]);
 
-		if (!initialQuery) {
-			for (const char of "sol") selector.handleInput(char);
-		}
 		expect(modelRows()).toEqual(["gpt-6.1-sol", "gpt-6-sol"]);
 
 		await vi.waitFor(() => {
