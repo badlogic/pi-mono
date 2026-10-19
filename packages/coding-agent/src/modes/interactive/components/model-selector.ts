@@ -278,10 +278,15 @@ export class ModelSelectorComponent extends Container implements Focusable {
 
 	private filterModels(query: string): void {
 		if (query) {
-			const filtered = fuzzyFilter(this.activeModels, query, (item) => {
-				const defaultText = this.isDefaultModel(item.model) ? " default" : "";
-				return `${getModelSelectorSearchText({ id: item.id, provider: item.provider, name: item.model.name })}${defaultText}`;
-			});
+			const filtered = fuzzyFilter(
+				this.activeModels,
+				query,
+				(item) => {
+					const defaultText = this.isDefaultModel(item.model) ? " default" : "";
+					return `${getModelSelectorSearchText({ id: item.id, provider: item.provider, name: item.model.name })}${defaultText}`;
+				},
+				{ ignorePosition: this.scope === "scoped" },
+			);
 			if (this.isDefaultSearch(query)) {
 				const defaultItems = this.activeModels.filter((item) => this.isDefaultModel(item.model));
 				const defaultKeys = new Set(defaultItems.map((item) => `${item.provider}\0${item.id}`));

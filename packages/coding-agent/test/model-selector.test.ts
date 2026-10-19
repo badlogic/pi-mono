@@ -56,6 +56,111 @@ describe("model selector", () => {
 		selector.dispose();
 	});
 
+	it.each([undefined, "sol"])("preserves scoped order when filtering (initial query: %s)", async (initialQuery) => {
+		harness = await createHarness({
+			models: [
+				{ id: "gpt-6-sol", name: "Sol 6", reasoning: true },
+				{ id: "gpt-6.1-sol", name: "Sol 6.1", reasoning: true },
+				{ id: "other-model", name: "Other Model", reasoning: true },
+			],
+		});
+		const currentModel = harness.getModel("gpt-6-sol")!;
+		const scopedModels = [
+			{ model: harness.getModel("gpt-6.1-sol")! },
+			{ model: harness.getModel("other-model")! },
+			{ model: currentModel },
+		];
+		const selector = new ModelSelectorComponent(
+			createFakeTui(),
+			currentModel,
+			harness.session.modelRuntime,
+			scopedModels,
+			() => {},
+			() => {},
+			initialQuery,
+		);
+		const modelRows = () =>
+			stripAnsi(selector.render(120).join("\n"))
+				.split("\n")
+				.filter((line) => line.includes(`[${currentModel.provider}]`))
+				.map((line) => line.replace(/^[→✓\s]+/, "").split(" [")[0]);
+
+		if (!initialQuery) {
+			for (const char of "sol") selector.handleInput(char);
+		}
+		expect(modelRows()).toEqual(["gpt-6.1-sol", "gpt-6-sol"]);
+
+		await vi.waitFor(() => {
+			expect(stripAnsi(selector.render(120).join("\n"))).toContain("Model catalogs refreshed.");
+		});
+		expect(modelRows()).toEqual(["gpt-6.1-sol", "gpt-6-sol"]);
+
+		selector.handleInput("\t");
+		expect(modelRows()).toEqual(["gpt-6-sol", "gpt-6.1-sol"]);
+		selector.handleInput("\t");
+		expect(modelRows()).toEqual(["gpt-6.1-sol", "gpt-6-sol"]);
+
+		selector.getSearchInput().setValue("");
+		selector.handleInput("\x1b[D");
+		expect(modelRows()).toEqual(scopedModels.map(({ model }) => model.id));
+		selector.dispose();
+	});
+
+	it.each([
+		["anthropic", ""],
+		["openrouter", "anthropic/"],
+		["amazon-bedrock", "anthropic."],
+	])("ranks Opus before Sonnet for %s in both scopes", async (provider, idPrefix) => {
+		harness = await createHarness({
+			models: [
+				{ id: "claude-sonnet-5", name: "Claude Sonnet 5", reasoning: true },
+				{ id: "claude-opus-5", name: "Claude Opus 5", reasoning: true },
+			],
+		});
+		const models = harness.models.map((model) => ({
+			...model,
+			provider,
+			id: `${idPrefix}${model.id}`,
+			name: `Anthropic: ${model.name}`,
+		}));
+		vi.spyOn(harness.session.modelRuntime, "getAvailableSnapshot").mockReturnValue(models);
+		vi.spyOn(harness.session.modelRuntime, "getModel").mockImplementation((provider, id) =>
+			models.find((model) => model.provider === provider && model.id === id),
+		);
+		const selector = new ModelSelectorComponent(
+			createFakeTui(),
+			models[0],
+			harness.session.modelRuntime,
+			models.map((model) => ({ model })),
+			() => {},
+			() => {},
+			"opus",
+			undefined,
+			models[0],
+		);
+		try {
+			await vi.waitFor(() => {
+				expect(stripAnsi(selector.render(120).join("\n"))).toContain("Model catalogs refreshed.");
+			});
+			for (const scope of ["scoped", "all"]) {
+				const rendered = stripAnsi(selector.render(120).join("\n"));
+				const modelRows = rendered.split("\n").filter((line) => line.includes(`[${provider}]`));
+				expect(modelRows, scope).toHaveLength(2);
+				expect(modelRows[0], scope).toContain(`→   ${idPrefix}claude-opus-5`);
+				expect(modelRows[1], scope).toContain(`${idPrefix}claude-sonnet-5`);
+				selector.handleInput("\t");
+			}
+
+			selector.getSearchInput().setValue("default");
+			selector.handleInput("\x1b[D");
+			expect(stripAnsi(selector.render(120).join("\n"))).toContain(
+				`${idPrefix}claude-sonnet-5 [${provider}] · default`,
+			);
+		} finally {
+			selector.dispose();
+		}
+	});
+
 	it("uses the configured save binding", async () => {
 		setKeybindings(new KeybindingsManager({ "app.models.save": "ctrl+r" }));
 		harness = await createHarness();

@@ -45,13 +45,47 @@ describe("fuzzyMatch", () => {
 		assert.ok(consecutive.score < scattered.score);
 	});
 
-	it("word boundary matches score better", () => {
+	it("word boundary matches score better for scattered matches", () => {
 		const atBoundary = fuzzyMatch("fb", "foo-bar");
-		const notAtBoundary = fuzzyMatch("fb", "afbx");
+		const notAtBoundary = fuzzyMatch("fb", "afxby");
 
 		assert.strictEqual(atBoundary.matches, true);
 		assert.strictEqual(notAtBoundary.matches, true);
 		assert.ok(atBoundary.score < notAtBoundary.score);
+	});
+
+	it("rewards embedded substrings over earlier scattered matches", () => {
+		const substring = fuzzyMatch("opus", "anthropic/claude-opus-5");
+		const scattered = fuzzyMatch("opus", "anthropic/claude-sonnet-5");
+		assert.strictEqual(substring.matches, true);
+		assert.strictEqual(scattered.matches, true);
+		assert.ok(substring.score < scattered.score);
+	});
+
+	it("retains position penalties for substring matches by default", () => {
+		assert.ok(fuzzyMatch("sol", "gpt-6-sol").score < fuzzyMatch("sol", "gpt-6.1-sol").score);
+		assert.ok(
+			fuzzyMatch("mode", "Output mode").score < fuzzyMatch("mode", "A long description mentioning mode").score,
+		);
+	});
+
+	it("retains actual word boundaries for substring matches", () => {
+		assert.ok(fuzzyMatch("cache", "prompt-cache").score < fuzzyMatch("cache", "mycache").score);
+	});
+
+	it("can ignore position while retaining word boundaries and gap penalties", () => {
+		const options = { ignorePosition: true };
+		assert.strictEqual(
+			fuzzyMatch("sol", "gpt-6.1-sol", options).score,
+			fuzzyMatch("SOL", "gpt-6-sol", options).score,
+		);
+		assert.ok(fuzzyMatch("cache", "prompt-cache", options).score < fuzzyMatch("cache", "mycache", options).score);
+		assert.ok(fuzzyMatch("app", "a_p_p", options).score < fuzzyMatch("app", "a___p___p", options).score);
+	});
+
+	it("prefers whole-string matches over prefixes and prefixes over embedded substrings", () => {
+		assert.ok(fuzzyMatch("app", "app").score < fuzzyMatch("app", "application").score);
+		assert.ok(fuzzyMatch("app", "application").score < fuzzyMatch("app", "my-application").score);
 	});
 
 	it("matches swapped alpha numeric tokens", () => {
@@ -83,6 +117,38 @@ describe("fuzzyFilter", () => {
 		assert.strictEqual(result[0], "app");
 	});
 
+	it("preserves input order for equally scoring substring matches", () => {
+		const items = ["a___p___p", "banana", "my-application", "a_p_p", "my-app"];
+		const result = fuzzyFilter(items, "APP", (item) => item);
+
+		assert.deepStrictEqual(result, ["my-application", "my-app", "a_p_p", "a___p___p"]);
+		assert.deepStrictEqual(items, ["a___p___p", "banana", "my-application", "a_p_p", "my-app"]);
+	});
+
+	it("uses input order for equal scores when position penalties are disabled", () => {
+		const items = ["openai s_o_l", "gpt-6.1-sol openai", "gpt-6-sol other", "gpt-6-sol openai"];
+		for (const query of ["openai sol", "openai/sol", "SOL OPENAI"]) {
+			assert.deepStrictEqual(
+				fuzzyFilter(items, query, (item) => item),
+				[items[3], items[1], items[0]],
+			);
+			assert.deepStrictEqual(
+				fuzzyFilter(items, query, (item) => item, { ignorePosition: true }),
+				[items[1], items[3], items[0]],
+			);
+		}
+	});
+
+	it("preserves all items for empty queries", () => {
+		const items = ["banana", "apple"];
+		for (const query of ["", "  ", "/"]) {
+			assert.deepStrictEqual(
+				fuzzyFilter(items, query, (item) => item),
+				items,
+			);
+		}
+	});
+
 	it("prioritizes exact matches over longer prefix matches", () => {
 		const items = ["clone", "cl"];
 		const result = fuzzyFilter(items, "cl", (x: string) => x);
@@ -101,6 +167,14 @@ describe("fuzzyFilter", () => {
 		assert.strictEqual(result.length, 2);
 		assert.ok(result.map((r) => r.name).includes("foo"));
 		assert.ok(result.map((r) => r.name).includes("foobar"));
+	});
+
+	it("retains swapped alpha numeric matches after contiguous matches", () => {
+		const items = ["gpt-5.2-codex", "codex52"];
+		assert.deepStrictEqual(
+			fuzzyFilter(items, "codex52", (item) => item),
+			[items[1], items[0]],
+		);
 	});
 
 	it("matches slash-separated provider/model queries against reordered text", () => {

@@ -112,6 +112,28 @@ describe("session selector search", () => {
 		expect(result2.map((s) => s.id)).toEqual(["newer", "older"]);
 	});
 
+	it("ranks an unquoted title match above a later substring in a newer session", () => {
+		const sessions = [
+			makeSession({
+				id: "newer",
+				name: "Other work",
+				modified: new Date("2026-01-03T00:00:00.000Z"),
+				allMessagesText: `${"unrelated content ".repeat(1000)}cache`,
+			}),
+			makeSession({
+				id: "older",
+				name: "Cache work",
+				modified: new Date("2026-01-01T00:00:00.000Z"),
+				allMessagesText: "Summary",
+			}),
+		];
+
+		expect(filterAndSortSessions(sessions, "cache", "relevance").map((session) => session.id)).toEqual([
+			"older",
+			"newer",
+		]);
+	});
+
 	it("returns empty list for invalid regex", () => {
 		const sessions: SessionInfo[] = [
 			makeSession({

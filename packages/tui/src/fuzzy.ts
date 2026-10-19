@@ -9,7 +9,12 @@ export interface FuzzyMatch {
 	score: number;
 }
 
-export function fuzzyMatch(query: string, text: string): FuzzyMatch {
+export interface FuzzyMatchOptions {
+	/** Omit position penalties so equally strong matches retain input order when filtering. */
+	ignorePosition?: boolean;
+}
+
+export function fuzzyMatch(query: string, text: string, options: FuzzyMatchOptions = {}): FuzzyMatch {
 	const queryLower = query.toLowerCase();
 	const textLower = text.toLowerCase();
 
@@ -22,13 +27,20 @@ export function fuzzyMatch(query: string, text: string): FuzzyMatch {
 			return { matches: false, score: 0 };
 		}
 
+		// Prefer a contiguous occurrence over an earlier scattered subsequence,
+		// but score it at its real position to retain word-boundary and position signals.
+		const substringIndex = textLower.indexOf(normalizedQuery);
+
 		let queryIndex = 0;
 		let score = 0;
 		let lastMatchIndex = -1;
 		let consecutiveMatches = 0;
 
 		while (queryIndex < normalizedQuery.length) {
-			const i = textLower.indexOf(normalizedQuery[queryIndex]!, lastMatchIndex + 1);
+			const i =
+				substringIndex >= 0
+					? substringIndex + queryIndex
+					: textLower.indexOf(normalizedQuery[queryIndex]!, lastMatchIndex + 1);
 			if (i === -1) break;
 
 			const isWordBoundary = i === 0 || /[\s\-_./:]/.test(textLower[i - 1]!);
@@ -50,8 +62,8 @@ export function fuzzyMatch(query: string, text: string): FuzzyMatch {
 				score -= 10;
 			}
 
-			// Slight penalty for later matches
-			score += i * 0.1;
+			// Slight penalty for later matches, unless the caller prefers input order.
+			if (!options.ignorePosition) score += i * 0.1;
 
 			lastMatchIndex = i;
 			queryIndex++;
@@ -61,9 +73,8 @@ export function fuzzyMatch(query: string, text: string): FuzzyMatch {
 			return { matches: false, score: 0 };
 		}
 
-		if (normalizedQuery === textLower) {
-			score -= 100;
-		}
+		if (substringIndex >= 0) score -= 100;
+		if (normalizedQuery === textLower) score -= 100;
 
 		return { matches: true, score };
 	};
@@ -95,9 +106,15 @@ export function fuzzyMatch(query: string, text: string): FuzzyMatch {
 
 /**
  * Filter and sort items by fuzzy match quality (best matches first).
+ * Equal scores retain their input order.
  * Supports whitespace- and slash-separated tokens: all tokens must match.
  */
-export function fuzzyFilter<T>(items: T[], query: string, getText: (item: T) => string): T[] {
+export function fuzzyFilter<T>(
+	items: T[],
+	query: string,
+	getText: (item: T) => string,
+	options: FuzzyMatchOptions = {},
+): T[] {
 	if (!query.trim()) {
 		return items;
 	}
@@ -119,7 +136,7 @@ export function fuzzyFilter<T>(items: T[], query: string, getText: (item: T) => 
 		let allMatch = true;
 
 		for (const token of tokens) {
-			const match = fuzzyMatch(token, text);
+			const match = fuzzyMatch(token, text, options);
 			if (match.matches) {
 				totalScore += match.score;
 			} else {
