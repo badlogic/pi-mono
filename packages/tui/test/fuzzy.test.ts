@@ -14,10 +14,14 @@ describe("fuzzyMatch", () => {
 		assert.strictEqual(result.matches, false);
 	});
 
-	it("exact match has good score", () => {
-		const result = fuzzyMatch("test", "test");
-		assert.strictEqual(result.matches, true);
-		assert.ok(result.score < 0); // Should be negative due to consecutive bonuses
+	it("prefers whole-string matches over prefixes and prefixes over embedded substrings", () => {
+		const exact = fuzzyMatch("app", "app");
+		const prefix = fuzzyMatch("app", "application");
+		const embedded = fuzzyMatch("app", "my-application");
+		assert.strictEqual(exact.matches, true);
+		assert.ok(exact.score < 0);
+		assert.ok(exact.score < prefix.score);
+		assert.ok(prefix.score < embedded.score);
 	});
 
 	it("characters must appear in order", () => {
@@ -83,11 +87,6 @@ describe("fuzzyMatch", () => {
 		assert.ok(fuzzyMatch("app", "a_p_p", options).score < fuzzyMatch("app", "a___p___p", options).score);
 	});
 
-	it("prefers whole-string matches over prefixes and prefixes over embedded substrings", () => {
-		assert.ok(fuzzyMatch("app", "app").score < fuzzyMatch("app", "application").score);
-		assert.ok(fuzzyMatch("app", "application").score < fuzzyMatch("app", "my-application").score);
-	});
-
 	it("matches swapped alpha numeric tokens", () => {
 		const result = fuzzyMatch("codex52", "gpt-5.2-codex");
 		assert.strictEqual(result.matches, true);
@@ -95,10 +94,14 @@ describe("fuzzyMatch", () => {
 });
 
 describe("fuzzyFilter", () => {
-	it("empty query returns all items unchanged", () => {
-		const items = ["apple", "banana", "cherry"];
-		const result = fuzzyFilter(items, "", (x: string) => x);
-		assert.deepStrictEqual(result, items);
+	it("empty queries return all items unchanged", () => {
+		const items = ["banana", "apple", "cherry"];
+		for (const query of ["", "  ", "/"]) {
+			assert.deepStrictEqual(
+				fuzzyFilter(items, query, (item) => item),
+				items,
+			);
+		}
 	});
 
 	it("filters out non-matching items", () => {
@@ -135,16 +138,6 @@ describe("fuzzyFilter", () => {
 			assert.deepStrictEqual(
 				fuzzyFilter(items, query, (item) => item, { ignorePosition: true }),
 				[items[1], items[3], items[0]],
-			);
-		}
-	});
-
-	it("preserves all items for empty queries", () => {
-		const items = ["banana", "apple"];
-		for (const query of ["", "  ", "/"]) {
-			assert.deepStrictEqual(
-				fuzzyFilter(items, query, (item) => item),
-				items,
 			);
 		}
 	});
