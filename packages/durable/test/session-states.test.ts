@@ -5,6 +5,7 @@ import { context, createConversation, documentChanges, flush, openTestSession } 
 type State = { value: number; retained: { label: string } };
 
 const StateDoc = defineDoc<State>({
+	checkpointWhen: () => false,
 	kind: "state.state",
 	version: 1,
 	scope: "session",
@@ -12,6 +13,7 @@ const StateDoc = defineDoc<State>({
 });
 
 const FamilyDoc = defineDocFamily<{ value: number }, string>({
+	checkpointWhen: () => false,
 	kind: "state.family",
 	version: 1,
 	family: true,
@@ -131,6 +133,7 @@ describe("Session document states", () => {
 
 	it("cold-loads a definition-free fork copy", async () => {
 		const Copied = defineDoc<{ value: number }>({
+			checkpointWhen: () => false,
 			kind: "state.copied",
 			version: 1,
 			scope: "conversation",
@@ -158,12 +161,14 @@ describe("Session document states", () => {
 
 	it("hydrates a migrated tracker without writing and skips an equal version-base update", async () => {
 		const Old = defineDoc<{ value: number }>({
+			checkpointWhen: () => false,
 			kind: "state.migration",
 			version: 1,
 			scope: "session",
 			initial: () => ({ value: 3 }),
 		});
 		const Current = defineDoc<{ value: number; migrated: boolean }>({
+			checkpointWhen: () => false,
 			kind: "state.migration",
 			version: 2,
 			scope: "session",

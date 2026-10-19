@@ -865,7 +865,7 @@ export class Transaction implements Tx {
 			if (plan.content?.type === "document.change" && plan.content.content.kind === "delta" && change?.loaded) {
 				const { prepared, version } = change;
 				const info = { deltasSinceBase: change.loaded.deltasSinceBase };
-				if (change.definition?.checkpointWhen?.(prepared.value, prepared.ops, info)) {
+				if (change.definition!.checkpointWhen(prepared.value, prepared.ops, info)) {
 					plan.content = { ...plan.content, content: { version, kind: "base", value: prepared.value } };
 				}
 			}

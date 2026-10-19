@@ -29,6 +29,7 @@ const Supervisor = defineTask<null, { phase: "ready" }, null>({
 const AgentRegistry = defineDoc<{
 	agents: Record<string, { conversationId: ConversationId; requestId: string }>;
 }>({
+	checkpointWhen: () => false,
 	kind: "example.agent-registry",
 	version: 1,
 	scope: "conversation",

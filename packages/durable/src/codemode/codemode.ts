@@ -126,6 +126,8 @@ export const CodemodeRunDoc = defineDoc<RunState>({
 	version: 1,
 	scope: "task",
 	initial: () => ({}),
+	// The document retires with its task.
+	checkpointWhen: () => false,
 });
 
 type JournalEntry = {
@@ -150,6 +152,8 @@ export const CodemodeJournalDoc = defineDoc<JournalState>({
 	version: 1,
 	scope: "task",
 	initial: () => ({ entries: [] }),
+	// The document retires with its task.
+	checkpointWhen: () => false,
 });
 
 /**
@@ -163,6 +167,7 @@ export const CodemodeStoreDoc = defineDoc<{ values: Record<string, JsonValue> }>
 	history: "rewindable",
 	fork: "asOf",
 	initial: () => ({ values: {} }),
+	checkpointWhen: (_value, _ops, { deltasSinceBase }) => deltasSinceBase >= 64,
 });
 
 /** One tool call a script made, as the code mode call's details show it. */

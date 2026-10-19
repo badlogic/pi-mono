@@ -1313,6 +1313,7 @@ describe("owned conversations from tools and supervisors", () => {
 		directories.add(directory);
 		const path = join(directory, "session.sqlite");
 		const Children = defineDoc<{ child?: ConversationId }>({
+			checkpointWhen: () => false,
 			kind: "test.children",
 			version: 1,
 			scope: "conversation",

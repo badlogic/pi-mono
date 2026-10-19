@@ -63,6 +63,7 @@ describe("Session document checkpoints", () => {
 			},
 		});
 		const DefaultDoc = defineDoc<{ count: number }>({
+			checkpointWhen: () => false,
 			kind: "checkpoint.default",
 			version: 1,
 			scope: "session",
@@ -333,6 +334,7 @@ describe("Session document migrations", () => {
 	it("migrates read-only once per cold load, copies the callback result, and writes nothing", async () => {
 		type Current = { count: number; labels: string[] };
 		const Old = defineDoc<{ count: number }>({
+			checkpointWhen: () => false,
 			kind: "migration.read-only",
 			version: 1,
 			scope: "session",
@@ -341,6 +343,7 @@ describe("Session document migrations", () => {
 		let calls = 0;
 		let retained: Current | undefined;
 		const Current = defineDoc<Current>({
+			checkpointWhen: () => false,
 			kind: "migration.read-only",
 			version: 3,
 			scope: "session",
@@ -375,6 +378,7 @@ describe("Session document migrations", () => {
 
 	it("writes the required base on the first successful transaction, then writes deltas", async () => {
 		const Old = defineDoc<{ count: number }>({
+			checkpointWhen: () => false,
 			kind: "migration.transition",
 			version: 1,
 			scope: "session",
@@ -439,6 +443,7 @@ describe("Session document migrations", () => {
 
 	it("rolls migration and edits back with the callback, then coalesces later edits into one base", async () => {
 		const Old = defineDoc<{ count: number }>({
+			checkpointWhen: () => false,
 			kind: "migration.rollback",
 			version: 1,
 			scope: "session",
@@ -446,6 +451,7 @@ describe("Session document migrations", () => {
 		});
 		let migrations = 0;
 		const Current = defineDoc<{ count: number; migrated: boolean }>({
+			checkpointWhen: () => false,
 			kind: "migration.rollback",
 			version: 2,
 			scope: "session",
@@ -495,12 +501,14 @@ describe("Session document migrations", () => {
 
 	it("strict-checks migration results before tracker ownership and remains usable after rejection", async () => {
 		const Old = defineDoc<{ count: number }>({
+			checkpointWhen: () => false,
 			kind: "migration.invalid",
 			version: 1,
 			scope: "session",
 			initial: () => ({ count: 1 }),
 		});
 		const Invalid = defineDoc<JsonObject>({
+			checkpointWhen: () => false,
 			kind: "migration.invalid",
 			version: 2,
 			scope: "session",
@@ -508,6 +516,7 @@ describe("Session document migrations", () => {
 			migrate: () => ({ invalid: new Date() }) as unknown as JsonObject,
 		});
 		const Other = defineDoc<{ ok: boolean }>({
+			checkpointWhen: () => false,
 			kind: "migration.invalid.other",
 			version: 1,
 			scope: "session",
@@ -528,18 +537,21 @@ describe("Session document migrations", () => {
 
 	it("rejects newer stored versions and older versions without migration for snapshots and transactions", async () => {
 		const V2 = defineDoc<{ count: number }>({
+			checkpointWhen: () => false,
 			kind: "migration.compatibility",
 			version: 2,
 			scope: "session",
 			initial: () => ({ count: 2 }),
 		});
 		const V1 = defineDoc<{ count: number }>({
+			checkpointWhen: () => false,
 			kind: "migration.compatibility",
 			version: 1,
 			scope: "session",
 			initial: () => ({ count: 1 }),
 		});
 		const V3WithoutMigration = defineDoc<{ count: number }>({
+			checkpointWhen: () => false,
 			kind: "migration.compatibility",
 			version: 3,
 			scope: "session",
@@ -563,6 +575,7 @@ describe("Session document migrations", () => {
 
 	it("persists a required migration base before retirement without consulting the checkpoint predicate", async () => {
 		const Old = defineDoc<{ count: number }>({
+			checkpointWhen: () => false,
 			kind: "migration.retire",
 			version: 1,
 			scope: "session",
@@ -596,12 +609,14 @@ describe("Session document migrations", () => {
 
 	it("leaves unaccessed older documents and unavailable definitions untouched", async () => {
 		const FirstV1 = defineDoc<{ count: number }>({
+			checkpointWhen: () => false,
 			kind: "migration.lazy.first",
 			version: 1,
 			scope: "session",
 			initial: () => ({ count: 1 }),
 		});
 		const SecondV1 = defineDoc<{ count: number }>({
+			checkpointWhen: () => false,
 			kind: "migration.lazy.second",
 			version: 1,
 			scope: "session",
@@ -609,6 +624,7 @@ describe("Session document migrations", () => {
 		});
 		let secondMigrations = 0;
 		const FirstV2 = defineDoc<{ count: number }>({
+			checkpointWhen: () => false,
 			kind: "migration.lazy.first",
 			version: 2,
 			scope: "session",
@@ -616,6 +632,7 @@ describe("Session document migrations", () => {
 			migrate: (value) => ({ count: value.count as number }),
 		});
 		defineDoc<{ count: number }>({
+			checkpointWhen: () => false,
 			kind: "migration.lazy.second",
 			version: 2,
 			scope: "session",
@@ -647,6 +664,7 @@ describe("Session document migrations", () => {
 describe("Session historical document snapshots", () => {
 	it("migrates current and historical rewindable values independently and follows fork ancestry", async () => {
 		const V1 = defineDoc<{ count: number }>({
+			checkpointWhen: () => false,
 			kind: "history.migration",
 			version: 1,
 			scope: "conversation",
@@ -655,6 +673,7 @@ describe("Session historical document snapshots", () => {
 			initial: () => ({ count: 0 }),
 		});
 		const Family = defineDocFamily<{ seed: string; count: number }, string>({
+			checkpointWhen: () => false,
 			kind: "history.family",
 			version: 1,
 			family: true,
@@ -665,6 +684,7 @@ describe("Session historical document snapshots", () => {
 		});
 		const migrations: number[] = [];
 		const V3 = defineDoc<{ count: number; version: number }>({
+			checkpointWhen: () => false,
 			kind: "history.migration",
 			version: 3,
 			scope: "conversation",
@@ -734,6 +754,7 @@ describe("Session historical document snapshots", () => {
 
 	it("selects the incarnation alive at the entry commit across retirement and recreation", async () => {
 		const Doc = defineDoc<{ value: string }>({
+			checkpointWhen: () => false,
 			kind: "history.incarnation",
 			version: 1,
 			scope: "conversation",
@@ -776,12 +797,14 @@ describe("Session tracker cache across definition versions", () => {
 	type V1 = { name: string };
 	type V2 = { names: string[] };
 	const V1Doc = defineDoc<V1>({
+		checkpointWhen: () => false,
 		kind: "cache.versioned",
 		version: 1,
 		scope: "session",
 		initial: () => ({ name: "first" }),
 	});
 	const V2Doc = defineDoc<V2>({
+		checkpointWhen: () => false,
 		kind: "cache.versioned",
 		version: 2,
 		scope: "session",

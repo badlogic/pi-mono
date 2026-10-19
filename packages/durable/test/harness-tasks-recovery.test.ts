@@ -525,6 +525,7 @@ describe("blocked tasks", () => {
 
 	it("settles an aborted blocked task as orphaned and retires its documents", async () => {
 		const Scratch = defineDoc<{ n: number }>({
+			checkpointWhen: () => false,
 			kind: "test.orphan-scratch",
 			version: 1,
 			scope: "task",

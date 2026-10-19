@@ -276,6 +276,7 @@ describe("Harness close", () => {
 
 	it("publishes no frame to states and watches from a commit that settles during close", async () => {
 		const Notes = defineDoc<{ text: string }>({
+			checkpointWhen: () => false,
 			kind: "test.close-frames",
 			version: 1,
 			scope: "session",
@@ -337,6 +338,7 @@ describe("Harness close", () => {
 
 	it("leaves no subscription behind a watch acquisition cancelled on the line", async () => {
 		const Notes = defineDoc<{ text: string }>({
+			checkpointWhen: () => false,
 			kind: "test.cancelled-watch",
 			version: 1,
 			scope: "session",
@@ -451,12 +453,14 @@ describe("Harness close", () => {
 
 	it("completes reads queued at the seal and rejects queued waits and acquisitions that would follow commits", async () => {
 		const Notes = defineDoc<{ text: string }>({
+			checkpointWhen: () => false,
 			kind: "test.queued-at-seal",
 			version: 1,
 			scope: "session",
 			initial: () => ({ text: "" }),
 		});
 		const Absent = defineDoc<{ text: string }>({
+			checkpointWhen: () => false,
 			kind: "test.queued-absent",
 			version: 1,
 			scope: "session",
@@ -535,6 +539,7 @@ describe("scheduling on a paused Harness", () => {
 	it("never schedules from a read-only viewer", async () => {
 		const { harness, root, id, submissionId, ran } = await paused();
 		const Notes = defineDoc<{ text: string }>({
+			checkpointWhen: () => false,
 			kind: "test.viewer-notes",
 			version: 1,
 			scope: "session",

@@ -735,6 +735,7 @@ const Todos = defineDoc<{ items: string[] }>({
 	history: "latest", // or "rewindable" to read old values with snapshotAsOf()
 	fork: "initial", // what a fork starts with: "initial", "current", or "asOf"
 	initial: () => ({ items: [] }),
+	checkpointWhen: () => false, // required: true stores this change as a complete base, bounding replay
 });
 
 await root.commit(async (tx) => {

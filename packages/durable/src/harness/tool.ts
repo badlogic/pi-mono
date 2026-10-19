@@ -109,6 +109,8 @@ export const NestedCallDoc = defineDocFamily<NestedCallState, null>({
 	scope: "task",
 	family: true,
 	initial: () => ({}),
+	// The document retires with its task.
+	checkpointWhen: () => false,
 });
 
 type Runtime = TaskRuntime<ToolTaskInput, ToolTaskCheckpoint, ToolTaskResult, ToolHooks>;

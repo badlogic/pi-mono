@@ -14,6 +14,7 @@ import { context, documentChanges, flush, openTestSession } from "./session-supp
 type State = { value: number; items: string[]; retained: { label: string } };
 
 const StateDoc = defineDoc<State>({
+	checkpointWhen: () => false,
 	kind: "watch.state",
 	version: 1,
 	scope: "session",
@@ -430,12 +431,14 @@ describe("Session document watches", () => {
 
 	it("hydrates migration without writing and observes the later exact edit", async () => {
 		const Old = defineDoc<{ value: number }>({
+			checkpointWhen: () => false,
 			kind: "watch.migration",
 			version: 1,
 			scope: "session",
 			initial: () => ({ value: 3 }),
 		});
 		const Current = defineDoc<{ value: number; migrated: boolean }>({
+			checkpointWhen: () => false,
 			kind: "watch.migration",
 			version: 2,
 			scope: "session",
