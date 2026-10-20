@@ -153,6 +153,69 @@ describe("Node SQLite driver", () => {
 		await database.close();
 	});
 
+	it("runs an exclusive operation alone, outside a transaction, after earlier calls", async () => {
+		const database = await openNodeSqliteDatabase(":memory:");
+		await database.exec("CREATE TABLE exclusive_probe (value INTEGER)");
+		const earlier = database.run("INSERT INTO exclusive_probe (value) VALUES (?)", 1);
+		let release!: () => void;
+		const gate = new Promise<void>((resolve) => {
+			release = resolve;
+		});
+		let handle!: SqliteExecutor;
+		const exclusive = database.exclusive(async (executor) => {
+			handle = executor;
+			const seen = await executor.all("SELECT value FROM exclusive_probe");
+			// Not inside a transaction: the handle may begin and commit one itself.
+			await executor.exec("BEGIN; INSERT INTO exclusive_probe (value) VALUES (2); COMMIT");
+			await gate;
+			return seen;
+		});
+		let laterSettled = false;
+		const later = database.all("SELECT value FROM exclusive_probe ORDER BY value").finally(() => {
+			laterSettled = true;
+		});
+		await earlier;
+		await new Promise((resolve) => setTimeout(resolve, 10));
+		expect(laterSettled).toBe(false);
+
+		release();
+		await expect(exclusive).resolves.toEqual([{ value: 1 }]);
+		await expect(later).resolves.toEqual([{ value: 1 }, { value: 2 }]);
+		await expect(handle.exec("SELECT 1")).rejects.toThrow("SQLite exclusive handle is no longer active");
+		await expect(database.exclusive(async () => Promise.reject(new Error("failed")))).rejects.toThrow("failed");
+		expect(await database.get("SELECT count(*) AS count FROM exclusive_probe")).toEqual({ count: 2 });
+		await database.close();
+	});
+
+	it("rolls back a transaction an exclusive operation left open and rejects", async () => {
+		const database = await openNodeSqliteDatabase(":memory:");
+		await database.exec("CREATE TABLE left_open (value INTEGER)");
+		const leftOpen = "SQLite exclusive operation left a transaction open; it was rolled back";
+
+		await expect(
+			database.exclusive(async (executor) => {
+				await executor.exec("BEGIN; INSERT INTO left_open (value) VALUES (1)");
+				return "returned without committing";
+			}),
+		).rejects.toThrow(leftOpen);
+
+		const failure = new Error("failed mid-transaction");
+		const rejected = database.exclusive(async (executor) => {
+			await executor.exec("BEGIN IMMEDIATE; INSERT INTO left_open (value) VALUES (2)");
+			throw failure;
+		});
+		await expect(rejected).rejects.toThrow(leftOpen);
+		await expect(rejected).rejects.toMatchObject({ cause: failure });
+
+		// Later calls run outside any leftover transaction: autocommit writes commit and transactions can begin.
+		await database.run("INSERT INTO left_open (value) VALUES (?)", 3);
+		await database.transaction(async (transaction) => {
+			await transaction.run("INSERT INTO left_open (value) VALUES (?)", 4);
+		});
+		expect(await database.all("SELECT value FROM left_open ORDER BY value")).toEqual([{ value: 3 }, { value: 4 }]);
+		await database.close();
+	});
+
 	it("does not preserve the callback error when rollback itself fails", async () => {
 		const database = await openNodeSqliteDatabase(":memory:");
 		await database.exec("CREATE TABLE rollback_probe (value INTEGER)");
