@@ -13,6 +13,10 @@
 - Failed model request spans report `provider_error` status with up to 500 error-message characters; cancelled requests keep `ok` status with `stop: "aborted"`.
 - Added `MiniMax-M3.1-Flash` to the `minimax` and `minimax-cn` providers, with thinking levels low through max sent as `output_config.effort`. Thinking cannot be turned off for this model. New MiniMax models from models.dev now appear without a manual allowlist entry; only the older M2, M2.1, M2.5, and M2.5-highspeed models stay hidden ([#11121](https://github.com/earendil-works/pi/issues/11121))
 
+### Changed
+
+- Grok 4.3 and Grok 4.5 on the `xai` provider now offer the `xhigh` thinking level, matching the reasoning efforts xAI supports for these models.
+
 ### Fixed
 
 - Fixed whitespace-only tool output (for example a bare `\r\n` from bash) being sent as-is to OpenAI Completions, OpenAI Responses, and Google providers; it now uses the same placeholder as empty output, since some providers reject whitespace-only tool content with a 400 ([#8720](https://github.com/earendil-works/pi/issues/8720))
