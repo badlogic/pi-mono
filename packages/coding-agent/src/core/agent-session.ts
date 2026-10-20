@@ -404,6 +404,14 @@ export class AgentSession {
 	private _compactionAbortController: AbortController | undefined = undefined;
 	private _autoCompactionAbortController: AbortController | undefined = undefined;
 	private _overflowRecoveryAttempted = false;
+	/** Consecutive overflow-recovery compaction failures across turns (reset by a healthy response or successful compaction). */
+	private _overflowRecoveryFailures = 0;
+	/**
+	 * Latched when overflow recovery fails twice in a row: further runs are refused and queued
+	 * messages are drained, so injected messages cannot drive an endless compact-and-retry loop.
+	 * Cleared by a successful compaction or a model switch.
+	 */
+	private _overflowRecoveryExhausted = false;
 
 	// Branch summarization state
 	private _branchSummaryAbortController: AbortController | undefined = undefined;
@@ -1173,6 +1181,7 @@ export class AgentSession {
 				this._lastAssistantMessage = assistantMsg;
 				if (assistantMsg.stopReason !== "error" && assistantMsg.stopReason !== "length") {
 					this._overflowRecoveryAttempted = false;
+					this._overflowRecoveryFailures = 0;
 				}
 
 				// Reset retry counter immediately on successful assistant response
@@ -1835,6 +1844,11 @@ export class AgentSession {
 	 * @param onStarted Called once the run's messages are prepared, before the first request.
 	 */
 	private async _startRun(trigger: BeforeAgentStartTrigger, onStarted?: () => void): Promise<void> {
+		if (this._overflowRecoveryExhausted) {
+			throw new Error(
+				"Context overflow recovery is exhausted: repeated compact-and-retry attempts failed. Run /compact manually, select a larger-context model, or start a new session.",
+			);
+		}
 		this._isAgentRunActive = true;
 		this._agentRunAbortRequested = false;
 		let messages: AgentMessage[];
@@ -1941,6 +1955,17 @@ export class AgentSession {
 	}
 
 	private async _handlePostAgentRun(): Promise<boolean> {
+		// Overflow recovery exhausted: stop feeding the loop. Queued steering/follow-up
+		// messages would each reset the per-turn recovery flag and drive another doomed
+		// compact-and-retry cycle; drain them so the run settles.
+		if (this._overflowRecoveryExhausted) {
+			if (this._steeringMessages.length > 0 || this._followUpMessages.length > 0) {
+				this._steeringMessages.length = 0;
+				this._followUpMessages.length = 0;
+				this._emitQueueUpdate();
+			}
+			return false;
+		}
 		const message = this._lastAssistantMessage;
 		const toolResults = this._lastAssistantToolResults;
 		this._lastAssistantMessage = undefined;
@@ -2512,6 +2537,9 @@ export class AgentSession {
 		const previousModel = this.model;
 		const thinkingLevel = this._getThinkingLevelForModelSwitch(model);
 		this.agent.state.model = model;
+		// A larger-context model changes the overflow equation entirely: re-arm recovery.
+		this._overflowRecoveryFailures = 0;
+		this._overflowRecoveryExhausted = false;
 		this.sessionManager.appendModelChange(model.provider, model.id);
 		if (options.persist) {
 			this.settingsManager.setDefaultModelAndProvider(model.provider, model.id);
@@ -2904,6 +2932,10 @@ export class AgentSession {
 			};
 			// compaction_end listeners may submit queued prompts, so expose idle state before notifying them.
 			this._clearManualCompactionState();
+			// Manual compaction succeeded: re-arm overflow recovery (this is the documented
+			// recovery path for an exhausted session).
+			this._overflowRecoveryFailures = 0;
+			this._overflowRecoveryExhausted = false;
 			this._emit({
 				type: "compaction_end",
 				reason: "manual",
@@ -3047,6 +3079,15 @@ export class AgentSession {
 			}
 
 			if (this._overflowRecoveryAttempted) {
+				this._overflowRecoveryFailures++;
+				// Two consecutive failures means compaction cannot make the context fit (and a
+				// compaction summary itself failed). Latch exhaustion: refuse further runs until a
+				// successful compaction or model switch, otherwise every queued/injected message
+				// re-arms recovery and drives an unbounded retry loop.
+				if (this._overflowRecoveryFailures >= 2) this._overflowRecoveryExhausted = true;
+				const exhaustedNote = this._overflowRecoveryExhausted
+					? " Recovery is exhausted: further prompts are refused until a compaction succeeds or a larger-context model is selected."
+					: "";
 				const errorMessage = contextOverflow
 					? "Context overflow recovery failed after one compact-and-retry attempt. Try reducing context or switching to a larger-context model."
 					: "Truncated response recovery failed after one compact-and-retry attempt.";
@@ -3056,11 +3097,11 @@ export class AgentSession {
 					result: undefined,
 					aborted: false,
 					willRetry: false,
-					errorMessage,
+					errorMessage: errorMessage + exhaustedNote,
 				});
 				await this._emitSessionCompactFailed({
 					reason: "overflow",
-					errorMessage,
+					errorMessage: errorMessage + exhaustedNote,
 					aborted: false,
 					willRetry: false,
 					fromExtension: false,
@@ -3233,6 +3274,11 @@ export class AgentSession {
 				details,
 			};
 			this._emit({ type: "compaction_end", reason, result, aborted: false, willRetry });
+
+			// A successful compaction proves the context can be shrunk: re-arm overflow
+			// recovery completely (counter and exhaustion latch).
+			this._overflowRecoveryFailures = 0;
+			this._overflowRecoveryExhausted = false;
 
 			if (willRetry) return true;
 

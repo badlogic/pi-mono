@@ -13,11 +13,23 @@ import type {
 import { estimateContextTokens } from "../utils/estimate.ts";
 
 const CONTEXT_SAFETY_TOKENS = 4096;
+/** Relative part of the safety margin: estimation error grows with context size (observed ~4% on a 100k-token prompt). */
+const CONTEXT_SAFETY_RATIO = 0.05;
 const MIN_MAX_TOKENS = 1;
+
+/**
+ * Token headroom kept between (estimated input + clamped output) and the context window.
+ * A fixed margin is insufficient for large contexts: estimation error scales with prompt
+ * size, and a 100k-token prompt underestimating by ~4% overflows a fixed 4096 margin.
+ */
+export function contextSafetyTokens(estimatedInputTokens: number): number {
+	return Math.max(CONTEXT_SAFETY_TOKENS, Math.ceil(estimatedInputTokens * CONTEXT_SAFETY_RATIO));
+}
 
 export function clampMaxTokensToContext(model: Model<Api>, context: TranscriptContext, maxTokens: number): number {
 	if (model.contextWindow <= 0) return Math.max(MIN_MAX_TOKENS, maxTokens);
-	const available = model.contextWindow - estimateContextTokens(context).tokens - CONTEXT_SAFETY_TOKENS;
+	const estimated = estimateContextTokens(context).tokens;
+	const available = model.contextWindow - estimated - contextSafetyTokens(estimated);
 	return Math.min(maxTokens, Math.max(MIN_MAX_TOKENS, available));
 }
 
