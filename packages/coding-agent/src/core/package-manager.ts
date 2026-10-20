@@ -90,6 +90,15 @@ export interface ResolvedPaths {
 	skills: ResolvedResource[];
 	prompts: ResolvedResource[];
 	themes: ResolvedResource[];
+	/** Configured packages that were skipped because installing them failed. */
+	installFailures?: PackageInstallFailure[];
+}
+
+/** A configured package that could not be installed while resolving resources. */
+export interface PackageInstallFailure {
+	source: string;
+	scope: SourceScope;
+	message: string;
 }
 
 export type MissingSourceAction = "install" | "skip" | "error";
@@ -823,6 +832,9 @@ export class DefaultPackageManager implements PackageManager {
 	private globalNpmRoot: string | undefined;
 	private globalNpmRootCommandKey: string | undefined;
 	private progressCallback: ProgressCallback | undefined;
+	// Sources that failed to install during this process. Startup resolves packages twice when project
+	// trust is resolved, so without this a failing install costs a second network attempt and child output.
+	private readonly failedInstallSources = new Map<string, PackageInstallFailure>();
 
 	constructor(options: PackageManagerOptions) {
 		this.cwd = resolvePath(options.cwd);
@@ -939,7 +951,7 @@ export class DefaultPackageManager implements PackageManager {
 
 		// Dedupe: project scope wins over global for same package identity
 		const packageSources = this.dedupePackages(allPackages);
-		await this.resolvePackageSources(packageSources, accumulator, onMissing);
+		const installFailures = await this.resolvePackageSources(packageSources, accumulator, onMissing);
 
 		const globalBaseDir = this.agentDir;
 		const projectBaseDir = join(this.cwd, CONFIG_DIR_NAME);
@@ -991,7 +1003,7 @@ export class DefaultPackageManager implements PackageManager {
 			);
 		}
 
-		return this.toResolvedPaths(accumulator);
+		return this.withInstallFailures(this.toResolvedPaths(accumulator), installFailures);
 	}
 
 	async resolveExtensionSources(
@@ -1007,8 +1019,8 @@ export class DefaultPackageManager implements PackageManager {
 		const packageSources = sources
 			.filter((source) => !source.startsWith(BUILTIN_PATH_PREFIX))
 			.map((source) => ({ pkg: source as PackageSource, scope }));
-		await this.resolvePackageSources(packageSources, accumulator);
-		return this.toResolvedPaths(accumulator);
+		const installFailures = await this.resolvePackageSources(packageSources, accumulator);
+		return this.withInstallFailures(this.toResolvedPaths(accumulator), installFailures);
 	}
 
 	listConfiguredPackages(): ConfiguredPackage[] {
@@ -1289,7 +1301,8 @@ export class DefaultPackageManager implements PackageManager {
 		sources: Array<{ pkg: PackageSource; scope: SourceScope }>,
 		accumulator: ResourceAccumulator,
 		onMissing?: (source: string) => Promise<MissingSourceAction>,
-	): Promise<void> {
+	): Promise<PackageInstallFailure[]> {
+		const installFailures: PackageInstallFailure[] = [];
 		for (const { pkg, scope } of sources) {
 			const sourceStr = typeof pkg === "string" ? pkg : pkg.source;
 			const filter = typeof pkg === "object" ? pkg : undefined;
@@ -1307,15 +1320,31 @@ export class DefaultPackageManager implements PackageManager {
 
 			const installMissing = async (): Promise<boolean> => {
 				if (isOfflineModeEnabled()) return false;
-				if (!onMissing) {
+				if (onMissing) {
+					const action = await onMissing(resolvedSource);
+					if (action === "skip") return false;
+					if (action === "error") throw new Error(`Missing source: ${resolvedSource}`);
+				}
+				const knownFailure = this.failedInstallSources.get(resolvedSource);
+				if (knownFailure) {
+					installFailures.push(knownFailure);
+					return false;
+				}
+				// A source that cannot be installed (no network, missing package, failing git prepare step)
+				// must not abort startup. Skip its resources, like offline mode does, and report the failure.
+				try {
 					await this.installParsedSource(parsed, resolvedScope);
 					return true;
+				} catch (error) {
+					const failure: PackageInstallFailure = {
+						source: resolvedSource,
+						scope: resolvedScope,
+						message: error instanceof Error ? error.message : String(error),
+					};
+					this.failedInstallSources.set(resolvedSource, failure);
+					installFailures.push(failure);
+					return false;
 				}
-				const action = await onMissing(resolvedSource);
-				if (action === "skip") return false;
-				if (action === "error") throw new Error(`Missing source: ${resolvedSource}`);
-				await this.installParsedSource(parsed, resolvedScope);
-				return true;
 			};
 
 			if (parsed.type === "npm") {
@@ -1346,6 +1375,7 @@ export class DefaultPackageManager implements PackageManager {
 				this.collectPackageResources(installedPath, accumulator, filter, metadata);
 			}
 		}
+		return installFailures;
 	}
 
 	private findAutoloadDeltaBase(
@@ -2638,6 +2668,10 @@ export class DefaultPackageManager implements PackageManager {
 			prompts: new Map(),
 			themes: new Map(),
 		};
+	}
+
+	private withInstallFailures(paths: ResolvedPaths, installFailures: PackageInstallFailure[]): ResolvedPaths {
+		return installFailures.length > 0 ? { ...paths, installFailures } : paths;
 	}
 
 	private toResolvedPaths(accumulator: ResourceAccumulator): ResolvedPaths {
