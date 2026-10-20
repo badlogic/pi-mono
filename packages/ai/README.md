@@ -233,6 +233,8 @@ for (const block of response.content) {
 }
 ```
 
+`usage.cost.totalFromProvider` is `true` when `usage.cost.total` is the billed cost reported by the provider and `false` when it is estimated from the model's catalog rates. A missing value, as in sessions recorded before this field existed, also means `false`.
+
 Snippets in the rest of this README assume a `models` collection set up like this (with the relevant providers registered).
 
 ## Providers and Models

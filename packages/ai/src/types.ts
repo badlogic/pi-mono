@@ -476,6 +476,8 @@ export interface Usage {
 		cacheRead: number;
 		cacheWrite: number;
 		total: number;
+		/** True when `total` is the billed cost reported by the provider. False when it is a catalog estimate; absent also means false. */
+		totalFromProvider?: boolean;
 	};
 }
 
