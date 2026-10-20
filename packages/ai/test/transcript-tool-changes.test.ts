@@ -9,10 +9,10 @@ function tool(name: string): Tool {
 	return { name, description: `${name} tool`, parameters: Type.Object({}) };
 }
 
-async function capturePayload<T>(model: Model<Api>, context: Context): Promise<T> {
+async function capturePayload<T>(model: Model<Api>, context: Context, apiKey = "test-key"): Promise<T> {
 	let captured: T | undefined;
 	const stream = streamSimple(model, context, {
-		apiKey: "test-key",
+		apiKey,
 		onPayload: (payload) => {
 			captured = payload as T;
 			throw new PayloadCaptured();
@@ -403,5 +403,71 @@ describe("transcript system messages", () => {
 		expect(payload.tools?.map((value) => value.function?.name)).toEqual(["late_tool"]);
 		expect(payload.messages.map((message) => message.role)).toEqual(["system", "user"]);
 		expect(payload.messages[0]?.content).toBe("base prompt\n\nupdated guidance\n\n<rules>\nnew rules\n</rules>");
+	});
+});
+
+// Extensions that sendMessage() during session_start put a custom message (converted to a
+// user message for the LLM) ahead of pi's system message. Providers must still find the
+// prompt and initial tools past that prefix. Regression for #11157.
+describe("system message after leading custom prefix", () => {
+	const hoistedContext: Context = {
+		messages: [
+			{ role: "user", content: "context loaded by an extension at session_start", timestamp: 0 },
+			{ role: "system", content: "base prompt", toolsAdded: [baseTool], timestamp: 1 },
+			{ role: "user", content: "before", timestamp: 2 },
+		],
+	};
+
+	test("sends the Anthropic system field and anchors native tool changes", async () => {
+		const payload = await capturePayload<AnthropicPayload>(anthropicNativeModel, hoistedContext);
+
+		expect(payload.system?.map((block) => block.text)).toEqual(["base prompt"]);
+		expect(payload.tools).toMatchObject([
+			{ name: "base_tool", cache_control: { type: "ephemeral" } },
+			{ name: "__pi_deferred_placeholder__", defer_loading: true },
+		]);
+		expect(payload.messages.map((message) => message.role)).toEqual(["user", "user"]);
+	});
+
+	test("sends Codex instructions from the system message past the prefix", async () => {
+		const model: Model<"openai-codex-responses"> = {
+			...modelBase,
+			id: "gpt-5.3-codex-spark",
+			name: "GPT-5.3 Codex Spark",
+			api: "openai-codex-responses",
+			provider: "openai-codex",
+			baseUrl: "http://127.0.0.1:9",
+			compat: { supportsMidConvoSystemMessages: true },
+		};
+		// Codex streams require an OAuth-shaped token (accountId extraction runs before onPayload).
+		const payload = await capturePayload<{ instructions?: string; input: Array<{ role?: string }> }>(
+			model,
+			hoistedContext,
+			"test.eyJodHRwczovL2FwaS5vcGVuYWkuY29tL2F1dGgiOiB7ImNoYXRncHRfYWNjb3VudF9pZCI6ICJhY2MtMSJ9fQ.sig",
+		);
+
+		expect(payload.instructions).toBe("base prompt");
+		// The prompt-bearing system message must not be re-sent in the input list.
+		expect(payload.input.filter((item) => item.role === "system")).toHaveLength(0);
+	});
+
+	test("folds updates into the first system message for OpenAI-compatible transports", async () => {
+		const model: Model<"openai-completions"> = {
+			...modelBase,
+			id: "custom-model",
+			name: "Custom model",
+			api: "openai-completions",
+			provider: "custom-provider",
+			reasoning: false,
+		};
+		const payload = await capturePayload<{
+			tools?: Array<{ function?: { name: string } }>;
+			messages: Array<{ role: string; content?: string }>;
+		}>(model, hoistedContext);
+
+		expect(payload.messages.filter((message) => message.role === "system").map((message) => message.content)).toEqual(
+			["base prompt"],
+		);
+		expect(payload.tools?.map((value) => value.function?.name)).toEqual(["base_tool"]);
 	});
 });

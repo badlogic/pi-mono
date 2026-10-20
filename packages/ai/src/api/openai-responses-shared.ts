@@ -232,9 +232,12 @@ export function convertResponsesMessages<TApi extends Api>(
 	const instructionRole = model.reasoning && compat?.supportsDeveloperRole !== false ? "developer" : "system";
 
 	let msgIndex = 0;
-	let sourceIndex = 0;
+	// The initial system message may sit after leading custom/user messages (extensions that
+	// sendMessage at session_start); only the first system message counts as the leading one.
+	let seenSystemMessage = false;
 	for (const msg of transformedMessages) {
-		const isLeadingSystemMessage = sourceIndex++ === 0 && msg.role === "system";
+		const isLeadingSystemMessage = msg.role === "system" && !seenSystemMessage;
+		if (msg.role === "system") seenSystemMessage = true;
 		if (msg.role === "system") {
 			if (!isLeadingSystemMessage) appendSystemToolAdditions(msg, `system:${msgIndex}`);
 			if (!isLeadingSystemMessage || includeInitialSystemMessage) {

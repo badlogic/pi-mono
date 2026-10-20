@@ -808,9 +808,13 @@ function stripSymbolKeys(value: unknown): unknown {
 function toChatMessages(messages: Message[], supportsImages: boolean): MistralChatMessage[] {
 	const result: MistralChatMessage[] = [];
 
-	for (const [index, msg] of messages.entries()) {
+	let seenSystemMessage = false;
+	for (const msg of messages) {
 		if (msg.role === "system") {
-			const text = index === 0 ? getSystemMessageText(msg) : renderSystemMessageUpdate(msg);
+			// The initial system message may sit after leading custom/user messages (extensions
+			// that sendMessage at session_start); only the first system message is the prompt.
+			const text = seenSystemMessage ? renderSystemMessageUpdate(msg) : getSystemMessageText(msg);
+			seenSystemMessage = true;
 			if (text.length > 0) result.push({ role: "system", content: sanitizeSurrogates(text) });
 			continue;
 		}

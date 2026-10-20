@@ -1174,7 +1174,12 @@ function buildParams(
 	const initialSystemMessage = getInitialSystemMessage(context.messages);
 	const initialSystemText = initialSystemMessage ? getSystemMessageText(initialSystemMessage) : "";
 	const transformedMessages = transformMessages(context.messages, model, normalizeToolCallId);
-	const conversationMessages = initialSystemMessage ? transformedMessages.slice(1) : transformedMessages;
+	// transformMessages maps 1:1, so the initial system message keeps its index.
+	const initialSystemIndex = initialSystemMessage
+		? transformedMessages.findIndex((message) => message.role === "system")
+		: -1;
+	const conversationMessages =
+		initialSystemIndex !== -1 ? transformedMessages.filter((_, i) => i !== initialSystemIndex) : transformedMessages;
 	// Native tool changes keep the request-level tool list fixed and define every later tool
 	// by value in a `tool_addition` block, which also expresses same-name redefinitions.
 	// Anthropic rejects a tool list where every tool is deferred, so there must be an initial

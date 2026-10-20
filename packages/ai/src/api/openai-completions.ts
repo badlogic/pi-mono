@@ -1233,6 +1233,9 @@ export function convertMessages(
 		compat.supportsMidConvoSystemMessages === true && compat.supportsMidConvoToolAdditions === true,
 	);
 	const instructionRole = model.reasoning && compat.supportsDeveloperRole ? "developer" : "system";
+	// The initial system message may sit after leading custom/user messages (extensions that
+	// sendMessage at session_start); only the first system message is the prompt.
+	let seenSystemMessage = 0;
 
 	let lastRole: string | null = null;
 
@@ -1248,7 +1251,11 @@ export function convertMessages(
 		}
 
 		if (msg.role === "system") {
-			const addedTools = i > 0 && transcriptTools.anchorsAdditions ? (msg.toolsAdded ?? []) : [];
+			// The initial system message may sit after leading custom/user messages (extensions
+			// that sendMessage at session_start); only the first system message is the prompt.
+			const isInitialSystemMessage = seenSystemMessage === 0;
+			seenSystemMessage++;
+			const addedTools = !isInitialSystemMessage && transcriptTools.anchorsAdditions ? (msg.toolsAdded ?? []) : [];
 			if (addedTools.length > 0) {
 				const kimiToolMessage: KimiToolSystemMessageParam = {
 					role: "system",
@@ -1256,7 +1263,7 @@ export function convertMessages(
 				};
 				params.push(kimiToolMessage as unknown as ChatCompletionMessageParam);
 			}
-			const text = i === 0 ? getSystemMessageText(msg) : renderSystemMessageUpdate(msg);
+			const text = seenSystemMessage === 1 ? getSystemMessageText(msg) : renderSystemMessageUpdate(msg);
 			if (text.length > 0) {
 				params.push({ role: instructionRole, content: sanitizeSurrogates(text) });
 			}
