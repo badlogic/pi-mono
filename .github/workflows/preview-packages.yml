@@ -1,0 +1,101 @@
+# Publishes the preview packages that CI packed to pkg.earendil.com, and removes PR refs when PRs close.
+# Runs the version of this file on the default branch, with this repo's permissions. It never checks out or runs
+# PR code: the artifact is only read as data, and the commit, ref and PR number come from the event.
+# The worker (earendil-works/earendil-pkg) accepts uploads only from exactly this file on main.
+
+name: Preview packages
+
+on:
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
+  pull_request_target:
+    types: [closed]
+
+permissions: {}
+
+# Publishing and cleanup for the same branch run one at a time, in order, so a slow publish cannot recreate the ref
+# of a PR that cleanup just removed. `queue: max` keeps every waiting run; the default replaces a waiting cleanup.
+concurrency:
+  group: preview-packages-${{ github.event.workflow_run.head_repository.full_name || github.event.pull_request.head.repo.full_name }}-${{ github.event.workflow_run.head_branch || github.event.pull_request.head.ref }}
+  queue: max
+
+jobs:
+  publish:
+    if: github.event_name == 'workflow_run' && github.event.workflow_run.conclusion != 'cancelled'
+    runs-on: ubuntu-latest
+    permissions:
+      actions: read # download the artifact from the CI run
+      contents: read # check out the client script
+      id-token: write # GitHub OIDC token for pkg.earendil.com
+      pull-requests: write # install comment
+    steps:
+      - name: Find packed packages
+        id: find
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RUN_ID: ${{ github.event.workflow_run.id }}
+        run: |
+          count=$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$RUN_ID/artifacts" \
+            --jq '[.artifacts[] | select(.name == "preview-packages")] | length')
+          if [ "$count" = 0 ]; then echo "::notice::CI produced no preview packages (it failed before packing)"; fi
+          echo "found=$([ "$count" != 0 ] && echo true || echo false)" >> "$GITHUB_OUTPUT"
+
+      - name: Download packed packages
+        if: steps.find.outputs.found == 'true'
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: preview-packages
+          path: ${{ runner.temp }}/preview-packages
+          run-id: ${{ github.event.workflow_run.id }}
+          github-token: ${{ github.token }}
+
+      - name: Check out scripts
+        if: steps.find.outputs.found == 'true'
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          sparse-checkout: scripts
+          persist-credentials: false
+
+      - name: Publish
+        if: steps.find.outputs.found == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GITHUB_TOKEN: ${{ github.token }}
+          # Event data is passed through env, never interpolated into the script: branch names are PR-controlled.
+          EVENT: ${{ github.event.workflow_run.event }}
+          HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
+          HEAD_BRANCH: ${{ github.event.workflow_run.head_branch }}
+          HEAD_OWNER: ${{ github.event.workflow_run.head_repository.owner.login }}
+          RUN_ID: ${{ github.event.workflow_run.id }}
+          DIR: ${{ runner.temp }}/preview-packages
+        run: |
+          args=(--dir "$DIR" --sha "$HEAD_SHA" --run "$RUN_ID" --event "$EVENT")
+          if [ "$EVENT" = push ] && [ "$HEAD_BRANCH" = main ]; then
+            args+=(--ref main)
+          elif [ "$EVENT" = pull_request ]; then
+            # workflow_run lists no PRs for fork PRs, so look the PR up by head branch and verify the head commit.
+            pr=$(gh api -X GET "repos/$GITHUB_REPOSITORY/pulls" -f state=open -f head="$HEAD_OWNER:$HEAD_BRANCH" \
+              --jq 'map(select(.head.sha == env.HEAD_SHA)) | .[0].number // empty')
+            if [ -n "$pr" ]; then args+=(--ref "pr-$pr" --comment-pr "$pr"); fi
+          fi
+          node scripts/preview-packages.mjs publish "${args[@]}"
+
+  cleanup:
+    # pull_request_target runs this file from the PR's base branch; the worker only accepts it from main.
+    if: github.event_name == 'pull_request_target' && github.event.pull_request.base.ref == github.event.repository.default_branch
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read # check out the client script (base branch, not PR code)
+      id-token: write # GitHub OIDC token for pkg.earendil.com
+    steps:
+      - name: Check out scripts
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          sparse-checkout: scripts
+          persist-credentials: false
+
+      - name: Delete PR ref
+        env:
+          PR: ${{ github.event.pull_request.number }}
+        run: node scripts/preview-packages.mjs delete-ref --ref "pr-$PR"
