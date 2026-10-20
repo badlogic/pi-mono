@@ -83,6 +83,12 @@ export interface Terminal {
 	stop(): void;
 
 	/**
+	 * Synchronously restore terminal modes from a process `exit` handler when stop() did not run.
+	 * Writes `before`, then this terminal's own mode resets, then `after`.
+	 */
+	restoreOnExit?(before: string, after: string): void;
+
+	/**
 	 * Drain stdin before exiting to prevent Kitty key release events from
 	 * leaking to the parent shell over slow SSH connections.
 	 * @param maxMs - Maximum time to drain (default: 1000ms)
@@ -515,6 +521,21 @@ export class ProcessTerminal implements Terminal {
 		// Restore raw mode state
 		if (process.stdin.setRawMode) {
 			process.stdin.setRawMode(this.wasRaw);
+		}
+	}
+
+	restoreOnExit(before: string, after: string): void {
+		let sequence = before;
+		if (this.progressInterval) sequence += TERMINAL_PROGRESS_CLEAR_SEQUENCE;
+		sequence += "\x1b[?2004l";
+		if (this.keyboardProtocolPushed || this._kittyProtocolActive) sequence += "\x1b[<u";
+		if (this._modifyOtherKeysActive) sequence += "\x1b[>4;0m";
+		sequence += after;
+		try {
+			// process.stdout.write() may be asynchronous (e.g. Windows TTYs) and would not flush during exit.
+			fs.writeSync(process.stdout.fd, sequence);
+		} catch {
+			// The terminal may already be gone.
 		}
 	}
 
