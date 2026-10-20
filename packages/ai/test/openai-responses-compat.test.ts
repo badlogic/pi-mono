@@ -148,9 +148,10 @@ describe("openai-responses provider defaults", () => {
 			if (event.type === "done" || event.type === "error") break;
 		}
 
+		// gpt-5.4 declares its tools in additional_tools items; tool_choice applies to them.
 		expect(capturedPayload).toMatchObject({
 			tool_choice: "required",
-			tools: [expect.objectContaining({ name: "ping" })],
+			input: [{ type: "additional_tools", tools: [expect.objectContaining({ name: "ping" })] }, expect.anything()],
 		});
 	});
 
