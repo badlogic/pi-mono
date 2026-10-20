@@ -1,18 +1,8 @@
-{ pkgs, source }:
-let
-  biomeConfig = pkgs.writeText "biome.json" (
-    builtins.toJSON (
-      (pkgs.lib.importJSON "${source}/biome.json")
-      // {
-        plugins = [ "${source}/scripts/biome/model-type-comparison.grit" ];
-      }
-    )
-  );
-in
+{ pkgs }:
 pkgs.treefmt.withConfig {
-  runtimeInputs = [
-    pkgs.biome
-    pkgs.nixfmt
+  runtimeInputs = with pkgs; [
+    biome
+    nixfmt
   ];
   settings = {
     global.tree_root_file = "flake.nix";
@@ -23,8 +13,6 @@ pkgs.treefmt.withConfig {
           "format"
           "--write"
           "--no-errors-on-unmatched"
-          "--config-path"
-          (builtins.toString biomeConfig)
         ];
         includes = [
           "*.cjs"

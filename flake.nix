@@ -36,6 +36,7 @@
       forAllSystems = genAttrs platforms;
 
       piOverlay = _final: prev: {
+        biome = prev.callPackage ./nix/biome.nix { };
         pi = prev.callPackage ./nix/package.nix {
           inherit source packageJson platforms;
           nodejs = prev.nodejs_22;
@@ -45,9 +46,9 @@
       perSystem =
         system:
         let
-          pkgs = nixpkgsFor system;
-          pi = (pkgs.extend piOverlay).pi;
-          treefmtWrapper = import ./nix/treefmt.nix { inherit pkgs source; };
+          pkgs = (nixpkgsFor system).extend piOverlay;
+          inherit (pkgs) pi;
+          treefmtWrapper = import ./nix/treefmt.nix { inherit pkgs; };
           devShell = import ./nix/devshell.nix {
             inherit pkgs treefmtWrapper;
             nodejs = pkgs.nodejs_22;
