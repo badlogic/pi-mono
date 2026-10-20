@@ -3058,27 +3058,18 @@ async function generateModels() {
 	];
 	allModels.push(...deepseekModels);
 
-	const antLingBaseCompat: OpenAICompletionsCompat = {
+	// Ant Ling uses DeepSeek-style thinking: { type } plus reasoning_effort.
+	const antLingCompat: OpenAICompletionsCompat = {
 		supportsStore: false,
 		supportsDeveloperRole: false,
-		supportsReasoningEffort: false,
+		supportsReasoningEffort: true,
 		maxTokensField: "max_tokens",
+		thinkingFormat: "deepseek",
 		supportsLongCacheRetention: false,
 	};
-	const toggleReasoningEffortCompat: OpenAICompletionsCompat = {
-		...antLingBaseCompat,
-		supportsReasoningEffort: true,
-		thinkingFormat: "deepseek"
-	};
-	const ANT_LING_THINKING_LEVEL_MAP = {
-		off: "off",
-		minimal: null,
-		low: null,
-		medium: null,
-		high: "high",
-		xhigh: null,
-		max: null,
-	} as const;
+	// Thinking is either off or high. Hiding the lower levels makes Pi clamp them to high;
+	// off is unmapped so the request sends thinking: { type: "disabled" }.
+	const ANT_LING_THINKING_LEVEL_MAP = { minimal: null, low: null, medium: null } as const;
 	const antLingModels: Model<"openai-completions">[] = [
 		{
 			id: "Ling-3.1-flash",
@@ -3092,7 +3083,7 @@ async function generateModels() {
 			cost: { input: 0.5, output: 1.5, cacheRead: 0.1, cacheWrite: 0 },
 			contextWindow: 262144,
 			maxTokens: 262144,
-			compat: toggleReasoningEffortCompat,
+			compat: antLingCompat,
 		},
 		{
 			id: "Ling-3.0-flash-VL",
@@ -3106,7 +3097,7 @@ async function generateModels() {
 			cost: { input: 0.14, output: 0.42, cacheRead: 0.028, cacheWrite: 0 },
 			contextWindow: 262144,
 			maxTokens: 262144,
-			compat: toggleReasoningEffortCompat,
+			compat: antLingCompat,
 		},
 		{
 			id: "Ling-3.0-flash",
@@ -3120,8 +3111,8 @@ async function generateModels() {
 			cost: { input: 0.125, output: 0.375, cacheRead: 0.025, cacheWrite: 0 },
 			contextWindow: 262144,
 			maxTokens: 262144,
-			compat: toggleReasoningEffortCompat,
-		}
+			compat: antLingCompat,
+		},
 	];
 	allModels.push(...antLingModels);
 

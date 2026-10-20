@@ -2,6 +2,7 @@ import { Type } from "typebox";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { convertMessages } from "../src/api/openai-completions.ts";
 import { getModel, normalizeContext, streamSimple } from "../src/compat.ts";
+import { getSupportedThinkingLevels } from "../src/models.ts";
 import type { AssistantMessage, Model, SimpleStreamOptions, Tool, ToolResultMessage } from "../src/types.ts";
 
 const mockState = vi.hoisted(() => ({
@@ -1917,12 +1918,18 @@ describe("openai-completions tool_choice", () => {
 		expect(params.prompt_cache_retention).toBeUndefined();
 	});
 
-	it("maps all supported Ant Ling reasoning levels", async () => {
+	it("exposes only off and high for Ant Ling models", () => {
+		for (const id of ["Ling-3.1-flash", "Ling-3.0-flash", "Ling-3.0-flash-VL"] as const) {
+			expect(getSupportedThinkingLevels(getModel("ant-ling", id)!)).toEqual(["off", "high"]);
+		}
+	});
+
+	it("clamps every Ant Ling reasoning level to high", async () => {
 		const model = getModel("ant-ling", "Ling-3.0-flash")!;
-		for (const reasoning of ["low", "medium", "high", "xhigh"] as const) {
+		for (const reasoning of ["minimal", "low", "medium", "high", "xhigh"] as const) {
 			const params = await captureSimpleParams(model, reasoning);
 			expect(params.thinking).toEqual({ type: "enabled" });
-			expect(params.reasoning_effort).toBe(reasoning);
+			expect(params.reasoning_effort).toBe("high");
 		}
 	});
 

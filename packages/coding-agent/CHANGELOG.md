@@ -9,6 +9,7 @@
 ### Changed
 
 - `generateSummary()` and `generateSummaryWithUsage()` now ignore their `reserveTokens` parameter. Summary requests use the model's output limit instead.
+- Changed the `ant-ling` default model to `Ling-3.1-flash`, replacing the removed Ling 2.6 and Ring 2.6 models ([#10943](https://github.com/earendil-works/pi/pull/10943) by [@lvisei](https://github.com/lvisei))
 
 ### Fixed
 
@@ -38,10 +39,6 @@
 ### Changed
 
 - Changed the default NVIDIA model to `nvidia/nemotron-3.5-super-vl-120b-a12b` ([#10910](https://github.com/earendil-works/pi/pull/10910) by [@cv](https://github.com/cv))
-
-### Changed
-
-- Changed the `ant-ling` default model to `Ling-3.1-flash`.
 
 ### Fixed
 

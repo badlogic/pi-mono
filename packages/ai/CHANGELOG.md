@@ -5,12 +5,17 @@
 ### Breaking Changes
 
 - Renamed provider request option `telemetryContext` to `telemetry?: TelemetrySpan`, without a compatibility alias. Pass a parent span, not an adapter.
+- Removed the `thinkingFormat: "ant-ling"` compat value. Use `thinkingFormat: "deepseek"` for Ant Ling models ([#10943](https://github.com/earendil-works/pi/pull/10943) by [@lvisei](https://github.com/lvisei))
 
 ### Added
 
 - Added `AI_TELEMETRY_SCHEMA` and opt-in `pi.ai.request`/`pi.ai.poll` tracing around Models requests, with content-free first-event, block-size, and final usage attributes, plus duration, token, and USD cost metrics through `telemetry.metrics`.
 - Failed model request spans report `provider_error` status with up to 500 error-message characters; cancelled requests keep `ok` status with `stop: "aborted"`.
 - Added `MiniMax-M3.1-Flash` to the `minimax` and `minimax-cn` providers, with thinking levels low through max sent as `output_config.effort`. Thinking cannot be turned off for this model. New MiniMax models from models.dev now appear without a manual allowlist entry; only the older M2, M2.1, M2.5, and M2.5-highspeed models stay hidden ([#11121](https://github.com/earendil-works/pi/issues/11121))
+
+### Changed
+
+- Replaced the Ant Ling Ling 2.6 and Ring 2.6 models with Ling 3.1 Flash, Ling 3.0 Flash, and Ling 3.0 Flash VL. Ant Ling reasoning requests now use the DeepSeek-compatible `thinking` and `reasoning_effort` fields instead of nested `reasoning`, with thinking either off or high ([#10943](https://github.com/earendil-works/pi/pull/10943) by [@lvisei](https://github.com/lvisei))
 
 ### Fixed
 
@@ -26,15 +31,6 @@
 ### Added
 
 - Added cache-preserving thinking level changes for GPT-6 models on the openai provider: with an API key, the level is sent as configuration_update input items instead of changing reasoning.effort, controlled by compat.supportsMidConvoEffort ([#10853](https://github.com/earendil-works/pi/issues/10853))
-  
-### Breaking Changes
-
-- Removed the `thinkingFormat: "ant-ling"` compat value. Use `thinkingFormat: "deepseek"` for Ant Ling models.
-
-### Changed
-
-- Replaced Ling 2.6 and Ring 2.6 with Ling 3.0 and Ling 3.1 models.
-- Changed Ant Ling reasoning requests to use the DeepSeek-compatible `thinking` and `reasoning_effort` format instead of nested `reasoning`.
 
 ### Changed
 
