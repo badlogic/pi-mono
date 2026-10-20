@@ -27,7 +27,7 @@ asking for it again.
 
 <!-- example:01 -->
 ```ts
-const host = createHost({ name: "todo-server" });
+const host = createHost({ self: "server", name: "todo-server" });
 assert.equal(host.name, "todo-server");
 await host.close();
 ```
@@ -76,17 +76,17 @@ call from that root.
 
 <!-- example:02-call -->
 ```ts
-const host = createHost();
+const host = createHost({ self: "server" });
 host.serve(TodoLabel, ({ list }) => ({ label: () => `Todos for ${list}` }));
 const result = await host.root(async (ctx) => {
-	const todos = ctx.get(TodoLabel, { list: "family" });
+	const todos = await ctx.get(TodoLabel, { list: "family" });
 	return todos.label(ctx);
 });
 assert.equal(result, "Todos for family");
 ```
 
-The result is `"Todos for family"`. `ctx.get` returns a reference immediately;
-method calls wait for the object to become live. The reference acquired through
+The result is `"Todos for family"`. `await ctx.get` resolves once the object is
+live (and, as we will see, has its state). The reference acquired through
 `ctx.get` is released when this root ends. We never receive the factory's
 returned object directly. A standalone call without `ctx`, such as
 `todos.label()`, starts its own root. A method without arguments takes only
@@ -183,10 +183,9 @@ receive the same resulting value.
 
 <!-- example:03-call -->
 ```ts
-const host = createHost({ dev: true });
+const host = createHost({ self: "server", dev: true });
 host.serve(TodoStore, todoFactory);
-const todos = host.get(TodoStore, { list: "family" });
-await todos.ready;
+const todos = await host.get(TodoStore, { list: "family" });
 const counts: (number | undefined)[] = [];
 const stop = todos.openCount.subscribe((value) => counts.push(value));
 await host.root(async (ctx) => {
@@ -204,8 +203,8 @@ The count subscriber sees `0, 1, 0`: initially empty, one unfinished todo,
 then no unfinished todos. Resetting to empty does not add another count
 notification because the derived count is still zero. The final rows are `[]`.
 `subscribe` calls back immediately with the current value and returns an
-unsubscribe function. We await `ready` first so that value is not a loading
-placeholder.
+unsubscribe function. The awaited `get` makes sure there is a value: a reference
+you hold is live, with its state.
 
 > **Why:** Store reloadable state in cells, not closure variables. Treat
 > `cell.value`, `ref.rows.value`, and subscriber values as immutable.
@@ -239,7 +238,7 @@ const SavedTodos = local("tutorial.saved-todos", {
 	input: Type.Object({ list: Type.String() }),
 	members: { add: method(Type.Object({ text: Type.String() })) },
 });
-const host = createHost();
+const host = createHost({ self: "server" });
 let opens = 0;
 const closed = Promise.withResolvers<void>();
 host.serve(Database, (_input, _principal, self) => {
@@ -286,9 +285,8 @@ directly so we can inspect what was saved.
 
 <!-- example:04-call -->
 ```ts
-const saved = host.get(SavedTodos, { list: "family" });
-const database = host.get(Database, {});
-await saved.ready;
+const saved = await host.get(SavedTodos, { list: "family" });
+const database = await host.get(Database, {});
 await host.root((ctx) => saved.add({ text: "Buy milk" }, ctx));
 assert.deepEqual(database.db!.saved, ["Buy milk"]);
 assert.equal(opens, 1);
@@ -305,7 +303,7 @@ After the method, the fake database contains `["Buy milk"]`. It opened once,
 even though two objects referenced it. `SavedTodos` and `Database` become live
 only after their resources and declared dependencies are ready. That is why
 `database.db!` is safe inside this live object's method: activation has
-already established that dependency. An outside caller must await readiness.
+already established that dependency. An outside caller awaits its `get`.
 
 When both external references are released, `SavedTodos` is disposed and
 releases its own database reference. With no references left, the database closes; we
@@ -331,14 +329,17 @@ whether an editing method is available.
 
 Do not create a separate data cell for each viewer: their lists would diverge.
 Instead, each view holds the same host-local `TodoStore` and exposes its rows.
-`self.get` defaults to the host principal, so owner and guest views share
+`self.get` acts as the host's own principal, so owner and guest views share
 that store. Remote view objects themselves are separate per principal key.
+A remote contract also says where its objects live: `host: hostNamed("server")`
+puts every `Todos` object on the host named `server`. Section 6 uses that.
 
 <!-- example:05-views -->
 ```ts
 const Todos = remote("tutorial.todo-view", {
 	version: 1,
 	input: Type.Object({ list: Type.String() }),
+	host: hostNamed("server"),
 	variants: {
 		viewer: { state: { rows: Rows } },
 		editor: {
@@ -348,11 +349,14 @@ const Todos = remote("tutorial.todo-view", {
 	},
 });
 
-function serveViews(api: Pick<Host, "serve">): void {
+/** Who may ask: the owner, a guest, or the server's own code. */
+type Principal = "owner" | "guest" | "server";
+
+function serveViews(api: Pick<Host<Principal>, "serve">): void {
 	api.serve(Todos, ({ list }, principal, self) => {
 		if (list !== "family") throw forbidden("This list is not shared");
 		const store = self.get(TodoStore, { list });
-		if (principal !== "owner" && principal !== hostPrincipal) {
+		if (principal === "guest") {
 			return { variant: "viewer", rows: store.rows };
 		}
 		return {
@@ -368,29 +372,35 @@ function serveViews(api: Pick<Host, "serve">): void {
 ```
 
 Here principals are the strings `"owner"` and `"guest"`, assigned by
-trusted application code. The built-in `hostPrincipal` can also edit.
-`principalKey` maps identity to object identity. Real applications should use
-stable identity, connection provenance, and grant revision, not display names.
+trusted application code, and `"server"`, the host's own code: every host is
+created with `self`, the principal its own roots and objects act as. Chord
+invents no principals. The `Principal` type parameter of `createHost` and
+`Host` makes `principal` in the factory that type, so TypeScript checks the
+comparisons. `principalKey` maps identity to object identity. Real
+applications should use stable identity, connection provenance, and grant
+revision, not display names.
 
 <!-- example:05-call -->
 ```ts
-const host = createHost({ principalKey: (principal) => String(principal) });
+const host = createHost<Principal>({ name: "server", self: "server", principalKey: (principal) => principal });
 host.serve(TodoStore, todoFactory);
 serveViews(host);
-const owner = host.get(Todos, { list: "family" }, { principal: "owner" });
-const guest = host.get(Todos, { list: "family" }, { principal: "guest" });
-await Promise.all([owner.ready, guest.ready]);
-assert.equal(owner.variant, "editor");
+const owner = await host.get(Todos, { list: "family" }, { principal: "owner" });
+const guest = await host.get(Todos, { list: "family" }, { principal: "guest" });
+assert.ok(owner.variant === "editor"); // narrows the reference to the editor variant
 assert.equal(guest.variant, "viewer");
 await host.root((ctx) => owner.add({ text: "Buy milk" }, ctx), { principal: "owner" });
 assert.deepEqual(guest.rows.value, [{ text: "Buy milk", done: false }]);
+// @ts-expect-error A viewer has no add: TypeScript refuses it, and so does the provider.
 await assert.rejects(guest.add({ text: "Not allowed" }), (error) => isChordError(error, "not_in_variant"));
 await assert.rejects(owner.add({ text: " " }), (error) => isChordError(error, "invalid"));
 ```
 
 The owner gets `editor`; the guest gets `viewer`. Both see the same milk
-todo. Calling the guest's `add` rejects with `not_in_variant`, even though
-TypeScript exposes methods from all variants on a reference. Whitespace-only text
+todo. A reference is typed as the union of its variants: `add` is reachable only
+after narrowing on `variant` (`assert.ok(owner.variant === "editor")` does that).
+The guest's `add` is refused by TypeScript, and, called anyway, rejects with
+`not_in_variant`. Whitespace-only text
 rejects with `invalid`: it is a string, as the schema demands, but it breaks a
 rule only the method knows. Use `invalid` for bad input and `forbidden` only
 for callers who may not do something.
@@ -406,50 +416,59 @@ for callers who may not do something.
 
 A browser cannot call a host-only contract. `remote` contracts describe only
 schema-checked state and methods that can travel as JSON. Our `Todos` view is
-remote; the underlying `TodoStore` and database stay local.
+remote; the underlying `TodoStore` and database stay local. A caller never
+names a host: `browser.get(Todos, …)` goes to `server` because the contract
+says so, and the server refuses to serve, or to be asked for, a type it is not
+the place of. A type that lives on one host per session says
+`host: hostFamily("session:", "session")`: its input's `session` field picks
+the host (`{ session: "S1" }` lives on `session:S1`).
 
 A **link** carries ordered messages between hosts. A memory link runs both ends
 in one test process, but uses the remote protocol. The accepting host stamps
 the caller's principal from its authenticator, not from method arguments or a
-client's claimed identity.
+client's claimed identity. The connecting side names the principal its parent's
+own requests act as (`upstream: { link, principal }`, or `connect(link, {
+principal })`).
 
 <!-- example:06 -->
 ```ts
-const server = createHost({ name: "server" });
+const server = createHost<Principal>({ self: "server", name: "server" });
 server.serve(TodoStore, todoFactory);
 serveViews(server);
 const [down, up] = memoryLinkPair();
 server.accept(down, { principal: "owner", kind: "client" });
-const browser = createHost({ name: "browser", kind: "client", upstream: up });
-const todos = browser.get(Todos, { list: "family" }, { at: "server" });
-const hydrated = Promise.withResolvers<void>();
+const browser = createHost({
+	self: "browser",
+	name: "browser",
+	kind: "client",
+	upstream: { link: up, principal: "server" },
+});
+const todos = await browser.get(Todos, { list: "family" });
+assert.ok(todos.variant === "editor");
+assert.deepEqual(todos.rows.value, []);
 const updated = Promise.withResolvers<void>();
 const stop = todos.rows.subscribe((rows) => {
-	if (rows !== undefined) hydrated.resolve();
-	if (rows?.length === 1) updated.resolve();
+	if (rows.length === 1) updated.resolve();
 });
-await todos.ready;
-await hydrated.promise;
-assert.deepEqual(todos.rows.value, []);
 await browser.root((ctx) => todos.add({ text: "Buy milk" }, ctx));
 await updated.promise;
 assert.deepEqual(todos.rows.value, [{ text: "Buy milk", done: false }]);
 // Deliberately bypass TypeScript to simulate a malformed caller.
 await assert.rejects(todos.add({ text: 123 } as never), (error) => isChordError(error, "invalid"));
 stop();
-assert.equal(todos.rows.value, undefined);
+// A held reference keeps its state without listeners.
+assert.deepEqual(todos.rows.value, [{ text: "Buy milk", done: false }]);
 todos.release();
 ```
 
 The browser sees an empty snapshot, then the new milk todo. `ready` means
-the remote reference has bound to a live object; it does **not** guarantee that
-subscribed state has arrived. That is why we separately await `hydrated` and
-`updated`. A remote readable starts at `undefined` and returns to
-`undefined` when its last subscriber leaves.
+the remote reference has bound to a live object **and** has its state: every
+state member of its variant has a snapshot. A held reference stays subscribed,
+with or without listeners, until it is released.
 
 What crosses the wire: the input and consumer's contract description, the
-provider's shape (variant and members), method arguments and results, and
-subscribed state. State starts with a **snapshot**, the whole current value;
+provider's shape (variant and members), method arguments and results, and the
+state of the reference's variant. State starts with a **snapshot**, the whole current value;
 subsequent **deltas** describe changes. Rebinds and reloads can send a
 `reset`, a fresh whole value. Functions, resource connections, and cell
 instances do not cross the wire.
@@ -483,7 +502,7 @@ const Activity = local("tutorial.activity", {
 	input: Type.Object({}),
 	members: { seen: Type.Number() },
 });
-const host = createHost();
+const host = createHost({ self: "server" });
 host.serve(TodoStore, todoFactory);
 const observed = Promise.withResolvers<void>();
 const seeded = Promise.withResolvers<void>();
@@ -506,8 +525,7 @@ host.serve(Activity, (_input, _principal, self) => {
 	});
 	return { seen };
 });
-const activity = host.get(Activity, {});
-await activity.ready;
+const activity = await host.get(Activity, {});
 await Promise.all([seeded.promise, observed.promise]);
 assert.equal(activity.seen.value, 1);
 activity.release();
@@ -569,7 +587,7 @@ const menuFacet: Facet = {
 					self.register(Actions, {
 						addSample: async (ctx) => {
 							await todos.add({ text: "Try plugins" }, ctx);
-							return todos.openCount.value!;
+							return todos.openCount.value;
 						},
 					});
 					return {};
@@ -581,7 +599,7 @@ const menuFacet: Facet = {
 		{ uses: [TodoStore] },
 	),
 };
-const host = createHost();
+const host = createHost({ self: "server" });
 await host.load([menuFacet, storeFacet], { awaitHostObjects: false });
 await host.ready();
 assert.equal(await click!(), 1);
@@ -632,7 +650,7 @@ old root sees; application methods should not pause like this.
 
 <!-- example:09-compatible -->
 ```ts
-const host = createHost();
+const host = createHost({ self: "server" });
 const facet = (label: string): Facet => ({
 	name: "todos",
 	setup: (api) =>
@@ -642,7 +660,7 @@ const facet = (label: string): Facet => ({
 		})),
 });
 await host.load([facet("Original")]);
-const todos = host.get(TodoStore, { list: "family" });
+const todos = await host.get(TodoStore, { list: "family" });
 await todos.add({ text: "Buy milk" });
 const entered = Promise.withResolvers<void>();
 const resume = Promise.withResolvers<void>();
@@ -748,7 +766,7 @@ await host.reload([
 	},
 ]);
 assert.equal(await todos.label(), "Todos for family");
-const newer = host.get(RenamedStore, { list: "family" });
+const newer = await host.get(RenamedStore, { list: "family" });
 assert.equal(await newer.heading(), "Todos for family");
 assert.equal(todos.rows.value?.[0]?.text, "BUY MILK");
 ```
@@ -775,7 +793,7 @@ Here the fake records what the editing view sends to the store.
 
 <!-- example:10 -->
 ```ts
-const host = createHost({ dev: true });
+const host = createHost<Principal>({ name: "server", self: "server", dev: true });
 const received: string[] = [];
 const fake: Facet = {
 	name: "fake-store",
@@ -790,7 +808,8 @@ const fake: Facet = {
 };
 await host.load([fake]);
 serveViews(host);
-const owner = host.get(Todos, { list: "family" }, { principal: "owner" });
+const owner = await host.get(Todos, { list: "family" }, { principal: "owner" });
+assert.ok(owner.variant === "editor");
 await owner.add({ text: "Test delegation" });
 assert.deepEqual(received, ["Test delegation"]);
 await assert.rejects(owner.add({ text: "" }), (error) => isChordError(error, "invalid"));
@@ -805,8 +824,8 @@ message's wording.
 
 Our other tests exercise the real cells (section 3), resource cleanup (4),
 principal variants (5), a client over a memory link (6), and callers kept through
-reload (9). For remote state tests, await the value you need, not just
-`ref.ready`. Always unsubscribe and close hosts; leaked references can hide
+reload (9). After an awaited `get` the state is there; for later changes, await
+the value you need. Always unsubscribe and close hosts; leaked references can hide
 lifetime bugs or leave background tasks running.
 
 > **Tip:** A fake must honor the contract it serves. This fake delegates all
@@ -821,12 +840,11 @@ screen should not lose its data merely because a button click finishes. Use
 
 <!-- example:11 -->
 ```ts
-const host = createHost();
+const host = createHost({ self: "server" });
 host.serve(TodoStore, todoFactory);
-const screen = host.get(TodoStore, { list: "family" });
-await screen.ready;
+const screen = await host.get(TodoStore, { list: "family" });
 await host.root(async (ctx) => {
-	const temporary = ctx.get(TodoStore, { list: "family" });
+	const temporary = await ctx.get(TodoStore, { list: "family" });
 	await temporary.add({ text: "Keep roots short" }, ctx);
 }); // The temporary reference is released here; screen still holds the store.
 assert.equal(screen.openCount.value, 1);
@@ -852,7 +870,8 @@ explicit load/save policy.
 - Keep roots short and tasks cancellable: migration and shutdown need work to settle.
 - Check grants and arguments, not just variants: available methods are not a full policy.
 - Stamp principals at trusted ingress, not from client payloads: names are not identities.
-- Subscribe before expecting remote state: readiness is not snapshot hydration.
+- Await `get` before reading state: a reference you hold is live and hydrated, a
+  loading one (`host.hold`) throws `not_ready`.
 - Release references and unsubscribe: otherwise unused objects remain referenced or observed.
 - Bump state versions, contract versions, and resource versions for their own changes:
   each protects a different boundary.
@@ -883,7 +902,7 @@ import {
 	type Factory,
 	forbidden,
 	type Host,
-	hostPrincipal,
+	hostNamed,
 	invalid,
 	isChordError,
 	local,

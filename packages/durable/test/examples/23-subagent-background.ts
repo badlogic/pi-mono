@@ -44,6 +44,7 @@ type Subagent = {
 	reported: EntryId[];
 };
 const Subagents = defineDoc<{ agents: Record<string, Subagent>; reporters: Record<string, TaskId> }>({
+	checkpointWhen: () => false,
 	kind: "app.subagents",
 	version: 1,
 	scope: "conversation",

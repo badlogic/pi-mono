@@ -134,6 +134,7 @@ function examples() {
 	// ─── Section 7.2: hooks reading extension state ──────────────────────────────
 
 	const PlanModeDoc = defineDoc<{ enabled: boolean }>({
+		checkpointWhen: () => false,
 		kind: "app.plan-mode",
 		version: 1,
 		scope: "conversation",
@@ -270,6 +271,7 @@ function examples() {
 			// Absent: the conversation runs locally. Only conversations with this document run in a container.
 			// Subagents do not copy it: their creator writes it too when they should run in the container.
 			const ContainerDoc = defineDoc<{ image: string }>({
+				checkpointWhen: () => false,
 				kind: "app.container",
 				version: 1,
 				scope: "conversation",

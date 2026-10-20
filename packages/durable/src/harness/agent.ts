@@ -53,6 +53,14 @@ export const AgentDoc = defineDoc<AgentState>({
 /** Default `settings.contextRetentionMs`: ten minutes. */
 const DEFAULT_CONTEXT_RETENTION_MS = 600_000;
 
+/** Default `settings.restartLimit`. */
+export const DEFAULT_RESTART_LIMIT = 5;
+
+/** A restart limit as given when it is a number of restarts, `1` or more, rounded down (`Infinity` never parks); else the default. */
+function restartLimit(limit: number | undefined): number {
+	return typeof limit === "number" && limit >= 1 ? Math.floor(limit) : DEFAULT_RESTART_LIMIT;
+}
+
 /** Resolve the host settings: every field over its built-in default, object fields merged. */
 export function resolveSettings(settings: HarnessSettings | undefined): Settings {
 	const extensions = settings?.extensions;
@@ -71,6 +79,8 @@ export function resolveSettings(settings: HarnessSettings | undefined): Settings
 		followUpMode: settings?.followUpMode ?? "one-at-a-time",
 		contextRetentionMs: settings?.contextRetentionMs ?? DEFAULT_CONTEXT_RETENTION_MS,
 		documentRetentionMs: documentRetention(settings?.documentRetentionMs),
+		afterFailedRun: settings?.afterFailedRun ?? "keep",
+		restartLimit: restartLimit(settings?.restartLimit),
 	};
 }
 
@@ -170,12 +180,39 @@ export async function createAgent(tx: Tx, conversation: ConversationRecord): Pro
 }
 
 /** Handlers of the selected extensions' hooks for a task name, in extension order. */
-export function agentHooks(agent: Agent, taskName: string): object[] {
-	const handlers: object[] = [];
+export function agentHooks(
+	agent: Agent,
+	taskName: string,
+): { readonly extension: string; readonly handlers: object }[] {
+	const handlers: { readonly extension: string; readonly handlers: object }[] = [];
 	for (const extension of agent.extensions) {
-		for (const hook of extension.hooks ?? []) if (hook.task === taskName) handlers.push(hook.handlers);
+		for (const hook of extension.hooks ?? []) {
+			if (hook.task === taskName) handlers.push({ extension: extension.name, handlers: hook.handlers });
+		}
 	}
 	return handlers;
+}
+
+/** The extension whose code a section of `agent` runs: the last selected one that provides or wraps it. */
+export function sectionExtension(agent: Agent, key: string): string | undefined {
+	let found: string | undefined;
+	for (const extension of agent.extensions) {
+		const provides = extension.sections?.some((section) => section.key === key) === true;
+		const wraps = extension.wraps?.some((wrap) => "section" in wrap && wrap.section === key) === true;
+		if (provides || wraps) found = extension.name;
+	}
+	return found;
+}
+
+/** The extension whose code a tool of `agent` runs: the last selected one that provides or wraps it. */
+export function toolExtension(agent: Agent, name: string): string | undefined {
+	let found: string | undefined;
+	for (const extension of agent.extensions) {
+		const provides = extension.tools?.some((tool) => tool.name === name) === true;
+		const wraps = extension.wraps?.some((wrap) => "tool" in wrap && wrap.tool === name) === true;
+		if (provides || wraps) found = extension.name;
+	}
+	return found;
 }
 
 /**
@@ -186,7 +223,8 @@ export function resolveAgent<Tool extends ToolRegistration>(
 	state: Readonly<AgentState> | undefined,
 	snapshot: RegistrySnapshot<Tool>,
 	settings: Settings,
-	report: (error: unknown) => void,
+	/** Gets a wrapper's failure with the name of the wrapper's extension. */
+	report: (error: unknown, extension: string) => void,
 ): Agent<Tool> {
 	const extensions = selectExtensions(state?.extensions, snapshot, settings);
 
@@ -198,13 +236,14 @@ export function resolveAgent<Tool extends ToolRegistration>(
 	}
 	for (const extension of extensions) {
 		for (const wrap of extension.wraps ?? []) {
+			const wrapReport = (error: unknown) => report(error, extension.name);
 			if ("tool" in wrap)
 				applyWrap(
 					composed,
 					wrap.tool,
 					(tool) => wrap.wrap(tool),
 					(tool) => tool.name,
-					report,
+					wrapReport,
 				);
 			else
 				applyWrap(
@@ -212,7 +251,7 @@ export function resolveAgent<Tool extends ToolRegistration>(
 					wrap.section,
 					(section) => wrap.wrap(section),
 					(section) => section.key,
-					report,
+					wrapReport,
 				);
 		}
 	}

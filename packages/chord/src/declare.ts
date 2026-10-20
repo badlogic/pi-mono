@@ -31,7 +31,8 @@ export interface ListenerDecl {
 	readonly fn: (event: unknown, ctx: Ctx) => void | Promise<void>;
 }
 
+// A cell has a `key` and a `value` too: sources are matched before resources.
 /** What `self.on(name, source, …)` passes to `select`: a resource's opened value, or the source itself. */
-export type ValueOf<S> = S extends Resource<infer T> ? T : S;
+export type ValueOf<S> = S extends Subscribable<unknown> ? S : S extends Resource<infer T> ? T : S;
 /** What `self.on(name, source, handler)` delivers: a readable's values, an event source's events. */
-export type EventOf<S> = S extends Resource<infer T> ? EventOf<T> : S extends Subscribable<infer E> ? E : never;
+export type EventOf<S> = S extends Subscribable<infer E> ? E : S extends Resource<infer T> ? EventOf<T> : never;

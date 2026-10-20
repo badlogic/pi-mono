@@ -14,6 +14,7 @@ export {
 	configure,
 	DEFAULT_COMPACTION_POLICY,
 	DEFAULT_PROGRESS_POLICY,
+	DEFAULT_RESTART_LIMIT,
 	DEFAULT_RETRY_POLICY,
 } from "./harness/agent.ts";
 export {
@@ -50,7 +51,9 @@ export {
 } from "./harness/live.ts";
 export { ProviderDoc, type ProviderState } from "./harness/provider.ts";
 export { createRegistry } from "./harness/registry.ts";
+export type { BlockedReason } from "./harness/scheduler.ts";
 export type { TaskGraph, TaskGraphNode, TaskGraphState, TaskGraphWatch } from "./harness/task-graph.ts";
+export { DURABLE_TELEMETRY_SCHEMA } from "./harness/telemetry.ts";
 export {
 	NestedCallDoc,
 	type NestedCallState,
@@ -60,6 +63,7 @@ export {
 	type ToolTaskResult,
 } from "./harness/tool.ts";
 export type {
+	AfterFailedRun,
 	Agent,
 	AgentChange,
 	AgentState,
@@ -68,6 +72,7 @@ export type {
 	CompactionPolicy,
 	CompactionReason,
 	CompactionResult,
+	CompactionSettings,
 	ContextView,
 	Conversation,
 	ConversationAbortOptions,
@@ -113,6 +118,7 @@ export type {
 	ToolHooks,
 	ToolRegistration,
 	UserInput,
+	Wake,
 	Wrap,
 } from "./harness/types.ts";
 export { UsageDoc, type UsageState } from "./harness/usage.ts";
@@ -157,6 +163,7 @@ export type {
 	EntryQuery,
 	EntryRecord,
 	HookRunner,
+	HostCallback,
 	Id,
 	JoinPolicy,
 	JsonObject,
@@ -164,6 +171,9 @@ export type {
 	NextTaskState,
 	Page,
 	PhaseHandler,
+	ReportFrom,
+	ReportInfo,
+	ReportTask,
 	RewindableConversationDocFamilyToken,
 	RewindableConversationDocToken,
 	RewindableConversationSemantics,
@@ -174,6 +184,7 @@ export type {
 	SessionDocFamilyToken,
 	SessionDocToken,
 	SessionEnd,
+	SetTimer,
 	Storage,
 	StorageWrite,
 	StoredDocument,

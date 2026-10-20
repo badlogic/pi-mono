@@ -50,7 +50,7 @@ const RELOADS = 6;
 describe("generation GC", () => {
 	it("a reference held across reloads keeps only the current generation alive", async () => {
 		const generations = tracker();
-		const host = createHost({ onError: () => {} });
+		const host = createHost({ self: { kind: "host" }, onError: () => {} });
 		const facet = (generation: number): Facet => {
 			const sentinel = generations.track(generation, { generation });
 			return {
@@ -63,7 +63,7 @@ describe("generation GC", () => {
 			};
 		};
 		host.install(facet(0));
-		const ref = host.get(Store, {});
+		const ref = host.hold(Store, {});
 		await ref.ready;
 		for (let generation = 1; generation <= RELOADS; generation++) {
 			await host.reload([facet(generation)]);
@@ -75,7 +75,7 @@ describe("generation GC", () => {
 
 	it('a lifetime "host" object with state, a kept resource, a listener, a task and registrations keeps only the current generation alive', async () => {
 		const generations = tracker();
-		const host = createHost({ onError: () => {} });
+		const host = createHost({ self: { kind: "host" }, onError: () => {} });
 		const facet = (generation: number): Facet => {
 			const sentinel = generations.track(generation, { generation });
 			return {
@@ -114,7 +114,7 @@ describe("generation GC", () => {
 
 	it("abort listeners that calls and tasks add to their ctx.signal do not outlive them", async () => {
 		const generations = tracker();
-		const host = createHost({ onError: () => {} });
+		const host = createHost({ self: { kind: "host" }, onError: () => {} });
 		const facet = (generation: number): Facet => {
 			const sentinel = generations.track(generation, { generation });
 			return {
@@ -143,7 +143,7 @@ describe("generation GC", () => {
 		await host.install(facet(0));
 		for (let generation = 1; generation <= RELOADS; generation++) {
 			await host.reload([facet(generation)]);
-			assert.equal(await host.root((ctx) => ctx.get(Store, {}).get(ctx)), generation);
+			assert.equal(await host.root(async (ctx) => (await ctx.get(Store, {})).get(ctx)), generation);
 		}
 		assert.deepEqual(await generations.collect([RELOADS]), [RELOADS]);
 		await host.close();
@@ -156,7 +156,7 @@ describe("generation GC", () => {
 			input: Type.Object({ id: Type.Number() }),
 			members: { id: method(undefined, Type.Number()) },
 		});
-		const host = createHost({ onError: () => {} });
+		const host = createHost({ self: { kind: "host" }, onError: () => {} });
 		host.serve(Item, (input) => {
 			// The normalized input is held by the object: it stands for the object.
 			const { id } = objects.track(input.id, input);
@@ -164,7 +164,7 @@ describe("generation GC", () => {
 		});
 		// In a function of its own, so no reference outlives the iteration in this frame.
 		const use = async (id: number): Promise<void> => {
-			const ref = host.get(Item, { id });
+			const ref = host.hold(Item, { id });
 			assert.equal(await ref.id(), id);
 			ref.release();
 		};

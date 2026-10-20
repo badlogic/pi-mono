@@ -525,6 +525,7 @@ describe("blocked tasks", () => {
 
 	it("settles an aborted blocked task as orphaned and retires its documents", async () => {
 		const Scratch = defineDoc<{ n: number }>({
+			checkpointWhen: () => false,
 			kind: "test.orphan-scratch",
 			version: 1,
 			scope: "task",
@@ -721,7 +722,7 @@ describe("definition handover", () => {
 	it("hands over to a newer version whose migration fails and leaves the task blocked", async () => {
 		const log: string[] = [];
 		const gate = deferred();
-		const { harness, registry, id, reports } = await startHandover(log, { a: gate.promise });
+		const { harness, registry, id, infos } = await startHandover(log, { a: gate.promise });
 		// The same extension name replaces the old one in place.
 		addTask(
 			registry,
@@ -732,7 +733,8 @@ describe("definition handover", () => {
 			}),
 		);
 		gate.resolve();
-		await eventually(() => reports.length === 1);
+		await eventually(() => infos.length === 1);
+		expect(infos).toMatchObject([{ type: "migration_failed", task: { id } }]);
 		await flush();
 		expect(await harness.getTask(id, context)).toMatchObject({
 			version: 1,
@@ -746,7 +748,7 @@ describe("definition handover", () => {
 		const log: string[] = [];
 		const gateA = deferred();
 		const gateB = deferred();
-		const { harness, registry, old, id, reports } = await startHandover(log, { a: gateA.promise, b: gateB.promise });
+		const { harness, registry, old, id, infos } = await startHandover(log, { a: gateA.promise, b: gateB.promise });
 		old.dispose();
 		gateA.resolve();
 		await eventually(() => log.includes("old:b start"));
@@ -755,7 +757,10 @@ describe("definition handover", () => {
 		gateB.resolve();
 		await harness.waitForTask(id, context);
 		expect(log).toEqual(["old:a start", "old:a end", "old:b start", "old:b end", "old:c"]);
-		expect(reports.map((report) => (report as Error).cause)).toEqual(["missing_task", "incompatible_task"]);
+		expect(infos).toMatchObject([
+			{ type: "task_outdated", task: { id }, reason: "missing_task" },
+			{ type: "task_outdated", task: { id }, reason: "incompatible_task" },
+		]);
 		await harness.close(context);
 	});
 

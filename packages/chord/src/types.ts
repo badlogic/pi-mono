@@ -1,26 +1,37 @@
 import type { AnyContract, InputOf, Ref } from "./contract.ts";
 import type { Op } from "./delta/index.ts";
 
-/** App-defined, JSON-serializable identity of a caller. Mapped to an object key by `createHost({ principalKey })`. */
-export type Principal = unknown;
-
-export interface GetOptions {
-	/** Principal the object is created for. Defaults to the host principal. */
-	readonly principal?: Principal;
-	/** Host name. Only the local host in phase 1a. */
-	readonly at?: string;
+/**
+ * Options of `get`. `P` is the app's principal type: a JSON-serializable identity of a caller, mapped to an object key
+ * by `createHost({ principalKey })`.
+ */
+export interface GetOptions<P = unknown> {
+	/** Principal the object is created for. Defaults to the host's own principal (`createHost({ self })`). */
+	readonly principal?: P;
+	/**
+	 * False: a method-only reference. It receives no state (unless another reference to the same object wants it), and
+	 * is ready once its object is live.
+	 */
+	readonly state?: boolean;
 }
 
 /**
  * The explicit call context of one root (a short Chord call tree). Calls made with it carry its root id and code
  * version; `get` references are released when the call that received this ctx settles.
  */
-export interface Ctx {
+export interface Ctx<P = unknown> {
 	readonly signal: AbortSignal;
 	readonly rootId: string;
 	readonly codeVersion: number;
-	readonly principal: Principal;
-	get<C extends AnyContract>(type: C, input: InputOf<C>, options?: GetOptions): Ref<C>;
+	/** Who the root acts as: the caller at ingress, the host's own principal inside objects. */
+	readonly principal: P;
+	/**
+	 * A reference for this call, released when the call settles. Resolves once it is ready: live, with every state
+	 * member of its variant (unless `state: false`). Rejects with the activation error, `aborted` when the ctx is
+	 * aborted or the call settles first, or `unavailable/ready_timeout` after the host's `readyTimeout`; the reference
+	 * is released then.
+	 */
+	get<C extends AnyContract>(type: C, input: InputOf<C>, options?: GetOptions<P>): Promise<Ref<C>>;
 }
 
 export type StateEvent<T> =
@@ -38,10 +49,10 @@ export interface Readable<T> {
 }
 
 /**
- * What an implementation may expose as a state member: a cell, a derivation, or a held object's state member (whose
- * value is `undefined` only while that object is loading; an object is live only after its references are).
+ * What an implementation may expose as a state member: a cell, a derivation, or a held object's state member (an
+ * object goes live only once the members it exposes have their values).
  */
-export type StateSource<T> = Readable<T> | Readable<T | undefined>;
+export type StateSource<T> = Readable<T>;
 
 declare const EXPOSED: unique symbol;
 
@@ -57,7 +68,6 @@ export interface Shape {
 	readonly members: readonly string[];
 	/** Fingerprint of the provider contract. */
 	readonly contract: string;
-	readonly codeVersion: number;
 }
 
 export interface RefBase<C extends AnyContract> {

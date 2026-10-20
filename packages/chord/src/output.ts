@@ -1,7 +1,9 @@
-import type { ShellOutputSkip } from "../env/index.ts";
-import { utf8ByteLength } from "../truncate.ts";
+/**
+ * Bounded output streams and adaptive progress commits: `OutputBuffer` keeps a head or tail window of a stream at a cost
+ * proportional to each chunk, and `Progress` paces commits of a changing value by their size.
+ */
 
-/** Retention limits of one tool's output. */
+/** Retention limits of one output stream. */
 export type OutputLimits = { readonly maxBytes: number; readonly maxLines: number; readonly retain: "head" | "tail" };
 
 /** Retained output and what the limits dropped. */
@@ -14,6 +16,19 @@ export type OutputSlice = {
 	readonly droppedBytes: number;
 	readonly droppedLines: number;
 };
+
+/**
+ * Output a producer omitted before a chunk, measured on the decoded text: every U+FFFD counts as three bytes, and no
+ * sanitizing is applied.
+ */
+export interface OutputSkip {
+	/** UTF-8 byte length of the omitted text. */
+	readonly bytes: number;
+	/** Newlines (U+000A) in the omitted text. */
+	readonly newlines: number;
+	/** Whether the omitted text ends with a newline. */
+	readonly endsWithNewline: boolean;
+}
 
 const NEWLINE = 0x0a;
 const INVALID_OUTPUT = /[\x00-\x08\x0b-\x1f\ufff9-\ufffb]/g;
@@ -105,7 +120,7 @@ function lineCount(bytes: Uint8Array): number {
 }
 
 /**
- * Bounded running output of one tool call. Accepting a chunk costs time proportional to the chunk: head retention stops
+ * Bounded running output of one stream, such as a tool call's or a process's. Accepting a chunk costs time proportional to the chunk: head retention stops
  * storing once the window is full, and tail retention drops stored text the window no longer needs when it snapshots.
  * Counts of the whole stream are kept so the dropped totals stay exact.
  */
@@ -138,10 +153,9 @@ export class OutputBuffer {
 
 	/**
 	 * Accept a chunk; returns whether anything was accepted. `skipped` is output omitted right before the chunk, which
-	 * must be more than the tail window by at least one byte or line (`ShellOutputInfo.skipped`); only tail retention
-	 * accepts it.
+	 * must be more than the tail window by at least one byte or line; only tail retention accepts it.
 	 */
-	push(chunk: string | Uint8Array, skipped?: ShellOutputSkip): boolean {
+	push(chunk: string | Uint8Array, skipped?: OutputSkip): boolean {
 		// Bytes of an incomplete character from an earlier byte chunk come first.
 		const pending = typeof chunk === "string" || skipped !== undefined ? this.#decoder.decode() : "";
 		let text = typeof chunk === "string" ? chunk : this.#decoder.decode(chunk, { stream: true });
@@ -157,7 +171,7 @@ export class OutputBuffer {
 	}
 
 	/** Count omitted output; nothing stored before it can be in the window once the text after it arrives. */
-	#skip(skipped: ShellOutputSkip): void {
+	#skip(skipped: OutputSkip): void {
 		if (skipped.bytes === 0) return;
 		this.#totalBytes += skipped.bytes;
 		this.#totalNewlines += skipped.newlines;
@@ -251,6 +265,34 @@ function lines(newlines: number, terminated: boolean): number {
 	return newlines + (terminated ? 0 : 1);
 }
 
+interface RuntimeBuffer {
+	byteLength(content: string, encoding: "utf8"): number;
+}
+
+const runtimeBuffer = (globalThis as { Buffer?: RuntimeBuffer }).Buffer;
+const nonAsciiPattern = /[^\x00-\x7f]/;
+
+/** UTF-8 byte length of `content`; a lone surrogate counts as U+FFFD, three bytes. */
+export function utf8ByteLength(content: string): number {
+	if (runtimeBuffer) return runtimeBuffer.byteLength(content, "utf8");
+	const firstNonAscii = content.search(nonAsciiPattern);
+	if (firstNonAscii === -1) return content.length;
+	let bytes = firstNonAscii;
+	for (let i = firstNonAscii; i < content.length; i++) {
+		const code = content.charCodeAt(i);
+		if (code <= 0x7f) bytes += 1;
+		else if (code <= 0x7ff) bytes += 2;
+		else if (code >= 0xd800 && code <= 0xdbff && i + 1 < content.length) {
+			const next = content.charCodeAt(i + 1);
+			if (next >= 0xdc00 && next <= 0xdfff) {
+				bytes += 4;
+				i++;
+			} else bytes += 3;
+		} else bytes += 3;
+	}
+	return bytes;
+}
+
 function countNewlines(text: string): number {
 	let count = 0;
 	for (let index = text.indexOf("\n"); index !== -1; index = text.indexOf("\n", index + 1)) count++;
@@ -260,26 +302,48 @@ function countNewlines(text: string): number {
 /** Each progress commit also buys a pause proportional to what it wrote. */
 export const PROGRESS_BYTES_PER_SECOND = 100 * 1024;
 
+/** The clock and timer progress commits pace on. */
+export type ProgressClock = {
+	readonly now: () => number;
+	/** Call `callback` once after about `delayMs`; returns a function that disarms it. */
+	readonly setTimer: (callback: () => void, delayMs: number) => () => void;
+};
+
+const SYSTEM_CLOCK: ProgressClock = {
+	now: () => Date.now(),
+	setTimer: (callback, delayMs) => {
+		const timer = setTimeout(callback, delayMs);
+		return () => clearTimeout(timer);
+	},
+};
+
 /**
  * Adaptive progress commits: the first change after an idle period commits at once; each commit then delays the next
  * by at least `minIntervalMs` and by its written size at 100 KiB/s. At most one commit is in flight; changes made
- * meanwhile coalesce into the next one.
+ * meanwhile coalesce into the next one. Paces on `clock`, by default `Date.now` and `setTimeout`.
  */
 export class Progress {
 	readonly #write: () => Promise<number>;
 	readonly #onError: (error: unknown) => void;
 	readonly #minIntervalMs: number;
+	readonly #clock: ProgressClock;
 	#waiters: PromiseWithResolvers<void>[] = [];
-	#timer: ReturnType<typeof setTimeout> | undefined;
+	#timer: (() => void) | undefined;
 	#inFlight: Promise<void> | undefined;
 	#nextAt = 0;
 	#dirty = false;
 	#stopped = false;
 
-	constructor(write: () => Promise<number>, onError: (error: unknown) => void, minIntervalMs: number) {
+	constructor(
+		write: () => Promise<number>,
+		onError: (error: unknown) => void,
+		minIntervalMs: number,
+		clock: ProgressClock = SYSTEM_CLOCK,
+	) {
 		this.#write = write;
 		this.#onError = onError;
 		this.#minIntervalMs = minIntervalMs;
+		this.#clock = clock;
 	}
 
 	/** Schedule a commit. */
@@ -299,7 +363,7 @@ export class Progress {
 	/** Stop committing and wait for the commit in flight; returns the waiters the final commit must settle. */
 	async stop(): Promise<PromiseWithResolvers<void>[]> {
 		this.#stopped = true;
-		clearTimeout(this.#timer);
+		this.#timer?.();
 		this.#timer = undefined;
 		await this.#inFlight;
 		return this.#waiters.splice(0);
@@ -307,12 +371,13 @@ export class Progress {
 
 	#schedule(): void {
 		if (this.#stopped || this.#timer !== undefined || this.#inFlight !== undefined) return;
-		const wait = this.#nextAt - Date.now();
+		const wait = this.#nextAt - this.#clock.now();
 		if (wait <= 0) this.#flush();
 		else
-			this.#timer = setTimeout(() => {
+			this.#timer = this.#clock.setTimer(() => {
 				this.#timer = undefined;
-				this.#flush();
+				// Checks the clock again: a timer that fires early waits for the rest.
+				this.#schedule();
 			}, wait);
 	}
 
@@ -320,7 +385,7 @@ export class Progress {
 		if (this.#stopped || !this.#dirty) return;
 		this.#dirty = false;
 		const waiters = this.#waiters.splice(0);
-		const started = Date.now();
+		const started = this.#clock.now();
 		this.#inFlight = this.#write()
 			.then(
 				(bytes) => {

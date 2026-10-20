@@ -24,12 +24,14 @@ const WorkTask = defineTask<{ path: string }, Checkpoint, { ok: boolean }>({
 
 type Progress = { lines: string[] };
 const ProgressDoc = defineDoc<Progress>({
+	checkpointWhen: () => false,
 	kind: "test.progress",
 	version: 1,
 	scope: "task",
 	initial: () => ({ lines: [] }),
 });
 const StepDoc = defineDocFamily<Progress, null>({
+	checkpointWhen: () => false,
 	kind: "test.step",
 	version: 1,
 	family: true,
@@ -39,6 +41,7 @@ const StepDoc = defineDocFamily<Progress, null>({
 
 type Notes = { text: string };
 const NotesDoc = defineDoc<Notes>({
+	checkpointWhen: () => false,
 	kind: "test.notes",
 	version: 1,
 	scope: "conversation",

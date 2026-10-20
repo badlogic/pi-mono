@@ -8,13 +8,16 @@ import {
 	createHost,
 	defineRegistry,
 	type Facet,
+	hostNamed,
 	isChordError,
 	local,
+	memoryLinkPair,
 	method,
 	type Ref,
 	remote,
 } from "../src/index.ts";
 import { fits } from "../src/schema.ts";
+import { CountingLink } from "./fixtures/counting.ts";
 
 const tick = () => new Promise<void>((resolve) => setImmediate(resolve));
 const ticks = async (n = 10) => {
@@ -54,7 +57,7 @@ const Item = local("t.item", {
 
 describe("review: reload commit", () => {
 	it("#1 a failing listener subscription fails prepare; the code version and all objects stay unchanged", async () => {
-		const host = createHost({ onError: () => {} });
+		const host = createHost({ self: { kind: "host" }, onError: () => {} });
 		const sources = { a: emitter<number>(), b: emitter<number>({ failSubscribe: true }), c: emitter<number>() };
 		const facet = (version: string, listen: boolean): Facet => ({
 			name: "item",
@@ -65,7 +68,7 @@ describe("review: reload commit", () => {
 				}),
 		});
 		host.install(facet("v1", false));
-		const refs = ["a", "b", "c"].map((id) => host.get(Item, { id }));
+		const refs = ["a", "b", "c"].map((id) => host.hold(Item, { id }));
 		await Promise.all(refs.map((ref) => ref.ready));
 		const codeVersion = host.codeVersion;
 		await assert.rejects(host.reload([facet("v2", true)]), /subscribe fails/);
@@ -76,15 +79,17 @@ describe("review: reload commit", () => {
 	});
 
 	it("#2 migration is validated against the new remote schemas, not the obsolete ones (dev mode)", async () => {
-		const host = createHost({ dev: true, onError: () => {} });
+		const host = createHost({ self: { kind: "host" }, dev: true, onError: () => {} });
 		const V1 = remote("t.counted", {
 			version: 1,
 			input: Type.Object({}),
+			host: hostNamed("host"),
 			variants: { main: { state: { count: Type.Object({ n: Type.Number() }) } } },
 		});
 		const V2 = remote("t.counted", {
 			version: 2,
 			input: Type.Object({}),
+			host: hostNamed("host"),
 			variants: { main: { state: { count: Type.Object({ total: Type.Number() }) } } },
 		});
 		host.install({
@@ -99,7 +104,7 @@ describe("review: reload commit", () => {
 					{ linger: 60_000 },
 				),
 		});
-		const first = host.get(V1, {});
+		const first = host.hold(V1, {});
 		await first.ready;
 		first.release();
 		await host.reload([
@@ -121,7 +126,7 @@ describe("review: reload commit", () => {
 					),
 			},
 		]);
-		const second = host.get(V2, {});
+		const second = host.hold(V2, {});
 		const values: unknown[] = [];
 		second.count.subscribe((value) => values.push(value));
 		await second.ready;
@@ -130,9 +135,9 @@ describe("review: reload commit", () => {
 	});
 
 	it("#1 a commit that still fails midway fails the host terminally (no half-published code version serving work)", async () => {
-		const host = createHost({ onError: () => {} });
+		const host = createHost({ self: { kind: "host" }, onError: () => {} });
 		host.install({ name: "item", setup: (api) => api.serve(Item, () => ({ version: () => "v1" })) });
-		const ref = host.get(Item, { id: "a" });
+		const ref = host.hold(Item, { id: "a" });
 		await ref.ready;
 		// Everything fallible runs in prepare now, so break an install step directly (white box).
 		const objects = (host as unknown as { objects: Map<string, { startTasks(): void }> }).objects;
@@ -152,7 +157,7 @@ describe("review: reload commit", () => {
 	});
 
 	it("reentrant observers calling another object during a commit see the whole new code version", async () => {
-		const host = createHost({ onError: () => {} });
+		const host = createHost({ self: { kind: "host" }, onError: () => {} });
 		const Other = local("t.other", {
 			version: 1,
 			input: Type.Object({}),
@@ -166,8 +171,8 @@ describe("review: reload commit", () => {
 			},
 		});
 		host.install(facet("v1"));
-		const item = host.get(Item, { id: "a" });
-		const other = host.get(Other, {});
+		const item = host.hold(Item, { id: "a" });
+		const other = host.hold(Other, {});
 		await Promise.all([item.ready, other.ready]);
 		const seen: Promise<string>[] = [];
 		item.onShape(() => seen.push(other.version()));
@@ -184,7 +189,7 @@ describe("review: leases, invocations, activation", () => {
 	});
 
 	it("#4 a running listener holds a lease: the gate waits for it before migrating", async () => {
-		const host = createHost({ onError: () => {} });
+		const host = createHost({ self: { kind: "host" }, onError: () => {} });
 		const events = emitter<number>();
 		const go = latch();
 		const seen: unknown[] = [];
@@ -200,7 +205,7 @@ describe("review: leases, invocations, activation", () => {
 					return { count };
 				}),
 		});
-		const ref = host.get(Store, {});
+		const ref = host.hold(Store, {});
 		await ref.ready;
 		events.emit(1);
 		await tick();
@@ -238,7 +243,7 @@ describe("review: leases, invocations, activation", () => {
 		});
 		const log: string[] = [];
 		let go = latch();
-		const host = createHost({ onError: () => {} });
+		const host = createHost({ self: { kind: "host" }, onError: () => {} });
 		host.serve(Worker, ({ id }, _principal, self) => {
 			const connResource = self.resource("conn", {
 				version: 1,
@@ -256,7 +261,7 @@ describe("review: leases, invocations, activation", () => {
 				},
 			};
 		});
-		const released = host.get(Worker, { id: "r" });
+		const released = host.hold(Worker, { id: "r" });
 		const call = released.work();
 		await ticks();
 		released.release();
@@ -268,7 +273,7 @@ describe("review: leases, invocations, activation", () => {
 
 		go = latch();
 		log.length = 0;
-		const forced = host.get(Worker, { id: "f" }, { principal: { user: "u" } });
+		const forced = host.hold(Worker, { id: "f" }, { principal: { user: "u" } });
 		const forcedCall = forced.work();
 		await ticks();
 		const invalidated = host.invalidatePrincipal((principal) => (principal as { user?: string }).user === "u");
@@ -283,7 +288,7 @@ describe("review: leases, invocations, activation", () => {
 
 	it("#6 a registry conflict found while finalizing activation unwinds the loser completely", async () => {
 		const errors: unknown[] = [];
-		const host = createHost({ onError: (error) => errors.push(error) });
+		const host = createHost({ self: { kind: "host" }, onError: (error) => errors.push(error) });
 		const Routes = defineRegistry<string>("t.review-routes");
 		const log: string[] = [];
 		const types = ["t.eager-a", "t.eager-b"].map((name) => local(name, { version: 1, input: Type.Object({}) }));
@@ -310,7 +315,7 @@ describe("review: leases, invocations, activation", () => {
 	});
 
 	it("#6 releasing the last hold while listeners start up does not resurrect the object", async () => {
-		const host = createHost({ onError: () => {} });
+		const host = createHost({ self: { kind: "host" }, onError: () => {} });
 		const log: string[] = [];
 		let ref: Ref<typeof Store> | undefined;
 		let runs = 0;
@@ -326,11 +331,11 @@ describe("review: leases, invocations, activation", () => {
 			self.on("drop", count, () => ref?.release());
 			return { count };
 		});
-		ref = host.get(Store, {});
+		ref = host.hold(Store, {});
 		await ref.ready.catch(() => {});
 		await ticks(20);
 		assert.deepEqual(log, ["open", "close"]);
-		const again = host.get(Store, {});
+		const again = host.hold(Store, {});
 		ref = undefined;
 		await again.ready;
 		assert.equal(runs, 2);
@@ -345,7 +350,7 @@ describe("review: prepare isolation and contracts", () => {
 	});
 
 	it("#7 a prepare rerun cannot touch retained resources, even open ones", async () => {
-		const host = createHost({ onError: () => {} });
+		const host = createHost({ self: { kind: "host" }, onError: () => {} });
 		const native = { mutated: false };
 		const facet = (touch: boolean): Facet => ({
 			name: "db",
@@ -357,7 +362,7 @@ describe("review: prepare isolation and contracts", () => {
 				}),
 		});
 		host.install(facet(false));
-		const ref = host.get(Db, {});
+		const ref = host.hold(Db, {});
 		await ref.ready;
 		await assert.rejects(host.reload([facet(true)]), (error) => isChordError(error, "not_ready"));
 		assert.equal(native.mutated, false);
@@ -365,11 +370,11 @@ describe("review: prepare isolation and contracts", () => {
 	});
 
 	it("#7 objects of types a reload adds start listeners and tasks only at commit", async () => {
-		const host = createHost({ onError: () => {} });
+		const host = createHost({ self: { kind: "host" }, onError: () => {} });
 		const log: string[] = [];
 		const Fresh = local("t.fresh", { version: 1, input: Type.Object({}) });
 		host.install({ name: "item", setup: (api) => api.serve(Item, () => ({ version: () => "v1" })) });
-		await Promise.all(["a", "b"].map((id) => host.get(Item, { id }).ready));
+		await Promise.all(["a", "b"].map((id) => host.hold(Item, { id }).ready));
 		const plugins = (fail: boolean): Facet[] => [
 			{
 				name: "fresh",
@@ -400,15 +405,17 @@ describe("review: prepare isolation and contracts", () => {
 	});
 
 	it("#8 a breaking provider change and its updated consumer reload in one batch", async () => {
-		const host = createHost({ onError: () => {} });
+		const host = createHost({ self: { kind: "host" }, onError: () => {} });
 		const P1 = remote("t.provider", {
 			version: 1,
 			input: Type.Object({}),
+			host: hostNamed("host"),
 			variants: { main: { methods: { get: method(undefined, Type.String()) } } },
 		});
 		const P2 = remote("t.provider", {
 			version: 2,
 			input: Type.Object({}),
+			host: hostNamed("host"),
 			variants: { main: { methods: { fetch: method(undefined, Type.String()) } } },
 		});
 		const Consumer = local("t.consumer", {
@@ -426,7 +433,7 @@ describe("review: prepare isolation and contracts", () => {
 				});
 			},
 		});
-		const consumer = host.get(Consumer, {});
+		const consumer = host.hold(Consumer, {});
 		assert.equal(await consumer.ask(), "old");
 		await host.reload([
 			{
@@ -445,7 +452,7 @@ describe("review: prepare isolation and contracts", () => {
 
 	it("#9 an exclusive resource whose close failed is restored on rollback, or marked unavailable", async () => {
 		for (const reopen of ["works", "fails"] as const) {
-			const host = createHost({ onError: () => {} });
+			const host = createHost({ self: { kind: "host" }, onError: () => {} });
 			const log: string[] = [];
 			let opens = 0;
 			const facet = (rev: number): Facet => ({
@@ -470,7 +477,7 @@ describe("review: prepare isolation and contracts", () => {
 					}),
 			});
 			host.install(facet(1));
-			const ref = host.get(Db, {});
+			const ref = host.hold(Db, {});
 			await ref.ready;
 			// The failing close aborts the reload at the gate; the old resource must not stay closed.
 			await assert.rejects(host.reload([facet(2)]), /close fails/);
@@ -484,7 +491,7 @@ describe("review: prepare isolation and contracts", () => {
 	});
 
 	it("#10 retirement closes dropped resources before releasing dropped holds", async () => {
-		const host = createHost({ onError: () => {} });
+		const host = createHost({ self: { kind: "host" }, onError: () => {} });
 		const log: string[] = [];
 		const Dep = local("t.dep", { version: 1, input: Type.Object({}) });
 		const facet = (withDecls: boolean): Facet => ({
@@ -512,7 +519,7 @@ describe("review: prepare isolation and contracts", () => {
 			},
 		});
 		host.install(facet(true));
-		const ref = host.get(Item, { id: "a" });
+		const ref = host.hold(Item, { id: "a" });
 		await ref.ready;
 		const go = latch();
 		const pinned = host.root(async (ctx) => {
@@ -561,10 +568,11 @@ describe("review: prepare isolation and contracts", () => {
 	});
 
 	it("#11 arguments are stripped to what the consumer knows, then to what the provider knows", async () => {
-		const host = createHost({ onError: () => {} });
+		const host = createHost({ self: { kind: "host" }, onError: () => {} });
 		const Strict = remote("t.strict", {
 			version: 1,
 			input: Type.Object({}),
+			host: hostNamed("host"),
 			variants: {
 				main: {
 					methods: {
@@ -574,7 +582,7 @@ describe("review: prepare isolation and contracts", () => {
 			},
 		});
 		host.serve(Strict, () => ({ variant: "main", echo: (args) => args }));
-		const ref = host.get(Strict, {});
+		const ref = host.hold(Strict, {});
 		assert.deepEqual(await ref.echo({ a: "x", junk: 1 } as never), { a: "x" });
 	});
 });
@@ -587,7 +595,7 @@ describe("review: ctx races", () => {
 	});
 
 	it("an aborted task ctx cannot start fresh calls", async () => {
-		const host = createHost({ onError: () => {} });
+		const host = createHost({ self: { kind: "host" }, onError: () => {} });
 		const Runner = local("t.runner", { version: 1, input: Type.Object({}) });
 		let hits = 0;
 		const go = latch();
@@ -605,9 +613,9 @@ describe("review: ctx races", () => {
 			});
 			return {};
 		});
-		const runner = host.get(Runner, {});
+		const runner = host.hold(Runner, {});
 		await runner.ready;
-		const target = host.get(Target, {});
+		const target = host.hold(Target, {});
 		await target.ready;
 		runner.release();
 		await ticks();
@@ -618,10 +626,10 @@ describe("review: ctx races", () => {
 	});
 
 	it("an expired ctx and a foreign ctx are refused", async () => {
-		const host = createHost({ onError: () => {} });
-		const other = createHost({ onError: () => {} });
+		const host = createHost({ self: { kind: "host" }, onError: () => {} });
+		const other = createHost({ self: { kind: "host" }, onError: () => {} });
 		host.serve(Target, () => ({ hit: () => {} }));
-		const target = host.get(Target, {});
+		const target = host.hold(Target, {});
 		await target.ready;
 		const expired = await host.root((ctx) => ctx);
 		await assert.rejects(
@@ -636,5 +644,43 @@ describe("review: ctx races", () => {
 			return true;
 		});
 		assert.ok(foreign);
+	});
+
+	// #10959
+	it("a remote reference refuses a foreign ctx and a ctx not made by Chord, without calling", async () => {
+		const RemoteTarget = remote("t.remote-target", {
+			version: 1,
+			input: Type.Object({}),
+			host: hostNamed("server"),
+			variants: { main: { state: {}, methods: { hit: method() } } },
+		});
+		let hits = 0;
+		const server = createHost({ self: { kind: "host" }, name: "server", onError: () => {} });
+		server.serve(RemoteTarget, () => ({
+			variant: "main",
+			hit: () => {
+				hits++;
+			},
+		}));
+		const [down, up] = memoryLinkPair();
+		server.accept(down, { kind: "host", name: "worker", principal: { worker: true } });
+		const link = new CountingLink(up);
+		const worker = createHost({ self: { kind: "host" }, name: "worker", onError: () => {} });
+		worker.connect(link, { principal: { kind: "server" } });
+		const other = createHost({ self: { kind: "host" }, name: "other", onError: () => {} });
+		const target = worker.hold(RemoteTarget, {});
+		await target.ready;
+		const foreign = await other.root((ctx) => target.hit(ctx).catch((error: unknown) => error));
+		assert.ok(isChordError(foreign, "invalid") && foreign.reason === "foreign_ctx", String(foreign));
+		const forged = { rootId: "forged", codeVersion: 1, signal: new AbortController().signal } as unknown as Ctx;
+		await assert.rejects(
+			target.hit(forged),
+			(error) => isChordError(error, "invalid") && error.reason === "foreign_ctx",
+		);
+		await ticks();
+		assert.equal(hits, 0);
+		assert.equal(link.count("sent", "call"), 0);
+		await worker.root((ctx) => target.hit(ctx));
+		assert.equal(hits, 1);
 	});
 });

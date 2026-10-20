@@ -41,6 +41,7 @@ afterEach(async () => {
 });
 
 const NoteDoc = defineDoc<{ text: string }>({
+	checkpointWhen: () => false,
 	kind: "test.note",
 	version: 1,
 	scope: "conversation",

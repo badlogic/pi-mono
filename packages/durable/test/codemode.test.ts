@@ -115,21 +115,26 @@ function codemodeChat(globals: CodemodeGlobal[] = [], namespaces: CodemodeNamesp
 		),
 	);
 	const gates = new Map<number, Deferred>();
+	const done = new Map<number, Deferred>();
 	const finished: number[] = [];
+	const once = (map: Map<number, Deferred>, id: number) => {
+		const found = map.get(id) ?? deferred();
+		map.set(id, found);
+		return found;
+	};
 	const slows = {
 		finished,
-		gate: (id: number) => {
-			const gate = gates.get(id) ?? deferred();
-			gates.set(id, gate);
-			return gate;
-		},
+		gate: (id: number) => once(gates, id),
 		release: (id: number) => slows.gate(id).resolve(),
+		/** Resolves once call `id` has finished. */
+		finishedCall: (id: number) => once(done, id).promise,
 	};
 	addTool(
 		setup.registry,
 		tool("slow", async (args) => {
 			await slows.gate(args.id ?? 0).promise;
 			finished.push(args.id ?? 0);
+			once(done, args.id ?? 0).resolve();
 			return { output: [{ type: "text", text: `slow ${args.id}` }] };
 		}),
 	);
@@ -230,7 +235,7 @@ describe("durable code mode", () => {
 			return order;`;
 		// 2 finishes first, then 1.
 		chat.slows.release(2);
-		void eventually(() => chat.slows.finished.includes(2)).then(() => chat.slows.release(1));
+		void chat.slows.finishedCall(2).then(() => chat.slows.release(1));
 		const { harness, result } = await restart(chat, code);
 		expect(result).toEqual({ text: "[2,1]", isError: false });
 		expect(Object.fromEntries(chat.echo)).toEqual({ "2,1": 1 });
@@ -661,6 +666,30 @@ describe("durable code mode", () => {
 		);
 		expect(result).toEqual({ text: "[true,true]", isError: false });
 		await harness.close(context);
+	});
+
+	it("drops a global's result that arrives after the script finished", async () => {
+		const late = deferred<string>();
+		const chat = codemodeChat([
+			{ name: "slowly", execute: () => late.promise },
+			{ name: "quickly", execute: async () => "quick" },
+		]);
+		chat.setup.faux.setResponses([script(`const pending = slowly(); await quickly(); return 1;`), DONE]);
+		const rejections: unknown[] = [];
+		const onRejection = (reason: unknown) => rejections.push(reason);
+		process.on("unhandledRejection", onRejection);
+		try {
+			const { harness, root } = await openChat(await openNodeSqliteStorage(await sqlitePath()), chat.setup);
+			await (await root.submit({ type: "input", content: "go" }, context)).wait(context);
+			expect(await resultText(chat.setup, root)).toEqual({ text: "1", isError: false });
+			// The script's tool call has ended; its pending global resolves now.
+			late.resolve("late");
+			await new Promise((resolve) => setTimeout(resolve, 20));
+			expect(rejections).toEqual([]);
+			await harness.close(context);
+		} finally {
+			process.off("unhandledRejection", onRejection);
+		}
 	});
 
 	it("rejects a failed tool call with its error text and structured output", async () => {

@@ -6,6 +6,7 @@ import {
 	createHost,
 	defineRegistry,
 	type Facet,
+	hostNamed,
 	isChordError,
 	local,
 	method,
@@ -17,7 +18,7 @@ import {
 } from "../src/index.ts";
 
 const tick = () => new Promise<void>((resolve) => setImmediate(resolve));
-const quiet = () => createHost({ onError: () => {} });
+const quiet = () => createHost({ self: { kind: "host" }, onError: () => {} });
 
 function latch() {
 	let open = () => {};
@@ -91,7 +92,7 @@ describe("reload", () => {
 	it("compatible reload: no gate, pinned roots keep old code, state preserved, previous retires", async () => {
 		const host = quiet();
 		host.install(greeterFacet({ greeting: "hello" }));
-		const ref = host.get(Greeter, {});
+		const ref = host.hold(Greeter, {});
 		assert.equal(await ref.greet("a"), "hello a");
 		const go = latch();
 		const pinned = host.root(async (ctx) => {
@@ -100,13 +101,13 @@ describe("reload", () => {
 			return [first, await ref.greet("p", ctx)];
 		});
 		await tick();
-		const shapes: number[] = [];
-		ref.onShape((shape) => shapes.push(shape.codeVersion));
+		const shapes: string[] = [];
+		ref.onShape((shape) => shapes.push(shape.contract));
 		const report = await host.reload([greeterFacet({ greeting: "hi" })]);
 		assert.deepEqual(report.gated, []);
 		assert.equal(report.prepared.length, 1);
 		assert.equal(await ref.greet("b"), "hi b");
-		assert.deepEqual(shapes, [report.codeVersion]);
+		assert.equal(shapes.length, 1, "one shape push at the commit");
 		assert.equal(host.previousCodeVersion, report.previous);
 		go.open();
 		assert.deepEqual(await pinned, ["hello p", "hello p"]);
@@ -117,8 +118,8 @@ describe("reload", () => {
 	it("prepare runs in recording mode: writes throw and a failing factory leaves everything unchanged", async () => {
 		const host = quiet();
 		host.install(greeterFacet({ greeting: "hello" }));
-		const a = host.get(Greeter, { id: "a" });
-		const b = host.get(Greeter, { id: "b" });
+		const a = host.hold(Greeter, { id: "a" });
+		const b = host.hold(Greeter, { id: "b" });
 		await Promise.all([a.ready, b.ready]);
 		let captured: Ctx | undefined;
 		await host.root((ctx) => {
@@ -160,7 +161,7 @@ describe("reload", () => {
 	it("refuses a changed cell schema without a version bump", async () => {
 		const host = quiet();
 		host.install(greeterFacet({ greeting: "hello" }));
-		await host.get(Greeter, {}).ready;
+		await host.hold(Greeter, {}).ready;
 		const changed = greeterFacet({
 			greeting: "hi",
 			schema: Type.Object({ total: Type.Number() }),
@@ -176,7 +177,7 @@ describe("reload", () => {
 	it("state bump: gate, migrate(old, fromVersion) into the new schema, reset to watchers, old roots upgrade_conflict", async () => {
 		const host = quiet();
 		host.install(greeterFacet({ greeting: "hello" }));
-		const ref = host.get(Greeter, {});
+		const ref = host.hold(Greeter, {});
 		await ref.greet("a");
 		await ref.greet("a");
 		const events: StateEvent<unknown>[] = [];
@@ -243,7 +244,7 @@ describe("reload", () => {
 				}),
 		});
 		host.install(facet(1));
-		const pair = host.get(Pair, {});
+		const pair = host.hold(Pair, {});
 		await pair.ready;
 		await pair.bump();
 		const report = await host.reload([facet(2)]);
@@ -256,7 +257,7 @@ describe("reload", () => {
 	it("gate: late old roots get upgrade_conflict, grandfathered roots re-enter, then commit", async () => {
 		const host = quiet();
 		host.install(greeterFacet({ greeting: "hello" }));
-		const ref = host.get(Greeter, {});
+		const ref = host.hold(Greeter, {});
 		await ref.ready;
 		const go = latch();
 		const grandfathered = host.root(async (ctx) => {
@@ -298,7 +299,7 @@ describe("reload", () => {
 				}),
 		});
 		host.install(facet("hello", 1));
-		const ref = host.get(Greeter, {});
+		const ref = host.hold(Greeter, {});
 		await ref.ready;
 		const go = latch();
 		const blocker = host.root(async (ctx) => {
@@ -344,7 +345,7 @@ describe("reload", () => {
 				}),
 		});
 		host.install(facet(1));
-		const ref = host.get(Greeter, {});
+		const ref = host.hold(Greeter, {});
 		assert.equal(await ref.greet("x"), "1 x");
 		log.length = 0;
 		const report = await host.reload([facet(2)]);
@@ -357,7 +358,7 @@ describe("reload", () => {
 	it("two-version rule: the next reload retires the previous code version; its roots get superseded", async () => {
 		const host = quiet();
 		host.install(greeterFacet({ greeting: "v1" }));
-		const ref = host.get(Greeter, {});
+		const ref = host.hold(Greeter, {});
 		await ref.ready;
 		const first = host.codeVersion;
 		const go = latch();
@@ -410,7 +411,7 @@ describe("reload", () => {
 				}),
 		});
 		host.install(facet(1));
-		const ref = host.get(Greeter, {});
+		const ref = host.hold(Greeter, {});
 		await ref.ready;
 		const old = host.root((ctx) => ref.greet("wait", ctx));
 		await tick();
@@ -440,7 +441,7 @@ describe("reload", () => {
 				}),
 		});
 		host.install(facet("a"));
-		const ref = host.get(Greeter, {});
+		const ref = host.hold(Greeter, {});
 		await ref.ready;
 		await host.reload([facet("b")]);
 		await host.reload([facet("c")]);
@@ -457,7 +458,7 @@ describe("reload", () => {
 			vi.useRealTimers();
 		});
 		const errors: unknown[] = [];
-		const host = createHost({ onError: (error) => errors.push(error), taskStopDeadline: 30 });
+		const host = createHost({ self: { kind: "host" }, onError: (error) => errors.push(error), taskStopDeadline: 30 });
 		const log: string[] = [];
 		const stuck = latch();
 		const facet = (label: string): Facet => ({
@@ -473,7 +474,7 @@ describe("reload", () => {
 				}),
 		});
 		host.install(facet("a"));
-		const ref = host.get(Greeter, {});
+		const ref = host.hold(Greeter, {});
 		await ref.ready;
 		await host.reload([facet("b")]);
 		await vi.advanceTimersByTimeAsync(29);
@@ -506,7 +507,7 @@ describe("reload", () => {
 		const other: Facet = { name: "other", setup: (api) => void signals.set("other", api.signal) };
 		host.install(facet("a"));
 		host.install(other);
-		await host.get(Greeter, {}).ready;
+		await host.hold(Greeter, {}).ready;
 		await assert.rejects(host.reload([facet("b", true)]));
 		assert.equal(signals.get("b")?.aborted, true, "the aborted reload's run");
 		assert.equal(signals.get("a")?.aborted, false, "still installed");
@@ -523,16 +524,19 @@ describe("reload", () => {
 		const DocV1 = remote("t.rdoc", {
 			version: 1,
 			input: Type.Object({}),
+			host: hostNamed("host"),
 			variants: { main: { methods: { read: method(undefined, Type.Object({ text: Type.String() })) } } },
 		});
 		const DocBroken = remote("t.rdoc", {
 			version: 1,
 			input: Type.Object({}),
+			host: hostNamed("host"),
 			variants: { main: { methods: { read: method(undefined, Type.Object({ text: Type.Number() })) } } },
 		});
 		const DocV2 = remote("t.rdoc", {
 			version: 2,
 			input: Type.Object({}),
+			host: hostNamed("host"),
 			variants: { main: { methods: { fetch: method(undefined, Type.Object({ body: Type.String() })) } } },
 		});
 		const host = quiet();
@@ -540,7 +544,7 @@ describe("reload", () => {
 			name: "doc",
 			setup: (api) => api.serve(DocV1, () => ({ variant: "main", read: () => ({ text: "v1" }) })),
 		});
-		const consumer = host.get(DocV1, {});
+		const consumer = host.hold(DocV1, {});
 		assert.deepEqual(await consumer.read(), { text: "v1" });
 
 		const broken: Facet = {
@@ -567,7 +571,7 @@ describe("reload", () => {
 		};
 		await host.reload([adapted]);
 		assert.deepEqual(await consumer.read(), { text: "v2 via adapter" });
-		const modern = host.get(DocV2, {});
+		const modern = host.hold(DocV2, {});
 		assert.deepEqual(await modern.fetch(), { body: "v2" });
 	});
 
@@ -612,7 +616,7 @@ describe("reload", () => {
 				}),
 		});
 		host.install(facet(1));
-		const ref = host.get(Sum, {});
+		const ref = host.hold(Sum, {});
 		await ref.ready;
 		emit(1);
 		await tick();
@@ -664,7 +668,7 @@ describe("reload", () => {
 	it("a reload can add a type together with a consumer that holds it", async () => {
 		const host = quiet();
 		host.install(greeterFacet({ greeting: "hello" }));
-		const ref = host.get(Greeter, {});
+		const ref = host.hold(Greeter, {});
 		await ref.ready;
 		const Clock = local("t.clock", {
 			version: 1,
@@ -696,7 +700,7 @@ describe("reload", () => {
 	it("the gate rejects new objects of a changed type; after commit they get the new code", async () => {
 		const host = quiet();
 		host.install(greeterFacet({ greeting: "hello" }));
-		const ref = host.get(Greeter, {});
+		const ref = host.hold(Greeter, {});
 		await ref.ready;
 		const go = latch();
 		const grandfathered = host.root(async (ctx) => {
@@ -719,13 +723,13 @@ describe("reload", () => {
 			}
 		});
 		assert.throws(
-			() => host.get(Greeter, { id: "late" }),
+			() => host.hold(Greeter, { id: "late" }),
 			(error) => isChordError(error, "upgrade_conflict") && error.retryable,
 		);
 		go.open();
 		await grandfathered;
 		await reload;
-		assert.equal(await host.get(Greeter, { id: "late" }).greet("l"), "hi l");
+		assert.equal(await host.hold(Greeter, { id: "late" }).greet("l"), "hi l");
 		// The previous code version is still retained (pinned root), but the gated object dropped its old implementation.
 		assert.notEqual(host.previousCodeVersion, undefined);
 		later.open();

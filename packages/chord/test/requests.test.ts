@@ -11,6 +11,7 @@ import {
 	type Facet,
 	type FacetApi,
 	type FacetLoader,
+	hostNamed,
 	isChordError,
 	local,
 	memoryLinkPair,
@@ -42,14 +43,16 @@ describe("application requests", () => {
 		const Conv = remote("t.conv", {
 			version: 1,
 			input: Type.Object({}),
+			host: hostNamed("server"),
 			variants: { main: { state: { view: View }, methods: { set: method(Type.String()) } } },
 		});
 		const Chat = remote("t.chat", {
 			version: 1,
 			input: Type.Object({}),
+			host: hostNamed("server"),
 			variants: { viewer: { state: { view: View } } },
 		});
-		const server = createHost({ name: "server", onError: () => {} });
+		const server = createHost({ self: { kind: "host" }, name: "server", onError: () => {} });
 		server.serve(Conv, (_input, _principal, self) => {
 			const view = self.state("view", View, { text: "" });
 			return {
@@ -65,11 +68,11 @@ describe("application requests", () => {
 			const conv = self.get(Conv, {});
 			return { variant: "viewer", view: conv.view };
 		});
-		const chat = server.get(Chat, {});
+		const chat = server.hold(Chat, {});
 		const values: unknown[] = [];
 		chat.view.subscribe((value) => values.push(value));
 		await chat.ready;
-		await server.get(Conv, {}).set("hi");
+		await server.hold(Conv, {}).set("hi");
 		await tick();
 		assert.deepEqual(chat.view.value, { text: "hi" });
 		assert.deepEqual(values.at(-1), { text: "hi" });
@@ -77,11 +80,16 @@ describe("application requests", () => {
 		// Across a link: the snapshot and its ops reach a browser.
 		const [down, up] = memoryLinkPair();
 		server.accept(down, { principal: { guest: "g" } });
-		const browser = createHost({ name: "browser", kind: "client", upstream: up, onError: () => {} });
-		const remoteChat = browser.get(Chat, {}, { at: "server" });
-		remoteChat.view.subscribe(() => {});
-		await until(() => remoteChat.view.value !== undefined);
-		await server.get(Conv, {}).set("there");
+		const browser = createHost({
+			self: { kind: "host" },
+			name: "browser",
+			kind: "client",
+			upstream: { link: up, principal: { kind: "server" } },
+			onError: () => {},
+		});
+		const remoteChat = browser.hold(Chat, {});
+		await remoteChat.ready;
+		await server.hold(Conv, {}).set("there");
 		await until(() => (remoteChat.view.value as { text: string } | undefined)?.text === "there");
 	});
 
@@ -111,17 +119,17 @@ describe("application requests", () => {
 				}));
 			}),
 		});
-		const host = createHost({ name: "worker", onError: () => {} });
+		const host = createHost({ self: { kind: "host" }, name: "worker", onError: () => {} });
 		host.install(facet("v1"));
 		await sleep(5);
 		const api = captured[0]!;
 		assert.equal(api.name, "worker");
 		// A callback outside Chord (a Durable tool, say) starts its own root.
-		assert.equal(await api.root((ctx) => ctx.get(Reader, {}).read(ctx)), "v1");
+		assert.equal(await api.root(async (ctx) => (await ctx.get(Reader, {})).read(ctx)), "v1");
 		await host.reload([facet("v2")]);
 		await sleep(5);
 		assert.equal(captured[1]!.registry(Config).get("greeting"), "v2");
-		assert.equal(await api.root((ctx) => ctx.get(Reader, {}).read(ctx)), "v2");
+		assert.equal(await api.root(async (ctx) => (await ctx.get(Reader, {})).read(ctx)), "v2");
 	});
 
 	it("#3 a listener keeps its subscription across reloads when resource and select are unchanged", async () => {
@@ -159,9 +167,9 @@ describe("application requests", () => {
 					return { seen };
 				}),
 		});
-		const host = createHost({ onError: () => {} });
+		const host = createHost({ self: { kind: "host" }, onError: () => {} });
 		host.install(facet("v1"));
-		const ref = host.get(Watcher, {});
+		const ref = host.hold(Watcher, {});
 		await ref.ready;
 		emit("a");
 		await host.reload([facet("v2")]);
@@ -190,9 +198,9 @@ describe("application requests", () => {
 					return {};
 				}),
 		});
-		const host = createHost({ onError: () => {} });
+		const host = createHost({ self: { kind: "host" }, onError: () => {} });
 		host.install(facet(true));
-		await host.get(Watcher, {}).ready;
+		await host.hold(Watcher, {}).ready;
 		await host.reload([facet(true)]);
 		assert.equal(subscribes, 1);
 		await host.reload([facet(false)]);
@@ -207,7 +215,7 @@ describe("application requests", () => {
 		});
 		const Doc = Type.Object({ entries: Type.Array(Type.String()), status: Type.String() });
 		let lastOptions: { diff?: boolean } | undefined;
-		const host = createHost({ onError: () => {} });
+		const host = createHost({ self: { kind: "host" }, onError: () => {} });
 		host.serve(Mirror, (_input, _principal, self) => {
 			const doc = self.state("doc", Doc, { entries: ["a", "b"], status: "idle" });
 			return {
@@ -217,7 +225,7 @@ describe("application requests", () => {
 				},
 			};
 		});
-		const ref = host.get(Mirror, {});
+		const ref = host.hold(Mirror, {});
 		await ref.ready;
 		const events: StateEvent<unknown>[] = [];
 		let replica: unknown;
@@ -249,9 +257,10 @@ describe("application requests", () => {
 		const Echo = remote("t.echo", {
 			version: 1,
 			input: Type.Object({}),
+			host: hostNamed("server"),
 			variants: { main: { methods: { codeVersion: method(undefined, Type.Number()) } } },
 		});
-		const server = createHost({ name: "server", onError: () => {} });
+		const server = createHost({ self: { kind: "host" }, name: "server", onError: () => {} });
 		const echoFacet: Facet = {
 			name: "echo",
 			setup: (api) => api.serve(Echo, () => ({ variant: "main", codeVersion: (ctx: Ctx) => ctx.codeVersion })),
@@ -261,16 +270,16 @@ describe("application requests", () => {
 		assert.equal(server.codeVersion, 2);
 		assert.equal(server.previousCodeVersion, undefined);
 		const loader: FacetLoader = async () => [];
-		const worker = createHost({ name: "session:S1", loader, onError: () => {} });
+		const worker = createHost({ self: { kind: "host" }, name: "session:S1", loader, onError: () => {} });
 		const go = latch();
 		// A worker root of code version 1 (an eager object's listener, say) calls the server after connecting.
 		const call = worker.root(async (ctx) => {
 			await go.promise;
-			return ctx.get(Echo, {}, { at: "server" }).codeVersion(ctx);
+			return (await ctx.get(Echo, {})).codeVersion(ctx);
 		});
 		const [down, up] = memoryLinkPair();
 		server.accept(down, { principal: { worker: "S1" }, kind: "host", name: "session:S1" });
-		worker.connect(up);
+		worker.connect(up, { principal: { kind: "server" } });
 		go.open();
 		assert.equal(await call, 2);
 		await until(() => worker.codeVersion === 2);
@@ -289,7 +298,7 @@ describe("application requests", () => {
 		});
 		const gate = latch();
 		const native = { queries: [] as string[] };
-		const host = createHost({ onError: () => {} });
+		const host = createHost({ self: { kind: "host" }, onError: () => {} });
 		host.serve(Store, (_input, _principal, self) => {
 			const db = self.resource("db", {
 				version: 1,
@@ -300,7 +309,7 @@ describe("application requests", () => {
 			});
 			return { db: self.expose(db) };
 		});
-		const ref = host.get(Store, {});
+		const ref = host.hold(Store, {});
 		assert.equal(ref.db, undefined);
 		gate.open();
 		await ref.ready;
@@ -311,13 +320,14 @@ describe("application requests", () => {
 			self.expose({ key: "x", value: 1 });
 			return {};
 		});
-		await assert.rejects(host.get(Other, {}).ready, /expose takes a resource declared by this object/);
+		await assert.rejects(host.hold(Other, {}).ready, /expose takes a resource declared by this object/);
 	});
 
 	it("#7 a cluster reload reports what each child prepared", async () => {
 		const Greeter = remote("t.greeter", {
 			version: 1,
 			input: Type.Object({}),
+			host: hostNamed("session:S1"),
 			variants: { main: { methods: { greet: method(Type.String(), Type.String()) } } },
 		});
 		const greeter = (text: string): Facet => ({
@@ -326,13 +336,19 @@ describe("application requests", () => {
 		});
 		const modules = new Map([["greeter", greeter("v1")]]);
 		const loader: FacetLoader = async (names) => names.map((name) => modules.get(String(name))!);
-		const server = createHost({ name: "server", onError: () => {} });
+		const server = createHost({ self: { kind: "host" }, name: "server", onError: () => {} });
 		const [down, up] = memoryLinkPair();
 		server.accept(down, { principal: { worker: "S1" }, kind: "host", name: "session:S1" });
-		const worker = createHost({ name: "session:S1", upstream: up, loader, onError: () => {} });
+		const worker = createHost({
+			self: { kind: "host" },
+			name: "session:S1",
+			upstream: { link: up, principal: { kind: "server" } },
+			loader,
+			onError: () => {},
+		});
 		worker.install(greeter("v1"));
 		await tick();
-		const ref = server.get(Greeter, {}, { at: "session:S1" });
+		const ref = server.hold(Greeter, {});
 		assert.equal(await ref.greet("a"), "v1 a");
 		modules.set("greeter", greeter("v2"));
 		const report = await server.reload([], { remote: { "session:": ["greeter"] } });
@@ -343,13 +359,14 @@ describe("application requests", () => {
 		assert.equal(child?.codeVersion, report.codeVersion);
 	});
 
-	it("#8 a remote state member forgets its value when nobody listens; the next subscriber sees the fresh value", async () => {
+	it("#8 a held remote reference keeps its state without listeners; a later subscriber sees the current value", async () => {
 		const Counter = remote("t.count8", {
 			version: 1,
 			input: Type.Object({}),
+			host: hostNamed("server"),
 			variants: { main: { state: { n: Type.Number() }, methods: { set: method(Type.Number()) } } },
 		});
-		const server = createHost({ name: "server", onError: () => {} });
+		const server = createHost({ self: { kind: "host" }, name: "server", onError: () => {} });
 		server.serve(Counter, (_input, _principal, self) => {
 			const n = self.state("n", Type.Number(), 0);
 			return {
@@ -362,26 +379,38 @@ describe("application requests", () => {
 		});
 		const [down, up] = memoryLinkPair();
 		server.accept(down, { principal: { guest: "g" } });
-		const browser = createHost({ name: "browser", kind: "client", upstream: up, onError: () => {} });
-		const counter = browser.get(Counter, {}, { at: "server" });
+		const browser = createHost({
+			self: { kind: "host" },
+			name: "browser",
+			kind: "client",
+			upstream: { link: up, principal: { kind: "server" } },
+			onError: () => {},
+		});
+		const counter = browser.hold(Counter, {});
+		await counter.ready;
+		assert.equal(counter.n.value, 0);
 		const stop = counter.n.subscribe(() => {});
 		await counter.set(1);
 		await until(() => counter.n.value === 1);
 		stop();
-		assert.equal(counter.n.value, undefined);
 		await counter.set(2);
+		await until(() => counter.n.value === 2);
 		const seen: unknown[] = [];
 		const again = counter.n.subscribe((value) => seen.push(value));
-		await until(() => seen.at(-1) === 2);
-		assert.deepEqual(seen, [undefined, 2]);
+		assert.deepEqual(seen, [2]);
 		again();
 	});
 
 	it("#9 references report status changes: live, loading while a link reconnects, gone, released", async () => {
-		const Thing = remote("t.thing9", { version: 1, input: Type.Object({}), variants: { main: {} } });
-		const server = createHost({ name: "server", onError: () => {} });
+		const Thing = remote("t.thing9", {
+			version: 1,
+			input: Type.Object({}),
+			host: hostNamed("server"),
+			variants: { main: {} },
+		});
+		const server = createHost({ self: { kind: "host" }, name: "server", onError: () => {} });
 		server.serve(Thing, () => ({ variant: "main" }));
-		const localThing = server.get(Thing, {}, { principal: { user: "u" } });
+		const localThing = server.hold(Thing, {}, { principal: { user: "u" } });
 		const localStatus: unknown[] = [];
 		localThing.onStatus((status, error) =>
 			localStatus.push(status === "gone" ? [status, (error as { code: string }).code] : status),
@@ -394,8 +423,14 @@ describe("application requests", () => {
 
 		const [down, up] = memoryLinkPair();
 		server.accept(down, { principal: { guest: "g" } });
-		const browser = createHost({ name: "browser", kind: "client", upstream: up, onError: () => {} });
-		const remoteThing = browser.get(Thing, {}, { at: "server" });
+		const browser = createHost({
+			self: { kind: "host" },
+			name: "browser",
+			kind: "client",
+			upstream: { link: up, principal: { kind: "server" } },
+			onError: () => {},
+		});
+		const remoteThing = browser.hold(Thing, {});
 		const remoteStatus: string[] = [];
 		remoteThing.onStatus((status) => remoteStatus.push(status));
 		await remoteThing.ready;
@@ -403,7 +438,7 @@ describe("application requests", () => {
 		await until(() => remoteStatus.length === 2);
 		const [down2, up2] = memoryLinkPair();
 		server.accept(down2, { principal: { guest: "g" } });
-		browser.connect(up2);
+		browser.connect(up2, { principal: { kind: "server" } });
 		await until(() => remoteStatus.length === 3);
 		remoteThing.release();
 		await tick();
@@ -415,9 +450,10 @@ describe("application requests", () => {
 		const Remote = remote("t.remote10", {
 			version: 1,
 			input: Type.Object({}),
+			host: hostNamed("server"),
 			variants: { main: { methods: { note: method(Type.String()) } } },
 		});
-		const server = createHost({ name: "server", onError: () => {} });
+		const server = createHost({ self: { kind: "host" }, name: "server", onError: () => {} });
 		server.serve(Remote, () => ({
 			variant: "main",
 			note: (text) => {
@@ -432,7 +468,12 @@ describe("application requests", () => {
 		const Chat = local("t.chat10", { version: 1, input: Type.Object({}) });
 		const [down, up] = memoryLinkPair();
 		server.accept(down, { principal: { worker: "w" }, kind: "host", name: "w" });
-		const worker = createHost({ name: "w", upstream: up, onError: (error) => log.push(`error: ${String(error)}`) });
+		const worker = createHost({
+			self: { kind: "host" },
+			name: "w",
+			upstream: { link: up, principal: { kind: "server" } },
+			onError: (error) => log.push(`error: ${String(error)}`),
+		});
 		// Eager: activated (and registered with the host) before the object that holds it.
 		worker.serve(
 			Proc,
@@ -449,7 +490,7 @@ describe("application requests", () => {
 		await sleep(5);
 		worker.serve(Chat, (_input, _principal, self) => {
 			const proc = self.get(Proc, {});
-			const upstream = self.get(Remote, {}, { at: "server" });
+			const upstream = self.get(Remote, {});
 			self.resource("session", {
 				version: 1,
 				open: () => proc.tracker?.add("chat"),
@@ -461,7 +502,7 @@ describe("application requests", () => {
 			});
 			return {};
 		});
-		await worker.get(Chat, {}).ready;
+		await worker.hold(Chat, {}).ready;
 		await worker.close();
 		assert.deepEqual(log, ["chat closed, proc live, tracker ok", "server: bye", "proc closed"]);
 	});

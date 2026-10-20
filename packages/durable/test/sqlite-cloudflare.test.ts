@@ -1,130 +1,80 @@
 import { DatabaseSync } from "node:sqlite";
+import { BACKGROUND_CONTEXT } from "@earendil-works/chord/context";
 import { registerStorageConformance } from "@earendil-works/pi-durable/testing";
 import { describe, expect, it } from "vitest";
-import {
-	DurableObjectSqliteDatabase,
-	type DurableObjectSqliteStorage,
-	openDurableObjectSqliteStorage,
-} from "../src/storage/sqlite/cloudflare.ts";
+import { durableObjectStorage } from "../../chord/test/sqlite/helpers.ts";
+import { idFromNumber } from "../src/ids.ts";
+import { DurableObjectSqliteDatabase, openDurableObjectSqliteStorage } from "../src/storage/sqlite/cloudflare.ts";
+import { type EntryId, ROOT_CONVERSATION_ID } from "../src/types.ts";
 
-type SqlValue = ArrayBuffer | string | number | null;
-
-/**
- * A stand-in for a SQLite-backed Durable Object's `ctx.storage` over `node:sqlite`, with its value types: `BLOB`
- * bindings and results are `ArrayBuffer`s, and `exec()` without bindings may run several statements.
- */
-function durableObjectStorage(database = new DatabaseSync(":memory:")): DurableObjectSqliteStorage {
-	const toNode = (value: SqlValue) => (value instanceof ArrayBuffer ? new Uint8Array(value) : value);
-	const fromNode = (value: unknown): SqlValue =>
-		value instanceof Uint8Array ? (value.slice().buffer as ArrayBuffer) : (value as SqlValue);
-	return {
-		sql: {
-			exec(query, ...bindings) {
-				if (bindings.length === 0 && query.trim().replace(/;\s*$/, "").includes(";")) {
-					database.exec(query);
-					return { toArray: () => [] };
-				}
-				const statement = database.prepare(query);
-				if (statement.columns().length === 0) {
-					statement.run(...bindings.map(toNode));
-					return { toArray: () => [] };
-				}
-				const rows = statement.all(...bindings.map(toNode)) as Record<string, unknown>[];
-				return {
-					toArray: () =>
-						rows.map((row) =>
-							Object.fromEntries(Object.entries(row).map(([key, value]) => [key, fromNode(value)])),
-						),
-				};
-			},
-		},
-		async transaction(closure) {
-			database.exec("BEGIN");
-			try {
-				const result = await closure();
-				database.exec("COMMIT");
-				return result;
-			} catch (error) {
-				database.exec("ROLLBACK");
-				throw error;
-			}
-		},
-	};
-}
-
-registerStorageConformance({ describe, expect, it }, "SqliteStorage on a Durable Object", async (use) =>
-	use(await openDurableObjectSqliteStorage(durableObjectStorage())),
+registerStorageConformance({ describe, expect, it }, "SqliteStorage on a prefixed Durable Object", async (use) =>
+	use(await openDurableObjectSqliteStorage(durableObjectStorage(), { prefix: "pi_" })),
 );
 
 describe("Durable Object SQLite adapter", () => {
-	it("binds and returns BLOB values as Uint8Array", async () => {
-		const database = new DurableObjectSqliteDatabase(durableObjectStorage());
-		await database.exec("CREATE TABLE blobs (id INTEGER PRIMARY KEY, data BLOB, n INTEGER)");
-		await database.run("INSERT INTO blobs (id, data, n) VALUES (?, ?, ?)", 1, new Uint8Array([1, 2, 3]), 7n);
-		expect(await database.get("SELECT data, n FROM blobs WHERE id = ?", 1)).toEqual({
-			data: new Uint8Array([1, 2, 3]),
-			n: 7,
-		});
+	it("keeps schema names unprefixed by default", async () => {
+		const sqlite = new DatabaseSync(":memory:");
+		await openDurableObjectSqliteStorage(durableObjectStorage(sqlite));
+		expect(sqlite.prepare("SELECT version FROM durable_schema").get()).toEqual({ version: 2 });
+		expect(sqlite.prepare("SELECT name FROM sqlite_master WHERE name = 'pi_durable_schema'").get()).toBeUndefined();
 	});
 
-	it("rejects a bigint binding outside the safe integer range", async () => {
-		const database = new DurableObjectSqliteDatabase(durableObjectStorage());
-		await database.exec("CREATE TABLE numbers (n INTEGER)");
-		await expect(database.run("INSERT INTO numbers (n) VALUES (?)", 9_007_199_254_740_993n)).rejects.toThrow(
-			RangeError,
+	it("prefixes pi's tables and indexes without changing host tables", async () => {
+		const sqlite = new DatabaseSync(":memory:");
+		const storage = durableObjectStorage(sqlite);
+		const database = new DurableObjectSqliteDatabase(storage);
+		await database.exec("CREATE TABLE host_notes (text TEXT)");
+		await database.exec("CREATE TABLE tasks (text TEXT)");
+		await openDurableObjectSqliteStorage(storage, { prefix: "pi_" });
+		const names = sqlite
+			.prepare("SELECT name FROM sqlite_master WHERE type IN ('table', 'index') AND name NOT LIKE 'sqlite_%'")
+			.all()
+			.map((row) => String(row.name));
+		expect(names).toContain("host_notes");
+		expect(names).toContain("tasks");
+		expect(names).not.toContain("pi_host_notes");
+		const piNames = names.filter((name) => !["host_notes", "tasks"].includes(name));
+		expect(piNames.length).toBeGreaterThan(10);
+		expect(piNames.every((name) => name.startsWith("pi_"))).toBe(true);
+		expect(piNames).toContain("pi_tasks");
+		expect(piNames).toContain("pi_durable_schema");
+	});
+
+	it("isolates concurrently opened prefixes on one Durable Object", async () => {
+		const storage = durableObjectStorage();
+		const [first, second] = await Promise.all([
+			openDurableObjectSqliteStorage(storage, { prefix: "first_" }),
+			openDurableObjectSqliteStorage(storage, { prefix: "second_" }),
+		]);
+		const entryId = idFromNumber<EntryId>(2);
+		await Promise.all([
+			first.commit(
+				[
+					{ type: "conversation", value: { id: ROOT_CONVERSATION_ID } },
+					{ type: "entry", value: { id: entryId, conversationId: ROOT_CONVERSATION_ID, kind: "first" } },
+				],
+				BACKGROUND_CONTEXT,
+			),
+			second.commit(
+				[
+					{ type: "conversation", value: { id: ROOT_CONVERSATION_ID } },
+					{ type: "entry", value: { id: entryId, conversationId: ROOT_CONVERSATION_ID, kind: "second" } },
+				],
+				BACKGROUND_CONTEXT,
+			),
+		]);
+		expect((await first.entry(entryId, BACKGROUND_CONTEXT))?.entry.kind).toBe("first");
+		expect((await second.entry(entryId, BACKGROUND_CONTEXT))?.entry.kind).toBe("second");
+		await Promise.all([first.close(BACKGROUND_CONTEXT), second.close(BACKGROUND_CONTEXT)]);
+	});
+
+	it("rejects invalid and reserved prefixes", async () => {
+		await expect(openDurableObjectSqliteStorage(durableObjectStorage(), { prefix: "" })).rejects.toThrow("Invalid");
+		await expect(openDurableObjectSqliteStorage(durableObjectStorage(), { prefix: "bad-prefix" })).rejects.toThrow(
+			"Invalid",
 		);
-		expect(await database.all("SELECT n FROM numbers")).toEqual([]);
-	});
-
-	it("closes after an active transaction settles", async () => {
-		const database = new DurableObjectSqliteDatabase(durableObjectStorage());
-		await database.exec("CREATE TABLE items (id INTEGER PRIMARY KEY)");
-		const order: string[] = [];
-		const { promise: gate, resolve } = Promise.withResolvers<void>();
-		const transaction = database.transaction(async (handle) => {
-			await handle.run("INSERT INTO items (id) VALUES (?)", 1);
-			await gate;
-			order.push("transaction");
-		});
-		const closed = database.close().then(() => order.push("close"));
-		resolve();
-		await Promise.all([transaction, closed]);
-		expect(order).toEqual(["transaction", "close"]);
-	});
-
-	it("rolls back a rejected transaction and rejects its handle afterwards", async () => {
-		const database = new DurableObjectSqliteDatabase(durableObjectStorage());
-		await database.exec("CREATE TABLE items (id INTEGER PRIMARY KEY)");
-		let handle: Parameters<Parameters<DurableObjectSqliteDatabase["transaction"]>[0]>[0] | undefined;
-		await expect(
-			database.transaction(async (transaction) => {
-				handle = transaction;
-				await transaction.run("INSERT INTO items (id) VALUES (?)", 1);
-				throw new Error("abort");
-			}),
-		).rejects.toThrow("abort");
-		expect(await database.all("SELECT id FROM items")).toEqual([]);
-		await expect(handle!.run("INSERT INTO items (id) VALUES (?)", 2)).rejects.toThrow("no longer active");
-	});
-
-	it("queues operations behind an active transaction", async () => {
-		const database = new DurableObjectSqliteDatabase(durableObjectStorage());
-		await database.exec("CREATE TABLE items (id INTEGER PRIMARY KEY)");
-		const order: string[] = [];
-		const { promise: gate, resolve } = Promise.withResolvers<void>();
-		const transaction = database.transaction(async (handle) => {
-			await handle.run("INSERT INTO items (id) VALUES (?)", 1);
-			await gate;
-			order.push("transaction");
-		});
-		const read = database.all("SELECT id FROM items").then((rows) => {
-			order.push("read");
-			return rows;
-		});
-		resolve();
-		await transaction;
-		expect(await read).toEqual([{ id: 1 }]);
-		expect(order).toEqual(["transaction", "read"]);
-		await database.close();
+		await expect(openDurableObjectSqliteStorage(durableObjectStorage(), { prefix: "sqlite_pi_" })).rejects.toThrow(
+			"reserved",
+		);
 	});
 });

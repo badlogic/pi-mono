@@ -17,6 +17,7 @@ const context = BACKGROUND_CONTEXT;
 
 // Which sandbox a conversation runs in. `fork: "initial"`: a fork gets no sandbox until the app assigns one.
 const Sandbox = defineDoc<{ path?: string }>({
+	checkpointWhen: () => false,
 	kind: "app.sandbox",
 	version: 1,
 	scope: "conversation",

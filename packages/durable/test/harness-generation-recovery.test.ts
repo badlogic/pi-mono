@@ -1,6 +1,7 @@
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { DatabaseSync } from "node:sqlite";
 import { type AssistantMessage, createModels, fauxAssistantMessage, type Message } from "@earendil-works/pi-ai";
 import { AssistantEntry, type Harness, LiveDoc, type TaskId } from "@earendil-works/pi-durable";
 import { afterEach, describe, expect, it } from "vitest";
@@ -8,7 +9,7 @@ import { openNodeSqliteStorage } from "../src/storage/sqlite/node.ts";
 import { allEntries, type ChatSetup, chatSetup, openChat, textOf, unanswered, waitFor } from "./chat-support.ts";
 import { addSection } from "./harness-support.ts";
 import { context } from "./session-support.ts";
-import { aborted, deferred } from "./task-support.ts";
+import { aborted, deferred, eventually } from "./task-support.ts";
 
 const directories = new Set<string>();
 
@@ -182,7 +183,17 @@ describe("generation recovery", () => {
 		await opened.harness.close(context);
 
 		opened = await open(path, setup);
-		expect(await checkpoint(opened.harness, taskId)).toEqual({ phase: "retry", attempt: 1, until: 61_000 });
+		expect((await opened.harness.getTask(taskId, context))?.state).toEqual({
+			status: "sleeping",
+			checkpoint: { phase: "retry", attempt: 1, until: 61_000 },
+			until: 61_000,
+		});
+		await eventually(() => !opened.harness.wake().active);
+		expect(opened.harness.wake()).toEqual({ active: false, at: 61_000 });
+		// An early wake retries nothing.
+		opened.harness.resume();
+		await new Promise((resolve) => setTimeout(resolve, 20));
+		expect(setup.faux.state.callCount).toBe(1);
 		expect(await opened.harness.snapshot(LiveDoc, opened.root.id, context)).toEqual({
 			run: { taskId, inputs: [id] },
 			generation: { attempt: 1, retry: { at: 61_000, error: "503 Service Unavailable" } },
@@ -195,6 +206,49 @@ describe("generation recovery", () => {
 			"pi.assistant",
 			"pi.assistant",
 		]);
+		await opened.harness.close(context);
+	});
+
+	it("sleeps again for a retry stored as a running phase by an earlier version", async () => {
+		const path = await sqlitePath();
+		const setup = chatSetup();
+		let now = 1_000;
+		setup.now = () => now;
+		setup.faux.setResponses([
+			fauxAssistantMessage([], { stopReason: "error", errorMessage: "503 Service Unavailable" }),
+			fauxAssistantMessage("recovered"),
+		]);
+		let opened = await open(path, setup);
+		opened.harness.resume();
+		setup.settings.retry = { enabled: true, maxRetries: 2, baseDelayMs: 60_000 };
+		const id = (await opened.root.submit({ type: "input", content: "hi" }, context)).id;
+		await waitFor(
+			async () =>
+				(await opened.harness.getTask(await runTaskId(opened.harness), context))?.state.status === "sleeping",
+		);
+		const taskId = await runTaskId(opened.harness);
+		await opened.harness.close(context);
+		// Earlier versions slept inside a running `retry` phase.
+		const database = new DatabaseSync(path);
+		database
+			.prepare(
+				"UPDATE tasks SET status = 'running', record = json_set(json_remove(record, '$.state.until'), '$.state.status', 'running') WHERE id = ?",
+			)
+			.run(taskId);
+		database.close();
+
+		opened = await open(path, setup);
+		opened.harness.resume();
+		await waitFor(async () => (await opened.harness.getTask(taskId, context))?.state.status === "sleeping");
+		expect((await opened.harness.getTask(taskId, context))?.state).toMatchObject({
+			status: "sleeping",
+			until: 61_000,
+		});
+		expect(setup.faux.state.callCount).toBe(1);
+		now = 61_000;
+		opened.harness.resume();
+		expect((await (await opened.harness.submission(id, context))!.wait(context)).status).toBe("done");
+		expect(setup.faux.state.callCount).toBe(2);
 		await opened.harness.close(context);
 	});
 
@@ -217,6 +271,12 @@ describe("generation recovery", () => {
 
 		opened = await open(path, setup);
 		expect(await checkpoint(opened.harness, taskId)).toMatchObject({ phase: "poll", attempt: 1, pollAt: 61_000 });
+		expect((await opened.harness.getTask(taskId, context))?.state).toMatchObject({
+			status: "sleeping",
+			until: 61_000,
+		});
+		await eventually(() => !opened.harness.wake().active);
+		expect(opened.harness.wake()).toEqual({ active: false, at: 61_000 });
 		now = 61_000;
 		opened.harness.resume();
 		const settled = await (await opened.harness.submission(id, context))!.wait(context);
@@ -230,6 +290,8 @@ describe("generation recovery", () => {
 	it("fails no_model when the pinned model is gone after reopen, in request and in poll", async () => {
 		const path = await sqlitePath();
 		const setup = chatSetup({ deferred: { pollAfterMs: 60_000 } });
+		let now = 1_000;
+		setup.now = () => now;
 		const busy = unanswered();
 		setup.faux.setResponses([busy.step, fauxAssistantMessage("deferred")]);
 		let opened = await open(path, setup);
@@ -258,6 +320,8 @@ describe("generation recovery", () => {
 		});
 		await opened.harness.close(context);
 
+		// The poll sleeps until it is due; then the model is resolved.
+		now = 61_000;
 		opened = await open(path, empty);
 		opened.harness.resume();
 		expect(await (await opened.harness.submission(polling, context))!.wait(context)).toMatchObject({

@@ -1,10 +1,18 @@
 import { type Context, copyJson, type JsonValue } from "@earendil-works/chord";
-import { awaitWithContext, withAbortSignal } from "@earendil-works/chord/context";
+import { awaitWithContext, withAbortSignal, withoutAbortSignal, withTelemetry } from "@earendil-works/chord/context";
 import type { Models } from "@earendil-works/pi-ai";
+import {
+	createTypedMetrics,
+	createTypedSpanStarter,
+	NOOP_TELEMETRY_CONTEXT,
+	NOOP_TELEMETRY_METRICS,
+	type TelemetryCarrier,
+} from "@earendil-works/pi-telemetry";
 import type { ExecutionEnv } from "../env/index.ts";
 import { errorMessage } from "../errors.ts";
 import type { SessionImpl } from "../session/session.ts";
 import type { Transaction } from "../session/transaction.ts";
+import type { Timers } from "../timers.ts";
 import type {
 	CommitPublication,
 	ConversationId,
@@ -14,8 +22,11 @@ import type {
 	HookRunner,
 	JsonObject,
 	NextTaskState,
+	ReportInfo,
+	ReportTask,
 	RunningTask,
 	Storage,
+	StorageWrite,
 	TaskDefinition,
 	TaskId,
 	TaskOutcome,
@@ -23,39 +34,64 @@ import type {
 	TaskRuntime,
 	TaskState,
 } from "../types.ts";
-import { agentHooks } from "./agent.ts";
+import { agentHooks, DEFAULT_RESTART_LIMIT } from "./agent.ts";
 import { type ContextRange, readContextFrom } from "./context.ts";
+import { DURABLE_TELEMETRY_SCHEMA } from "./telemetry.ts";
 import type {
 	Agent,
 	AnyTask,
 	ConversationHandle,
 	HarnessInspection,
+	HarnessOptions,
 	RegistryReader,
 	RegistrySnapshot,
 	Settings,
 	SettledTask,
 	TaskInspection,
+	Wake,
 } from "./types.ts";
-import { closedError, scanAll, Waiters } from "./util.ts";
+import { closedError, optionalExtension, scanAll, Waiters } from "./util.ts";
 
 type AnyTaskRecord = TaskRecord<JsonValue, JsonValue, JsonValue>;
-/** A record that can still run code: pending, running, or waiting. */
+/** A record that can still run code: pending, running, waiting, or sleeping. */
 type RunnableTaskRecord = Extract<
 	AnyTaskRecord,
-	{ readonly state: { readonly status: "pending" | "running" | "waiting" } }
+	{ readonly state: { readonly status: "pending" | "running" | "waiting" | "sleeping" } }
 >;
-type Checkpoint = { readonly phase: string };
+type Checkpoint = { readonly phase: string; readonly attempt?: number };
 type ErasedDefinition = TaskDefinition<JsonValue, Checkpoint, JsonValue, object>;
 type ErasedRuntime = TaskRuntime<JsonValue, Checkpoint, JsonValue, object>;
 type ErasedRunningTask = RunningTask<JsonValue, Checkpoint, JsonValue>;
 
 const SCAN_PAGE_SIZE = 256;
-/** Longest delay `setTimeout` supports; longer sleeps wait in several steps. */
-const MAX_TIMER_DELAY = 2_147_483_647;
-const LIVE_STATUSES = ["pending", "running", "waiting", "completing"] as const;
+const LIVE_STATUSES = ["pending", "running", "waiting", "sleeping", "completing"] as const;
 
-/** Why a pending task cannot be reserved under a registry snapshot. Derived, never persisted. */
-type BlockedReason = "missing_task" | "task_too_old" | "migration_failed";
+/** What `blockedReason()` reads of a task: the task graph keeps only this of each record. */
+export type BlockedSubject = Pick<
+	AnyTaskRecord,
+	"id" | "kind" | "version" | "abortRequested" | "abortReason" | "restarts"
+> & {
+	readonly status: TaskState<JsonValue, JsonValue>["status"];
+};
+
+/** The part of a record `blockedReason()` reads. */
+export function blockedSubject(record: AnyTaskRecord): BlockedSubject {
+	return {
+		id: record.id,
+		kind: record.kind,
+		version: record.version,
+		abortRequested: record.abortRequested,
+		...(record.abortReason === undefined ? {} : { abortReason: record.abortReason }),
+		...(record.restarts === undefined ? {} : { restarts: record.restarts }),
+		status: record.state.status,
+	};
+}
+
+/**
+ * Why a task cannot be reserved: no registered definition can take it, or it was cut off `restartLimit` times in a row.
+ * Derived from the registry, the settings, and the record's `restarts`.
+ */
+export type BlockedReason = "missing_task" | "task_too_old" | "migration_failed" | "restart_limit";
 
 type Resolution =
 	| { readonly kind: "ready"; readonly task: AnyTask; readonly record: RunnableTaskRecord }
@@ -69,13 +105,22 @@ type Fit =
 /** One in-memory execution of a task in run or abort mode. */
 type Invocation = {
 	readonly taskId: TaskId;
+	readonly kind: string;
+	/** The extension that installed the definition this invocation runs, as of its reservation; none for a built-in. */
+	readonly extension: string | undefined;
 	readonly conversationId: ConversationId;
 	readonly mode: "run" | "abort";
 	readonly controller: AbortController;
+	links?: readonly TelemetryCarrier[];
 	/** Context passed to handlers; cancelled by `controller`. */
-	readonly context: Context;
+	context: Context;
+	/** Keeps the terminal state available after it leaves the live index. Released when the invocation finishes. */
+	record?: TaskRecord<JsonValue, Checkpoint, JsonValue>;
+	fault?: Extract<TaskOutcome<JsonValue>, { readonly status: "faulted" }>;
 	/** Watches acquired through the runtime; stopped at invocation end. */
 	readonly watches: Set<DocumentWatch<JsonObject>>;
+	/** Timers armed through the runtime; disarmed at invocation end. */
+	readonly timers: Set<() => void>;
 	ended: boolean;
 	readonly done: Promise<void>;
 	readonly finish: () => void;
@@ -149,10 +194,12 @@ function parentNode(node: TaskNode): Node {
 type Scope = { readonly conversation: ConversationId } | { readonly roots: true };
 
 export type TaskSchedulerOptions = {
+	readonly telemetry?: HarnessOptions["telemetry"];
 	readonly session: SessionImpl;
 	readonly storage: Storage;
 	readonly registry: RegistryReader;
-	readonly models: Models;
+	/** The host's current model access (`HarnessOptions.models`); read at each access. */
+	readonly models: () => Models;
 	/** Resolve a conversation's agent against a snapshot; the runtime calls it at most once per phase. */
 	readonly agent: (conversationId: ConversationId, snapshot: RegistrySnapshot, context: Context) => Promise<Agent>;
 	/** Resolve the settings; read at each access. */
@@ -160,7 +207,13 @@ export type TaskSchedulerOptions = {
 	/** Build a conversation's environment with `HarnessOptions.env`. */
 	readonly env: (conversationId: ConversationId, context: Context) => Promise<ExecutionEnv | undefined>;
 	readonly now: () => number;
-	readonly report: (error: unknown) => void;
+	/** `HarnessOptions.onWake`: replaces the timer for sleeping tasks. */
+	readonly onWake: ((wake: Wake) => void) | undefined;
+	/** The host's timers (`HarnessOptions.setTimer`). */
+	readonly timers: Timers;
+	/** While closing, on the line after admitted commits settle, write what the callback returns straight to Storage. */
+	readonly writeAtClose: (writes: () => readonly StorageWrite[]) => Promise<void>;
+	readonly report: (error: unknown, info: ReportInfo, context?: Context) => void;
 	/** Harness cleanup staged in the commit that makes an outcome the scheduler wrote itself terminal. */
 	readonly settleOutcome: (tx: Transaction, record: AnyTaskRecord, outcome: SchedulerOutcome) => Promise<void>;
 	/** Withdraw a conversation's queued inputs, for conversation abort and abort cascades. */
@@ -178,8 +231,9 @@ export type TaskSchedulerOptions = {
 /**
  * Durable task scheduler of one Harness.
  *
- * `#live` mirrors every committed non-terminal task record: pending, running, waiting, and completing. The synchronous
- * commit listener updates it on the Session line, so code running on the line reads exactly the committed state from it.
+ * `#live` mirrors every committed non-terminal task record: pending, running, waiting, sleeping, and completing. The
+ * synchronous commit listener updates it on the Session line, so code running on the line reads exactly the committed
+ * state from it.
  *
  * Tasks and conversations form one ownership tree (spec §5.5): a task's parent is its owner task, or its conversation;
  * a conversation's parent is its owner task, if any. Walks up that tree decide what reaches one task: a cancelling
@@ -197,15 +251,22 @@ export type TaskSchedulerOptions = {
  * step that decides its end, so a runtime commit it queued either lands before that decision or is rejected.
  */
 export class TaskScheduler {
+	readonly #telemetry: NonNullable<HarnessOptions["telemetry"]>;
+	readonly #activeMetric;
+	readonly #durationMetric;
+	readonly #resumed = new Set<TaskId>();
 	readonly #session: SessionImpl;
 	readonly #storage: Storage;
 	readonly #registry: RegistryReader;
-	readonly #models: Models;
+	readonly #models: () => Models;
 	readonly #agent: TaskSchedulerOptions["agent"];
 	readonly #settings: TaskSchedulerOptions["settings"];
 	readonly #env: TaskSchedulerOptions["env"];
 	readonly #now: () => number;
-	readonly #report: (error: unknown) => void;
+	readonly #onWake: ((wake: Wake) => void) | undefined;
+	readonly #timers: Timers;
+	readonly #writeAtClose: (writes: () => readonly StorageWrite[]) => Promise<void>;
+	readonly #report: (error: unknown, info: ReportInfo, context?: Context) => void;
 	readonly #settleOutcome: TaskSchedulerOptions["settleOutcome"];
 	readonly #withdrawInputs: TaskSchedulerOptions["withdrawInputs"];
 	readonly #conversation: TaskSchedulerOptions["conversation"];
@@ -217,8 +278,8 @@ export class TaskScheduler {
 	 * first idle check after `settings.contextRetentionMs` of idleness, and at close.
 	 */
 	readonly #contexts = new Map<ConversationId, { range: ContextRange; idleSince: number | undefined }>();
-	/** Timer for the earliest expiry of an idle context, only where timers can be unreferenced (see `#scheduleExpiry`). */
-	#expiry: { readonly at: number; readonly timer: ReturnType<typeof setTimeout> } | undefined;
+	/** Background timer for the earliest expiry of an idle context, unless the host declined it (see `#scheduleExpiry`). */
+	#expiry: { readonly at: number; readonly disarm: () => void } | undefined;
 	readonly #invocations = new Map<TaskId, Invocation>();
 	readonly #taskWaiters = new Waiters<TaskId, SettledTask<JsonValue>>();
 	/** Idle waiters by conversation; `undefined` waits for the whole Harness. */
@@ -260,7 +321,21 @@ export class TaskScheduler {
 	 * them with reason `restart`, so nothing of them or below them runs a phase again.
 	 */
 	readonly #abandoned = new Set<TaskId>();
+	/** Sleeping live tasks, due or not: the candidates of `#wakeDue()`. */
+	readonly #sleeping = new Set<TaskId>();
+	/** Timer for the earliest sleep, without `onWake` while scheduling runs. */
+	#timer: { readonly at: number; readonly disarm: () => void } | undefined;
+	/** Last value given to `onWake`, so an unchanged one is not repeated. */
+	#lastWake: Wake | undefined;
+	#wakeScheduled = false;
+	readonly #blockedListeners = new Set<() => void>();
+	/** A registry snapshot that threw for the task graph was reported; it is read per record, so only once. */
+	#snapshotReported = false;
+	/** Tasks a pass left out as parked; each pass checks them again, as `settings.restartLimit` may have risen. */
+	readonly #parkedTasks = new Set<TaskId>();
 	#reconcileScheduled = false;
+	/** Reconcile passes underway with work (they may overlap): their commits finalize held outcomes and mark cascades. */
+	#reconcilingWork = 0;
 	#sweepScheduled = false;
 	#cascadePending = false;
 	#unsubscribeRegistry: () => void = () => {};
@@ -270,6 +345,10 @@ export class TaskScheduler {
 	#draining = false;
 
 	constructor(options: TaskSchedulerOptions) {
+		this.#telemetry = options.telemetry ?? NOOP_TELEMETRY_CONTEXT;
+		const metrics = createTypedMetrics(this.#telemetry.metrics ?? NOOP_TELEMETRY_METRICS, [DURABLE_TELEMETRY_SCHEMA]);
+		this.#activeMetric = metrics.upDownCounter("pi.durable.tasks.active");
+		this.#durationMetric = metrics.histogram("pi.durable.phase.duration");
 		this.#session = options.session;
 		this.#storage = options.storage;
 		this.#registry = options.registry;
@@ -278,6 +357,9 @@ export class TaskScheduler {
 		this.#settings = options.settings;
 		this.#env = options.env;
 		this.#now = options.now;
+		this.#onWake = options.onWake;
+		this.#timers = options.timers;
+		this.#writeAtClose = options.writeAtClose;
 		this.#report = options.report;
 		this.#settleOutcome = options.settleOutcome;
 		this.#withdrawInputs = options.withdrawInputs;
@@ -285,11 +367,19 @@ export class TaskScheduler {
 		this.#context = options.context;
 	}
 
-	/** Load live tasks and change surviving `running` tasks back to `pending`. Dispatches nothing. */
+	/**
+	 * Load live tasks and change surviving `running` tasks back to `pending`, counting the restart. Dispatches nothing. A
+	 * task that reaches the restart limit this way is parked and reported.
+	 */
 	async open(context: Context): Promise<void> {
 		this.#session.observeCommits((publication) => this.#observe(publication));
 		this.#session.subscribeClose(() => this.#seal());
-		this.#unsubscribeRegistry = this.#registry.subscribe(() => this.#kick());
+		this.#unsubscribeRegistry = this.#registry.subscribe(() => {
+			this.#notifyBlocked();
+			this.#kick();
+		});
+		const limit = this.#restartLimit();
+		const parked: AnyTaskRecord[] = [];
 		await this.#session.commitWith(async (tx) => {
 			// Every table read before the first write.
 			const scans = [];
@@ -299,9 +389,13 @@ export class TaskScheduler {
 			for (const records of scans) {
 				for (const record of records) {
 					this.#track(undefined, record);
+					this.#resumed.add(record.id);
 					if (record.abandonOnRestart === true) this.#abandoned.add(record.id);
 					if (record.state.status === "running") {
-						tx.setTask(withState(record, { status: "pending", checkpoint: record.state.checkpoint }));
+						const restarts = (record.restarts ?? 0) + 1;
+						const pending = withState(record, { status: "pending", checkpoint: record.state.checkpoint });
+						tx.setTask({ ...pending, restarts } as AnyTaskRecord);
+						if (restarts >= limit && !record.abortRequested) parked.push(record);
 					}
 					if (record.state.status === "waiting" && record.state.policy === "failFast") {
 						this.#failFastChecks.add(record.id);
@@ -309,24 +403,136 @@ export class TaskScheduler {
 				}
 			}
 		}, context);
+		for (const record of parked) {
+			const restarts = (record.restarts ?? 0) + 1;
+			const error = new Error(
+				`Task ${record.id} (${record.kind}) was cut off ${restarts} times without progress; it is parked until retryTask()`,
+			);
+			this.#report(error, { type: "task_parked", ...this.#aboutTask(recordTask(record)) });
+		}
 		// Derive abort marks a crash left unapplied below cancelled owners, and finalize held outcomes.
 		this.#cascadePending = true;
 		this.#scheduleReconcile();
+		this.#scheduleWake();
 	}
 
-	/** Enable scheduling. Idempotent; the kick does nothing once closing. */
+	/**
+	 * Enable scheduling, and make sleeping tasks that are due runnable: a host wakeup, such as an alarm, calls this.
+	 * Idempotent; the kick does nothing once closing.
+	 */
 	resume(): void {
 		this.#enabled = true;
+		this.#wakeDue();
 		this.#kick();
 	}
 
 	/**
-	 * Signal every invocation and wait for them; writes nothing. Close calls this after every close listener has run, so
-	 * waits, watches, and streams a task holds end with the Session's reason, not as cancelled by its signal.
+	 * Run a task parked by the restart limit again: clears its restart count and enables scheduling. Does nothing for a
+	 * task that is not parked; rejects for an unknown one.
+	 */
+	async retry(id: TaskId, context: Context): Promise<void> {
+		await this.#session.commitWith(async (tx) => {
+			const current = await tx.task(id);
+			if (current === undefined) throw new Error(`Task ${id} does not exist`);
+			const status = current.state.status;
+			if (status === "terminal" || status === "completing" || !this.#parked(current)) return;
+			tx.setTask(progressed(current));
+		}, context);
+		this.resume();
+	}
+
+	/**
+	 * Why a live task cannot run here, if it cannot: its definition (missing, too old, failed migration) or the restart
+	 * limit. A running task, an abort-marked one, and one holding its outcome are never blocked.
+	 */
+	blockedReason(record: BlockedSubject): BlockedReason | undefined {
+		const status = record.status;
+		if (status === "running" || status === "completing" || status === "terminal") return undefined;
+		// An abort request runs its handler or orphans the task; a `restart` mark waits for the definition, blocked.
+		if (record.abortRequested && record.abortReason === undefined) return undefined;
+		if (this.#parked(record)) return "restart_limit";
+		let snapshot: RegistrySnapshot;
+		try {
+			snapshot = this.#registry.snapshot();
+		} catch (error) {
+			if (!this.#snapshotReported) this.#report(error, REGISTRY);
+			this.#snapshotReported = true;
+			return undefined;
+		}
+		const fit = this.#fit(record, snapshot.task(record.kind));
+		if ("reason" in fit) return fit.reason;
+		return fit.migrates && fit.task.definition.migrate === undefined ? "migration_failed" : undefined;
+	}
+
+	/** Call `listener` when blocked reasons may have changed without a commit: a registry change or a failed migration. */
+	subscribeBlocked(listener: () => void): () => void {
+		this.#blockedListeners.add(listener);
+		return () => this.#blockedListeners.delete(listener);
+	}
+
+	/**
+	 * When the Session next needs a process: `active` while some task can run now or is running, `at` for the earliest
+	 * sleep not yet due. Synchronous, from memory; a task whose chain is not loaded yet counts as it would alone.
+	 */
+	wake(): Wake {
+		const now = this.#now();
+		// A reconcile pass with work to do is work too: it finalizes held outcomes and marks cascades, at open as
+		// recovery. A process that dies before it lands must be woken again. A pass with nothing to do is not.
+		let active = this.#invocations.size > 0 || this.#reconcilingWork > 0 || this.#reconcileWork();
+		let at: number | undefined;
+		let snapshot: RegistrySnapshot | undefined;
+		let snapshotFailed = false;
+		for (const record of this.#live.values()) {
+			const state = record.state;
+			if (state.status === "completing") continue;
+			if (state.status === "waiting" && !record.abortRequested && state.on.some((id) => this.#live.has(id)))
+				continue;
+			if (state.status === "sleeping" && !record.abortRequested && state.until > now) {
+				at = at === undefined ? state.until : Math.min(at, state.until);
+				continue;
+			}
+			if (active) continue;
+			if (this.#parked(record)) continue;
+			// An abort invocation waits for the live work below it, which counts itself.
+			if (record.abortRequested && this.#waitingOn(record, true).length > 0) continue;
+			// A task no definition can take waits for a registry change, except an abort-marked one, which is orphaned.
+			if (!record.abortRequested || record.abortReason !== undefined) {
+				if (snapshot === undefined && !snapshotFailed) {
+					try {
+						snapshot = this.#registry.snapshot();
+					} catch (error) {
+						snapshotFailed = true;
+						this.#report(error, REGISTRY);
+					}
+				}
+				if (snapshot !== undefined && "reason" in this.#fit(record, snapshot.task(record.kind))) continue;
+			}
+			active = true;
+		}
+		return at === undefined ? { active } : { active, at };
+	}
+
+	/**
+	 * Signal every invocation and wait for them, then write the tasks they ran back as `pending` (`writeAtClose`), as a
+	 * close is not a crash. Close calls this after every close listener has run, so waits, watches, and streams a task
+	 * holds end with the Session's reason, not as cancelled by its signal.
 	 */
 	async join(): Promise<void> {
-		for (const invocation of this.#invocations.values()) invocation.controller.abort();
-		await Promise.allSettled([...this.#invocations.values()].map((invocation) => invocation.done));
+		const stopped = [...this.#invocations.values()];
+		for (const invocation of stopped) invocation.controller.abort();
+		await Promise.allSettled(stopped.map((invocation) => invocation.done));
+		if (stopped.length === 0) return;
+		// A close is not a crash: a task it stopped is `pending` again, so the next open counts no restart for it. Read
+		// on the line after commits admitted before the seal, such as an abort mark, so the write keeps them. A failure
+		// leaves them `running`, counted as if cut off; the Storage guard fails the Session and reports it.
+		await this.#writeAtClose(() =>
+			stopped.flatMap((invocation) => {
+				const record = this.#live.get(invocation.taskId);
+				if (record?.state.status !== "running") return [];
+				const value = withState(record, { status: "pending", checkpoint: record.state.checkpoint });
+				return [{ type: "task", value } as const];
+			}),
+		).catch(() => {});
 	}
 
 	/**
@@ -503,7 +709,7 @@ export class TaskScheduler {
 		try {
 			return this.#settings().contextRetentionMs;
 		} catch (error) {
-			this.#report(error);
+			this.#report(error, SETTINGS);
 			return 0;
 		}
 	}
@@ -530,9 +736,9 @@ export class TaskScheduler {
 	}
 
 	/**
-	 * Run `#settleIdle()` when the earliest idle context expires. The timer is unreferenced, so it never keeps the process
-	 * alive. Where timers cannot be unreferenced, as in Cloudflare Workers, none is kept: a pending timer could keep a
-	 * Durable Object from being evicted, and eviction frees the contexts. There, task changes alone check expiry.
+	 * Run `#settleIdle()` when the earliest idle context expires, on a background timer, which never keeps the process
+	 * alive. Where the host declines it, as the default does in Cloudflare Workers, none is kept: a pending timer could
+	 * keep a Durable Object from being evicted, and eviction frees the contexts. There, task changes alone check expiry.
 	 */
 	#scheduleExpiry(): void {
 		const retention = this.#contextRetentionMs();
@@ -543,23 +749,14 @@ export class TaskScheduler {
 			}
 		}
 		if (this.#expiry !== undefined && this.#expiry.at === at) return;
-		if (this.#expiry !== undefined) clearTimeout(this.#expiry.timer);
+		this.#expiry?.disarm();
 		this.#expiry = undefined;
 		if (at === undefined || this.#closing) return;
-		const timer = setTimeout(
-			() => {
-				this.#expiry = undefined;
-				this.#settleIdle();
-			},
-			Math.min(Math.max(0, at - this.#now()), MAX_TIMER_DELAY),
-		);
-		const unref = (timer as { unref?: unknown }).unref;
-		if (typeof unref !== "function") {
-			clearTimeout(timer);
-			return;
-		}
-		unref.call(timer);
-		this.#expiry = { at, timer };
+		const disarm = this.#timers.background(() => {
+			this.#expiry = undefined;
+			this.#settleIdle();
+		}, at - this.#now());
+		if (disarm !== undefined) this.#expiry = { at, disarm };
 	}
 
 	// ─── Ownership ───────────────────────────────────────────────────────────
@@ -578,6 +775,8 @@ export class TaskScheduler {
 	 */
 	async #reconcile(): Promise<void> {
 		this.#reconcileScheduled = false;
+		const work = this.#reconcileWork();
+		if (work) this.#reconcilingWork++;
 		const cascade = this.#cascadePending;
 		this.#cascadePending = false;
 		const checks = [...this.#failFastChecks];
@@ -624,7 +823,14 @@ export class TaskScheduler {
 			// running the pass again, so it fails the Session, which reports it.
 			this.#failSession(error);
 		}
+		if (work) this.#reconcilingWork--;
+		this.#scheduleWake();
 		this.#settleIdle();
+	}
+
+	/** Whether a reconcile pass would have work: a cascade to derive, held outcomes to check, or `failFast` waits. */
+	#reconcileWork(): boolean {
+		return this.#cascadePending || this.#finalizeChecks.size > 0 || this.#failFastChecks.size > 0;
 	}
 
 	/** Whether any of `ids` holds or ended with an outcome other than `completed`. */
@@ -797,10 +1003,19 @@ export class TaskScheduler {
 	 */
 	#track(previous: AnyTaskRecord | undefined, record: AnyTaskRecord): void {
 		const id = record.id;
+		const invocation = this.#invocations.get(id);
+		if (invocation !== undefined) invocation.record = record as TaskRecord<JsonValue, Checkpoint, JsonValue>;
+		if (record.state.status === "terminal") {
+			if (previous !== undefined && !this.#closing) this.#activeMetric.add(-1, { task: record.kind });
+			this.#resumed.delete(id);
+		} else if (previous === undefined && !this.#closing) {
+			this.#activeMetric.add(1, { task: record.kind });
+		}
 		if (previous?.state.status === "waiting") for (const on of previous.state.on) deleteFrom(this.#waiters, on, id);
 		if (record.state.status === "terminal") {
 			const node = nodeOf(record);
 			this.#live.delete(id);
+			this.#sleeping.delete(id);
 			this.#intent.delete(id);
 			this.#runnable.delete(id);
 			this.#finalizeChecks.delete(id);
@@ -827,6 +1042,8 @@ export class TaskScheduler {
 			this.#runnable.add(id);
 		}
 		if (record.state.status === "waiting") for (const on of record.state.on) addTo(this.#waiters, on, id);
+		if (record.state.status === "sleeping") this.#sleeping.add(id);
+		else this.#sleeping.delete(id);
 	}
 
 	/** The nearest live task above ended ordinary work may be free now: one holding its outcome, or an aborting one. */
@@ -1071,27 +1288,154 @@ export class TaskScheduler {
 	}
 
 	/** Fail the Session, which reports it, for a throw in one of the scheduler's own commits; ignored once closing. */
-	#failSession(error: unknown): void {
-		if (!this.#closing) this.#session.fail(error);
+	#failSession(error: unknown, context?: Context): void {
+		if (!this.#closing) this.#session.fail(error, context);
 	}
 
 	/** Close listener: runs synchronously once admission is sealed, before `join()`, or when the Session fails. */
 	#seal(): void {
+		for (const record of this.#live.values()) this.#activeMetric.add(-1, { task: record.kind });
+		this.#resumed.clear();
 		this.#closing = true;
 		try {
 			this.#unsubscribeRegistry();
 		} catch (error) {
-			this.#report(error);
+			this.#report(error, REGISTRY);
 		}
 		const error = closedError(this.#session);
 		this.#taskWaiters.rejectAll(error);
 		this.#idleWaiters.rejectAll(error);
 		this.#contexts.clear();
-		if (this.#expiry !== undefined) clearTimeout(this.#expiry.timer);
+		this.#expiry?.disarm();
 		this.#expiry = undefined;
+		this.#timer?.disarm();
+		this.#timer = undefined;
+	}
+
+	/** Recompute the wake in a microtask, off the Session line: arm the built-in timer, or tell `onWake` of a change. */
+	#scheduleWake(): void {
+		if (this.#wakeScheduled || this.#closing) return;
+		this.#wakeScheduled = true;
+		queueMicrotask(() => {
+			this.#wakeScheduled = false;
+			if (this.#closing) return;
+			const wake = this.wake();
+			if (this.#onWake === undefined) {
+				this.#armTimer(this.#enabled ? wake.at : undefined);
+				return;
+			}
+			const last = this.#lastWake;
+			if (last !== undefined && last.active === wake.active && last.at === wake.at) return;
+			try {
+				this.#onWake(wake);
+				// Only a delivered wake counts: after a throw, the next change or kick offers it again.
+				this.#lastWake = wake;
+			} catch (error) {
+				this.#report(error, ON_WAKE);
+			}
+		});
+	}
+
+	/**
+	 * Keep the timer for the earliest sleep. It keeps the process alive, unlike the context expiry timer: a process with a
+	 * sleeping task has work left, such as a retry backoff. Rechecks the clock when it fires, so a wake before `until`
+	 * only arms it again.
+	 */
+	#armTimer(at: number | undefined): void {
+		if (this.#timer !== undefined && this.#timer.at === at) return;
+		this.#timer?.disarm();
+		this.#timer = undefined;
+		if (at === undefined || this.#closing) return;
+		const disarm = this.#timers.foreground(() => {
+			this.#timer = undefined;
+			this.#wakeDue();
+			this.#kick();
+		}, at - this.#now());
+		this.#timer = { at, disarm };
+	}
+
+	/** Make every sleeping task whose time has come a reservation candidate. */
+	#wakeDue(): void {
+		for (const id of this.#sleeping) {
+			const record = this.#live.get(id);
+			if (record !== undefined && !this.#notDue(record)) this.#runnable.add(id);
+		}
+	}
+
+	/** A task cut off `restartLimit` times in a row; an abort mark still runs its abort handler. */
+	#parked(record: Pick<AnyTaskRecord, "abortRequested" | "restarts">): boolean {
+		return !record.abortRequested && record.restarts !== undefined && record.restarts >= this.#restartLimit();
+	}
+
+	/**
+	 * The report info of a task's failure, with the extension that installed its definition: the code that failed is
+	 * that extension's. Built-in tasks have none.
+	 */
+	/** What a report about `task`'s own code says of it: the task, and the extension that installed its definition. */
+	#aboutTask(task: {
+		readonly taskId: TaskId;
+		readonly kind: string;
+		readonly conversationId: ConversationId;
+		/** The installer of the definition whose code ran (an invocation's); absent: the current one's. */
+		readonly extension?: string | undefined;
+	}): { readonly task: ReportTask; readonly extension?: string } {
+		let extension: string | undefined;
+		if ("extension" in task) extension = task.extension;
+		else {
+			try {
+				const snapshot = this.#registry.snapshot();
+				extension = installerOf(snapshot, snapshot.task(task.kind));
+			} catch {
+				// A registry that throws is reported where it is read for scheduling; a report goes out without the name.
+			}
+		}
+		return { task: reportTask(task), ...optionalExtension(extension) };
+	}
+
+	/** Make parked tasks that a raised `settings.restartLimit` no longer parks candidates again, and tell the graph. */
+	#unparkRaised(): void {
+		let unparked = false;
+		for (const id of this.#parkedTasks) {
+			const record = this.#live.get(id);
+			if (record !== undefined && this.#parked(record)) continue;
+			this.#parkedTasks.delete(id);
+			if (record === undefined) continue;
+			this.#runnable.add(id);
+			unparked = true;
+		}
+		if (unparked) queueMicrotask(() => this.#notifyBlocked());
+	}
+
+	/** `settings.restartLimit`, or the default when the host's settings throw. */
+	#restartLimit(): number {
+		try {
+			return this.#settings().restartLimit;
+		} catch (error) {
+			this.#report(error, SETTINGS);
+			return DEFAULT_RESTART_LIMIT;
+		}
+	}
+
+	#notifyBlocked(): void {
+		for (const listener of [...this.#blockedListeners]) {
+			try {
+				listener();
+			} catch (error) {
+				this.#report(error, { type: "listener_error" });
+			}
+		}
+	}
+
+	/** A sleep whose `until` the clock has not reached; an abort mark ends a sleep. */
+	#notDue(
+		record: AnyTaskRecord,
+	): record is AnyTaskRecord & { readonly state: { readonly status: "sleeping"; readonly until: number } } {
+		const state = record.state;
+		return state.status === "sleeping" && !record.abortRequested && state.until > this.#now();
 	}
 
 	#kick(): void {
+		this.#scheduleWake();
 		this.#dirty = true;
 		if (this.#draining || !this.#enabled || this.#closing) return;
 		this.#draining = true;
@@ -1121,6 +1465,7 @@ export class TaskScheduler {
 	 */
 	async #reserve(): Promise<Reservation[]> {
 		const reservations: Reservation[] = [];
+		const faulted: { readonly record: AnyTaskRecord; readonly message: string }[] = [];
 		let abandoned: TaskId[] = [];
 		try {
 			await this.#session.commitWith(async (tx) => {
@@ -1134,6 +1479,10 @@ export class TaskScheduler {
 					return;
 				}
 				await this.#loadScopes(false);
+				// Every pass picks up sleeps whose time has come: a pass started by any change may be the first to run after
+				// a deadline, and the wake it schedules no longer keeps a timer for a due sleep.
+				this.#wakeDue();
+				this.#unparkRaised();
 				// Taken once per pass, and only when some task is a candidate.
 				let snapshot: RegistrySnapshot | undefined;
 				for (const id of [...this.#runnable]) {
@@ -1147,6 +1496,19 @@ export class TaskScheduler {
 						this.#runnable.delete(id);
 						continue;
 					}
+					// It returns at the first pass after its time comes, which the timer, `resume()`, or any change starts.
+					if (this.#notDue(record)) {
+						this.#runnable.delete(id);
+						continue;
+					}
+					// It returns when `retry()` clears its restart count, or at a pass after `settings.restartLimit` rose.
+					if (this.#parked(record)) {
+						this.#runnable.delete(id);
+						// Newly parked without a commit, as after a lowered limit: the graph must hear it.
+						if (!this.#parkedTasks.has(id)) queueMicrotask(() => this.#notifyBlocked());
+						this.#parkedTasks.add(id);
+						continue;
+					}
 					const runnable = record as RunnableTaskRecord;
 					const mode = record.abortRequested ? "abort" : "run";
 					// Work below an owner with cancellation intent waits for its cascade mark instead of running a phase; schedule
@@ -1154,6 +1516,16 @@ export class TaskScheduler {
 					if (mode === "run" && !record.background && this.#belowCancelled(parentOf(record))) {
 						this.#cascadePending = true;
 						this.#scheduleReconcile();
+						continue;
+					}
+					// An abort handler cut off `restartLimit` times in a row would run forever; nothing is left to park it for.
+					if (mode === "abort" && (record.restarts ?? 0) >= this.#restartLimit()) {
+						const message = `Abort handler of task ${id} (${record.kind}) was cut off ${record.restarts} times`;
+						await this.#terminate(tx, record, {
+							status: "faulted",
+							error: { message, detail: { reason: "restart_limit" } },
+						});
+						faulted.push({ record, message });
 						continue;
 					}
 					snapshot ??= this.#registry.snapshot();
@@ -1176,7 +1548,7 @@ export class TaskScheduler {
 					// Registered on the line, so marks and later reservations see it and close joins it; `#end` makes it a
 					// candidate again.
 					this.#runnable.delete(id);
-					const invocation = this.#createInvocation(record, mode);
+					const invocation = this.#createInvocation(runnable, mode, installerOf(snapshot, resolution.task));
 					reservations.push({ invocation, task: resolution.task, snapshot });
 				}
 			}, this.#context);
@@ -1187,6 +1559,13 @@ export class TaskScheduler {
 				invocation.finish();
 			}
 			throw error;
+		}
+		for (const { record, message } of faulted) {
+			this.#report(new Error(message), {
+				type: "task_faulted",
+				...this.#aboutTask(recordTask(record)),
+				reason: "restart_limit",
+			});
 		}
 		// Marked, or already marked or gone: done with them. Reserve again, now seeing the marks.
 		for (const id of abandoned) this.#abandoned.delete(id);
@@ -1220,12 +1599,16 @@ export class TaskScheduler {
 			return { kind: "ready", task: fit.task, record: migratedRecord as RunnableTaskRecord };
 		} catch (error) {
 			this.#failedMigrations.set(record.id, { task: fit.task, error });
-			this.#report(error);
+			// Blocked now without a commit: the graph and the host's wake must hear it.
+			queueMicrotask(() => this.#notifyBlocked());
+			this.#scheduleWake();
+			const extension = installerOf(snapshot, fit.task);
+			this.#report(error, { type: "migration_failed", ...this.#aboutTask({ ...recordTask(record), extension }) });
 			return { kind: "blocked", reason: "migration_failed" };
 		}
 	}
 
-	#fit(record: AnyTaskRecord, task: AnyTask | undefined): Fit {
+	#fit(record: Pick<AnyTaskRecord, "id" | "version">, task: AnyTask | undefined): Fit {
 		if (task === undefined) return { reason: "missing_task" };
 		const version = task.definition.version;
 		if (version === record.version) return { task, migrates: false };
@@ -1272,6 +1655,8 @@ export class TaskScheduler {
 		if (record.state.status === "completing") return { kind: "completing" };
 		const on = this.#waitingOn(record);
 		if (on.length > 0) return { kind: "waiting", on };
+		if (this.#notDue(record)) return { kind: "sleeping", until: record.state.until };
+		if (this.#parked(record)) return { kind: "blocked", reason: "restart_limit" };
 		const fit = this.#fit(record, snapshot.task(record.kind));
 		if ("reason" in fit) return { kind: "blocked", ...fit };
 		if (fit.migrates && fit.task.definition.migrate === undefined) {
@@ -1280,16 +1665,21 @@ export class TaskScheduler {
 		return { kind: "ready", migrates: fit.migrates };
 	}
 
-	#createInvocation(record: AnyTaskRecord, mode: "run" | "abort"): Invocation {
+	#createInvocation(record: RunnableTaskRecord, mode: "run" | "abort", extension: string | undefined): Invocation {
 		const controller = new AbortController();
 		const { promise: done, resolve: finish } = Promise.withResolvers<void>();
 		const invocation: Invocation = {
 			taskId: record.id,
+			kind: record.kind,
+			extension,
 			conversationId: record.conversationId,
 			mode,
 			controller,
+			links: record.startedAt === undefined ? record.links : undefined,
 			context: withAbortSignal(controller.signal, this.#context),
+			record: record as TaskRecord<JsonValue, Checkpoint, JsonValue>,
 			watches: new Set(),
+			timers: new Set(),
 			ended: false,
 			done,
 			finish: () => finish(),
@@ -1305,9 +1695,12 @@ export class TaskScheduler {
 				if (invocation.mode === "run") await this.#run(reservation);
 				else await this.#runAbort(reservation);
 			} catch (error) {
-				this.#report(error);
+				this.#report(error, { type: "task_error", ...this.#aboutTask(invocation) }, invocation.context);
 			} finally {
 				this.#end(invocation);
+				invocation.record = undefined;
+				invocation.links = undefined;
+				invocation.fault = undefined;
 				invocation.finish();
 				this.#kick();
 			}
@@ -1320,32 +1713,106 @@ export class TaskScheduler {
 		const state = { task: reservation.task, snapshot: reservation.snapshot, reported: undefined as ReportedTask };
 		const phase: Phase = { snapshot: () => state.snapshot, task: () => state.task, agent: undefined };
 		const runtime = this.#runtime(invocation, phase);
-		let previous: PhaseResult | undefined;
-		for (;;) {
-			const current = await this.#step(invocation, (tx, current) => this.#decide(tx, current, previous, state));
-			// Close may seal between the decision and dispatch.
-			if (current === undefined || this.#closing) return;
-			const checkpoint = current.state.checkpoint;
-			// Each phase handler resolves its agent afresh, at first use.
-			phase.agent = undefined;
-			try {
-				await erased(state.task).phases[checkpoint.phase]!(current, runtime, invocation.context);
-				previous = { checkpoint };
-			} catch (error) {
-				previous = { checkpoint, failure: { error } };
-			}
+		let current = await this.#step(invocation, (tx, next) =>
+			this.#decide(tx, next, undefined, state, invocation.extension, invocation.context),
+		);
+		while (current !== undefined && !this.#closing) {
+			const task = current;
+			current = await this.#phase(invocation, task, async () => {
+				const checkpoint = task.state.checkpoint;
+				// Each phase handler resolves its agent afresh, at first use.
+				phase.agent = undefined;
+				let previous: PhaseResult;
+				try {
+					await erased(state.task).phases[checkpoint.phase]!(task, runtime, invocation.context);
+					previous = { checkpoint };
+				} catch (error) {
+					previous = { checkpoint, failure: { error } };
+				}
+				return this.#step(invocation, (tx, next) =>
+					this.#decide(tx, next, previous, state, invocation.extension, invocation.context),
+				);
+			});
 		}
 	}
 
+	/** A phase owns its decision commit, not the next handler, a durable wait, or recovery. */
+	#phase<T>(invocation: Invocation, task: ErasedRunningTask, run: () => Promise<T>): Promise<T> {
+		const parent =
+			task.trace === undefined
+				? this.#telemetry
+				: (this.#telemetry.propagation?.extract(task.trace) ?? this.#telemetry);
+		const checkpoint = task.state.checkpoint;
+		const attempt = checkpoint.attempt;
+		const resumed = this.#resumed.delete(task.id);
+		return createTypedSpanStarter(parent, [DURABLE_TELEMETRY_SCHEMA])(
+			"pi.durable.phase",
+			{
+				"task.id": task.id,
+				"task.name": task.kind,
+				phase: checkpoint.phase,
+				kind: invocation.mode,
+				resumed,
+				...(attempt === undefined ? {} : { attempt }),
+			},
+			async (span) => {
+				if (span.propagation !== undefined && invocation.links !== undefined) {
+					for (const carrier of invocation.links) span.addLink({ context: span.propagation.extract(carrier) });
+				}
+				const previous = invocation.context;
+				invocation.context = withTelemetry(span, previous);
+				const started = performance.now();
+				try {
+					return await run();
+				} finally {
+					invocation.context = previous;
+					const state = invocation.record!.state;
+					const terminal =
+						invocation.fault ??
+						(state.status === "terminal" || state.status === "completing" ? state.outcome : undefined);
+					const outcome =
+						terminal !== undefined
+							? terminal.status === "completed"
+								? "done"
+								: terminal.status === "aborted"
+									? "aborted"
+									: "faulted"
+							: state.status === "waiting" || state.status === "sleeping"
+								? state.status
+								: invocation.ended || this.#closing
+									? "aborted"
+									: `next=${state.checkpoint!.phase}`;
+					span.setAttributes({ outcome });
+					if (terminal?.status === "faulted" || terminal?.status === "failed" || terminal?.status === "orphaned") {
+						const message = terminal.status === "orphaned" ? terminal.reason : terminal.error.message;
+						span.setStatus({
+							status: "error",
+							error: { name: `task_${terminal.status}`, message: message.slice(0, 500) },
+						});
+					} else if (outcome === "aborted") {
+						span.setStatus({ status: "ok" });
+					}
+					this.#durationMetric.record(
+						performance.now() - started,
+						{ task: task.kind, phase: checkpoint.phase, outcome },
+						span,
+					);
+				}
+			},
+		);
+	}
+
 	/**
-	 * Precedence rules for a run invocation, on the line. Rules 1 (terminal, `completing`, or `waiting`) and 2 (closing)
-	 * are applied by `#step`. Returns whether the invocation continues with the next phase.
+	 * Precedence rules for a run invocation, on the line. Rules 1 (terminal, `completing`, `waiting`, or `sleeping`) and 2
+	 * (closing) are applied by `#step`. Returns whether the invocation continues with the next phase.
 	 */
 	#decide(
 		tx: Transaction,
 		current: ErasedRunningTask,
 		previous: PhaseResult | undefined,
 		state: { task: AnyTask; snapshot: RegistrySnapshot; reported: ReportedTask },
+		extension: string | undefined,
+		context: Context,
 	): Decision {
 		// 3. abort mark: end; a fresh abort invocation starts once the task's ordinary owned work is gone.
 		if (current.abortRequested) return false;
@@ -1373,9 +1840,14 @@ export class TaskScheduler {
 			}
 			if (state.reported === undefined || state.reported.task !== next) {
 				state.reported = { task: next };
-				const cause = next === undefined ? "missing_task" : "incompatible_task";
 				this.#report(
-					new Error(`Task ${current.id} keeps running under its old ${current.kind} definition`, { cause }),
+					new Error(`Task ${current.id} keeps running under its old ${current.kind} definition`),
+					{
+						type: "task_outdated",
+						...this.#aboutTask({ ...recordTask(current), extension }),
+						reason: next === undefined ? "missing_task" : "incompatible_task",
+					},
+					context,
 				);
 			}
 		}
@@ -1387,46 +1859,63 @@ export class TaskScheduler {
 		const invocation = reservation.invocation;
 		const current = this.#live.get(invocation.taskId) as ErasedRunningTask | undefined;
 		if (current === undefined || this.#closing) return;
-		let failure: { readonly error: unknown } | undefined;
-		try {
-			const phase: Phase = { snapshot: () => reservation.snapshot, task: () => reservation.task, agent: undefined };
-			const runtime = this.#runtime(invocation, phase);
-			await erased(reservation.task).abort(current, runtime, invocation.context);
-		} catch (error) {
-			failure = { error };
-		}
-		const message = `Abort handler of task ${invocation.taskId} returned without a terminal outcome`;
-		await this.#step(invocation, () => ({ fault: failure?.error ?? new Error(message) }));
+		await this.#phase(invocation, current, async () => {
+			let failure: { readonly error: unknown } | undefined;
+			try {
+				const phase: Phase = {
+					snapshot: () => reservation.snapshot,
+					task: () => reservation.task,
+					agent: undefined,
+				};
+				const runtime = this.#runtime(invocation, phase);
+				await erased(reservation.task).abort(current, runtime, invocation.context);
+			} catch (error) {
+				failure = { error };
+			}
+			const message = `Abort handler of task ${invocation.taskId} returned without a terminal outcome`;
+			await this.#step(invocation, () => ({ fault: failure?.error ?? new Error(message) }));
+		});
 	}
 
 	/**
-	 * One synchronous decision on the Session line. A task that is no longer running (rule 1: terminal, `completing`, or
-	 * `waiting`) or a closing Harness (rule 2) ends the invocation without a write; otherwise `decide` may stage a write
-	 * and returns whether the invocation continues. Ending happens inside the callback, before a fault's Harness
-	 * cleanup. A rejected step, such as admission after close, also ends the invocation.
+	 * One synchronous decision on the Session line. A task that is no longer running (rule 1: terminal, `completing`,
+	 * `waiting`, or `sleeping`) or a closing Harness (rule 2) ends the invocation without a write; otherwise `decide` may
+	 * stage a write and returns whether the invocation continues. Ending happens inside the callback, before a fault's
+	 * Harness cleanup. A rejected step, such as admission after close, also ends the invocation.
 	 */
 	async #step(
 		invocation: Invocation,
 		decide: (tx: Transaction, current: ErasedRunningTask) => Decision,
 	): Promise<ErasedRunningTask | undefined> {
+		let fault: { readonly error: unknown } | undefined;
 		try {
-			return await this.#session.commitWith(async (tx) => {
+			const continued = await this.#session.commitWith(async (tx) => {
 				const found = this.#live.get(invocation.taskId);
 				const current = found?.state.status === "running" ? (found as ErasedRunningTask) : undefined;
 				const decision = current !== undefined && !this.#closing ? decide(tx, current) : false;
 				if (decision === true) return current;
 				this.#end(invocation);
 				if (decision !== false) {
+					fault = { error: decision.fault };
 					const message = errorMessage(decision.fault);
-					await this.#terminate(tx, current!, { status: "faulted", error: { message } });
+					invocation.fault = { status: "faulted", error: { message } };
+					await this.#terminate(tx, current!, invocation.fault);
 				}
 				return undefined;
-			}, this.#context);
+			}, withoutAbortSignal(invocation.context));
+			// Reported once the fault is durable: a host may count it, for example toward a breaker.
+			if (fault !== undefined)
+				this.#report(
+					fault.error,
+					{ type: "task_faulted", ...this.#aboutTask(invocation), reason: "threw" },
+					invocation.context,
+				);
+			return continued;
 		} catch (error) {
 			// The step writes the scheduler's own decision, a fault or a terminal record; a throw there would otherwise
 			// leave the task running, to be reserved and run again.
 			this.#end(invocation);
-			this.#failSession(error);
+			this.#failSession(error, invocation.context);
 			return undefined;
 		}
 	}
@@ -1457,16 +1946,20 @@ export class TaskScheduler {
 		next: NextTaskState<Checkpoint, JsonValue>,
 	): Promise<void> {
 		if (next.status === "waiting") await this.#validateWait(tx, invocation, current, next.on, next.policy);
+		if (next.status === "sleeping") validateSleep(invocation, current.id, next.until);
 		if (next.status === "terminal") {
 			const overlay = overlayOf(tx);
 			await this.#loadScopes(false);
 			for (const record of overlay.tasks.values()) await this.#loadChain(parentOf(record), overlay);
 			if (this.#hasOwnedLive(current.id, overlay)) {
-				tx.setTask(withState(current, { status: "completing", outcome: next.outcome }));
+				tx.setTask(withState(progressed(current), { status: "completing", outcome: next.outcome }));
 				return;
 			}
 		}
-		tx.setTask(withState(current, next));
+		// A state the task committed that differs from its current one is progress: its restart count starts over. The
+		// same checkpoint committed again, for example as intent before an effect, is not.
+		const same = jsonEqual(current.state as unknown as JsonValue, next as unknown as JsonValue);
+		tx.setTask(withState(same ? current : progressed(current), next));
 	}
 
 	/**
@@ -1562,6 +2055,8 @@ export class TaskScheduler {
 			if (this.#live.has(invocation.taskId)) this.#runnable.add(invocation.taskId);
 		}
 		for (const watch of invocation.watches) void watch.stop();
+		for (const disarm of invocation.timers) disarm();
+		invocation.timers.clear();
 		// Pending waits bound to the invocation, such as a tool's waitForTask(), reject with it.
 		invocation.controller.abort(endedError(invocation));
 	}
@@ -1600,24 +2095,31 @@ export class TaskScheduler {
 		};
 		const hooks: HookRunner<Record<string, unknown>> = {
 			each: async (name, invoke) => {
-				for (const handlers of agentHooks(await agent(), phase.task().definition.name)) {
+				for (const { extension, handlers } of agentHooks(await agent(), phase.task().definition.name)) {
 					const handler = (handlers as Record<string, unknown>)[name];
 					if (typeof handler !== "function") continue;
 					try {
 						await invoke(handler.bind(handlers));
 					} catch (error) {
 						if (invocation.controller.signal.aborted) throw error;
-						this.#report(error);
+						this.#report(
+							error,
+							{ type: "extension_error", extension, task: reportTask(invocation) },
+							invocation.context,
+						);
 					}
 				}
 			},
 		};
 		const settings = this.#settings;
+		const models = this.#models;
 		return {
 			taskId: invocation.taskId as TaskId<JsonValue>,
 			conversationId: invocation.conversationId,
 			signal: invocation.controller.signal,
-			models: this.#models,
+			get models() {
+				return models();
+			},
 			agent: (context) =>
 				invocation.ended ? Promise.reject(endedError(invocation)) : awaitWithContext(agent(), context),
 			get settings() {
@@ -1628,15 +2130,25 @@ export class TaskScheduler {
 			get registry() {
 				return phase.snapshot();
 			},
-			commit: (change, context) =>
-				this.#gated(
+			commit: async (change, context) => {
+				let checkpoint: string | undefined;
+				await this.#gated(
 					invocation,
 					async (tx, current) => {
 						const next = await change(tx, current);
 						if (next !== undefined) await this.#commitState(tx, invocation, current, next);
+						if (next?.status === "running" && current.state.checkpoint.phase !== next.checkpoint.phase) {
+							checkpoint = next.checkpoint.phase;
+						}
 					},
 					context,
-				),
+				);
+				if (checkpoint !== undefined) {
+					invocation.context.telemetry.addEvent("pi.durable.checkpoint", {
+						phase: checkpoint,
+					});
+				}
+			},
 			memo: ((name: string, ...rest: readonly unknown[]) => {
 				if (rest.length === 1) {
 					return this.#read(invocation, async () => memoOf(this.#live.get(invocation.taskId), name));
@@ -1653,7 +2165,12 @@ export class TaskScheduler {
 					rest[1] as Context,
 				);
 			}) as ErasedRuntime["memo"],
-			sleep: (until, context) => this.#sleep(invocation, until, context),
+			sleepUntil: (until, checkpoint, context) =>
+				this.#gated(
+					invocation,
+					(tx, current) => this.#commitState(tx, invocation, current, { status: "sleeping", checkpoint, until }),
+					context,
+				),
 			watchDoc: ((...args: readonly unknown[]) => this.#watchDoc(invocation, args)) as ErasedRuntime["watchDoc"],
 			snapshot: ((...args: readonly unknown[]) =>
 				this.#read(invocation, () =>
@@ -1770,9 +2287,32 @@ export class TaskScheduler {
 				if (invocation.ended) throw endedError(invocation);
 				return this.#now();
 			},
-			report: (error) => {
+			setTimer: (callback, delayMs) => {
+				// An ended invocation's timers never fire.
+				if (invocation.ended) return () => {};
+				const disarm = this.#timers.foreground(() => {
+					invocation.timers.delete(disarm);
+					if (!invocation.ended) callback();
+				}, delayMs);
+				invocation.timers.add(disarm);
+				return () => {
+					invocation.timers.delete(disarm);
+					disarm();
+				};
+			},
+			report: (error, from) => {
 				if (invocation.ended) throw endedError(invocation);
-				this.#report(error);
+				// The task's own failure names the task's extension; any other names whose code failed, if anyone's.
+				const task = reportTask(invocation);
+				this.#report(
+					error,
+					from === undefined
+						? { type: "task_error", ...this.#aboutTask(invocation) }
+						: from.type === "extension"
+							? { type: "extension_error", task, ...optionalExtension(from.extension) }
+							: { type: "host_error", callback: from.callback, task },
+					invocation.context,
+				);
 			},
 		};
 	}
@@ -1808,20 +2348,6 @@ export class TaskScheduler {
 		);
 	}
 
-	/** Wait until the Harness clock reaches `until`, rechecking it after every timer. */
-	async #sleep(invocation: Invocation, until: number, context: Context): Promise<void> {
-		if (invocation.ended) throw endedError(invocation);
-		const signals = [invocation.controller.signal];
-		if (context.abortSignal !== undefined) signals.push(context.abortSignal);
-		const signal = AbortSignal.any(signals);
-		for (;;) {
-			signal.throwIfAborted();
-			const remaining = until - this.#now();
-			if (remaining <= 0) return;
-			await delay(Math.min(remaining, MAX_TIMER_DELAY), signal);
-		}
-	}
-
 	async #watchDoc(invocation: Invocation, args: readonly unknown[]): Promise<DocumentWatch<JsonObject> | undefined> {
 		if (invocation.ended) throw endedError(invocation);
 		const watch = (await sessionMethod(this.#session, "watchDoc")(...args)) as DocumentWatch<JsonObject> | undefined;
@@ -1836,9 +2362,36 @@ export class TaskScheduler {
 	}
 }
 
-/** The record with an abort mark: `restart` for an abandonment; without a reason, a request, which replaces `restart`. */
+const REGISTRY: ReportInfo = { type: "host_error", callback: "registry" };
+const SETTINGS: ReportInfo = { type: "host_error", callback: "settings" };
+const ON_WAKE: ReportInfo = { type: "host_error", callback: "onWake" };
+
+/** The extension that installed `task` in `snapshot`, the last one that lists it; none for a built-in task. */
+function installerOf(snapshot: RegistrySnapshot, task: AnyTask | undefined): string | undefined {
+	if (task === undefined) return undefined;
+	return snapshot.installed().findLast((installed) => installed.tasks?.includes(task) === true)?.name;
+}
+
+/** The report info of a failure of a task. */
+function reportTask(task: {
+	readonly taskId: TaskId;
+	readonly kind: string;
+	readonly conversationId: ConversationId;
+}): ReportTask {
+	return { id: task.taskId, kind: task.kind, conversationId: task.conversationId };
+}
+
+/** A stored task's identity, as an invocation names it. */
+function recordTask(record: Pick<AnyTaskRecord, "id" | "kind" | "conversationId">) {
+	return { taskId: record.id, kind: record.kind, conversationId: record.conversationId };
+}
+
+/**
+ * The record with an abort mark: `restart` for an abandonment; without a reason, a request, which replaces `restart`.
+ * The restart count starts over: it now counts cut-offs of the abort handler.
+ */
 function withAbortMark(record: AnyTaskRecord, reason?: "restart"): AnyTaskRecord {
-	const { abortReason: _reason, ...rest } = record;
+	const { abortReason: _reason, restarts: _restarts, ...rest } = record;
 	return { ...rest, abortRequested: true, ...(reason === undefined ? {} : { abortReason: reason }) } as AnyTaskRecord;
 }
 
@@ -1910,10 +2463,17 @@ function endedError(invocation: Invocation): Error {
 	return new Error(`Task ${invocation.taskId} invocation has ended`);
 }
 
-/** Replace a live record's state; memos disappear once an outcome is decided. */
+/** The record without its restart count, as after a state the task committed. */
+function progressed(record: AnyTaskRecord): AnyTaskRecord {
+	if (record.restarts === undefined) return record;
+	const { restarts: _restarts, ...rest } = record;
+	return rest as AnyTaskRecord;
+}
+
+/** Replace a live record's state; memos and the restart count disappear once an outcome is decided. */
 function withState(record: AnyTaskRecord, state: TaskState<JsonValue, JsonValue>): AnyTaskRecord {
 	if (state.status !== "terminal" && state.status !== "completing") return { ...record, state } as AnyTaskRecord;
-	const { memos: _memos, ...rest } = record;
+	const { memos: _memos, restarts: _restarts, ...rest } = record;
 	return { ...rest, state };
 }
 
@@ -1925,18 +2485,12 @@ function canReserve(task: AnyTask, record: AnyTaskRecord): boolean {
 	);
 }
 
-function delay(ms: number, signal: AbortSignal): Promise<void> {
-	return new Promise((resolve, reject) => {
-		const onAbort = (): void => {
-			clearTimeout(timer);
-			reject(signal.reason);
-		};
-		const timer = setTimeout(() => {
-			signal.removeEventListener("abort", onAbort);
-			resolve();
-		}, ms);
-		signal.addEventListener("abort", onAbort, { once: true });
-	});
+/** A sleep's `until` is a time on the Harness clock; an abort handler cannot sleep. */
+function validateSleep(invocation: Invocation, task: TaskId, until: number): void {
+	if (invocation.mode === "abort") throw new Error(`Abort handler of task ${task} cannot sleep`);
+	if (typeof until !== "number" || !Number.isFinite(until) || until < 0) {
+		throw new Error(`Task ${task} cannot sleep until ${until}: not a time in milliseconds`);
+	}
 }
 
 /** Structural equality of two JSON values; object key order is ignored. */

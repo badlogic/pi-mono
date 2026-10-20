@@ -495,7 +495,11 @@ describe("generation", () => {
 			followUpMode: "one-at-a-time",
 			contextRetentionMs: 600_000,
 			documentRetentionMs: expect.any(Number),
+			afterFailedRun: "keep",
+			restartLimit: 5,
 		});
+		expect(resolveSettings({ restartLimit: 0 }).restartLimit).toBe(5);
+		expect(resolveSettings({ restartLimit: Number.POSITIVE_INFINITY }).restartLimit).toBe(Number.POSITIVE_INFINITY);
 		expect(resolveSettings({ retry: { enabled: false }, compaction: { backgroundTokens: 0 } })).toMatchObject({
 			retry: { enabled: false, maxRetries: 3, baseDelayMs: 2000 },
 			compaction: { enabled: true, backgroundTokens: 0 },
@@ -535,6 +539,7 @@ describe("generation", () => {
 
 	it("renders sections that read conversation documents through input.read", async () => {
 		const Agent = defineDoc<{ cwd: string; kind: string }>({
+			checkpointWhen: () => false,
 			kind: "test.agent",
 			version: 1,
 			scope: "conversation",

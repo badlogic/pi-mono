@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [1.3.0] - 2026-10-15
+
 ### Breaking Changes
 
 - Worker-backed results and `close()` now settle after requesting shutdown, not after worker exit. Hosts that require actual exit must track `onWorkerStarted(exited)` or retain capacity through `acquireWorker()`'s release callback

@@ -186,6 +186,7 @@ describe("inbox", () => {
 		// Occupy the line, let the answer queue its boundary commit behind it, then change the mode.
 		const held = storage.holdCommits();
 		const Marker = defineDoc<{ n: number }>({
+			checkpointWhen: () => false,
 			kind: "test.marker",
 			version: 1,
 			scope: "session",

@@ -1,6 +1,6 @@
 import type { Cell } from "./cell.ts";
 import { type AnyContract, bind, coverage } from "./contract.ts";
-import { asChordError, ChordError, invalid } from "./errors.ts";
+import { asChordError, ChordError, invalid, isChordError } from "./errors.ts";
 import type { CodeVersionState, Facet, HostImpl, PluginRef, Serve } from "./host.ts";
 import {
 	type Factory,
@@ -18,6 +18,7 @@ import {
 import { holdPublications } from "./publish.ts";
 import type { RegistryTable } from "./registry.ts";
 import { assertValid, deepEqual } from "./schema.ts";
+import type { Readable } from "./types.ts";
 
 export interface ReloadOptions {
 	/** Facet names to remove. */
@@ -82,12 +83,25 @@ function dryRun(candidate: Candidate): void {
 	const values = new Map<unknown, unknown>(migrated);
 	const derives = [...run.decls.derives].sort(([, a], [, b]) => a.seq - b.seq);
 	for (const [name, derived] of derives) {
-		const value = derived.compute((source) => (values.has(source) ? values.get(source) : source.value));
+		const value = derived.compute((source) => (values.has(source) ? values.get(source) : candidateValue(source)));
 		for (const schema of exposed.get(derived) ?? [])
 			assertValid("state", `${object.address}: derivation ${name}`, schema, value);
 		values.set(derived, value);
 	}
 	candidate.derived = values;
+}
+
+/**
+ * A source's value for a dry run. A reference to a provider this reload upgrades too reads nothing before the commit
+ * (its new contract does not bind the old code): the dry run computes without it, the commit with the real value.
+ */
+function candidateValue(source: Readable<unknown>): unknown {
+	try {
+		return source.value;
+	} catch (error) {
+		if (isChordError(error, "not_ready") || isChordError(error, "not_in_variant")) return undefined;
+		throw error;
+	}
 }
 
 /** A reload error keeps the underlying code (`contract_mismatch`, `invalid`, ...) and says it aborted the reload. */
@@ -393,12 +407,18 @@ export class Reload {
 			if (resource.exclusive && old?.exclusive && old.state === "open") candidate.replaced.push(old);
 		}
 		if (deferred.size > 0) candidate.reasons.push("exclusive resource replaced");
-		if (candidate.reasons.length === 0) dryRun(candidate);
 		await object.open(
 			run.created.resources.filter((resource) => !deferred.has(resource)),
 			run.created.refs,
 			this.abort.signal,
 		);
+		await object.waitHydrated(run);
+		// Cells this reload adds read their first value once the new resources are open (gated objects: at the gate);
+		// the derivations over them are checked after.
+		if (candidate.reasons.length === 0) {
+			await object.initCells(run, this.abort.signal);
+			dryRun(candidate);
+		}
 	}
 
 	/**
@@ -475,6 +495,8 @@ export class Reload {
 				await old.close(object.openOrder);
 			}
 			await object.open(candidate.atGate, [], this.abort.signal);
+			this.#alive();
+			await object.initCells(candidate.run, this.abort.signal);
 			this.#alive();
 		}
 		for (const candidate of this.gated) this.migrate(candidate);

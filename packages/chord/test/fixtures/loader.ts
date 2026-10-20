@@ -42,9 +42,9 @@ try {
 	mkdirSync(dir, { recursive: true });
 	writeFileSync(`${dir}facet.ts`, facetSource);
 	writeGreeting("v1");
-	const host = createHost({ loader: nodeLoader, onError: () => {} });
+	const host = createHost({ self: { kind: "host" }, loader: nodeLoader, onError: () => {} });
 	await host.load([`${dir}facet.ts`]);
-	const ref = host.get(Hello, {});
+	const ref = host.hold(Hello, {});
 	assert.equal(await ref.greet("x"), "v1 x");
 	writeGreeting("v2");
 	const report = await host.reload([`${dir}facet.ts`]);
@@ -71,9 +71,9 @@ try {
 			`const Shared = local("t.shared", { version: 1, input: Type.Object({}), members: { same: method(undefined, Type.Boolean()) } });\n` +
 			`export default defineFacet((host) => host.serve(Shared, () => ({ same: async () => (await import(new URL("../b/facet.ts", import.meta.url).href)).own === state })));\n`,
 	);
-	const ordered = createHost({ loader: nodeLoader, onError: () => {} });
+	const ordered = createHost({ self: { kind: "host" }, loader: nodeLoader, onError: () => {} });
 	await ordered.load([`${plugins}a/facet.ts`, `${plugins}b/facet.ts`]);
-	assert.equal(await ordered.get(Shared, {}).same(), true);
+	assert.equal(await ordered.hold(Shared, {}).same(), true);
 	await ordered.close();
 } finally {
 	rmSync(dir, { recursive: true, force: true });
