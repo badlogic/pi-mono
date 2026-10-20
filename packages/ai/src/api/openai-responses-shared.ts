@@ -230,7 +230,6 @@ export function convertResponsesMessages<TApi extends Api>(
 	const unavailableTools = new Set<string>();
 	const appendSystemToolAdditions = (message: SystemMessage, seed: string): void => {
 		const tools = message.toolsAdded ?? [];
-		for (const tool of message.toolsRemoved ?? []) unavailableTools.add(tool.name);
 		for (const tool of tools) unavailableTools.delete(tool.name);
 		if (tools.length === 0) return;
 		if (toolSupport === "changes") {
@@ -289,6 +288,8 @@ export function convertResponsesMessages<TApi extends Api>(
 					const added = new Set((msg.toolsAdded ?? []).map((tool) => tool.name));
 					const removed = (msg.toolsRemoved ?? []).map((tool) => tool.name).filter((name) => !added.has(name));
 					if (removed.length > 0) parts.push(renderToolRemovalNotice(removed));
+					// Recorded after this message's additions, whose notice precedes this removal notice.
+					for (const name of removed) unavailableTools.add(name);
 				}
 				const text = parts.filter((part) => part.length > 0).join("\n\n");
 				if (text.length > 0) {

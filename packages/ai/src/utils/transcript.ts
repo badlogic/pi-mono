@@ -198,16 +198,24 @@ export function hasToolRedefinitions(messages: TranscriptMessages): boolean {
 
 /** Whether tool history contains a removal or same-name redeclaration that an addition-only transport cannot replay. */
 export function hasNonAdditiveToolChanges(messages: TranscriptMessages): boolean {
+	return findLastNonAdditiveToolChange(messages.filter(isSystemMessage)) >= 0;
+}
+
+/** Index of the last system message with a removal or same-name redeclaration, or -1. */
+function findLastNonAdditiveToolChange(systemMessages: readonly SystemMessage[]): number {
+	// A name declared before counts as a redeclaration even after its removal: Kimi K3 ignores a
+	// removed tool that a later tool message declares again (verified October 2026).
 	const declared = new Set<string>();
-	for (const message of messages) {
-		if (!isSystemMessage(message)) continue;
-		if ((message.toolsRemoved?.length ?? 0) > 0) return true;
+	let last = -1;
+	for (let index = 0; index < systemMessages.length; index++) {
+		const message = systemMessages[index];
+		if ((message.toolsRemoved?.length ?? 0) > 0) last = index;
 		for (const tool of message.toolsAdded ?? []) {
-			if (declared.has(tool.name)) return true;
+			if (declared.has(tool.name)) last = index;
 			declared.add(tool.name);
 		}
 	}
-	return false;
+	return last;
 }
 
 /**
@@ -247,19 +255,9 @@ export function resolveTranscriptTools(messages: TranscriptMessages, support: Tr
 		return { requestTools: getCurrentTools(systemMessages), foldedSystemMessages: systemMessages.length };
 	}
 	if (support === "changes") return { requestTools: [], foldedSystemMessages: 0 };
-	let folded = getInitialSystemMessage(messages) ? 1 : 0;
-	if (support === "additions") {
-		// A name declared before counts as a redeclaration even after its removal: Kimi K3 ignores a
-		// removed tool that a later tool message declares again (verified October 2026).
-		const declared = new Set<string>();
-		for (let index = 0; index < systemMessages.length; index++) {
-			const message = systemMessages[index];
-			const added = message.toolsAdded ?? [];
-			if ((message.toolsRemoved?.length ?? 0) > 0 || added.some((tool) => declared.has(tool.name))) {
-				folded = Math.max(folded, index + 1);
-			}
-			for (const tool of added) declared.add(tool.name);
-		}
-	}
+	const folded = Math.max(
+		getInitialSystemMessage(messages) ? 1 : 0,
+		findLastNonAdditiveToolChange(systemMessages) + 1,
+	);
 	return { requestTools: getCurrentTools(systemMessages.slice(0, folded)), foldedSystemMessages: folded };
 }

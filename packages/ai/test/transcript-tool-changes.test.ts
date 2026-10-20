@@ -422,6 +422,32 @@ describe("transcript system messages", () => {
 		expect(payload.input.at(-2)).toMatchObject({ type: "additional_tools", tools: [{ name: "drop_tool" }] });
 	});
 
+	test("does not list a tool as still unavailable before its removal is announced", async () => {
+		const payload = await capturePayload<ResponsesPayload>(additionalToolsModel, {
+			messages: [
+				{ role: "system", content: "base prompt", toolsAdded: [baseTool, dropTool], timestamp: 0 },
+				{
+					role: "system",
+					content: "",
+					toolsAdded: [lateTool],
+					toolsRemoved: [{ name: "drop_tool" }],
+					timestamp: 1,
+				},
+				{ role: "user", content: "go", timestamp: 2 },
+			],
+		});
+
+		// Like Codex: notice, then the tools, then the removal notice.
+		const [notice] = payload.input.slice(-4);
+		expect(notice?.content).toContain("incremental tools update");
+		expect(notice?.content).not.toContain("Still unavailable");
+		expect(payload.input.slice(-3)).toMatchObject([
+			{ type: "additional_tools", tools: [{ name: "late_tool" }] },
+			{ content: expect.stringContaining("no longer available. Do not call them:\n- drop_tool") },
+			{ role: "user" },
+		]);
+	});
+
 	// #10940: synthetic tool search cannot remove tools, so a removal rewrites the prefix once.
 	test("keeps the OpenAI tool search prefix across loads after a removal", async () => {
 		const model: Model<"openai-responses"> = {
