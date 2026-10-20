@@ -5,6 +5,7 @@
 ### Added
 
 - Changing the thinking level mid-session on OpenAI GPT-6 models (API key) now keeps the prompt cache ([#10853](https://github.com/earendil-works/pi/issues/10853))
+- Added built-in Scaleway provider support with `SCW_API_KEY` authentication and `deepseek-v4.1-flash` as the default model.
 
 ### Fixed
 

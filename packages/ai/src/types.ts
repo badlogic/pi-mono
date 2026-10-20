@@ -114,6 +114,7 @@ export type KnownProvider =
 	| "fireworks"
 	| "together"
 	| "baseten"
+	| "scaleway"
 	| "opencode"
 	| "opencode-go"
 	| "kimi-coding"

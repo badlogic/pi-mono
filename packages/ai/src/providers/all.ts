@@ -34,6 +34,7 @@ import { qwenTokenPlanProvider } from "./qwen-token-plan.ts";
 import { qwenTokenPlanCnProvider } from "./qwen-token-plan-cn.ts";
 import { qwenTokenPlanIndividualProvider } from "./qwen-token-plan-individual.ts";
 import { radiusProvider } from "./radius.ts";
+import { scalewayProvider } from "./scaleway.ts";
 import { togetherProvider } from "./together.ts";
 import { typesafeProvider } from "./typesafe.ts";
 import { vercelAIGatewayProvider } from "./vercel-ai-gateway.ts";
@@ -167,6 +168,7 @@ export function builtinProviders(): Provider[] {
 		qwenTokenPlanCnProvider(),
 		qwenTokenPlanIndividualProvider(),
 		radiusProvider(),
+		scalewayProvider(),
 		togetherProvider(),
 		typesafeProvider(),
 		vercelAIGatewayProvider(),

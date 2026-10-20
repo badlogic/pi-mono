@@ -324,6 +324,19 @@ describe("Tool Results with Images", () => {
 		});
 	});
 
+	describe.skipIf(!process.env.SCW_API_KEY)("Scaleway Provider (qwen3.5-397b-a17b)", () => {
+		const llm = getModel("scaleway", "qwen3.5-397b-a17b");
+		const options = { reasoningEffort: "high" } satisfies StreamOptionsWithExtras;
+
+		it("should handle tool result with only image", { retry: 3, timeout: 30000 }, async () => {
+			await handleToolWithImageResult(llm, options);
+		});
+
+		it("should handle tool result with text and image", { retry: 3, timeout: 30000 }, async () => {
+			await handleToolWithTextAndImageResult(llm, options);
+		});
+	});
+
 	describe.skipIf(!process.env.XIAOMI_API_KEY)("Xiaomi MiMo (API billing) Provider (mimo-v2.5-pro)", () => {
 		const llm = getModel("xiaomi", "mimo-v2.5-pro");
 

@@ -1615,6 +1615,52 @@ function processBasetenModels(provider: ModelsDevProvider | undefined): Model<Ap
 	return models;
 }
 
+function processScalewayModels(provider: ModelsDevProvider | undefined): Model<Api>[] {
+	if (!provider?.models) return [];
+
+	const baseUrl = "https://api.scaleway.ai/v1";
+	// Documented OpenAI-compatibility gaps: `store` is not a supported parameter,
+	// the message schema only accepts system/user/assistant/tool roles, and `strict`
+	// tool schemas are ignored ("act as if set to false").
+	// https://www.scaleway.com/en/developers/api/generative-apis/~schemas
+	const baseCompat: OpenAICompletionsCompat = {
+		supportsStore: false,
+		supportsDeveloperRole: false,
+		supportsStrictMode: false,
+		supportsUsageInStreaming: true,
+		maxTokensField: "max_completion_tokens",
+	};
+	const reasoningCompat: OpenAICompletionsCompat = {
+		...baseCompat,
+		thinkingFormat: "openai",
+		supportsReasoningEffort: true,
+	};
+	const models: Model<Api>[] = [];
+
+	for (const [modelId, model] of Object.entries(provider.models)) {
+		if (model.tool_call !== true) continue;
+		if (model.status === "deprecated") continue;
+
+		const reasoning = model.reasoning === true;
+		models.push({
+			id: modelId,
+			name: model.name || modelId,
+			api: "openai-completions",
+			provider: "scaleway",
+			baseUrl,
+			reasoning,
+			input: model.modalities?.input?.includes("image") ? ["text", "image"] : ["text"],
+			cost: getModelsDevCost(model.cost),
+			compat: reasoning ? reasoningCompat : baseCompat,
+			contextWindow: model.limit?.context || 4096,
+			maxTokens: model.limit?.output || 4096,
+		});
+		recordModelsDevReasoningOptions("scaleway", modelId, model);
+	}
+
+	return models;
+}
+
 function processGoogleModels(data: ModelsDevCatalog): Model<Api>[] {
 	const models: Model<Api>[] = [];
 	const googleModels = data.google?.models;
@@ -2182,6 +2228,7 @@ async function loadModelsDevData(): Promise<Model<any>[]> {
 		}
 
 		models.push(...processBasetenModels(data.baseten));
+		models.push(...processScalewayModels(data.scaleway));
 
 		// Process OpenCode models (Zen and Go)
 		// API mapping based on provider.npm field:
@@ -3116,7 +3163,10 @@ async function generateModels() {
 		if (
 			candidate.api === "openai-completions" &&
 			candidate.id.includes("deepseek-v4") &&
-			!QWEN_TOKEN_PLAN_PROVIDER_IDS.has(candidate.provider)
+			!QWEN_TOKEN_PLAN_PROVIDER_IDS.has(candidate.provider) &&
+			// Scaleway accepts reasoning_effort natively and does not require
+			// reasoning_content on replayed assistant messages.
+			candidate.provider !== "scaleway"
 		) {
 			const preservesNativeReasoningEffort = candidate.provider === "openrouter" || candidate.provider === "opencode";
 			candidate.compat = {

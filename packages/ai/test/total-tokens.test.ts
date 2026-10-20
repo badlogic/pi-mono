@@ -418,6 +418,32 @@ describe("totalTokens field", () => {
 	});
 
 	// =========================================================================
+	// Scaleway
+	// =========================================================================
+
+	describe.skipIf(!process.env.SCW_API_KEY)("Scaleway", () => {
+		it(
+			"DeepSeek V4.1 Flash - should return totalTokens equal to sum of components",
+			{ retry: 3, timeout: 60000 },
+			async () => {
+				const llm = getModel("scaleway", "deepseek-v4.1-flash");
+
+				console.log(`\nScaleway / ${llm.id}:`);
+				const { first, second } = await testTotalTokensWithCache(llm, {
+					apiKey: process.env.SCW_API_KEY,
+					reasoningEffort: "high",
+				});
+
+				logUsage("First request", first);
+				logUsage("Second request", second);
+
+				assertTotalTokensEqualsComponents(first);
+				assertTotalTokensEqualsComponents(second);
+			},
+		);
+	});
+
+	// =========================================================================
 	// z.ai
 	// =========================================================================
 

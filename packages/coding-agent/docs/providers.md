@@ -52,6 +52,7 @@ This table covers providers with a single primary API-key variable. Providers th
 | Fireworks | `FIREWORKS_API_KEY` |
 | Together AI | `TOGETHER_API_KEY` |
 | Baseten | `BASETEN_API_KEY` |
+| Scaleway | `SCW_API_KEY` |
 | Kimi For Coding | `KIMI_API_KEY` |
 | Meta | `META_API_KEY` |
 | MiniMax | `MINIMAX_API_KEY` |
@@ -245,3 +246,17 @@ gcloud auth application-default login
 ```
 
 To use a service-account key file instead, set `GOOGLE_APPLICATION_CREDENTIALS` along with the project and location.
+
+### Scaleway
+
+Authenticate with `/login scaleway` or `SCW_API_KEY`. The key is an IAM secret key from the Scaleway console.
+
+The built-in provider uses the serverless Generative APIs endpoint at `https://api.scaleway.ai/v1`. To use a dedicated Generative APIs deployment instead, point the provider at its endpoint in [`models.json`](models.md#configure-a-compatible-endpoint):
+
+```json
+{
+  "providers": {
+    "scaleway": { "baseUrl": "https://<deployment-id>.ifr.fr-par.scaleway.com/v1" }
+  }
+}
+```
