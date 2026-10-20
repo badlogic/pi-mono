@@ -1614,7 +1614,8 @@
               text: match[2],
               tokens: this.lexer.inlineTokens(match[2])
             };
-          }
+          },
+          emStrong: markedCjkFriendly().tokenizer.emStrong
         },
         renderer: {
           // Sanitize link URLs with a scheme allow-list. Browsers strip C0
