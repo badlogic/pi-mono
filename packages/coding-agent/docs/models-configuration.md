@@ -185,3 +185,12 @@ Also applies to `azure-openai-responses` and `openai-codex-responses`.
 | Field | Type | Default | Description |
 |---|---|---|---|
 | `supportsMidConvoSystemMessages` | boolean | `false` | Whether the exact model accepts system messages after the conversation has started. When false, later system messages are folded into the leading system message. |
+
+### `typesafe-system-one`
+
+Also applies to `cloudflare-workers-ai-system-one`.
+
+| Field | Type | Default | Description |
+|---|---|---|---|
+| `imageInput` | `"assets" \| "images" \| "state-image-urls"` |  | How the service takes classifier images. "assets" sends TypeSafe's assets map (PNG and JPEG) and references the images from the state, as TypeSafe and Jev on Workers AI expect. "images" sends Clef's images list of data URLs (PNG, JPEG, and WebP, at most four), as Clef on Workers AI expects. "state-image-urls" places image_url parts before the state, as OpenRouter expects; OpenRouter drops assets without an error. Auto-detected from the provider, baseUrl, and model ID. Classifier models read it from the provider-level compat; models and modelOverrides entries apply to chat models only. |
+| `sendImageOptInHeader` | boolean |  | Whether requests with images send the TypeSafe-Danger-Zone-Images: true header, which TypeSafe's own API requires for its experimental image input. Defaults to true for the typesafe-system-one API unless the model is detected as OpenRouter. |

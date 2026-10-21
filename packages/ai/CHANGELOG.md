@@ -17,6 +17,9 @@
 - Failed model request spans report `provider_error` status with up to 500 error-message characters; cancelled requests keep `ok` status with `stop: "aborted"`.
 - Added `MiniMax-M3.1-Flash` to the `minimax` and `minimax-cn` providers, with thinking levels low through max sent as `output_config.effort`. Thinking cannot be turned off for this model. New MiniMax models from models.dev now appear without a manual allowlist entry; only the older M2, M2.1, M2.5, and M2.5-highspeed models stay hidden ([#11121](https://github.com/earendil-works/pi/issues/11121))
 - Sign in with ChatGPT: ChatGPT Business workspace usage-limit errors are not retried and tell the user to ask their workspace admin to increase the limit.
+- Added image input to System One classifiers: `ClassifierContext.images` now works with Jev on `typesafe` (experimental there, opted in with the `TypeSafe-Danger-Zone-Images` header) and `cloudflare-workers-ai`, with Clef on `cloudflare-workers-ai`, and with OpenRouter decision models whose catalog lists image input. Each service gets its own wire form: TypeSafe `assets`, Clef `images` data URLs, or OpenRouter `image_url` parts in the state.
+- Added `compat` to System One classifier models (`SystemOneCompat`, with `imageInput` and `sendImageOptInHeader`). Built-in catalog entries set it explicitly; models without it detect the form from the provider, `baseUrl`, and model ID.
+- Added the `@cf/cloudflare/clef-omni` and `typesafe/jev-1.14.0` classifier models to `cloudflare-workers-ai`.
 
 ### Changed
 
@@ -24,6 +27,7 @@
 
 ### Fixed
 
+- Fixed Cloudflare Workers AI classifier catalog data: Clef Flash now costs $0.038 per million input tokens with a 24,576-token context window, and Jev costs $0.042 per million input tokens instead of being listed as free.
 - Fixed whitespace-only tool output (for example a bare `\r\n` from bash) being sent as-is to OpenAI Completions, OpenAI Responses, and Google providers; it now uses the same placeholder as empty output, since some providers reject whitespace-only tool content with a 400 ([#8720](https://github.com/earendil-works/pi/issues/8720))
 - Fixed automatic retry not triggering for gateway upstream failures such as `upstream_error: Upstream request failed`, `upstream_stream_read_error`, and `Upstream HTTP/2 stream failed` ([#10920](https://github.com/earendil-works/pi/issues/10920))
 - Fixed automatic retry not triggering for `stream disconnected before completion` errors relayed by proxies that wrap the Codex CLI ([#11057](https://github.com/earendil-works/pi/issues/11057))

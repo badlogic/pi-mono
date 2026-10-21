@@ -895,8 +895,8 @@ Classifier models consume structured JSON state, and optionally images, and answ
 | Provider | Model IDs | Auth |
 | --- | --- | --- |
 | `typesafe` | `jev-latest` | `TYPESAFE_API_KEY` |
-| `openrouter` | `typesafe/jev-1.13`, `~typesafe/jev-latest` | `OPENROUTER_API_KEY` or OpenRouter OAuth |
-| `cloudflare-workers-ai` | `typesafe/jev`, `@cf/cloudflare/clef`, `@cf/cloudflare/clef-flash` | `CLOUDFLARE_API_KEY` and `CLOUDFLARE_ACCOUNT_ID` |
+| `openrouter` | `typesafe/jev-1.13`, `typesafe/jev-1.14`, `~typesafe/jev-latest`, `cloudflare/clef`, `cloudflare/clef-flash`, `cloudflare/clef-omni` | `OPENROUTER_API_KEY` or OpenRouter OAuth |
+| `cloudflare-workers-ai` | `typesafe/jev`, `typesafe/jev-1.14.0`, `@cf/cloudflare/clef`, `@cf/cloudflare/clef-flash`, `@cf/cloudflare/clef-omni` | `CLOUDFLARE_API_KEY` and `CLOUDFLARE_ACCOUNT_ID` |
 | `vercel-ai-gateway` | `typesafe-ai/jev` | `AI_GATEWAY_API_KEY` |
 | `opencode` | `jev-1.13`, `jev-1.13-free` | `OPENCODE_API_KEY` |
 | `openai` | `gpt-6-luna` | `OPENAI_API_KEY` |
@@ -940,6 +940,18 @@ When the service reports token counts, `result.usage` carries them with their co
 `ClassifierOptions.temperature` divides the answer logits by the given value before they are normalized; values above 1 soften the distribution. APIs that cannot apply it, such as System One and OpenAI Decisions, ignore it.
 
 `ClassifierContext.images` holds image blocks (`{ type: "image", data, mimeType }`) judged together with the state. Only models whose `input` includes `"image"` accept them; `classify()` returns an error result for other models.
+
+### System One images
+
+System One services take images in three forms. The model's `compat.imageInput` chooses the form (`"assets"`, `"images"`, or `"state-image-urls"`), and `compat.sendImageOptInHeader` controls TypeSafe's opt-in header:
+
+- **TypeSafe** (`typesafe`, and Jev on Workers AI) takes PNG and JPEG images as `assets`, `{ "<image-1>": { type: "image", format: "png", data_base64 } }`. Every asset must be referenced from the request, so the state is sent as `["<image-1>", ..., state]`. Images are experimental on TypeSafe's own API and need the `TypeSafe-Danger-Zone-Images: true` header, which the API sends with requests that carry images.
+- **Clef on Workers AI** takes up to four PNG, JPEG, or WebP images as an `images` list of data URLs, next to the unchanged state.
+- **OpenRouter** takes images as `{ type: "image_url", image_url: { url } }` parts before the state: `[part, ..., state]`. It answers requests with `assets` but drops the images, without an error.
+
+Built-in catalog entries set `compat` explicitly, so they keep their form when `baseUrl` points at a proxy. For models without it, the APIs detect the form: OpenRouter by provider `openrouter` or a `baseUrl` containing `openrouter.ai`, Clef by a model ID starting with `@cf/cloudflare/clef`, and TypeSafe's form with the opt-in header otherwise. A custom provider that reaches OpenRouter through a proxy matches neither check and must set `compat.imageInput: "state-image-urls"` and `compat.sendImageOptInHeader: false`; otherwise OpenRouter drops its images.
+
+Vercel AI Gateway and OpenCode list their Jev models with text input only.
 
 ### OpenAI Decisions
 
