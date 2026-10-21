@@ -21,7 +21,7 @@ function escapeRegex(value: string): string {
 function buildFdPathQuery(query: string): string {
 	const normalized = toDisplayPath(query);
 	if (!normalized.includes("/")) {
-		return normalized;
+		return escapeRegex(normalized);
 	}
 
 	const hasTrailingSeparator = normalized.endsWith("/");
