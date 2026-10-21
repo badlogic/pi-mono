@@ -2,17 +2,31 @@
 
 ## [Unreleased]
 
+### New Features
+
+- **Image input for classifiers**: codemode `models.classify()` accepts `images` for TypeSafe's Jev and Cloudflare's Clef models on `typesafe`, `cloudflare-workers-ai`, and OpenRouter. See [Use classifier models](docs/models.md#use-classifier-models) and [Codemode](docs/codemode.md#models).
+- **Models Configuration reference**: every provider, model, model override, and compatibility field of `models.json`, generated from its schema. See [Models Configuration](docs/models-configuration.md).
+- **Summaries without a fixed output cap**: compaction and branch summaries use the model's output limit, so long reasoning no longer makes them fail. See [Compaction](docs/compaction.md#compaction).
+- **Codemode waits for a free worker**: parallel scripts and in-process subagents queue instead of failing, and `PI_CODEMODE_MAX_WORKERS` raises the limit. See [Codemode limits](docs/codemode.md#limits).
+- **Rex terminal support**: OSC 8 hyperlinks, truecolor, and inline images.
+
 ### Added
 
 - Added a Models Configuration reference generated from the `models.json` schema, listing all provider, model, model override, and compatibility fields ([#10790](https://github.com/earendil-works/pi/issues/10790))
 - Codemode `models.classify()` now accepts `images` for TypeSafe's Jev and Cloudflare's Clef models on `typesafe`, `cloudflare-workers-ai`, and OpenRouter, and lists Clef Omni and Jev 1.14 on Workers AI.
 - Provider-level `compat` in `models.json` now also applies to classifier models, with the System One fields `imageInput` and `sendImageOptInHeader` for proxies that serve another service's classifiers. Extension classifier models accept `compat` too.
+- Added `MiniMax-M3.1-Flash` to the `minimax` and `minimax-cn` providers, with thinking levels low through max ([#11121](https://github.com/earendil-works/pi/issues/11121))
+- Added support for the Rex terminal: OSC 8 hyperlinks, truecolor, and inline images ([#11131](https://github.com/earendil-works/pi/issues/11131), [#11150](https://github.com/earendil-works/pi/pull/11150) by [@petrroll](https://github.com/petrroll), [#11183](https://github.com/earendil-works/pi/pull/11183) by [@nihaals](https://github.com/nihaals))
 
 ### Changed
 
 - Provider attribution headers now come from pi-ai's client identity. Extensions' `before_provider_headers` handlers no longer see the OpenRouter, NVIDIA NIM, and OpenCode attribution headers; returning `null` for one still removes it. Cloudflare requests send pi's detailed `User-Agent` instead of `pi-coding-agent`, as do GitHub release checks for tool downloads, and OpenCode requests send `x-opencode-client` whenever attribution is enabled, not only with a session.
 - `generateSummary()` and `generateSummaryWithUsage()` now ignore their `reserveTokens` parameter. Summary requests use the model's output limit instead.
 - Changed the default GitHub Copilot model from `gpt-5.4`, which Copilot retired, to `gpt-6.1-sol`.
+- Changed the default NVIDIA model to `nvidia/nemotron-3.5-super-vl-120b-a12b` ([#10910](https://github.com/earendil-works/pi/pull/10910) by [@cv](https://github.com/cv))
+- Changed the default Xiaomi model to `mimo-v2.6-pro` for the `xiaomi` and Xiaomi Token Plan providers, since `mimo-v2.5-pro` left the catalog.
+- Grok 4.3 and Grok 4.5 on the `xai` provider now offer the `xhigh` thinking level.
+- Sign in with ChatGPT: ChatGPT Business workspace usage-limit errors are not retried and tell the user to ask their workspace admin to increase the limit.
 
 ### Fixed
 
@@ -28,6 +42,19 @@
 - Fixed `mcp.json` files that start with a UTF-8 BOM failing to parse, which skipped all their MCP servers and made `pi mcp add`/`pi mcp remove` fail ([#11191](https://github.com/earendil-works/pi/issues/11191))
 - Fixed `/compact <instructions>` ignoring the instructions when summarizing the start of a turn that compaction splits. When the split turn was the only new content since the last compaction, the instructions were ignored entirely ([#11058](https://github.com/earendil-works/pi/issues/11058))
 - Fixed resumed sessions and `/tree` navigation leaving extension tools inactive when the branch recorded its tools before they were registered, such as tools from extensions installed after the session started. Extension tools the branch never added or removed are now active unless they are registered with `defaultActive: false` ([#11062](https://github.com/earendil-works/pi/issues/11062), [#11075](https://github.com/earendil-works/pi/issues/11075))
+- Fixed sessions breaking after recovery from a response cut off at the output limit: the truncated tool call was omitted but its tool results were kept, so providers rejected every later request ([#11227](https://github.com/earendil-works/pi/issues/11227), [#11233](https://github.com/earendil-works/pi/pull/11233) by [@petrroll](https://github.com/petrroll))
+- Fixed the `grep` tool following `RIPGREP_CONFIG_PATH`, where options such as `--fixed-strings` silently changed regex searches into literal ones. The tool now runs `rg --no-config` ([#11203](https://github.com/earendil-works/pi/issues/11203), [#11230](https://github.com/earendil-works/pi/pull/11230) by [@petrroll](https://github.com/petrroll))
+- Fixed Windows shell detection rejecting runnable Microsoft Store shell aliases ([#9504](https://github.com/earendil-works/pi/pull/9504) by [@petrroll](https://github.com/petrroll))
+- Fixed Windows shell detection missing PowerShell outside `PATH` and the legacy WSL `bash.exe` launcher when Windows is not installed in `C:\Windows`. pi now checks `%ProgramFiles%\PowerShell\7`, `%SystemRoot%\System32\WindowsPowerShell\v1.0`, and `%SystemRoot%` ([#9501](https://github.com/earendil-works/pi/pull/9501) by [@petrroll](https://github.com/petrroll))
+- Fixed GitHub Copilot sessions with large request bodies, such as many images, failing with HTTP 413 `failed to parse request` instead of compacting and retrying ([#11016](https://github.com/earendil-works/pi/pull/11016) by [@petrroll](https://github.com/petrroll))
+- Fixed the `openai-codex` provider offering `gpt-5.5` and `gpt-5.3-codex-spark`, which always fail for ChatGPT accounts ([#11173](https://github.com/earendil-works/pi/pull/11173) by [@lucasmeijer](https://github.com/lucasmeijer))
+- Fixed whitespace-only tool output (for example a bare `\r\n` from bash) making OpenAI Completions, OpenAI Responses, and Google requests fail with a 400 ([#8720](https://github.com/earendil-works/pi/issues/8720))
+- Fixed automatic retry not triggering for more gateway upstream failures, `stream disconnected before completion` errors relayed by Codex CLI proxies, and transient Google Vertex OAuth token refresh failures, and retrying errors because of digits inside request ids or byte counts ([#10920](https://github.com/earendil-works/pi/issues/10920), [#11057](https://github.com/earendil-works/pi/issues/11057), [#10996](https://github.com/earendil-works/pi/issues/10996))
+- Fixed OpenAI Responses models losing the prompt cache on every deferred tool load after a tool was removed ([#10940](https://github.com/earendil-works/pi/issues/10940))
+- Fixed Cloudflare Workers AI classifier pricing: Clef Flash costs $0.038 and Jev $0.042 per million input tokens instead of Jev being listed as free.
+- Fixed an unclosed `$$` display-math block swallowing or corrupting every Markdown table after it ([#11159](https://github.com/earendil-works/pi/issues/11159))
+- Fixed Markdown bold and italic not rendering next to CJK punctuation ([#10730](https://github.com/earendil-works/pi/pull/10730) by [@theBucky](https://github.com/theBucky))
+- Fixed `@` file autocomplete returning no results for queries containing regex metacharacters such as `[` or `(` ([#10972](https://github.com/earendil-works/pi/issues/10972))
 
 ## [1.3.0] - 2026-10-15
 
@@ -48,10 +75,6 @@
 
 - Changed the `kimi-coding` provider to use OpenAI Chat Completions at `https://api.kimi.com/coding/v1`, the protocol used by the official Kimi Code client. K3, K3-256K, and Kimi For Coding now accept tools added mid-conversation without invalidating the prompt cache. `models.json` overrides of the `kimi-coding` base URL must now include `/v1` ([#10720](https://github.com/earendil-works/pi/issues/10720))
 - Changed model switching to drop thinking blocks from earlier assistant messages produced by a different model, instead of sending them as plain text. The new model previously saw the old model's reasoning as part of its replies and could start writing its own reasoning into the visible answer ([#10995](https://github.com/earendil-works/pi/issues/10995))
-
-### Changed
-
-- Changed the default NVIDIA model to `nvidia/nemotron-3.5-super-vl-120b-a12b` ([#10910](https://github.com/earendil-works/pi/pull/10910) by [@cv](https://github.com/cv))
 
 ### Fixed
 
