@@ -66,6 +66,12 @@
 			"import": "./dist/storage/memory.js",
 			"default": "./dist/storage/memory.js"
 		},
+		"./storage/indexeddb": {
+			"source": "./src/storage/indexeddb.ts",
+			"types": "./dist/storage/indexeddb.d.ts",
+			"import": "./dist/storage/indexeddb.js",
+			"default": "./dist/storage/indexeddb.js"
+		},
 		"./storage/jsonl": {
 			"source": "./src/storage/jsonl/index.ts",
 			"types": "./dist/storage/jsonl/index.d.ts",
@@ -154,6 +160,7 @@
 	},
 	"devDependencies": {
 		"@cloudflare/vitest-plugin": "1.4.4",
+		"fake-indexeddb": "6.2.6",
 		"shx": "0.3.4",
 		"vitest": "4.1.11"
 	}
