@@ -1,6 +1,6 @@
 import type { Context } from "@earendil-works/chord";
 import { LOG_START } from "../storage/log.ts";
-import type { Seq } from "../types.ts";
+import type { JsonObject, Seq } from "../types.ts";
 
 /**
  * A slot of a session's remote history: the batch of log records after `after`, up to `to`, uploaded by `device`. A
@@ -41,6 +41,14 @@ export interface SessionSyncStore {
 	getBatch(sessionId: string, after: Seq, context: Context): Promise<Uint8Array | undefined>;
 	getSnapshot(sessionId: string, to: Seq, context: Context): Promise<Uint8Array | undefined>;
 	list(sessionId: string, context: Context): Promise<RemoteListing>;
+	/** The sessions the remote holds anything for. */
+	sessions(context: Context): Promise<string[]>;
+	/**
+	 * The host's description of a session (title, location, which device started it), outside its history: the last
+	 * write wins, and it may be ahead of or behind the batches.
+	 */
+	putMeta(sessionId: string, meta: JsonObject, context: Context): Promise<void>;
+	getMeta(sessionId: string, context: Context): Promise<JsonObject | undefined>;
 }
 
 /** The remote's own side: folding history into snapshots, which clients never do. */

@@ -27,3 +27,4 @@ export {
 	type SessionSyncMaintenance,
 	type SessionSyncStore,
 } from "./remote.ts";
+export { FileSyncStateStore } from "./state.ts";

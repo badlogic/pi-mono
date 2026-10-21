@@ -1,12 +1,19 @@
 import type { Context } from "@earendil-works/chord";
 import type { FileError, FileSystem, Result } from "../env/index.ts";
 import { seqFromNumber } from "../ids.ts";
-import type { Seq } from "../types.ts";
+import type { JsonObject, Seq } from "../types.ts";
 import type { BatchInfo, PutBatchResult, RemoteListing, SessionSyncMaintenance } from "./remote.ts";
 
 const pad = (value: number): string => String(value).padStart(16, "0");
 const SLOT_NAME = /^(\d{16})\.json$/;
 const SNAPSHOT_NAME = /^(\d{16})\.batch$/;
+const SESSION_ID = /^[A-Za-z0-9_-][A-Za-z0-9._-]*$/;
+
+/** A session ID names a file or directory: refuse anything that could leave the root. */
+export function checkSessionId(sessionId: string): string {
+	if (!SESSION_ID.test(sessionId)) throw new Error(`Invalid session ID for a sync directory: ${sessionId}`);
+	return sessionId;
+}
 
 function unwrap<T>(result: Result<T, FileError>): T {
 	if (!result.ok) throw result.error;
@@ -22,6 +29,7 @@ function unwrap<T>(result: Result<T, FileError>): T {
  * {root}/{session}/slots/{after}.json     { after, to, device, folded? }, written once
  * {root}/{session}/batches/{after}.batch  the records, until folded
  * {root}/{session}/snapshots/{to}.batch
+ * {root}/{session}/meta.json             the host's description, last write wins
  * ```
  */
 export class FileSystemSyncRemote implements SessionSyncMaintenance {
@@ -43,11 +51,12 @@ export class FileSystemSyncRemote implements SessionSyncMaintenance {
 	): Promise<PutBatchResult> {
 		const existing = await this.#slot(sessionId, after, context);
 		if (existing !== undefined) return { type: "exists", to: existing.to, device: existing.device };
-		await this.#write([sessionId, "batches"], `${pad(after)}.batch`, body, context);
+		await this.#write(sessionId, ["batches"], `${pad(after)}.batch`, body, context);
 		// The slot is written last: it is what makes the batch exist.
 		const slot: BatchInfo = { after, to, device };
 		await this.#write(
-			[sessionId, "slots"],
+			sessionId,
+			["slots"],
 			`${pad(after)}.json`,
 			new TextEncoder().encode(JSON.stringify(slot)),
 			context,
@@ -66,7 +75,7 @@ export class FileSystemSyncRemote implements SessionSyncMaintenance {
 	}
 
 	async putSnapshot(sessionId: string, to: Seq, body: Uint8Array, context: Context): Promise<void> {
-		await this.#write([sessionId, "snapshots"], `${pad(to)}.batch`, body, context);
+		await this.#write(sessionId, ["snapshots"], `${pad(to)}.batch`, body, context);
 	}
 
 	async foldBatches(sessionId: string, afters: readonly Seq[], context: Context): Promise<void> {
@@ -75,7 +84,8 @@ export class FileSystemSyncRemote implements SessionSyncMaintenance {
 			if (slot === undefined || slot.folded) continue;
 			const folded: BatchInfo = { ...slot, folded: true };
 			await this.#write(
-				[sessionId, "slots"],
+				sessionId,
+				["slots"],
 				`${pad(after)}.json`,
 				new TextEncoder().encode(JSON.stringify(folded)),
 				context,
@@ -108,33 +118,59 @@ export class FileSystemSyncRemote implements SessionSyncMaintenance {
 		return { batches, snapshots };
 	}
 
+	async sessions(context: Context): Promise<string[]> {
+		const result = await this.#fs.listDir(this.#root, context);
+		if (!result.ok && result.error.code === "not_found") return [];
+		return unwrap(result)
+			.filter((info) => info.kind === "directory" && SESSION_ID.test(info.name))
+			.map((info) => info.name)
+			.sort();
+	}
+
+	async putMeta(sessionId: string, meta: JsonObject, context: Context): Promise<void> {
+		await this.#write(sessionId, [], "meta.json", new TextEncoder().encode(JSON.stringify(meta)), context);
+	}
+
+	async getMeta(sessionId: string, context: Context): Promise<JsonObject | undefined> {
+		const bytes = await this.#read(context, sessionId, "meta.json");
+		return bytes === undefined ? undefined : (JSON.parse(new TextDecoder().decode(bytes)) as JsonObject);
+	}
+
 	async #slot(sessionId: string, after: Seq, context: Context): Promise<BatchInfo | undefined> {
 		const bytes = await this.#read(context, sessionId, "slots", `${pad(after)}.json`);
 		return bytes === undefined ? undefined : (JSON.parse(new TextDecoder().decode(bytes)) as BatchInfo);
 	}
 
-	async #names(context: Context, ...parts: string[]): Promise<string[]> {
-		const result = await this.#fs.listDir(await this.#path(context, ...parts), context);
+	async #names(context: Context, sessionId: string, ...parts: string[]): Promise<string[]> {
+		const result = await this.#fs.listDir(await this.#path(context, sessionId, ...parts), context);
 		if (!result.ok && result.error.code === "not_found") return [];
 		return unwrap(result).map((info) => info.name);
 	}
 
-	async #read(context: Context, ...parts: string[]): Promise<Uint8Array | undefined> {
-		const result = await this.#fs.readBinaryFile(await this.#path(context, ...parts), context);
+	async #read(context: Context, sessionId: string, ...parts: string[]): Promise<Uint8Array | undefined> {
+		const result = await this.#fs.readBinaryFile(await this.#path(context, sessionId, ...parts), context);
 		if (!result.ok && result.error.code === "not_found") return undefined;
 		return unwrap(result);
 	}
 
 	/** Write through a temporary file and a rename, so a reader never sees half a file. */
-	async #write(directory: readonly string[], name: string, body: Uint8Array, context: Context): Promise<void> {
-		unwrap(await this.#fs.createDir(await this.#path(context, ...directory), { recursive: true }, context));
-		const path = await this.#path(context, ...directory, name);
-		const temporary = await this.#path(context, ...directory, `${name}.tmp`);
+	async #write(
+		sessionId: string,
+		directory: readonly string[],
+		name: string,
+		body: Uint8Array,
+		context: Context,
+	): Promise<void> {
+		unwrap(
+			await this.#fs.createDir(await this.#path(context, sessionId, ...directory), { recursive: true }, context),
+		);
+		const path = await this.#path(context, sessionId, ...directory, name);
+		const temporary = await this.#path(context, sessionId, ...directory, `${name}.tmp`);
 		unwrap(await this.#fs.writeFile(temporary, body, context));
 		unwrap(await this.#fs.renameFile(temporary, path, context));
 	}
 
-	async #path(context: Context, ...parts: string[]): Promise<string> {
-		return unwrap(await this.#fs.joinPath([this.#root, ...parts], context));
+	async #path(context: Context, sessionId: string, ...parts: string[]): Promise<string> {
+		return unwrap(await this.#fs.joinPath([this.#root, checkSessionId(sessionId), ...parts], context));
 	}
 }

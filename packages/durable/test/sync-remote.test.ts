@@ -11,6 +11,7 @@ import {
 	type BatchInfo,
 	decodeBatch,
 	encodeBatch,
+	FileSyncStateStore,
 	FileSystemSyncRemote,
 	FlushScheduler,
 	foldSession,
@@ -292,9 +293,47 @@ describe("syncing a session between devices", () => {
 			foldBatches: (...args) => store.foldBatches(...args),
 			deleteSnapshots: (...args) => store.deleteSnapshots(...args),
 			list: (...args) => store.list(...args),
+			sessions: (...args) => store.sessions(...args),
+			putMeta: (...args) => store.putMeta(...args),
+			getMeta: (...args) => store.getMeta(...args),
 			getBatch: async () => undefined,
 		};
 		await expect(foldSession({ sessionId: SESSION, store: vanishing, context })).rejects.toThrow("vanished");
+	});
+});
+
+describe("host pieces", () => {
+	it("lists sessions and keeps the last metadata written", async () => {
+		const store = await remote();
+		expect(await store.sessions(context)).toEqual([]);
+		const laptop = device("laptop", store);
+		await laptop.storage.commit([entry(1)], context);
+		await laptop.upload("s2");
+		await store.putMeta("s1", { title: "first" }, context);
+		await store.putMeta("s1", { title: "renamed", origin: "laptop" }, context);
+		expect(await store.sessions(context)).toEqual(["s1", "s2"]);
+		expect(await store.getMeta("s1", context)).toEqual({ title: "renamed", origin: "laptop" });
+		expect(await store.getMeta("s2", context)).toBeUndefined();
+	});
+
+	it("refuses session IDs that leave the root", async () => {
+		const store = await remote();
+		for (const id of ["..", "../x", "a/b", "", ".hidden"]) {
+			await expect(store.list(id, context)).rejects.toThrow("Invalid session ID");
+		}
+	});
+
+	it("keeps sync state in files", async () => {
+		const directory = await mkdtemp(join(tmpdir(), "pi-durable-sync-state-"));
+		directories.push(directory);
+		const state = new FileSyncStateStore(new NodeExecutionEnv({ cwd: directory }), join(directory, "sync"));
+		expect(await state.get(SESSION, context)).toBeUndefined();
+		await state.set(SESSION, { syncedHead: seqFromNumber(3), pulling: seqFromNumber(7) }, context);
+		expect(await state.get(SESSION, context)).toEqual({ syncedHead: seqFromNumber(3), pulling: seqFromNumber(7) });
+		await state.set(SESSION, { syncedHead: undefined }, context);
+		expect(await state.get(SESSION, context)).toEqual({ syncedHead: undefined });
+		await state.delete(SESSION, context);
+		expect(await state.get(SESSION, context)).toBeUndefined();
 	});
 });
 

@@ -822,8 +822,10 @@ continues the session from there. A device that finds the slot taken by another 
 that point are a different history, so the host renames its copy to a new session (forked at that point) and the
 session restores fresh. The remote folds the history into snapshots, keeping folded slots taken.
 
-The host keeps `{ syncedHead }` per copy (`SyncStateStore`), gives each device a stable ID, and implements the store
-(`SessionSyncStore`); `FileSystemSyncRemote` is one in a directory, for development and tests.
+The host keeps `{ syncedHead }` per copy (`SyncStateStore`; `FileSyncStateStore` keeps it in a directory), gives each
+device a stable ID, and implements the store (`SessionSyncStore`); `FileSystemSyncRemote` is one in a directory, for
+development and tests. The store also lists its sessions and keeps a metadata object per session for the host (title,
+location, origin device), outside the history: the last write wins.
 
 ```typescript
 const result = await uploadSession({ sessionId, device, source: storage, store, state, context }); // after commits
