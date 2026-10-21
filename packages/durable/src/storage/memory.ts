@@ -19,10 +19,12 @@ import type {
 	EntryRecord,
 	Id,
 	JsonObject,
+	LogRecord,
+	LogWrite,
 	Page,
+	ReplayableStorage,
 	ScanOrder,
 	Seq,
-	Storage,
 	StorageWrite,
 	StoredDocument,
 	SubmissionId,
@@ -32,6 +34,15 @@ import type {
 	TaskQuery,
 	TaskRecord,
 } from "../types.ts";
+import {
+	assertLogRecord,
+	documentWrites,
+	groupExport,
+	isCurrentOnly,
+	type SequencedWrite,
+	sortBySeq,
+	streamOf,
+} from "./export.ts";
 import { nextCursor, type ScanStart, scanStart } from "./scan.ts";
 
 type StoredTask = TaskRecord<JsonValue, JsonValue, JsonValue>;
@@ -194,9 +205,6 @@ const isAliveAt = (record: DocumentRecord, at: DocumentPoint): boolean => {
 	return record.createdAt <= at && (record.retiredAt === undefined || at < record.retiredAt);
 };
 
-const isCurrentOnly = (record: DocumentRecord): boolean =>
-	record.scope.kind !== "conversation" || record.history === "latest";
-
 const tableContaining = (state: State, id: Id<string>): TableName | undefined => state.recordTypes.get(id);
 
 const page = <T extends { readonly id: Id<string> }>(
@@ -234,7 +242,7 @@ export interface PreparedMemoryCommit {
  * Reads and retained writes are cloned intentionally to match the ownership boundary
  * of serialization-backed stores. This is backend conformance, not validation.
  */
-export class MemoryStorage implements Storage {
+export class MemoryStorage implements ReplayableStorage {
 	private readonly state: State = {
 		recordTypes: new Map(),
 		conversations: new Map(),
@@ -428,6 +436,47 @@ export class MemoryStorage implements Storage {
 		this.assertOpen();
 		if (!Number.isSafeInteger(this.nextId)) throw new Error("ID space is exhausted");
 		return idFromNumber<I>(this.nextId++);
+	}
+
+	async head(_context: Context): Promise<Seq | undefined> {
+		this.assertOpen();
+		return this.headSeq();
+	}
+
+	async replay(record: LogRecord, _context: Context): Promise<void> {
+		assertLogRecord(record);
+		this.prepareCommit(record.writes, record.seq).apply();
+	}
+
+	/** Builds the whole log from a consistent view when iteration starts; a later commit makes it reject. */
+	async *export(_context: Context): AsyncGenerator<LogRecord> {
+		this.assertOpen();
+		const head = this.headSeq();
+		const unsequenced: LogWrite[] = [];
+		for (const id of this.state.conversationIds) {
+			unsequenced.push({ type: "conversation", value: clone(this.state.conversations.get(id)!) });
+		}
+		for (const id of this.state.taskIds) unsequenced.push({ type: "task", value: clone(this.state.tasks.get(id)!) });
+		for (const id of this.state.submissionIds) {
+			unsequenced.push({ type: "submission", value: clone(this.state.submissions.get(id)!) });
+		}
+		const entries: SequencedWrite[] = [];
+		for (const [id, value] of this.state.entries) {
+			entries.push({ seq: this.state.entryCommitSeqs.get(id)!, write: { type: "entry", value: clone(value) } });
+		}
+		const documents: SequencedWrite[] = [];
+		for (const stored of this.state.documents.values()) {
+			documents.push(...documentWrites(clone(stored.record), clone(stored.revisions)));
+		}
+		const records = groupExport(head, unsequenced, [streamOf(sortBySeq(entries)), streamOf(sortBySeq(documents))]);
+		for await (const record of records) {
+			if (this.headSeq() !== head) throw new Error("Storage changed during export");
+			yield record;
+		}
+	}
+
+	private headSeq(): Seq | undefined {
+		return this.nextSeq === 1 ? undefined : seqFromNumber(this.nextSeq - 1);
 	}
 
 	async conversation(id: ConversationId, _context: Context): Promise<ConversationRecord | undefined> {
