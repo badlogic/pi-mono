@@ -43,53 +43,57 @@
         };
       };
 
-      perSystem =
+      perSystem = forAllSystems (
         system:
         let
           pkgs = (nixpkgsFor system).extend piOverlay;
           inherit (pkgs) pi;
+          nodejs = pkgs.nodejs_22;
           treefmtWrapper = import ./nix/treefmt.nix { inherit pkgs; };
-          devShell = import ./nix/devshell.nix {
-            inherit pkgs treefmtWrapper;
-            nodejs = pkgs.nodejs_22;
-          };
+          devShell = import ./nix/devshell.nix { inherit pkgs nodejs treefmtWrapper; };
         in
         {
           inherit
             pkgs
             pi
+            nodejs
             devShell
             treefmtWrapper
             ;
-        };
+        }
+      );
     in
     {
       checks = forAllSystems (
         system:
         import ./nix/checks.nix {
-          inherit (perSystem system) pkgs pi treefmtWrapper;
+          inherit (perSystem.${system})
+            pkgs
+            pi
+            nodejs
+            treefmtWrapper
+            ;
           inherit source;
-          nodejs = (perSystem system).pkgs.nodejs_22;
         }
       );
 
       packages = forAllSystems (system: {
-        default = (perSystem system).pi;
-        pi = (perSystem system).pi;
+        default = perSystem.${system}.pi;
+        pi = perSystem.${system}.pi;
       });
 
       devShells = forAllSystems (system: {
-        default = (perSystem system).devShell;
+        default = perSystem.${system}.devShell;
       });
 
-      formatter = forAllSystems (system: (perSystem system).treefmtWrapper);
+      formatter = forAllSystems (system: perSystem.${system}.treefmtWrapper);
 
       apps = forAllSystems (system: rec {
         default = pi;
         pi = {
           type = "app";
-          program = getExe (perSystem system).pi;
-          meta.description = (perSystem system).pi.meta.description;
+          program = getExe perSystem.${system}.pi;
+          meta.description = perSystem.${system}.pi.meta.description;
         };
       });
 

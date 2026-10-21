@@ -6,8 +6,6 @@
   nodejs,
 }:
 {
-  package = pi;
-
   smoke =
     pkgs.runCommand "pi-smoke-test"
       {
