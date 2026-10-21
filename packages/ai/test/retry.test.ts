@@ -156,6 +156,14 @@ describe("provider retry classification", () => {
 		).toBe(true);
 		expect(isRetryableAssistantError(fauxAssistantMessage("not an error"))).toBe(false);
 	});
+
+	it.each([
+		// Regression for #11057: status codes inside ids or other numbers are not status codes.
+		'401 {"type":"error","error":{"type":"authentication_error","message":"invalid x-api-key"},"request_id":"req_011CU503xyz"}',
+		"400 image exceeds 5 MB maximum: 5316784 bytes > 5242880 bytes",
+	])("does not match status codes inside ids or longer numbers: %s", (errorMessage) => {
+		expect(isRetryableAssistantError(fauxAssistantMessage("", { stopReason: "error", errorMessage }))).toBe(false);
+	});
 });
 
 describe("retryDelayMs", () => {
