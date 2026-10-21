@@ -486,7 +486,11 @@ export type ConversationStreamOptions = {
 	/** Provider/SDK retries inside one request attempt. */
 	maxRetries?: number;
 	maxRetryDelayMs?: number;
-	headers?: Record<string, string>;
+	/**
+	 * Request headers, over the provider attribution headers the harness adds (for OpenRouter `HTTP-Referer`,
+	 * `X-OpenRouter-Title`, and `X-OpenRouter-Categories`). Same name in any case replaces one; `null` removes it.
+	 */
+	headers?: Record<string, string | null>;
 	metadata?: JsonObject;
 	cacheRetention?: CacheRetention;
 	deferred?: boolean | { window?: "15m" | "1h" | "24h" };

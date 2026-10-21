@@ -13,6 +13,7 @@
 - Failed model request spans report `provider_error` status with up to 500 error-message characters; cancelled requests keep `ok` status with `stop: "aborted"`.
 - Added `MiniMax-M3.1-Flash` to the `minimax` and `minimax-cn` providers, with thinking levels low through max sent as `output_config.effort`. Thinking cannot be turned off for this model. New MiniMax models from models.dev now appear without a manual allowlist entry; only the older M2, M2.1, M2.5, and M2.5-highspeed models stay hidden ([#11121](https://github.com/earendil-works/pi/issues/11121))
 - Sign in with ChatGPT: ChatGPT Business workspace usage-limit errors are not retried and tell the user to ask their workspace admin to increase the limit.
+- Added `getProviderAttributionHeaders(model, client)` and `getProviderSessionHeaders(model, sessionId, client)`, the headers that identify a pi client to OpenRouter, NVIDIA NIM, Cloudflare, and OpenCode. The caller passes its identity as a `ProviderAttributionClient`.
 
 ### Changed
 

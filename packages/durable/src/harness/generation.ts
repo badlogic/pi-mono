@@ -5,8 +5,8 @@ import type {
 	DeferredHandle,
 	Message,
 	Model,
+	ModelsSimpleStreamOptions,
 	ModelThinkingLevel,
-	SimpleStreamOptions,
 	ToolCall,
 } from "@earendil-works/pi-ai";
 import { isContextOverflow } from "@earendil-works/pi-ai/utils/overflow";
@@ -34,7 +34,7 @@ import { applyBoundary, type Boundary, prepareBoundary, withdrawQueuedInputs } f
 import { assignJson } from "./json.ts";
 import { endRun, LiveDoc, type LiveState, type ToolSlot } from "./live.ts";
 import { planSystemEntries, renderSections, replaySections } from "./prompt.ts";
-import { ensureProviderSessionId } from "./provider.ts";
+import { attributionHeaders, ensureProviderSessionId } from "./provider.ts";
 import { appendToolResult, harnessError, ToolTask, type ToolTaskResult } from "./tool.ts";
 import type {
 	AfterFailedRun,
@@ -223,11 +223,13 @@ export const GenerationTask = defineTask<GenerationInput, GenerationCheckpoint, 
 				const replaced = await hook({ messages }, runtime, context);
 				if (replaced !== undefined) messages = replaced.messages;
 			});
-			const options: SimpleStreamOptions = {
+			const sessionId = await ensureProviderSessionId(runtime, context);
+			const options: ModelsSimpleStreamOptions = {
 				...streamOptions,
 				signal: runtime.signal,
 				telemetry: context.telemetry,
-				sessionId: await ensureProviderSessionId(runtime, context),
+				sessionId,
+				...attributionHeaders(model, sessionId),
 				...(thinkingLevel === "off" ? {} : { reasoning: thinkingLevel }),
 			};
 			const message = await streamResponse(runtime, model, messages, options, attempt, context);
@@ -447,7 +449,7 @@ async function streamResponse(
 	runtime: Runtime,
 	model: Model<Api>,
 	messages: readonly Message[],
-	options: SimpleStreamOptions,
+	options: ModelsSimpleStreamOptions,
 	attempt: number,
 	context: Context,
 ): Promise<AssistantMessage> {

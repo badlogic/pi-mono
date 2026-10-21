@@ -385,6 +385,34 @@ describe("generation", () => {
 		await harness.close(context);
 	});
 
+	it("adds pi-durable's provider attribution headers under the stream headers", async () => {
+		const setup = chatSetup({ provider: "openrouter" });
+		const seen: (SimpleStreamOptions | undefined)[] = [];
+		const capture = (_context: unknown, options?: SimpleStreamOptions) => {
+			seen.push(options);
+			return fauxAssistantMessage("ok");
+		};
+		setup.faux.setResponses([capture, capture]);
+		const { harness, root } = await openChat(new MemoryStorage(), setup);
+		await root.configure({ model: { provider: "openrouter", modelId: "faux-1" } }, context);
+		harness.resume();
+		await (await root.submit({ type: "input", content: "one" }, context)).wait(context);
+		// A host replaces a default in any case and removes one with null.
+		setup.settings.stream = { headers: { "x-openrouter-title": "my-app", "X-OpenRouter-Categories": null } };
+		await (await root.submit({ type: "input", content: "two" }, context)).wait(context);
+		expect(seen[0]!.headers).toEqual({
+			"HTTP-Referer": "https://pi.dev",
+			"X-OpenRouter-Title": "pi",
+			"X-OpenRouter-Categories": "cli-agent",
+		});
+		expect(seen[1]!.headers).toEqual({
+			"HTTP-Referer": "https://pi.dev",
+			"x-openrouter-title": "my-app",
+			"X-OpenRouter-Categories": null,
+		});
+		await harness.close(context);
+	});
+
 	// Regression coverage for #10424.
 	it("keeps provider session IDs request-local across concurrent conversations", async () => {
 		const setup = chatSetup();

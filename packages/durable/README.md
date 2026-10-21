@@ -422,6 +422,14 @@ const harness = await Harness.open(storage, {
 }, context);
 ```
 
+Generation and compaction requests carry provider attribution headers, for now the coding agent's: for OpenRouter, `HTTP-Referer: https://pi.dev`, `X-OpenRouter-Title: pi`, and `X-OpenRouter-Categories: cli-agent`. `stream.headers` go over them: the same header in any case replaces one, `null` removes it.
+
+```typescript
+settings: {
+	stream: { headers: { "HTTP-Referer": "https://example.com", "X-OpenRouter-Title": "my-app", "X-OpenRouter-Categories": "cloud-agent" } },
+}
+```
+
 ## Environment
 
 `env` builds the execution environment for each tool call, section rendering, and `runtime.env()`. It receives the conversation's ID, its agent `cwd`, and committed reads, so one function serves a directory per conversation or a container per conversation:

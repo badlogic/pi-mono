@@ -1,5 +1,5 @@
 import type { Context, Draft } from "@earendil-works/chord";
-import type { AssistantMessage, Message, ModelThinkingLevel, SimpleStreamOptions } from "@earendil-works/pi-ai";
+import type { AssistantMessage, Message, ModelsSimpleStreamOptions, ModelThinkingLevel } from "@earendil-works/pi-ai";
 import { calculateContextTokens, estimateMessageTokens } from "@earendil-works/pi-ai/utils/estimate";
 import { isRetryableAssistantError, retryDelayMs } from "@earendil-works/pi-ai/utils/retry";
 import { CompactionEntry } from "../entries.ts";
@@ -23,7 +23,7 @@ import {
 	type LiveState,
 	removeCompactionStatus,
 } from "./live.ts";
-import { ensureProviderSessionId } from "./provider.ts";
+import { attributionHeaders, ensureProviderSessionId } from "./provider.ts";
 import { admitSubmission } from "./submissions.ts";
 import type {
 	CompactionHooks,
@@ -172,13 +172,15 @@ export const CompactionTask = defineTask<CompactionInput, CompactionCheckpoint, 
 				},
 			];
 			const { deferred: _deferred, ...forwarded } = streamOptions;
-			const options: SimpleStreamOptions = {
+			const sessionId = await ensureProviderSessionId(runtime, context);
+			const options: ModelsSimpleStreamOptions = {
 				...forwarded,
 				cacheRetention: "none",
 				maxTokens,
 				signal: runtime.signal,
 				telemetry: context.telemetry,
-				sessionId: await ensureProviderSessionId(runtime, context),
+				sessionId,
+				...attributionHeaders(model, sessionId),
 				...(thinkingLevel === "off" ? {} : { reasoning: thinkingLevel }),
 			};
 			const message = await runtime.models.completeSimple(model, { messages }, options);

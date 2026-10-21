@@ -24,6 +24,7 @@
 - `settings.afterFailedRun`: a run that fails with `model_error` or `no_model` keeps the inputs queued behind it (`keep`, the default), starts the next run with them (`continue`), or settles them `unanswered` with reason `run_failed` (`withdraw`).
 - The task graph shows why a task cannot run (`TaskGraphNode.blocked`: `missing_task`, `task_too_old`, `migration_failed`, or `restart_limit`) and follows registry changes and failed migrations.
 - `HarnessOptions.models` and `HarnessOptions.settings` also accept a function returning the current value, like `env`. Generation, compaction, hooks and tools call it at each use (`api.models` reads the current value at each access), so a host can replace its model configuration or settings without reopening the Harness. A plain object still works.
+- Generation and compaction requests send provider attribution headers, for now the coding agent's values (OpenRouter app attribution, NVIDIA NIM, Cloudflare, OpenCode session). `settings.stream.headers` replace them per header, case-insensitively, and `null` removes one; `ConversationStreamOptions.headers` values may be `null`.
 
 ### Changed
 
