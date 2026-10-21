@@ -73,7 +73,7 @@ describe("durable SQLite migrations", () => {
 		await storage.close(BACKGROUND_CONTEXT);
 		const migrated = await openNodeSqliteDatabase(path);
 		try {
-			expect(await migrated.get("SELECT version FROM durable_schema WHERE singleton = 1")).toEqual({ version: 3 });
+			expect(await migrated.get("SELECT version FROM durable_schema WHERE singleton = 1")).toEqual({ version: 2 });
 			expect(await migrated.get("SELECT status, record FROM tasks WHERE id = 5")).toEqual({
 				status: "waiting",
 				record: JSON.stringify(waiting),

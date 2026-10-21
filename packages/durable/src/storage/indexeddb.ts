@@ -21,12 +21,10 @@ import type {
 	EntryRecord,
 	Id,
 	JsonObject,
-	LogRecord,
-	LogWrite,
 	Page,
-	ReplayableStorage,
 	ScanOrder,
 	Seq,
+	Storage,
 	StorageWrite,
 	StoredDocument,
 	SubmissionId,
@@ -36,16 +34,6 @@ import type {
 	TaskQuery,
 	TaskRecord,
 } from "../types.ts";
-import {
-	assertLogRecord,
-	documentWrites,
-	groupExport,
-	isCurrentOnly,
-	type SequencedWrite,
-	type StoredRevision,
-	sortBySeq,
-	streamOf,
-} from "./export.ts";
 import { nextCursor, type ScanStart, scanStart } from "./scan.ts";
 
 const DATABASE_VERSION = 1;
@@ -325,6 +313,9 @@ const isAliveAt = (record: DocumentRecord, at: DocumentPoint): boolean => {
 	return record.createdAt <= at && (record.retiredAt === undefined || at < record.retiredAt);
 };
 
+const isCurrentOnly = (record: DocumentRecord): boolean =>
+	record.scope.kind !== "conversation" || record.history === "latest";
+
 const writeId = (write: StorageWrite): Id<string> | undefined => {
 	switch (write.type) {
 		case "conversation":
@@ -384,7 +375,7 @@ function createSchema(database: IDBDatabase): void {
 }
 
 /** Browser IndexedDB implementation of the durable storage contract. One owner must serialize access to each database. */
-export class IndexedDbStorage implements ReplayableStorage {
+export class IndexedDbStorage implements Storage {
 	private readonly database: IDBDatabase;
 	private closed = false;
 	private closing: Promise<void> | undefined;
@@ -427,88 +418,13 @@ export class IndexedDbStorage implements ReplayableStorage {
 	}
 
 	async commit(writes: readonly StorageWrite[], _context: Context): Promise<Seq> {
-		return this.commitAt(writes, undefined);
-	}
-
-	async head(_context: Context): Promise<Seq | undefined> {
-		this.assertOpen();
-		return this.transaction(STORES.meta, "readonly", async (transaction) => {
-			const metadata = await requestResult(
-				transaction.objectStore(STORES.meta).get(META_KEY) as IDBRequest<MetaRow>,
-			);
-			if (metadata === undefined) throw new Error("Durable IndexedDB metadata is missing");
-			return metadata.nextSeq === 1 ? undefined : seqFromNumber(metadata.nextSeq - 1);
-		});
-	}
-
-	async replay(record: LogRecord, _context: Context): Promise<void> {
-		assertLogRecord(record);
-		await this.commitAt(record.writes, record.seq);
-	}
-
-	/** Reads every store in one transaction and builds the log in memory: browser sessions are small. */
-	async *export(context: Context): AsyncGenerator<LogRecord> {
-		this.assertOpen();
-		const snapshot = await this.transaction(ALL_STORES, "readonly", async (transaction) => {
-			const all = <T>(store: string) => requestResult(transaction.objectStore(store).getAll() as IDBRequest<T[]>);
-			const metadata = await requestResult(
-				transaction.objectStore(STORES.meta).get(META_KEY) as IDBRequest<MetaRow>,
-			);
-			if (metadata === undefined) throw new Error("Durable IndexedDB metadata is missing");
-			return {
-				head: metadata.nextSeq === 1 ? undefined : seqFromNumber(metadata.nextSeq - 1),
-				conversations: await all<ConversationRow>(STORES.conversations),
-				tasks: await all<TaskRow>(STORES.tasks),
-				submissions: await all<SubmissionRow>(STORES.submissions),
-				entries: await all<EntryRow>(STORES.entries),
-				documents: await all<DocumentRow>(STORES.documents),
-				revisions: await all<RevisionRow>(STORES.documentRevisions),
-			};
-		});
-		const unsequenced: LogWrite[] = [
-			...snapshot.conversations.map((row): LogWrite => ({ type: "conversation", value: row.record })),
-			...snapshot.tasks.map((row): LogWrite => ({ type: "task", value: row.record })),
-			...snapshot.submissions.map((row): LogWrite => ({ type: "submission", value: row.record })),
-		];
-		const entries = snapshot.entries.map(
-			(row): SequencedWrite => ({ seq: row.commitSeq, write: { type: "entry", value: row.record } }),
-		);
-		const revisionsByDocument = new Map<DocumentId, StoredRevision[]>();
-		for (const row of snapshot.revisions) {
-			const revision: StoredRevision =
-				row.kind === "base"
-					? { seq: row.seq, kind: "base", version: row.version, value: row.content as JsonObject }
-					: { seq: row.seq, kind: "delta", version: row.version, ops: row.content as readonly Op[] };
-			const revisions = revisionsByDocument.get(row.documentId);
-			if (revisions === undefined) revisionsByDocument.set(row.documentId, [revision]);
-			else revisions.push(revision);
-		}
-		const documents: SequencedWrite[] = [];
-		for (const row of snapshot.documents) {
-			documents.push(...documentWrites(row.record, revisionsByDocument.get(row.id) ?? []));
-		}
-		const records = groupExport(snapshot.head, unsequenced, [
-			streamOf(sortBySeq(entries)),
-			streamOf(sortBySeq(documents)),
-		]);
-		for await (const record of records) {
-			if ((await this.head(context)) !== snapshot.head) throw new Error("Storage changed during export");
-			yield record;
-		}
-	}
-
-	/** Commit at `seq`, or at the next sequence when it is undefined. */
-	private async commitAt(writes: readonly StorageWrite[], at: Seq | undefined): Promise<Seq> {
 		this.assertOpen();
 		const documentActions = this.prepareDocumentActions(writes);
 		return this.transaction(ALL_STORES, "readwrite", async (transaction) => {
 			const metaStore = transaction.objectStore(STORES.meta);
 			const metadata = await requestResult(metaStore.get(META_KEY) as IDBRequest<MetaRow>);
 			if (metadata === undefined) throw new Error("Durable IndexedDB metadata is missing");
-			if (at !== undefined && (!Number.isSafeInteger(at) || at < metadata.nextSeq)) {
-				throw new Error(`Commit sequence ${at} does not strictly increase`);
-			}
-			const seq = at ?? seqFromNumber(metadata.nextSeq);
+			const seq = seqFromNumber(metadata.nextSeq);
 			await this.checkGlobalIds(transaction, writes);
 			await this.checkDocumentActions(transaction, documentActions);
 			for (const write of writes) await this.applyTableWrite(transaction, write, seq);

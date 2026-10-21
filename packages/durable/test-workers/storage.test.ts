@@ -18,7 +18,7 @@ registerStorageConformance({ describe, expect, it }, "SqliteStorage on Durable O
 );
 
 describe("Durable Object SQLite schema", () => {
-	it("migrates a version 1 schema to admit sleeping tasks, keeping tasks and indexes, then adds sequence indexes", async () => {
+	it("migrates a version 1 schema to admit sleeping tasks, keeping tasks and indexes", async () => {
 		await runInDurableObject(fresh(), async (_instance, state) => {
 			const database = new DurableObjectSqliteDatabase(state.storage);
 			const schema = createSqliteSchema("legacy_");
@@ -35,7 +35,7 @@ describe("Durable Object SQLite schema", () => {
 			await expect(insert(6, "sleeping")).rejects.toThrow();
 
 			await openDurableObjectSqliteStorage(state.storage, { prefix: "legacy_" });
-			expect(await database.get(`SELECT version FROM ${schema.tables.durableSchema}`)).toEqual({ version: 3 });
+			expect(await database.get(`SELECT version FROM ${schema.tables.durableSchema}`)).toEqual({ version: 2 });
 			expect(await database.get(`SELECT status FROM ${tasks} WHERE id = 5`)).toEqual({ status: "waiting" });
 			await insert(6, "sleeping");
 			const indexes = await database.all<{ name: string }>(

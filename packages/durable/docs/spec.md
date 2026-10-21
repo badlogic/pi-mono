@@ -5279,33 +5279,6 @@ a stored version boundary; a version transition must be a base.
 
 The semantic conformance suite covers memory, SQLite, and JSONL.
 
-Every built-in backend is also a `ReplayableStorage`:
-
-```ts
-type LogWrite = Exclude<StorageWrite, { type: "document.copy" }>;
-type LogRecord = { readonly seq: Seq; readonly writes: readonly LogWrite[] };
-
-interface ReplayableStorage extends Storage {
-  head(context: Context): Promise<Seq | undefined>;
-  replay(record: LogRecord, context: Context): Promise<void>;
-  export(context: Context): AsyncIterable<LogRecord>;
-}
-```
-
-`replay()` is `commit()` at an explicit sequence above the head; later commits
-continue after it. A log never contains a copy: a copy is logged as the
-creation it became, with its materialized base, so replay never reads a source.
-`export()` writes the current state as a log in sequence order that, replayed
-into an empty backend, answers every read the same, historical document reads
-included. Documents keep their stamps: creation at `createdAt`, every retained
-revision at its sequence, retirement at `retiredAt`. A current-only document
-whose creation base was reclaimed is created with the placeholder base
-`{ version: 1, value: {} }`, which no read can reach. Conversations, tasks, and
-submissions carry no sequence and go into the first record; Storage checks no
-references between records, and nothing reads them at a past point. The last
-record is at the head, empty when nothing else is there. A commit while an
-export is consumed makes it reject.
-
 ### 10.1 Failures
 
 One rule per kind of error, so a host knows what happens without reading code.

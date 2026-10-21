@@ -20,12 +20,10 @@ import type {
 	EntryRecord,
 	Id,
 	JsonObject,
-	LogRecord,
-	LogWrite,
 	Page,
-	ReplayableStorage,
 	ScanOrder,
 	Seq,
+	Storage,
 	StorageWrite,
 	StoredDocument,
 	SubmissionId,
@@ -35,15 +33,6 @@ import type {
 	TaskQuery,
 	TaskRecord,
 } from "../../types.ts";
-import {
-	assertLogRecord,
-	creationWrite,
-	groupExport,
-	isCurrentOnly,
-	revisionWrite,
-	type SequencedWrite,
-	type StoredRevision,
-} from "../export.ts";
 import { nextCursor, type ScanStart, scanStart } from "../scan.ts";
 import { applySqliteMigrationsForSchema } from "./migrations.ts";
 import { createSqliteSchema, type SqliteSchema } from "./schema.ts";
@@ -67,19 +56,6 @@ type DocumentAction = {
 	content?: DocumentContent;
 	retire: boolean;
 };
-/** Columns of an export scan: rows are read in pages ordered by `(k1, k2)`. */
-type KeysetRow = { readonly k1: number; readonly k2: number };
-type ExportRevisionRow = KeysetRow & {
-	readonly kind: DocumentContent["kind"];
-	readonly version: number;
-	readonly content: string;
-};
-type ExportCreationRow = KeysetRow & {
-	readonly record: string;
-	readonly kind: DocumentContent["kind"] | null;
-	readonly version: number | null;
-	readonly content: string | null;
-};
 type ScopeColumns = {
 	readonly scopeKind: DocumentRecord["scope"]["kind"];
 	readonly ownerId: number;
@@ -91,15 +67,6 @@ export type SqliteStorageOptions = {
 	 * SQLite's reserved `sqlite_` prefix. Existing data is not migrated when this changes.
 	 */
 	readonly prefix?: string;
-};
-
-const EXPORT_PAGE_SIZE = 256;
-
-const revisionFromRow = (row: RevisionRow): StoredRevision => {
-	const seq = seqFromNumber(row.seq);
-	return row.kind === "base"
-		? { seq, kind: "base", version: row.version, value: parseJson<JsonObject>(row.content) }
-		: { seq, kind: "delta", version: row.version, ops: parseJson<readonly Op[]>(row.content) };
 };
 
 const parseJson = <T>(value: string): T => JSON.parse(value) as T;
@@ -162,6 +129,9 @@ const isAliveAt = (record: DocumentRecord, at: DocumentPoint): boolean => {
 	return record.createdAt <= at && (record.retiredAt === undefined || at < record.retiredAt);
 };
 
+const isCurrentOnly = (record: DocumentRecord): boolean =>
+	record.scope.kind !== "conversation" || record.history === "latest";
+
 const writeId = (write: StorageWrite): Id<string> | undefined => {
 	switch (write.type) {
 		case "conversation":
@@ -179,7 +149,7 @@ const writeId = (write: StorageWrite): Id<string> | undefined => {
 };
 
 /** Portable SQLite implementation of the Pico storage contract. */
-export class SqliteStorage implements ReplayableStorage {
+export class SqliteStorage implements Storage {
 	private readonly db: SqliteDatabase;
 	private readonly schema: SqliteSchema;
 	private nextId: number;
@@ -215,142 +185,15 @@ export class SqliteStorage implements ReplayableStorage {
 	}
 
 	async commit(writes: readonly StorageWrite[], _context: Context): Promise<Seq> {
-		return this.commitAt(writes, undefined);
-	}
-
-	async head(_context: Context): Promise<Seq | undefined> {
-		this.assertOpen();
-		return this.readHead();
-	}
-
-	async replay(record: LogRecord, _context: Context): Promise<void> {
-		assertLogRecord(record);
-		await this.commitAt(record.writes, record.seq);
-	}
-
-	/**
-	 * Streams in pages ordered by sequence through indexes, so the session is never held in memory, except the records
-	 * without a sequence (conversations, tasks, submissions), which the first log record holds.
-	 */
-	async *export(_context: Context): AsyncGenerator<LogRecord> {
-		this.assertOpen();
-		const head = await this.readHead();
-		const unchanged = async (): Promise<void> => {
-			this.assertOpen();
-			if ((await this.readHead()) !== head) throw new Error("Storage changed during export");
-		};
-		const { tables } = this.schema;
-		const unsequenced: LogWrite[] = [];
-		for await (const row of this.keyset<KeysetRow & JsonRow>(
-			`SELECT id AS k1, 0 AS k2, record FROM ${tables.conversations} WHERE (id, 0) > (?, ?) ORDER BY id LIMIT ?`,
-			unchanged,
-		)) {
-			unsequenced.push({ type: "conversation", value: parseJson<ConversationRecord>(row.record) });
-		}
-		for await (const row of this.keyset<KeysetRow & JsonRow>(
-			`SELECT id AS k1, 0 AS k2, record FROM ${tables.tasks} WHERE (id, 0) > (?, ?) ORDER BY id LIMIT ?`,
-			unchanged,
-		)) {
-			unsequenced.push({ type: "task", value: parseJson<StoredTask>(row.record) });
-		}
-		for await (const row of this.keyset<KeysetRow & JsonRow>(
-			`SELECT id AS k1, 0 AS k2, record FROM ${tables.submissions} WHERE (id, 0) > (?, ?) ORDER BY id LIMIT ?`,
-			unchanged,
-		)) {
-			unsequenced.push({ type: "submission", value: parseJson<SubmissionRecord>(row.record) });
-		}
-		const entries = this.mapRows(
-			this.keyset<KeysetRow & JsonRow>(
-				`SELECT commit_seq AS k1, id AS k2, record FROM ${tables.entries}
-					WHERE (commit_seq, id) > (?, ?) ORDER BY commit_seq, id LIMIT ?`,
-				unchanged,
-			),
-			(row): SequencedWrite => ({
-				seq: seqFromNumber(row.k1),
-				write: { type: "entry", value: parseJson<EntryRecord>(row.record) },
-			}),
-		);
-		const creations = this.mapRows(
-			this.keyset<ExportCreationRow>(
-				`SELECT d.created_at AS k1, d.id AS k2, d.record, r.kind, r.version, r.content
-					FROM ${tables.documents} d
-					LEFT JOIN ${tables.documentRevisions} r ON r.document_id = d.id AND r.seq = d.created_at
-					WHERE (d.created_at, d.id) > (?, ?) ORDER BY d.created_at, d.id LIMIT ?`,
-				unchanged,
-			),
-			(row) =>
-				creationWrite(
-					parseJson<DocumentRecord>(row.record),
-					row.kind === null
-						? undefined
-						: revisionFromRow({ seq: row.k1, kind: row.kind, version: row.version!, content: row.content! }),
-				),
-		);
-		const revisions = this.mapRows(
-			this.keyset<ExportRevisionRow>(
-				`SELECT r.seq AS k1, r.document_id AS k2, r.kind, r.version, r.content
-					FROM ${tables.documentRevisions} r JOIN ${tables.documents} d ON d.id = r.document_id
-					WHERE (r.seq, r.document_id) > (?, ?) AND r.seq <> d.created_at
-					ORDER BY r.seq, r.document_id LIMIT ?`,
-				unchanged,
-			),
-			(row) => revisionWrite(idFromNumber<DocumentId>(row.k2), revisionFromRow({ ...row, seq: row.k1 })),
-		);
-		const retirements = this.mapRows(
-			this.keyset<KeysetRow>(
-				`SELECT retired_at AS k1, id AS k2 FROM ${tables.documents}
-					WHERE retired_at IS NOT NULL AND (retired_at, id) > (?, ?) ORDER BY retired_at, id LIMIT ?`,
-				unchanged,
-			),
-			(row): SequencedWrite => ({
-				seq: seqFromNumber(row.k1),
-				write: { type: "document.retire", id: idFromNumber<DocumentId>(row.k2) },
-			}),
-		);
-		for await (const record of groupExport(head, unsequenced, [entries, creations, revisions, retirements])) {
-			await unchanged();
-			yield record;
-		}
-	}
-
-	/** Rows of `sql` in `(k1, k2)` order, a page at a time; `sql` binds the last key pair and the page size. */
-	private async *keyset<R extends KeysetRow>(sql: string, unchanged: () => Promise<void>): AsyncGenerator<R> {
-		let after: KeysetRow = { k1: -1, k2: -1 };
-		while (true) {
-			const rows = await this.db.all<R>(sql, after.k1, after.k2, EXPORT_PAGE_SIZE);
-			await unchanged();
-			yield* rows;
-			if (rows.length < EXPORT_PAGE_SIZE) return;
-			after = rows.at(-1)!;
-		}
-	}
-
-	private async *mapRows<R, T>(rows: AsyncIterable<R>, map: (row: R) => T): AsyncGenerator<T> {
-		for await (const row of rows) yield map(row);
-	}
-
-	private async readHead(): Promise<Seq | undefined> {
-		const metadata = await this.db.get<MetadataRow>(
-			`SELECT next_id, next_seq FROM ${this.schema.tables.durableMetadata} WHERE singleton = 1`,
-		);
-		if (metadata === undefined) throw new Error("Durable SQLite metadata is missing");
-		return metadata.next_seq === 1 ? undefined : seqFromNumber(metadata.next_seq - 1);
-	}
-
-	/** Commit at `seq`, or at the next sequence when it is undefined. */
-	private async commitAt(writes: readonly StorageWrite[], seq: Seq | undefined): Promise<Seq> {
 		this.assertOpen();
 		const documentActions = this.prepareDocumentActions(writes);
 		const candidateNextId = this.candidateNextId(writes);
-		const committed = await this.db.transaction(async (transaction) => {
+		const seq = await this.db.transaction(async (transaction) => {
 			const metadata = await transaction.get<MetadataRow>(
 				`SELECT next_id, next_seq FROM ${this.schema.tables.durableMetadata} WHERE singleton = 1`,
 			);
 			if (metadata === undefined) throw new Error("Durable SQLite metadata is missing");
-			if (seq !== undefined && (!Number.isSafeInteger(seq) || seq < metadata.next_seq)) {
-				throw new Error(`Commit sequence ${seq} does not strictly increase`);
-			}
-			const committedSeq = seq ?? seqFromNumber(metadata.next_seq);
+			const committedSeq = seqFromNumber(metadata.next_seq);
 			await this.checkGlobalIds(transaction, writes);
 			await this.checkDocumentActions(transaction, documentActions);
 			for (const write of writes) await this.applyTableWrite(transaction, write, committedSeq);
@@ -363,7 +206,7 @@ export class SqliteStorage implements ReplayableStorage {
 			return committedSeq;
 		});
 		this.nextId = Math.max(this.nextId, candidateNextId);
-		return committed;
+		return seq;
 	}
 
 	async mintId<I extends Id<string>>(): Promise<I> {

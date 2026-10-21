@@ -1272,34 +1272,3 @@ export interface Storage {
 	/** Release backend resources; all later operations must reject. */
 	close(context: Context): Promise<void>;
 }
-
-/**
- * A write as it appears in a commit log. Fork copies are logged as the creation they became, with the materialized
- * base, so replaying a log never needs to read a copy's source.
- */
-export type LogWrite = Exclude<StorageWrite, { readonly type: "document.copy" }>;
-
-/** One committed batch at its sequence. Sequences strictly increase within a log and may have gaps. */
-export type LogRecord = {
-	readonly seq: Seq;
-	readonly writes: readonly LogWrite[];
-};
-
-/** Storage that can write a log at explicit sequences and turn its state back into a log. */
-export interface ReplayableStorage extends Storage {
-	/** Sequence of the last committed batch; `undefined` for a storage without commits. */
-	head(context: Context): Promise<Seq | undefined>;
-
-	/**
-	 * Atomically commit `record.writes` at `record.seq`, which must exceed the head. Validation, atomicity, and stamps
-	 * are those of `commit()`; later commits continue after `record.seq`.
-	 */
-	replay(record: LogRecord, context: Context): Promise<void>;
-
-	/**
-	 * The current state as a log in sequence order: replayed into an empty storage, it answers every read the same,
-	 * historical document reads included. Its last record is at the head. No commit may run while it is consumed; one
-	 * that does makes the export reject.
-	 */
-	export(context: Context): AsyncIterable<LogRecord>;
-}

@@ -798,24 +798,6 @@ await database.transaction(async (transaction) => {
 });
 ```
 
-### Replication
-
-Every built-in storage is a `ReplayableStorage`: `export()` turns its state into a log of `{ seq, writes }` records
-that replays into any other storage with the same reads, `replay(record)` writes one record at its sequence, and
-`head()` is the last sequence. `ReplicatingStorage` from `@earendil-works/pi-durable/sync` wraps a storage and appends
-each committed batch to an `Outbox` as such a record, for a host that ships it elsewhere:
-
-```typescript
-const outbox = new MemoryOutbox(); // or a host outbox that persists records
-const storage = new ReplicatingStorage(await openNodeSqliteStorage(file), outbox);
-const harness = await Harness.open(storage, options, context);
-// Elsewhere: for (const record of records) await replica.replay(record, context);
-```
-
-`compactRecords(records)` drops what later records in the same run supersede (earlier task records, document content
-before a newer base) before the records are shipped. Only the device that drives a session opens a Harness on it:
-`Harness.open` commits, so a replica that keeps replaying records must be read through its storage.
-
 Custom backends can run the shared conformance suite with any Vitest- or Jest-compatible runner:
 
 ```typescript

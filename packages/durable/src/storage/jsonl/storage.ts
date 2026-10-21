@@ -15,8 +15,6 @@ import type {
 	EntryId,
 	EntryQuery,
 	Id,
-	LogRecord,
-	ReplayableStorage,
 	Seq,
 	Storage,
 	StorageWrite,
@@ -26,8 +24,7 @@ import type {
 	TaskQuery,
 	TaskRecord,
 } from "../../types.ts";
-import { assertLogRecord, isCurrentOnly, RECLAIMED_BASE } from "../export.ts";
-import { MemoryStorage, type PreparedMemoryCommit } from "../memory.ts";
+import { MemoryStorage } from "../memory.ts";
 
 const FORMAT_VERSION = 1;
 const MAIN_FILE = "main.jsonl";
@@ -106,6 +103,9 @@ const sidecarFileName = (kind: "doc" | "task", id: DocumentId | TaskId): string 
 const isSidecarFileName = (name: string): boolean => /^(?:doc|task)-(?:0|[1-9]\d*)\.jsonl$/.test(name);
 
 const isReclaimFileName = (name: string): boolean => /^(?:doc|task)-(?:0|[1-9]\d*)\.jsonl\.reclaim$/.test(name);
+
+const isCurrentOnly = (record: DocumentCreate): boolean =>
+	record.scope.kind !== "conversation" || record.history === "latest";
 
 const sidecarKey = (file: string, seq: Seq, ordinal: number): string => JSON.stringify([file, seq, ordinal]);
 
@@ -239,7 +239,7 @@ const parseSidecarRecord = (text: string, file: string, line: number): SidecarRe
 };
 
 /** Portable JSONL implementation of the storage contract. */
-export class JsonlStorage implements ReplayableStorage {
+export class JsonlStorage implements Storage {
 	private readonly fs: FileSystem;
 	private readonly directory: string;
 	private readonly mainPath: string;
@@ -277,24 +277,7 @@ export class JsonlStorage implements ReplayableStorage {
 
 	async commit(writes: readonly StorageWrite[], context: Context): Promise<Seq> {
 		this.assertUsable();
-		return this.persist(this.memory.prepareCommit(writes), context);
-	}
-
-	async head(context: Context): Promise<Seq | undefined> {
-		return this.store.head(context);
-	}
-
-	async replay(record: LogRecord, context: Context): Promise<void> {
-		this.assertUsable();
-		assertLogRecord(record);
-		await this.persist(this.memory.prepareCommit(record.writes, record.seq), context);
-	}
-
-	export(context: Context): AsyncIterable<LogRecord> {
-		return this.store.export(context);
-	}
-
-	private async persist(prepared: PreparedMemoryCommit, context: Context): Promise<Seq> {
+		const prepared = this.memory.prepareCommit(writes);
 		const encoded = this.encodeCommit(prepared.seq, prepared.writes);
 		const reclamations = this.planReclamations(prepared.writes, encoded);
 		const sidecars = await Promise.all(
@@ -712,7 +695,7 @@ export class JsonlStorage implements ReplayableStorage {
 							writes.push({
 								type: "document.create",
 								record: operation.record,
-								content: reclaimed || content === undefined ? RECLAIMED_BASE : content,
+								content: reclaimed || content === undefined ? { kind: "base", version: 1, value: {} } : content,
 							});
 						} else if (!reclaimed && content !== undefined) {
 							writes.push({ type: "document.change", id, content });
