@@ -162,8 +162,8 @@ describe("Responses API tool result images", () => {
 		});
 	});
 
-	describe("GitHub Copilot Responses Provider (gpt-5-mini)", () => {
-		const model = getModel("github-copilot", "gpt-5-mini");
+	describe("GitHub Copilot Responses Provider (gpt-6-luna)", () => {
+		const model = getModel("github-copilot", "gpt-6-luna");
 
 		it.skipIf(!githubCopilotToken)(
 			"should send tool result images in function_call_output",

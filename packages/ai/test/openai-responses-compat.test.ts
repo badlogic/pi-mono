@@ -72,8 +72,9 @@ describe("openai-responses provider defaults", () => {
 		vi.restoreAllMocks();
 	});
 
+	// #2567: Copilot rejected reasoning.effort "none". gpt-6-sol has off: "none", so this exercises the Copilot exception.
 	it("omits reasoning when no reasoning is requested", async () => {
-		const model = getModel("github-copilot", "gpt-5-mini");
+		const model = getModel("github-copilot", "gpt-6-sol");
 		let capturedPayload: unknown;
 
 		vi.spyOn(globalThis, "fetch").mockResolvedValue(

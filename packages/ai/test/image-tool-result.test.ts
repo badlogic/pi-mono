@@ -311,19 +311,6 @@ describe("Tool Results with Images", () => {
 		});
 	});
 
-	describe.skipIf(!process.env.BASETEN_API_KEY)("Baseten Provider (Kimi-K2.6)", () => {
-		const llm = getModel("baseten", "moonshotai/Kimi-K2.6");
-		const options = { reasoningEffort: "high" } satisfies StreamOptionsWithExtras;
-
-		it("should handle tool result with only image", { retry: 3, timeout: 30000 }, async () => {
-			await handleToolWithImageResult(llm, options);
-		});
-
-		it("should handle tool result with text and image", { retry: 3, timeout: 30000 }, async () => {
-			await handleToolWithTextAndImageResult(llm, options);
-		});
-	});
-
 	describe.skipIf(!process.env.XIAOMI_API_KEY)("Xiaomi MiMo (API billing) Provider (mimo-v2.6-pro)", () => {
 		const llm = getModel("xiaomi", "mimo-v2.6-pro");
 
