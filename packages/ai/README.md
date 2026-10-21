@@ -432,17 +432,26 @@ Header names are merged case-insensitively. Explicit headers override auth/model
 
 ```typescript
 const models = createModels({
-  identity: { userAgent: 'detailed', version: '2.1.0', attribution: 'my-app' },
+  identity: {
+    userAgent: 'detailed',
+    version: '2.1.0',
+    attribution: { name: 'my-app', url: 'https://my-app.example', categories: ['cloud-agent'] },
+  },
 });
 
-await models.completeSimple(model, context, { identity: { attribution: false } });
+await models.completeSimple(model, context, { identity: { attribution: null } });
 ```
 
 - `userAgent`: `"detailed"` (default) sends `pi/<version> (<platform>; <runtime>; <arch>)`, `"short"` sends `pi`, and `{ custom: "..." }` sends the given value. On Bedrock the value is appended to the AWS SDK user agent.
 - `version`: the version in the detailed `User-Agent`. Default: the pi-ai version.
-- `attribution`: provider attribution headers. `false` (default) sends none. `true` attributes requests to pi: OpenRouter gets `HTTP-Referer: https://pi.dev` and `X-OpenRouter-Title: pi`, NVIDIA NIM gets `X-BILLING-INVOKE-ORIGIN: Pi`, and OpenCode gets `x-opencode-client: pi`. A string attributes requests to that name instead. An object sets `name`, `url` (OpenRouter `HTTP-Referer`), and `categories` (OpenRouter `X-OpenRouter-Categories`); fields left out use pi's values only when `name` is left out too. The attribution name is also the Codex `originator` and the default `agentName` of `Models.login()`.
+- `attribution`: provider attribution headers. Absent (default) or `null` sends none; `null` also turns off attribution from a merged identity. `{ name, url, categories? }` maps to each provider's headers:
+  - OpenRouter: `HTTP-Referer: <url>` (the app's identity in OpenRouter's rankings, grouped by origin), `X-OpenRouter-Title: <name>`, and `X-OpenRouter-Categories` (comma-separated).
+  - NVIDIA NIM: `X-BILLING-INVOKE-ORIGIN: <name>` with its first letter upper-cased.
+  - OpenCode: `x-opencode-client: <name>`.
 
-Identity headers are defaults below provider, model, and request headers, so configured headers win and a `null` request header removes one. Providers that send a fixed client identity, such as GitHub Copilot and Anthropic OAuth, keep it. `withClientIdentity(models, identity)` returns a view of a `Models` whose requests use `identity` over the one the `Models` was created with, for libraries that receive a `Models` from their host. `identity` is plain JSON, so it can be persisted with other request options.
+  `PI_ATTRIBUTION` is pi's: `{ name: "pi", url: "https://pi.dev", categories: ["cli-agent"] }`.
+
+Identity headers are defaults below provider, model, and request headers, so configured headers win and a `null` request header removes one. Providers that send a fixed client identity, such as GitHub Copilot and Anthropic OAuth, keep it. `withClientIdentity(models, identity)` returns a wrapper of a `Models` (or `MutableModels`) whose requests use `identity` over the one the `Models` was created with, for libraries that receive a `Models` from their host. `identity` is plain JSON, so it can be persisted with other request options.
 
 ### Credential Store
 

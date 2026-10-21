@@ -1,4 +1,4 @@
-import type { Models } from "../models.ts";
+import type { Models, MutableModels } from "../models.ts";
 import { PI_AI_VERSION } from "./version.ts";
 
 /**
@@ -10,24 +10,18 @@ import { PI_AI_VERSION } from "./version.ts";
  */
 export type UserAgentMode = "short" | "detailed" | { custom: string };
 
-/** Attribution with explicit values. Absent fields fall back to pi's own attribution only when `name` is absent. */
-export interface ClientAttributionOptions {
-	/**
-	 * Name requests are attributed to (OpenRouter app title, NVIDIA invoke origin, OpenCode client, Codex originator).
-	 * Absent: pi, spelled as each provider expects.
-	 */
-	name?: string;
-	/** App URL, sent as OpenRouter's `HTTP-Referer`. Absent: `https://pi.dev` when `name` is absent too. */
-	url?: string;
-	/** OpenRouter app categories, comma-separated, e.g. `cli-agent`. */
-	categories?: string;
+/** Who requests are attributed to. `getAttributionHeaders()` maps the fields to each provider's headers. */
+export interface ClientAttribution {
+	/** App name: OpenRouter app title, NVIDIA invoke origin (first letter upper-cased), OpenCode client. */
+	name: string;
+	/** App URL: OpenRouter `HTTP-Referer`, the app's identity in OpenRouter's rankings, grouped by origin. */
+	url: string;
+	/** App categories, e.g. `["cli-agent"]`: OpenRouter `X-OpenRouter-Categories`, comma-separated. */
+	categories?: string[];
 }
 
-/**
- * Provider attribution headers. `false` sends none; `true` attributes requests to pi; a string attributes them to that
- * name; an object gives the values explicitly.
- */
-export type ClientAttribution = boolean | string | ClientAttributionOptions;
+/** pi's attribution, used by pi-agent-core, pi-durable, and the coding agent. */
+export const PI_ATTRIBUTION: ClientAttribution = { name: "pi", url: "https://pi.dev", categories: ["cli-agent"] };
 
 /**
  * How pi-ai identifies the calling app to providers. Every field is optional; absent fields use pi-ai's defaults:
@@ -36,8 +30,8 @@ export type ClientAttribution = boolean | string | ClientAttributionOptions;
 export interface ClientIdentity {
 	/** Default: `"detailed"`. */
 	userAgent?: UserAgentMode;
-	/** Default: `false`. */
-	attribution?: ClientAttribution;
+	/** Provider attribution headers. Absent or `null`: none; `null` also turns off attribution set by a merged identity. */
+	attribution?: ClientAttribution | null;
 	/** Version in the detailed `User-Agent`. Default: the pi-ai version. */
 	version?: string;
 }
@@ -48,7 +42,6 @@ export interface ClientIdentityTarget {
 	readonly baseUrl: string;
 }
 
-const PI_ATTRIBUTION_URL = "https://pi.dev";
 const NVIDIA_NIM_HOST = "integrate.api.nvidia.com";
 const OPENCODE_HOST = "opencode.ai";
 
@@ -88,19 +81,6 @@ export function formatUserAgent(identity?: ClientIdentity): string {
 	return runtime ? `${product} (${process.platform}; ${runtime}; ${process.arch})` : `${product} (browser)`;
 }
 
-function resolveAttribution(identity: ClientIdentity | undefined): ClientAttributionOptions | undefined {
-	const attribution = identity?.attribution;
-	if (attribution === undefined || attribution === false) return undefined;
-	if (attribution === true) return {};
-	if (typeof attribution === "string") return { name: attribution };
-	return attribution;
-}
-
-/** The explicitly configured attribution name, if any. Absent when attribution is off or uses pi's defaults. */
-export function getAttributionName(identity?: ClientIdentity): string | undefined {
-	return resolveAttribution(identity)?.name;
-}
-
 function matchesHost(baseUrl: string, expectedHost: string): boolean {
 	try {
 		return new URL(baseUrl).hostname === expectedHost;
@@ -125,20 +105,33 @@ function isOpenCode(target: ClientIdentityTarget): boolean {
 
 /** Provider attribution headers of an identity for a request target. Empty when attribution is off. */
 export function getAttributionHeaders(target: ClientIdentityTarget, identity?: ClientIdentity): Record<string, string> {
-	const attribution = resolveAttribution(identity);
+	const attribution = identity?.attribution;
 	if (!attribution) return {};
-	const { name, categories } = attribution;
+	const { name, url, categories } = attribution;
 	if (isOpenRouter(target)) {
-		const url = attribution.url ?? (name === undefined ? PI_ATTRIBUTION_URL : undefined);
 		return {
-			...(url === undefined ? {} : { "HTTP-Referer": url }),
-			"X-OpenRouter-Title": name ?? "pi",
-			...(categories === undefined ? {} : { "X-OpenRouter-Categories": categories }),
+			"HTTP-Referer": url,
+			"X-OpenRouter-Title": name,
+			...(categories === undefined || categories.length === 0
+				? {}
+				: { "X-OpenRouter-Categories": categories.join(",") }),
 		};
 	}
-	if (isNvidiaNim(target)) return { "X-BILLING-INVOKE-ORIGIN": name ?? "Pi" };
-	if (isOpenCode(target)) return { "x-opencode-client": name ?? "pi" };
+	// NVIDIA expects a capitalized origin, such as `Pi`.
+	if (isNvidiaNim(target)) return { "X-BILLING-INVOKE-ORIGIN": name.charAt(0).toUpperCase() + name.slice(1) };
+	if (isOpenCode(target)) return { "x-opencode-client": name };
 	return {};
+}
+
+/**
+ * OpenCode's per-conversation routing header for requests to OpenCode, including custom providers pointing at it.
+ * Undefined without a session or for other targets.
+ */
+export function getOpenCodeSessionHeaders(
+	target: ClientIdentityTarget,
+	sessionId: string | undefined,
+): Record<string, string> | undefined {
+	return sessionId && isOpenCode(target) ? { "x-opencode-session": sessionId } : undefined;
 }
 
 /**
@@ -149,34 +142,52 @@ export function getIdentityHeaders(target: ClientIdentityTarget, identity?: Clie
 	return { "User-Agent": formatUserAgent(identity), ...getAttributionHeaders(target, identity) };
 }
 
-const IDENTITY_REQUEST_METHODS = new Set<PropertyKey>([
-	"stream",
-	"complete",
-	"streamSimple",
-	"completeSimple",
-	"streamDeferred",
-	"fetchDeferred",
-	"cancelDeferred",
-	"generateImages",
-	"classify",
-]);
+function isMutableModels(models: Models): models is MutableModels {
+	return "setProvider" in models && "deleteProvider" in models && "clearProviders" in models;
+}
 
 /**
- * A view of `models` whose requests use `identity` as their default identity: a request's `identity` overrides it field
- * by field, and it overrides the identity `models` was created with. Everything else is delegated unchanged.
+ * `models` with `identity` as the default identity of its requests: a request's `identity` overrides it field by
+ * field, and it overrides the identity `models` was created with. Everything else is delegated unchanged; a
+ * `MutableModels` stays mutable.
  */
-export function withClientIdentity<T extends Models>(models: T, identity: ClientIdentity): T {
-	return new Proxy(models, {
-		get(target, property) {
-			const value: unknown = Reflect.get(target, property, target);
-			if (typeof value !== "function") return value;
-			if (!IDENTITY_REQUEST_METHODS.has(property)) return value.bind(target);
-			// Every request method takes (model, context or handle, options).
-			return (model: unknown, input: unknown, options?: { identity?: ClientIdentity }) =>
-				value.call(target, model, input, {
-					...options,
-					identity: mergeClientIdentity(identity, options?.identity),
-				});
-		},
-	});
+export function withClientIdentity(models: MutableModels, identity: ClientIdentity): MutableModels;
+export function withClientIdentity(models: Models, identity: ClientIdentity): Models;
+export function withClientIdentity(models: Models, identity: ClientIdentity): Models {
+	const withIdentity = <T extends { identity?: ClientIdentity }>(options: T | undefined): T =>
+		({ ...options, identity: mergeClientIdentity(identity, options?.identity) }) as T;
+	const wrapped: Models = {
+		getProviders: () => models.getProviders(),
+		getProvider: (id) => models.getProvider(id),
+		getModels: (provider) => models.getModels(provider),
+		getModel: (provider, id) => models.getModel(provider, id),
+		getModelsOfType: (type, provider) => models.getModelsOfType(type, provider),
+		getModelOfType: (type, provider, id) => models.getModelOfType(type, provider, id),
+		getAllModels: (provider) => models.getAllModels(provider),
+		refresh: (options) => models.refresh(options),
+		checkAuth: (providerId, options) => models.checkAuth(providerId, options),
+		getAvailable: (providerId, options) => models.getAvailable(providerId, options),
+		getAvailableOfType: (type, providerId, options) => models.getAvailableOfType(type, providerId, options),
+		getAllAvailable: (providerId, options) => models.getAllAvailable(providerId, options),
+		getAuth: models.getAuth.bind(models),
+		login: (providerId, type, interaction, options) => models.login(providerId, type, interaction, options),
+		logout: (providerId, options) => models.logout(providerId, options),
+		stream: (model, context, options) => models.stream(model, context, withIdentity(options)),
+		complete: (model, context, options) => models.complete(model, context, withIdentity(options)),
+		streamSimple: (model, context, options) => models.streamSimple(model, context, withIdentity(options)),
+		completeSimple: (model, context, options) => models.completeSimple(model, context, withIdentity(options)),
+		streamDeferred: (model, handle, options) => models.streamDeferred(model, handle, withIdentity(options)),
+		fetchDeferred: (model, handle, options) => models.fetchDeferred(model, handle, withIdentity(options)),
+		cancelDeferred: (model, handle, options) => models.cancelDeferred(model, handle, withIdentity(options)),
+		generateImages: (model, context, options) => models.generateImages(model, context, withIdentity(options)),
+		classify: (model, context, options) => models.classify(model, context, withIdentity(options)),
+	};
+	if (!isMutableModels(models)) return wrapped;
+	const mutable: MutableModels = {
+		...wrapped,
+		setProvider: (provider) => models.setProvider(provider),
+		deleteProvider: (id) => models.deleteProvider(id),
+		clearProviders: () => models.clearProviders(),
+	};
+	return mutable;
 }

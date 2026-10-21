@@ -141,7 +141,7 @@ export interface AgentOptions {
 	toolExecution?: ToolExecutionMode;
 	/**
 	 * How requests identify the app to providers, merged field by field over `DEFAULT_AGENT_IDENTITY`
-	 * (`{ attribution: true }`). Pass `{ attribution: false }` to send no attribution headers.
+	 * (`{ attribution: PI_ATTRIBUTION }`). Pass `{ attribution: null }` to send no attribution headers.
 	 */
 	identity?: ClientIdentity;
 }

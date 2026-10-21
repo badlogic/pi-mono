@@ -616,9 +616,9 @@ export type HarnessOptions<Tool extends ToolRegistration = ToolRegistration> = {
 	readonly models: Models | (() => Models);
 	/**
 	 * How model requests identify the app to providers, merged field by field over `DEFAULT_HARNESS_IDENTITY`
-	 * (`{ attribution: true }`, provider attribution to pi). It applies to every request through the Harness's models,
-	 * including hooks and tools, and overrides the identity the `Models` was created with; a request's own `identity`
-	 * overrides it. Pass `{ attribution: false }` to send no attribution headers.
+	 * (`{ attribution: PI_ATTRIBUTION }`, provider attribution to pi). It applies to every request through the Harness's
+	 * models, including hooks and tools, and overrides the identity the `Models` was created with; a request's own
+	 * `identity` overrides it. Pass `{ attribution: null }` to send no attribution headers.
 	 */
 	readonly identity?: ClientIdentity;
 	readonly registry: RegistryReader<Tool>;

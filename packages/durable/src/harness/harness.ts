@@ -1,7 +1,12 @@
 import type { AttachedReplicatedState, Context, JsonValue } from "@earendil-works/chord";
 import { withAbortSignal, withoutAbortSignal } from "@earendil-works/chord/context";
 import type { Models } from "@earendil-works/pi-ai";
-import { type ClientIdentity, mergeClientIdentity, withClientIdentity } from "@earendil-works/pi-ai/utils/identity";
+import {
+	type ClientIdentity,
+	mergeClientIdentity,
+	PI_ATTRIBUTION,
+	withClientIdentity,
+} from "@earendil-works/pi-ai/utils/identity";
 import {
 	createTypedMetrics,
 	NOOP_TELEMETRY_CONTEXT,
@@ -180,28 +185,17 @@ class ConversationImpl<Tool extends ToolRegistration> implements Conversation {
 }
 
 /** Request identity of a Harness's model requests: pi-ai's defaults with provider attribution to pi. */
-export const DEFAULT_HARNESS_IDENTITY: ClientIdentity = { attribution: true };
+export const DEFAULT_HARNESS_IDENTITY: ClientIdentity = { attribution: PI_ATTRIBUTION };
 
 /**
- * `HarnessOptions.models` as a function with `HarnessOptions.identity` applied. A plain `Models` is wrapped once and
- * returned at every call; a function's results are wrapped once per `Models` it returns.
+ * `HarnessOptions.models` as a function with `HarnessOptions.identity` applied. A plain `Models` is wrapped once; a
+ * function's result is wrapped at each call.
  */
 function currentModels(models: HarnessOptions["models"], identity: ClientIdentity | undefined): () => Models {
 	const merged = mergeClientIdentity(DEFAULT_HARNESS_IDENTITY, identity) ?? DEFAULT_HARNESS_IDENTITY;
-	if (typeof models !== "function") {
-		const wrapped = withClientIdentity(models, merged);
-		return () => wrapped;
-	}
-	const wrappers = new WeakMap<Models, Models>();
-	return () => {
-		const current = models();
-		let wrapped = wrappers.get(current);
-		if (wrapped === undefined) {
-			wrapped = withClientIdentity(current, merged);
-			wrappers.set(current, wrapped);
-		}
-		return wrapped;
-	};
+	if (typeof models === "function") return () => withClientIdentity(models(), merged);
+	const wrapped = withClientIdentity(models, merged);
+	return () => wrapped;
 }
 
 /** `HarnessOptions.settings` as a function: plain settings, or none, are returned at every call. */

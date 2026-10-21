@@ -28,7 +28,7 @@ import {
 import { formatProviderError, normalizeProviderError } from "../utils/error-body.ts";
 import { AssistantMessageEventStream } from "../utils/event-stream.ts";
 import { headersToRecord } from "../utils/headers.ts";
-import { getAttributionName, getIdentityHeaders } from "../utils/identity.ts";
+import { getIdentityHeaders } from "../utils/identity.ts";
 import { resolveHttpProxyUrlForTarget } from "../utils/node-http-proxy.ts";
 import { getSystemMessageText } from "../utils/text.ts";
 import {
@@ -285,11 +285,8 @@ export const stream: StreamFunction<"openai-codex-responses", OpenAICodexRespons
 				body = nextBody as RequestBody;
 			}
 			const websocketRequestId = codexSessionId || uuidv7();
-			// Codex expects an originator on every request, so it stays on without attribution.
-			const identityHeaders = {
-				originator: getAttributionName(options?.identity) ?? "pi",
-				...getIdentityHeaders(model, options?.identity),
-			};
+			// Codex expects an originator on every request; it is not attribution.
+			const identityHeaders = { originator: "pi", ...getIdentityHeaders(model, options?.identity) };
 			const sseHeaders = buildSSEHeaders(
 				identityHeaders,
 				model.headers,

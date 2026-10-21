@@ -56,7 +56,7 @@ import type {
 	Usage,
 } from "./types.ts";
 import { operationSignal, raceWithAbortSignal } from "./utils/abort.ts";
-import { type ClientIdentity, getAttributionName, mergeClientIdentity } from "./utils/identity.ts";
+import { type ClientIdentity, getOpenCodeSessionHeaders, mergeClientIdentity } from "./utils/identity.ts";
 import {
 	assertChatModel,
 	assertClassifierInputSupported,
@@ -377,10 +377,7 @@ export interface CreateModelsOptions {
 	credentials?: CredentialStore;
 	modelsStore?: ModelsStore;
 	authContext?: AuthContext;
-	/**
-	 * Default identity of every request; a request's `identity` overrides it field by field. Its attribution name is
-	 * also the default `LoginOptions.agentName`.
-	 */
+	/** Default identity of every request; a request's `identity` overrides it field by field. */
 	identity?: ClientIdentity;
 }
 
@@ -789,9 +786,7 @@ class ModelsImpl implements MutableModels {
 		if (!method?.login) {
 			throw new ModelsError("auth", `${provider.name} does not support ${type} login`);
 		}
-		const agentName = options?.agentName ?? getAttributionName(this.identity);
-		const loginOptions = agentName === undefined ? options : { ...options, agentName };
-		const loginOperation: Promise<Credential> = method.login({ ...interaction, signal }, loginOptions);
+		const loginOperation: Promise<Credential> = method.login({ ...interaction, signal }, options);
 		const credential = await raceWithAbortSignal(loginOperation, signal);
 		let mutationStarted = false;
 		let markMutationStarted: (() => void) | undefined;
@@ -881,10 +876,15 @@ class ModelsImpl implements MutableModels {
 
 		// Explicit request options win per-field; the Models-only transform runs last.
 		const apiKey = options?.apiKey ?? auth.apiKey;
-		let headers = mergeHeaders(auth.headers, options?.headers);
+		const requestModel: TModel = auth.baseUrl ? { ...model, baseUrl: auth.baseUrl } : model;
+		const sessionId =
+			options && "sessionId" in options && typeof options.sessionId === "string" ? options.sessionId : undefined;
+		let headers = mergeHeaders(
+			mergeHeaders(getOpenCodeSessionHeaders(requestModel, sessionId), auth.headers),
+			options?.headers,
+		);
 		if (options?.transformHeaders) headers = await options.transformHeaders(headers ?? {});
 		const env = resolution.env || options?.env ? { ...(resolution.env ?? {}), ...(options?.env ?? {}) } : undefined;
-		const requestModel: TModel = auth.baseUrl ? { ...model, baseUrl: auth.baseUrl } : model;
 		const identity = mergeClientIdentity(this.identity, options?.identity);
 		const { transformHeaders: _transformHeaders, ...providerOptions } = options ?? {};
 		const requestOptions = {

@@ -3,6 +3,7 @@ import {
 	fauxAssistantMessage,
 	type Message,
 	type Models,
+	PI_ATTRIBUTION,
 	type SimpleStreamOptions,
 	type SystemMessage,
 } from "@earendil-works/pi-ai";
@@ -391,7 +392,8 @@ describe("generation", () => {
 			seen.push(options?.identity);
 			return fauxAssistantMessage("ok");
 		};
-		for (const identity of [undefined, { userAgent: "short" as const, attribution: "acme" }]) {
+		const acme = { name: "acme", url: "https://acme.example" };
+		for (const identity of [undefined, { userAgent: "short" as const, attribution: acme }]) {
 			const setup = chatSetup();
 			setup.identity = identity;
 			setup.faux.setResponses([capture]);
@@ -400,7 +402,7 @@ describe("generation", () => {
 			await (await root.submit({ type: "input", content: "hi" }, context)).wait(context);
 			await harness.close(context);
 		}
-		expect(seen).toEqual([{ attribution: true }, { attribution: "acme", userAgent: "short" }]);
+		expect(seen).toEqual([{ attribution: PI_ATTRIBUTION }, { attribution: acme, userAgent: "short" }]);
 	});
 
 	// Regression coverage for #10424.
