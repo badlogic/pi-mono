@@ -64,6 +64,15 @@
         };
     in
     {
+      checks = forAllSystems (
+        system:
+        import ./nix/checks.nix {
+          inherit (perSystem system) pkgs pi treefmtWrapper;
+          inherit source;
+          nodejs = (perSystem system).pkgs.nodejs_22;
+        }
+      );
+
       packages = forAllSystems (system: {
         default = (perSystem system).pi;
         pi = (perSystem system).pi;
