@@ -22,7 +22,6 @@ import type {
 	Id,
 	JsonObject,
 	LogRecord,
-	LogWrite,
 	Page,
 	ReplayableStorage,
 	ScanOrder,
@@ -38,14 +37,16 @@ import type {
 } from "../types.ts";
 import {
 	assertLogRecord,
-	documentWrites,
-	groupExport,
+	creationWrite,
+	groupLog,
 	isCurrentOnly,
+	LOG_START,
+	revisionWrite,
 	type SequencedWrite,
 	type StoredRevision,
 	sortBySeq,
 	streamOf,
-} from "./export.ts";
+} from "./log.ts";
 import { nextCursor, type ScanStart, scanStart } from "./scan.ts";
 
 const DATABASE_VERSION = 1;
@@ -82,6 +83,13 @@ const INDEXES = {
 	documentsByScope: "documents_by_scope",
 	documentsByScopeKind: "documents_by_scope_kind",
 	documentRevisionsByKind: "document_revisions_by_kind",
+	conversationsBySeq: "conversations_by_seq",
+	tasksBySeq: "tasks_by_seq",
+	submissionsBySeq: "submissions_by_seq",
+	entriesBySeq: "entries_by_seq",
+	documentsByCreation: "documents_by_creation",
+	documentsByRetirement: "documents_by_retirement",
+	documentRevisionsBySeq: "document_revisions_by_seq",
 } as const;
 
 type StoredTask = TaskRecord<JsonValue, JsonValue, JsonValue>;
@@ -102,6 +110,7 @@ type ConversationRow = {
 	readonly id: ConversationId;
 	readonly ownerConversationId?: ConversationId;
 	readonly ownerTaskId?: TaskId;
+	readonly seq: Seq;
 	readonly record: ConversationRecord;
 };
 type EntryRow = {
@@ -118,6 +127,7 @@ type TaskRow = {
 	readonly status: StoredTask["state"]["status"];
 	readonly abortRequested: 0 | 1;
 	readonly background: 0 | 1;
+	readonly seq: Seq;
 	readonly record: StoredTask;
 };
 type SubmissionRow = {
@@ -125,6 +135,7 @@ type SubmissionRow = {
 	readonly conversationId: ConversationId;
 	readonly requestId?: string;
 	readonly status: SubmissionRecord["status"];
+	readonly seq: Seq;
 	readonly record: SubmissionRecord;
 };
 type DocumentRow = {
@@ -349,10 +360,12 @@ function createSchema(database: IDBDatabase): void {
 	const conversations = database.createObjectStore(STORES.conversations, { keyPath: "id" });
 	conversations.createIndex(INDEXES.conversationsByOwnerConversation, ["ownerConversationId", "id"]);
 	conversations.createIndex(INDEXES.conversationsByOwnerTask, ["ownerTaskId", "id"]);
+	conversations.createIndex(INDEXES.conversationsBySeq, ["seq", "id"]);
 
 	const entries = database.createObjectStore(STORES.entries, { keyPath: "id" });
 	entries.createIndex(INDEXES.entriesByConversation, ["conversationId", "id"]);
 	entries.createIndex(INDEXES.entryHeadsByConversation, ["headConversationId", "id"]);
+	entries.createIndex(INDEXES.entriesBySeq, ["commitSeq", "id"]);
 
 	const tasks = database.createObjectStore(STORES.tasks, { keyPath: "id" });
 	tasks.createIndex(INDEXES.tasksByStatus, ["status", "id"]);
@@ -360,11 +373,13 @@ function createSchema(database: IDBDatabase): void {
 	tasks.createIndex(INDEXES.tasksByKind, ["kind", "id"]);
 	tasks.createIndex(INDEXES.tasksByAbortRequested, ["abortRequested", "id"]);
 	tasks.createIndex(INDEXES.tasksByBackground, ["background", "id"]);
+	tasks.createIndex(INDEXES.tasksBySeq, ["seq", "id"]);
 
 	const submissions = database.createObjectStore(STORES.submissions, { keyPath: "id" });
 	submissions.createIndex(INDEXES.submissionsByRequest, ["conversationId", "requestId"]);
 	submissions.createIndex(INDEXES.submissionsByConversation, ["conversationId", "id"]);
 	submissions.createIndex(INDEXES.submissionsByStatus, ["status", "id"]);
+	submissions.createIndex(INDEXES.submissionsBySeq, ["seq", "id"]);
 
 	const documents = database.createObjectStore(STORES.documents, { keyPath: "id" });
 	documents.createIndex(INDEXES.documentsByAddress, [
@@ -378,9 +393,13 @@ function createSchema(database: IDBDatabase): void {
 	]);
 	documents.createIndex(INDEXES.documentsByScope, ["scopeKind", "ownerId", "id"]);
 	documents.createIndex(INDEXES.documentsByScopeKind, ["scopeKind", "ownerId", "kind", "id"]);
+	documents.createIndex(INDEXES.documentsByCreation, ["createdAt", "id"]);
+	// Live documents have no `retiredAt`, so only retired ones are in this index.
+	documents.createIndex(INDEXES.documentsByRetirement, ["retiredAt", "id"]);
 
 	const revisions = database.createObjectStore(STORES.documentRevisions, { keyPath: ["documentId", "seq"] });
 	revisions.createIndex(INDEXES.documentRevisionsByKind, ["documentId", "kind", "seq"]);
+	revisions.createIndex(INDEXES.documentRevisionsBySeq, ["seq", "documentId"]);
 }
 
 /** Browser IndexedDB implementation of the durable storage contract. One owner must serialize access to each database. */
@@ -446,53 +465,59 @@ export class IndexedDbStorage implements ReplayableStorage {
 		await this.commitAt(record.writes, record.seq);
 	}
 
-	/** Reads every store in one transaction and builds the log in memory: browser sessions are small. */
-	async *export(context: Context): AsyncGenerator<LogRecord> {
+	/** Reads the changes after `after` through the sequence indexes in one transaction, then groups them in memory. */
+	async *log(after: Seq | undefined, context: Context): AsyncGenerator<LogRecord> {
 		this.assertOpen();
-		const snapshot = await this.transaction(ALL_STORES, "readonly", async (transaction) => {
-			const all = <T>(store: string) => requestResult(transaction.objectStore(store).getAll() as IDBRequest<T[]>);
+		const since = after ?? LOG_START;
+		const read = await this.transaction(ALL_STORES, "readonly", async (transaction) => {
+			// Index keys start with the sequence, so `[since + 1]` sorts before every key of a later sequence.
+			const range = since === LOG_START ? null : keyRanges().lowerBound([since + 1]);
+			const after = <T>(store: string, index: string) =>
+				requestResult(transaction.objectStore(store).index(index).getAll(range) as IDBRequest<T[]>);
 			const metadata = await requestResult(
 				transaction.objectStore(STORES.meta).get(META_KEY) as IDBRequest<MetaRow>,
 			);
 			if (metadata === undefined) throw new Error("Durable IndexedDB metadata is missing");
 			return {
 				head: metadata.nextSeq === 1 ? undefined : seqFromNumber(metadata.nextSeq - 1),
-				conversations: await all<ConversationRow>(STORES.conversations),
-				tasks: await all<TaskRow>(STORES.tasks),
-				submissions: await all<SubmissionRow>(STORES.submissions),
-				entries: await all<EntryRow>(STORES.entries),
-				documents: await all<DocumentRow>(STORES.documents),
-				revisions: await all<RevisionRow>(STORES.documentRevisions),
+				conversations: await after<ConversationRow>(STORES.conversations, INDEXES.conversationsBySeq),
+				tasks: await after<TaskRow>(STORES.tasks, INDEXES.tasksBySeq),
+				submissions: await after<SubmissionRow>(STORES.submissions, INDEXES.submissionsBySeq),
+				entries: await after<EntryRow>(STORES.entries, INDEXES.entriesBySeq),
+				created: await after<DocumentRow>(STORES.documents, INDEXES.documentsByCreation),
+				retired: await after<DocumentRow>(STORES.documents, INDEXES.documentsByRetirement),
+				revisions: await after<RevisionRow>(STORES.documentRevisions, INDEXES.documentRevisionsBySeq),
 			};
 		});
-		const unsequenced: LogWrite[] = [
-			...snapshot.conversations.map((row): LogWrite => ({ type: "conversation", value: row.record })),
-			...snapshot.tasks.map((row): LogWrite => ({ type: "task", value: row.record })),
-			...snapshot.submissions.map((row): LogWrite => ({ type: "submission", value: row.record })),
+		const writes: SequencedWrite[] = [
+			...read.conversations.map(
+				(row): SequencedWrite => ({ seq: row.seq, write: { type: "conversation", value: row.record } }),
+			),
+			...read.tasks.map((row): SequencedWrite => ({ seq: row.seq, write: { type: "task", value: row.record } })),
+			...read.submissions.map(
+				(row): SequencedWrite => ({ seq: row.seq, write: { type: "submission", value: row.record } }),
+			),
+			...read.entries.map(
+				(row): SequencedWrite => ({ seq: row.commitSeq, write: { type: "entry", value: row.record } }),
+			),
+			...read.retired.map(
+				(row): SequencedWrite => ({ seq: row.retiredAt!, write: { type: "document.retire", id: row.id } }),
+			),
 		];
-		const entries = snapshot.entries.map(
-			(row): SequencedWrite => ({ seq: row.commitSeq, write: { type: "entry", value: row.record } }),
-		);
-		const revisionsByDocument = new Map<DocumentId, StoredRevision[]>();
-		for (const row of snapshot.revisions) {
+		// A document created after `since` has its creation revision among those read: it is at least as late.
+		const created = new Map(read.created.map((row) => [row.id, row.record]));
+		const atCreation = new Map<DocumentId, StoredRevision>();
+		for (const row of read.revisions) {
 			const revision: StoredRevision =
 				row.kind === "base"
 					? { seq: row.seq, kind: "base", version: row.version, value: row.content as JsonObject }
 					: { seq: row.seq, kind: "delta", version: row.version, ops: row.content as readonly Op[] };
-			const revisions = revisionsByDocument.get(row.documentId);
-			if (revisions === undefined) revisionsByDocument.set(row.documentId, [revision]);
-			else revisions.push(revision);
+			if (created.get(row.documentId)?.createdAt === row.seq) atCreation.set(row.documentId, revision);
+			else writes.push(revisionWrite(row.documentId, revision));
 		}
-		const documents: SequencedWrite[] = [];
-		for (const row of snapshot.documents) {
-			documents.push(...documentWrites(row.record, revisionsByDocument.get(row.id) ?? []));
-		}
-		const records = groupExport(snapshot.head, unsequenced, [
-			streamOf(sortBySeq(entries)),
-			streamOf(sortBySeq(documents)),
-		]);
-		for await (const record of records) {
-			if ((await this.head(context)) !== snapshot.head) throw new Error("Storage changed during export");
+		for (const record of created.values()) writes.push(creationWrite(record, atCreation.get(record.id)));
+		for await (const record of groupLog(read.head, since, [streamOf(sortBySeq(writes))])) {
+			if ((await this.head(context)) !== read.head) throw new Error("Storage changed while its log was read");
 			yield record;
 		}
 	}
@@ -1155,6 +1180,7 @@ export class IndexedDbStorage implements ReplayableStorage {
 									ownerConversationId: write.value.owner.conversationId,
 									ownerTaskId: write.value.owner.taskId,
 								}),
+						seq,
 						record: write.value,
 					} satisfies ConversationRow),
 				);
@@ -1181,6 +1207,7 @@ export class IndexedDbStorage implements ReplayableStorage {
 						status: write.value.state.status,
 						abortRequested: write.value.abortRequested ? 1 : 0,
 						background: write.value.background ? 1 : 0,
+						seq,
 						record: write.value,
 					} satisfies TaskRow),
 				);
@@ -1193,6 +1220,7 @@ export class IndexedDbStorage implements ReplayableStorage {
 						conversationId: write.value.conversationId,
 						...(write.value.requestId === undefined ? {} : { requestId: write.value.requestId }),
 						status: write.value.status,
+						seq,
 						record: write.value,
 					} satisfies SubmissionRow),
 				);

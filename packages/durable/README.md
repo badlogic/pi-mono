@@ -800,21 +800,24 @@ await database.transaction(async (transaction) => {
 
 ### Replication
 
-Every built-in storage is a `ReplayableStorage`: `export()` turns its state into a log of `{ seq, writes }` records
-that replays into any other storage with the same reads, `replay(record)` writes one record at its sequence, and
-`head()` is the last sequence. `ReplicatingStorage` from `@earendil-works/pi-durable/sync` wraps a storage and appends
-each committed batch to an `Outbox` as such a record, for a host that ships it elsewhere:
+Every built-in storage is a `ReplayableStorage` and can rebuild its commit log from what it stores. `log(after)` reads
+the changes committed after a sequence as `{ seq, writes }` records; replayed with `replay(record)` into a storage that
+holds the same state at `after`, they produce the same current state. `log(undefined)` reads everything, for an empty
+storage. `head()` is the last sequence. A host that syncs a session keeps only the sequence the other side has:
 
 ```typescript
-const outbox = new MemoryOutbox(); // or a host outbox that persists records
-const storage = new ReplicatingStorage(await openNodeSqliteStorage(file), outbox);
-const harness = await Harness.open(storage, options, context);
-// Elsewhere: for (const record of records) await replica.replay(record, context);
+const records = source.log(await replica.head(context), context); // or the head the remote reported
+for await (const record of records) await replica.replay(record, context);
 ```
 
-`compactRecords(records)` drops what later records in the same run supersede (earlier task records, document content
-before a newer base) before the records are shipped. Only the device that drives a session opens a Harness on it:
-`Harness.open` commits, so a replica that keeps replaying records must be read through its storage.
+The log holds what the storage kept, not every commit: each task and submission appears once, at its last write, and a
+current-only document such as `pi.live` only with what followed its newest base. Fork copies appear as the creations
+they became. A commit while a log is read makes it reject; read it again. Only the device that drives a session opens
+a Harness on it: `Harness.open` commits, so a replica that keeps replaying records must be read through its storage.
+
+`@earendil-works/pi-durable/sync` has `compactRecords(records)`, which folds a run of log records the same way (for
+example a snapshot and the batches after it) without a storage, and versioned JSON lines (`encodeLogLine`,
+`decodeLogLines`).
 
 Custom backends can run the shared conformance suite with any Vitest- or Jest-compatible runner:
 

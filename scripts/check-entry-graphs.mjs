@@ -65,7 +65,7 @@ const BUDGETS = {
 			// replicatedState) reach its host runtime through the root barrel. Chord's context reaches pi-telemetry's root
 			// (index, noop, metrics, memory) for its NOOP telemetry default; harness/telemetry.ts is Durable's schema.
 			// The Harness's request identity reaches pi-ai's utils/identity.ts and its version constant. The storages
-			// share log export (storage/export.ts).
+			// share the log (storage/log.ts).
 			maxFiles: 74,
 			forbid: [
 				"packages/ai/src/index.ts",

@@ -38,12 +38,13 @@ import type {
 import {
 	assertLogRecord,
 	creationWrite,
-	groupExport,
+	groupLog,
 	isCurrentOnly,
+	LOG_START,
 	revisionWrite,
 	type SequencedWrite,
 	type StoredRevision,
-} from "../export.ts";
+} from "../log.ts";
 import { nextCursor, type ScanStart, scanStart } from "../scan.ts";
 import { applySqliteMigrationsForSchema } from "./migrations.ts";
 import { createSqliteSchema, type SqliteSchema } from "./schema.ts";
@@ -67,14 +68,14 @@ type DocumentAction = {
 	content?: DocumentContent;
 	retire: boolean;
 };
-/** Columns of an export scan: rows are read in pages ordered by `(k1, k2)`. */
+/** Columns of a log scan: rows are read in pages ordered by `(k1, k2)`. */
 type KeysetRow = { readonly k1: number; readonly k2: number };
-type ExportRevisionRow = KeysetRow & {
+type LogRevisionRow = KeysetRow & {
 	readonly kind: DocumentContent["kind"];
 	readonly version: number;
 	readonly content: string;
 };
-type ExportCreationRow = KeysetRow & {
+type LogCreationRow = KeysetRow & {
 	readonly record: string;
 	readonly kind: DocumentContent["kind"] | null;
 	readonly version: number | null;
@@ -93,7 +94,7 @@ export type SqliteStorageOptions = {
 	readonly prefix?: string;
 };
 
-const EXPORT_PAGE_SIZE = 256;
+const LOG_PAGE_SIZE = 256;
 
 const revisionFromRow = (row: RevisionRow): StoredRevision => {
 	const seq = seqFromNumber(row.seq);
@@ -229,40 +230,41 @@ export class SqliteStorage implements ReplayableStorage {
 	}
 
 	/**
-	 * Streams in pages ordered by sequence through indexes, so the session is never held in memory, except the records
-	 * without a sequence (conversations, tasks, submissions), which the first log record holds.
+	 * Streams in pages through the sequence indexes, so neither a whole session nor the changes since `after` are held
+	 * in memory.
 	 */
-	async *export(_context: Context): AsyncGenerator<LogRecord> {
+	async *log(after: Seq | undefined, _context: Context): AsyncGenerator<LogRecord> {
 		this.assertOpen();
 		const head = await this.readHead();
+		const since = after ?? LOG_START;
 		const unchanged = async (): Promise<void> => {
 			this.assertOpen();
-			if ((await this.readHead()) !== head) throw new Error("Storage changed during export");
+			if ((await this.readHead()) !== head) throw new Error("Storage changed while its log was read");
 		};
 		const { tables } = this.schema;
-		const unsequenced: LogWrite[] = [];
-		for await (const row of this.keyset<KeysetRow & JsonRow>(
-			`SELECT id AS k1, 0 AS k2, record FROM ${tables.conversations} WHERE (id, 0) > (?, ?) ORDER BY id LIMIT ?`,
-			unchanged,
-		)) {
-			unsequenced.push({ type: "conversation", value: parseJson<ConversationRecord>(row.record) });
-		}
-		for await (const row of this.keyset<KeysetRow & JsonRow>(
-			`SELECT id AS k1, 0 AS k2, record FROM ${tables.tasks} WHERE (id, 0) > (?, ?) ORDER BY id LIMIT ?`,
-			unchanged,
-		)) {
-			unsequenced.push({ type: "task", value: parseJson<StoredTask>(row.record) });
-		}
-		for await (const row of this.keyset<KeysetRow & JsonRow>(
-			`SELECT id AS k1, 0 AS k2, record FROM ${tables.submissions} WHERE (id, 0) > (?, ?) ORDER BY id LIMIT ?`,
-			unchanged,
-		)) {
-			unsequenced.push({ type: "submission", value: parseJson<SubmissionRecord>(row.record) });
-		}
+		const stamped = <T extends LogWrite>(table: string, write: (record: string) => T) =>
+			this.mapRows(
+				this.keyset<KeysetRow & JsonRow>(
+					`SELECT seq AS k1, id AS k2, record FROM ${table} WHERE (seq, id) > (?, ?) ORDER BY seq, id LIMIT ?`,
+					since,
+					unchanged,
+				),
+				(row): SequencedWrite => ({ seq: seqFromNumber(row.k1), write: write(row.record) }),
+			);
+		const conversations = stamped(tables.conversations, (record) => ({
+			type: "conversation",
+			value: parseJson<ConversationRecord>(record),
+		}));
+		const tasks = stamped(tables.tasks, (record) => ({ type: "task", value: parseJson<StoredTask>(record) }));
+		const submissions = stamped(tables.submissions, (record) => ({
+			type: "submission",
+			value: parseJson<SubmissionRecord>(record),
+		}));
 		const entries = this.mapRows(
 			this.keyset<KeysetRow & JsonRow>(
 				`SELECT commit_seq AS k1, id AS k2, record FROM ${tables.entries}
 					WHERE (commit_seq, id) > (?, ?) ORDER BY commit_seq, id LIMIT ?`,
+				since,
 				unchanged,
 			),
 			(row): SequencedWrite => ({
@@ -271,11 +273,12 @@ export class SqliteStorage implements ReplayableStorage {
 			}),
 		);
 		const creations = this.mapRows(
-			this.keyset<ExportCreationRow>(
+			this.keyset<LogCreationRow>(
 				`SELECT d.created_at AS k1, d.id AS k2, d.record, r.kind, r.version, r.content
 					FROM ${tables.documents} d
 					LEFT JOIN ${tables.documentRevisions} r ON r.document_id = d.id AND r.seq = d.created_at
 					WHERE (d.created_at, d.id) > (?, ?) ORDER BY d.created_at, d.id LIMIT ?`,
+				since,
 				unchanged,
 			),
 			(row) =>
@@ -287,11 +290,12 @@ export class SqliteStorage implements ReplayableStorage {
 				),
 		);
 		const revisions = this.mapRows(
-			this.keyset<ExportRevisionRow>(
+			this.keyset<LogRevisionRow>(
 				`SELECT r.seq AS k1, r.document_id AS k2, r.kind, r.version, r.content
 					FROM ${tables.documentRevisions} r JOIN ${tables.documents} d ON d.id = r.document_id
 					WHERE (r.seq, r.document_id) > (?, ?) AND r.seq <> d.created_at
 					ORDER BY r.seq, r.document_id LIMIT ?`,
+				since,
 				unchanged,
 			),
 			(row) => revisionWrite(idFromNumber<DocumentId>(row.k2), revisionFromRow({ ...row, seq: row.k1 })),
@@ -300,6 +304,7 @@ export class SqliteStorage implements ReplayableStorage {
 			this.keyset<KeysetRow>(
 				`SELECT retired_at AS k1, id AS k2 FROM ${tables.documents}
 					WHERE retired_at IS NOT NULL AND (retired_at, id) > (?, ?) ORDER BY retired_at, id LIMIT ?`,
+				since,
 				unchanged,
 			),
 			(row): SequencedWrite => ({
@@ -307,21 +312,30 @@ export class SqliteStorage implements ReplayableStorage {
 				write: { type: "document.retire", id: idFromNumber<DocumentId>(row.k2) },
 			}),
 		);
-		for await (const record of groupExport(head, unsequenced, [entries, creations, revisions, retirements])) {
+		const streams = [conversations, tasks, submissions, entries, creations, revisions, retirements];
+		for await (const record of groupLog(head, since, streams)) {
 			await unchanged();
 			yield record;
 		}
 	}
 
-	/** Rows of `sql` in `(k1, k2)` order, a page at a time; `sql` binds the last key pair and the page size. */
-	private async *keyset<R extends KeysetRow>(sql: string, unchanged: () => Promise<void>): AsyncGenerator<R> {
-		let after: KeysetRow = { k1: -1, k2: -1 };
+	/**
+	 * Rows of `sql` with a first key after `after`, in `(k1, k2)` order, a page at a time; `sql` binds the last key pair
+	 * and the page size.
+	 */
+	private async *keyset<R extends KeysetRow>(
+		sql: string,
+		after: Seq,
+		unchanged: () => Promise<void>,
+	): AsyncGenerator<R> {
+		// Rows at `after` itself are excluded: every row ID is below the largest safe integer.
+		let last: KeysetRow = after === LOG_START ? { k1: -1, k2: -1 } : { k1: after, k2: Number.MAX_SAFE_INTEGER };
 		while (true) {
-			const rows = await this.db.all<R>(sql, after.k1, after.k2, EXPORT_PAGE_SIZE);
+			const rows = await this.db.all<R>(sql, last.k1, last.k2, LOG_PAGE_SIZE);
 			await unchanged();
 			yield* rows;
-			if (rows.length < EXPORT_PAGE_SIZE) return;
-			after = rows.at(-1)!;
+			if (rows.length < LOG_PAGE_SIZE) return;
+			last = rows.at(-1)!;
 		}
 	}
 
@@ -954,10 +968,11 @@ export class SqliteStorage implements ReplayableStorage {
 			case "conversation":
 				await this.claimId(executor, write.value.id, "conversation");
 				await executor.run(
-					`INSERT INTO ${this.schema.tables.conversations} (id, owner_conversation_id, owner_task_id, record) VALUES (?, ?, ?, ?)`,
+					`INSERT INTO ${this.schema.tables.conversations} (id, owner_conversation_id, owner_task_id, seq, record) VALUES (?, ?, ?, ?, ?)`,
 					write.value.id,
 					write.value.owner?.conversationId ?? null,
 					write.value.owner?.taskId ?? null,
+					seq,
 					encodeJson(write.value),
 				);
 				break;
@@ -975,30 +990,32 @@ export class SqliteStorage implements ReplayableStorage {
 			case "task":
 				await this.claimId(executor, write.value.id, "task");
 				await executor.run(
-					`INSERT INTO ${this.schema.tables.tasks} (id, conversation_id, kind, status, abort_requested, background, record)
-						VALUES (?, ?, ?, ?, ?, ?, ?)
+					`INSERT INTO ${this.schema.tables.tasks} (id, conversation_id, kind, status, abort_requested, background, seq, record)
+						VALUES (?, ?, ?, ?, ?, ?, ?, ?)
 						ON CONFLICT(id) DO UPDATE SET conversation_id = excluded.conversation_id, kind = excluded.kind,
 						status = excluded.status, abort_requested = excluded.abort_requested,
-						background = excluded.background, record = excluded.record`,
+						background = excluded.background, seq = excluded.seq, record = excluded.record`,
 					write.value.id,
 					write.value.conversationId,
 					encodeIndexedString(write.value.kind),
 					write.value.state.status,
 					write.value.abortRequested ? 1 : 0,
 					write.value.background ? 1 : 0,
+					seq,
 					encodeJson(write.value),
 				);
 				break;
 			case "submission":
 				await this.claimId(executor, write.value.id, "submission");
 				await executor.run(
-					`INSERT INTO ${this.schema.tables.submissions} (id, conversation_id, request_id, status, record) VALUES (?, ?, ?, ?, ?)
+					`INSERT INTO ${this.schema.tables.submissions} (id, conversation_id, request_id, status, seq, record) VALUES (?, ?, ?, ?, ?, ?)
 						ON CONFLICT(id) DO UPDATE SET conversation_id = excluded.conversation_id,
-						request_id = excluded.request_id, status = excluded.status, record = excluded.record`,
+						request_id = excluded.request_id, status = excluded.status, seq = excluded.seq, record = excluded.record`,
 					write.value.id,
 					write.value.conversationId,
 					write.value.requestId === undefined ? null : encodeIndexedString(write.value.requestId),
 					write.value.status,
+					seq,
 					encodeJson(write.value),
 				);
 				break;

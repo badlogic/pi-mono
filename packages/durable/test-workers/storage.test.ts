@@ -47,6 +47,7 @@ describe("Durable Object SQLite schema", () => {
 				schema.indexes.tasksByBackground,
 				schema.indexes.tasksByConversation,
 				schema.indexes.tasksByKind,
+				schema.indexes.tasksBySeq,
 				schema.indexes.tasksByStatus,
 			]);
 		});

@@ -1285,7 +1285,7 @@ export type LogRecord = {
 	readonly writes: readonly LogWrite[];
 };
 
-/** Storage that can write a log at explicit sequences and turn its state back into a log. */
+/** Storage that rebuilds its commit log from what it stores, and writes log records at their sequences. */
 export interface ReplayableStorage extends Storage {
 	/** Sequence of the last committed batch; `undefined` for a storage without commits. */
 	head(context: Context): Promise<Seq | undefined>;
@@ -1297,9 +1297,13 @@ export interface ReplayableStorage extends Storage {
 	replay(record: LogRecord, context: Context): Promise<void>;
 
 	/**
-	 * The current state as a log in sequence order: replayed into an empty storage, it answers every read the same,
-	 * historical document reads included. Its last record is at the head. No commit may run while it is consumed; one
-	 * that does makes the export reject.
+	 * The changes committed after `after`, as log records in sequence order and rebuilt from the stored state:
+	 * replayed into a storage holding this storage's state at `after`, they produce its current state, and every read,
+	 * historical document reads included, answers the same. Without `after`, the log rebuilds the whole state into an
+	 * empty storage. Superseded states are gone: each task and submission appears once, at its last write, and a
+	 * current-only document keeps only what followed its newest base. The last record is at the head; nothing follows a
+	 * head at `after`, and an `after` past the head rejects. A commit while the log is consumed makes it reject, and the
+	 * caller reads it again.
 	 */
-	export(context: Context): AsyncIterable<LogRecord>;
+	log(after: Seq | undefined, context: Context): AsyncIterable<LogRecord>;
 }

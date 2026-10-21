@@ -105,8 +105,8 @@ export const base = (id: number, value: Record<string, JsonValue>, version = 1):
  * across a version transition, task documents, fork copies, retire and recreate, an empty lifetime, upserted records,
  * and a head that no stamp records.
  */
-export async function seed(storage: ReplayableStorage): Promise<void> {
-	const batches: StorageWrite[][] = [
+export function seedBatches(): StorageWrite[][] {
+	return [
 		[{ type: "conversation", value: { id: ROOT_CONVERSATION_ID } }],
 		[
 			entry(2),
@@ -155,7 +155,10 @@ export async function seed(storage: ReplayableStorage): Promise<void> {
 		],
 		[{ type: "task", value: task(17, "pending") }],
 	];
-	for (const batch of batches) await storage.commit(batch, context);
+}
+
+export async function seed(storage: Storage): Promise<void> {
+	for (const batch of seedBatches()) await storage.commit(batch, context);
 }
 
 type Reads = Record<string, unknown>;

@@ -1,6 +1,5 @@
-import { isCurrentOnly, RECLAIMED_BASE } from "../storage/export.ts";
-import type { DocumentId, Id, LogWrite } from "../types.ts";
-import type { OutboxRecord } from "./log.ts";
+import { isCurrentOnly, RECLAIMED_BASE } from "../storage/log.ts";
+import type { DocumentId, Id, LogRecord, LogWrite } from "../types.ts";
 
 /** Whether a document keeps only its newest base; `undefined` when unknown, which keeps all of its content. */
 export type CurrentOnlyLookup = (id: DocumentId) => boolean | undefined;
@@ -18,21 +17,22 @@ type DocumentWrites = {
 };
 
 /**
- * Compact a run of consecutive records into the records that replay to the same reads:
+ * Compact a run of consecutive log records into the records that replay to the same reads, as a storage's own log
+ * of the same changes would hold them:
  *
  * - entries and conversations stay;
  * - of each task and submission only the last record stays, at the sequence that wrote it;
  * - a current-only document loses content before its newest base in the run, and all of it when the run retires it;
- *   a creation whose base is dropped keeps an empty placeholder base, as export writes it;
- * - rewindable and unknown documents keep everything;
+ *   a creation whose base is dropped keeps the placeholder base;
+ * - rewindable documents keep everything, and so do documents created before the run unless `lookup` knows them;
  * - records left without writes are dropped, except the last, which marks where the run ends.
  *
- * Pure: the same rules compact one flush, merge pending batches offline, and fold uploaded batches remotely.
+ * Pure: it folds a snapshot and the batches after it into a new snapshot without a storage, for example remotely.
  */
 export function compactRecords(
-	records: readonly OutboxRecord[],
+	records: readonly LogRecord[],
 	lookup: CurrentOnlyLookup = () => undefined,
-): OutboxRecord[] {
+): LogRecord[] {
 	if (records.length === 0) return [];
 	const currentOnly = new Map<DocumentId, boolean>();
 	const lastRecord = new Map<Id<string>, Position>();
@@ -47,7 +47,6 @@ export function compactRecords(
 	};
 
 	records.forEach((record, recordIndex) => {
-		for (const id of record.currentOnly ?? []) currentOnly.set(id, true);
 		record.writes.forEach((write, writeIndex) => {
 			const position = { record: recordIndex, write: writeIndex };
 			switch (write.type) {
@@ -97,7 +96,7 @@ export function compactRecords(
 		}
 	}
 
-	const compacted: OutboxRecord[] = [];
+	const compacted: LogRecord[] = [];
 	records.forEach((record, recordIndex) => {
 		const writes: LogWrite[] = [];
 		record.writes.forEach((write, writeIndex) => {
@@ -116,12 +115,7 @@ export function compactRecords(
 		});
 		const last = recordIndex === records.length - 1;
 		if (writes.length === 0 && !last) return;
-		const hints = (record.currentOnly ?? []).filter((id) =>
-			writes.some(
-				(write) => (write.type === "document.change" || write.type === "document.retire") && write.id === id,
-			),
-		);
-		compacted.push({ seq: record.seq, writes, ...(hints.length === 0 ? {} : { currentOnly: hints }) });
+		compacted.push({ seq: record.seq, writes });
 	});
 	return compacted;
 }

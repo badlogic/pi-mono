@@ -1,23 +1,13 @@
 import { seqFromNumber } from "../ids.ts";
-import type { DocumentId, LogRecord, LogWrite } from "../types.ts";
+import type { LogRecord, LogWrite } from "../types.ts";
 
 /** Version of the log line envelope. It changes when a `LogWrite` variant is added, removed, or changes shape. */
 export const LOG_VERSION = 1;
-
-/**
- * A committed record as the local outbox keeps it. `currentOnly` lists the documents this record changes or retires
- * without creating them whose history is current-only, which compaction needs and the writes alone do not say.
- * Created documents describe themselves.
- */
-export type OutboxRecord = LogRecord & {
-	readonly currentOnly?: readonly DocumentId[];
-};
 
 type LogLine = {
 	readonly v: typeof LOG_VERSION;
 	readonly seq: number;
 	readonly writes: readonly LogWrite[];
-	readonly currentOnly?: readonly DocumentId[];
 };
 
 export class LogFormatError extends Error {
@@ -28,15 +18,8 @@ export class LogFormatError extends Error {
 }
 
 /** One JSON line, terminated by a newline. */
-export function encodeLogLine(record: OutboxRecord): string {
-	const line: LogLine = {
-		v: LOG_VERSION,
-		seq: record.seq,
-		writes: record.writes,
-		...(record.currentOnly === undefined || record.currentOnly.length === 0
-			? {}
-			: { currentOnly: record.currentOnly }),
-	};
+export function encodeLogLine(record: LogRecord): string {
+	const line: LogLine = { v: LOG_VERSION, seq: record.seq, writes: record.writes };
 	return `${JSON.stringify(line)}\n`;
 }
 
@@ -45,8 +28,8 @@ export function encodeLogLine(record: OutboxRecord): string {
  * record; anything else that does not decode is an error. A line of an unknown version is an error too: an older pi
  * must not replay writes it does not understand.
  */
-export function decodeLogLines(text: string): { readonly records: OutboxRecord[]; readonly torn: number } {
-	const records: OutboxRecord[] = [];
+export function decodeLogLines(text: string): { readonly records: LogRecord[]; readonly torn: number } {
+	const records: LogRecord[] = [];
 	let start = 0;
 	let previous = 0;
 	while (start < text.length) {
@@ -62,7 +45,7 @@ export function decodeLogLines(text: string): { readonly records: OutboxRecord[]
 	return { records, torn: 0 };
 }
 
-function decodeLine(text: string, number: number): OutboxRecord {
+function decodeLine(text: string, number: number): LogRecord {
 	let value: unknown;
 	try {
 		value = JSON.parse(text);
@@ -83,11 +66,7 @@ function decodeLine(text: string, number: number): OutboxRecord {
 			throw new LogFormatError(`Log line ${number} has a write of unknown type ${String(write?.type)}`);
 		}
 	}
-	return {
-		seq: seqFromNumber(line.seq),
-		writes: line.writes,
-		...(line.currentOnly === undefined ? {} : { currentOnly: line.currentOnly }),
-	};
+	return { seq: seqFromNumber(line.seq), writes: line.writes };
 }
 
 const LOG_WRITE_TYPES: ReadonlySet<unknown> = new Set<LogWrite["type"]>([

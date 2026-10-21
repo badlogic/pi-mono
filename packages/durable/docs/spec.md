@@ -5288,23 +5288,32 @@ type LogRecord = { readonly seq: Seq; readonly writes: readonly LogWrite[] };
 interface ReplayableStorage extends Storage {
   head(context: Context): Promise<Seq | undefined>;
   replay(record: LogRecord, context: Context): Promise<void>;
-  export(context: Context): AsyncIterable<LogRecord>;
+  log(after: Seq | undefined, context: Context): AsyncIterable<LogRecord>;
 }
 ```
 
 `replay()` is `commit()` at an explicit sequence above the head; later commits
-continue after it. A log never contains a copy: a copy is logged as the
-creation it became, with its materialized base, so replay never reads a source.
-`export()` writes the current state as a log in sequence order that, replayed
-into an empty backend, answers every read the same, historical document reads
-included. Documents keep their stamps: creation at `createdAt`, every retained
-revision at its sequence, retirement at `retiredAt`. A current-only document
-whose creation base was reclaimed is created with the placeholder base
-`{ version: 1, value: {} }`, which no read can reach. Conversations, tasks, and
-submissions carry no sequence and go into the first record; Storage checks no
-references between records, and nothing reads them at a past point. The last
-record is at the head, empty when nothing else is there. A commit while an
-export is consumed makes it reject.
+continue after it. A log never contains a copy: a copy is stored, and logged, as
+the creation it became, so replay never reads a source.
+
+`log(after)` rebuilds the changes after `after` from stored state, in sequence
+order: replayed into a backend holding this backend's state at `after`, they
+produce its current state, and every read answers the same, historical document
+reads included. Without `after` it rebuilds everything for an empty backend.
+Every record carries the stamp of the commit that last wrote it: a conversation
+its creation, a task or submission its last write, an entry its commit, a
+document its creation and retirement, a revision its commit. The log groups the
+records stamped after `after` by stamp. A document created after `after` is
+created with the base stored at its creation, or, when a newer base reclaimed
+that one, with the placeholder base `{ version: 1, value: {} }`, which no read
+reaches; its retained revisions follow. So superseded states are absent: each
+task and submission appears once, and a current-only document only with what
+followed its newest base. Storage checks no references between records, so a
+task-scoped document may precede the task's record. The last record is at the
+head, empty when nothing else is there; nothing follows a head at `after`, and
+an `after` past the head rejects. Records stored before stamps existed carry
+stamp 0 and join the first record of a complete log. A commit while a log is
+consumed makes it reject.
 
 ### 10.1 Failures
 

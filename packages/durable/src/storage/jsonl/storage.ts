@@ -26,7 +26,7 @@ import type {
 	TaskQuery,
 	TaskRecord,
 } from "../../types.ts";
-import { assertLogRecord, isCurrentOnly, RECLAIMED_BASE } from "../export.ts";
+import { assertLogRecord, isCurrentOnly, RECLAIMED_BASE } from "../log.ts";
 import { MemoryStorage, type PreparedMemoryCommit } from "../memory.ts";
 
 const FORMAT_VERSION = 1;
@@ -290,8 +290,8 @@ export class JsonlStorage implements ReplayableStorage {
 		await this.persist(this.memory.prepareCommit(record.writes, record.seq), context);
 	}
 
-	export(context: Context): AsyncIterable<LogRecord> {
-		return this.store.export(context);
+	log(after: Seq | undefined, context: Context): AsyncIterable<LogRecord> {
+		return this.store.log(after, context);
 	}
 
 	private async persist(prepared: PreparedMemoryCommit, context: Context): Promise<Seq> {

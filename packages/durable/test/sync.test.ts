@@ -2,17 +2,9 @@ import { BACKGROUND_CONTEXT } from "@earendil-works/chord/context";
 import { describe, expect, it } from "vitest";
 import { seqFromNumber } from "../src/ids.ts";
 import { MemoryStorage } from "../src/storage/memory.ts";
-import {
-	compactRecords,
-	decodeLogLines,
-	encodeLogLine,
-	LogFormatError,
-	MemoryOutbox,
-	type OutboxRecord,
-	ReplicatingStorage,
-} from "../src/sync/index.ts";
-import { type LogRecord, ROOT_CONVERSATION_ID, type StorageWrite } from "../src/types.ts";
-import { collect, create, delta, documentId, entry, latestDoc, reads, seed, task } from "./replay-support.ts";
+import { compactRecords, decodeLogLines, encodeLogLine, LogFormatError } from "../src/sync/index.ts";
+import type { LogRecord, StorageWrite } from "../src/types.ts";
+import { collect, create, delta, documentId, entry, latestDoc, reads, seedBatches, task } from "./replay-support.ts";
 
 const context = BACKGROUND_CONTEXT;
 
@@ -22,108 +14,56 @@ async function replayed(records: readonly LogRecord[]): Promise<MemoryStorage> {
 	return storage;
 }
 
-async function replicated(): Promise<{ readonly storage: ReplicatingStorage; readonly outbox: MemoryOutbox }> {
-	const outbox = new MemoryOutbox();
-	const storage = new ReplicatingStorage(new MemoryStorage(), outbox);
-	await seed(storage);
-	return { storage, outbox };
+/**
+ * Commit `batches` and read the storage's log after each one, as a flush after every commit would upload it; with
+ * `snapshotAfter`, the first that many commits are read as one complete log instead.
+ */
+async function uploaded(
+	batches: readonly (readonly StorageWrite[])[],
+	snapshotAfter = 0,
+): Promise<{ readonly storage: MemoryStorage; readonly snapshot: LogRecord[]; readonly records: LogRecord[] }> {
+	const storage = new MemoryStorage();
+	for (const batch of batches.slice(0, snapshotAfter)) await storage.commit(batch, context);
+	const snapshot = await collect(storage.log(undefined, context));
+	const records: LogRecord[] = [];
+	for (const batch of batches.slice(snapshotAfter)) {
+		const head = await storage.head(context);
+		await storage.commit(batch, context);
+		records.push(...(await collect(storage.log(head, context))));
+	}
+	return { storage, snapshot, records };
 }
 
-describe("ReplicatingStorage", () => {
-	it("logs every commit so that replaying the log gives the same reads", async () => {
-		const { storage, outbox } = await replicated();
-		expect(outbox.records.map((record) => record.seq)).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9, 10]);
-		expect(await reads(await replayed(outbox.records))).toEqual(await reads(storage));
-	});
-
-	it("logs fork copies as the creations they became", async () => {
-		const { outbox } = await replicated();
-		const fork = outbox.records.find((record) => record.seq === 6)!;
-		const writes = fork.writes as readonly StorageWrite[];
-		expect(writes.some((write) => write.type === "document.copy")).toBe(false);
-		// The rewindable source as of seq 3, and the latest one as it was when the fork committed.
-		expect(writes.filter((write) => write.type === "document.create")).toMatchObject([
-			{ record: { id: 12 }, content: { kind: "base", version: 1, value: { a: 1, b: 1 } } },
-			{ record: { id: 13 }, content: { kind: "base", version: 1, value: { x: 1 } } },
-		]);
-	});
-
-	it("marks changes of current-only documents created earlier", async () => {
-		const { outbox } = await replicated();
-		const hints = Object.fromEntries(outbox.records.map((record) => [record.seq, record.currentOnly ?? []]));
-		expect(hints).toMatchObject({ 3: [6], 4: [6], 7: [10], 8: [9, 10], 9: [13] });
-		expect(hints[2]).toEqual([]);
-	});
-
-	it("does not log replayed records", async () => {
-		const outbox = new MemoryOutbox();
-		const storage = new ReplicatingStorage(new MemoryStorage(), outbox);
-		await storage.replay(
-			{ seq: seqFromNumber(1), writes: [{ type: "conversation", value: { id: ROOT_CONVERSATION_ID } }] },
-			context,
-		);
-		expect(outbox.records).toEqual([]);
-		expect(await storage.commit([entry(2)], context)).toBe(2);
-		expect(outbox.records.map((record) => record.seq)).toEqual([2]);
-	});
-
-	it("appends after the commit, so a rejected commit is never logged", async () => {
-		const outbox = new MemoryOutbox();
-		const storage = new ReplicatingStorage(new MemoryStorage(), outbox);
-		await storage.commit([{ type: "conversation", value: { id: ROOT_CONVERSATION_ID } }], context);
-		await expect(
-			storage.commit([{ type: "conversation", value: { id: ROOT_CONVERSATION_ID } }], context),
-		).rejects.toThrow("already belongs");
-		expect(outbox.records).toHaveLength(1);
-	});
-
-	it("tells a listener about each record once it is in the outbox", async () => {
-		const outbox = new MemoryOutbox();
-		const seen: number[] = [];
-		const storage = new ReplicatingStorage(new MemoryStorage(), outbox, {
-			onRecord: (record) => seen.push(record.seq, outbox.records.length),
-		});
-		await storage.commit([{ type: "conversation", value: { id: ROOT_CONVERSATION_ID } }], context);
-		expect(seen).toEqual([1, 1]);
-	});
-});
-
 describe("compactRecords", () => {
-	it("keeps the reads of every split of the log into batches", async () => {
-		const { storage, outbox } = await replicated();
+	it("folds a snapshot and the batches after it into one that replays to the same reads, at every split", async () => {
+		const batches = seedBatches();
+		for (let split = 0; split <= batches.length; split++) {
+			const { storage, snapshot, records } = await uploaded(batches, split);
+			const folded = compactRecords([...snapshot, ...records]);
+			expect(await reads(await replayed(folded)), `split at ${split}`).toEqual(await reads(storage));
+			expect(folded.at(-1)?.seq).toBe(await storage.head(context));
+		}
+	});
+
+	it("keeps the reads of every run of uploaded batches", async () => {
+		const { storage, records } = await uploaded(seedBatches());
 		const expected = await reads(storage);
-		const records = outbox.records;
 		for (let cut = 0; cut <= records.length; cut++) {
-			const batches = [records.slice(0, cut), records.slice(cut)];
-			const compacted = batches.flatMap((batch) => compactRecords(batch));
+			const compacted = [records.slice(0, cut), records.slice(cut)].flatMap((run) => compactRecords(run));
 			expect(await reads(await replayed(compacted)), `cut at ${cut}`).toEqual(expected);
 		}
 	});
 
-	it("keeps the reads when every record is its own batch, or the whole log is one", async () => {
-		const { storage, outbox } = await replicated();
-		const expected = await reads(storage);
-		expect(await reads(await replayed(outbox.records.flatMap((record) => compactRecords([record]))))).toEqual(
-			expected,
-		);
-		expect(await reads(await replayed(compactRecords(outbox.records)))).toEqual(expected);
+	it("leaves a storage's complete log as it is", async () => {
+		const { storage } = await uploaded(seedBatches());
+		const log = await collect(storage.log(undefined, context));
+		expect(compactRecords(log)).toEqual(log);
 	});
 
-	it("compacts the export of a storage too", async () => {
-		const { storage } = await replicated();
-		const exported = await collect(storage.export(context));
-		expect(await reads(await replayed(compactRecords(exported)))).toEqual(await reads(storage));
-	});
-
-	it("drops superseded task records and streaming deltas", async () => {
-		const live = latestDoc(2);
-		const records: OutboxRecord[] = [
-			{
-				seq: seqFromNumber(10),
-				writes: [{ type: "task", value: task(5, "running") }, delta(2, "partial", "a")],
-				currentOnly: [documentId(2)],
-			},
-			{ seq: seqFromNumber(11), writes: [delta(2, "partial", "ab")], currentOnly: [documentId(2)] },
+	it("drops superseded task records and document content before a newer base", () => {
+		const records: LogRecord[] = [
+			{ seq: seqFromNumber(10), writes: [{ type: "task", value: task(5, "running") }, delta(2, "partial", "a")] },
+			{ seq: seqFromNumber(11), writes: [delta(2, "partial", "ab")] },
 			{ seq: seqFromNumber(12), writes: [entry(6)] },
 			{
 				seq: seqFromNumber(13),
@@ -131,11 +71,11 @@ describe("compactRecords", () => {
 					{ type: "task", value: task(5, "terminal") },
 					{ type: "document.change", id: documentId(2), content: { kind: "base", version: 1, value: {} } },
 				],
-				currentOnly: [documentId(2)],
 			},
-			{ seq: seqFromNumber(14), writes: [delta(2, "partial", "c")], currentOnly: [documentId(2)] },
+			{ seq: seqFromNumber(14), writes: [delta(2, "partial", "c")] },
 		];
-		expect(compactRecords(records)).toEqual([
+		// Document 2 was created before the run; the lookup says it is current-only, like pi.live.
+		expect(compactRecords(records, (id) => (id === documentId(2) ? true : undefined))).toEqual([
 			{ seq: 12, writes: [entry(6)] },
 			{
 				seq: 13,
@@ -143,18 +83,15 @@ describe("compactRecords", () => {
 					{ type: "task", value: task(5, "terminal") },
 					{ type: "document.change", id: documentId(2), content: { kind: "base", version: 1, value: {} } },
 				],
-				currentOnly: [documentId(2)],
 			},
-			{ seq: 14, writes: [delta(2, "partial", "c")], currentOnly: [documentId(2)] },
+			{ seq: 14, writes: [delta(2, "partial", "c")] },
 		]);
-		// Without the hint the document's history is unknown, so its deltas stay.
-		const unhinted = records.map(({ currentOnly: _currentOnly, ...record }) => record);
-		expect(compactRecords(unhinted).flatMap((record) => record.writes)).toHaveLength(6);
-		expect(live.history).toBe("latest");
+		// Without the lookup its history is unknown, so its content stays.
+		expect(compactRecords(records).flatMap((record) => record.writes)).toHaveLength(6);
 	});
 
 	it("keeps an empty last record so the batch ends where the run ended", () => {
-		const records: OutboxRecord[] = [
+		const records: LogRecord[] = [
 			{ seq: seqFromNumber(3), writes: [{ type: "task", value: task(5, "pending") }] },
 			{ seq: seqFromNumber(4), writes: [{ type: "task", value: task(5, "running") }] },
 			{ seq: seqFromNumber(5), writes: [{ type: "task", value: task(5, "terminal") }] },
@@ -184,10 +121,10 @@ describe("compactRecords", () => {
 });
 
 describe("log lines", () => {
-	it("round-trips records with their hints", async () => {
-		const { outbox } = await replicated();
-		const text = outbox.records.map(encodeLogLine).join("");
-		expect(decodeLogLines(text)).toEqual({ records: outbox.records, torn: 0 });
+	it("round-trips records", async () => {
+		const { records } = await uploaded(seedBatches());
+		const text = records.map(encodeLogLine).join("");
+		expect(decodeLogLines(text)).toEqual({ records, torn: 0 });
 	});
 
 	it("reports a torn last line instead of failing", () => {
