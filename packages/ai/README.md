@@ -18,6 +18,7 @@ Unified LLM API with provider collections, automatic auth resolution, token and 
 - [Auth](#auth)
   - [How Auth Resolves](#how-auth-resolves)
   - [Transforming Request Headers](#transforming-request-headers)
+  - [Client Identity](#client-identity)
   - [Credential Store](#credential-store)
   - [Environment Variables](#environment-variables)
 - [Tools](#tools)
@@ -424,6 +425,24 @@ provider auth headers -> model.headers -> explicit options.headers -> transformH
 Header names are merged case-insensitively. Explicit headers override auth/model headers, and the transform has final control; returning `null` for a header suppresses lower-level defaults that support deletion.
 
 `transformHeaders` belongs to `Models`, not `Provider`. A `Models` implementation must consume it and remove it before calling `Provider.stream*()`. Provider implementations continue receiving ordinary `ApiStreamOptions` or `SimpleStreamOptions` and never handle the transform themselves. Use this option instead of calling `getAuth(model)` before `stream*()`, which would resolve request auth twice.
+
+### Client Identity
+
+`identity` controls how requests identify the calling app to providers. Set it on `createModels()` as a default, or per request; a request's fields override the `Models` default field by field:
+
+```typescript
+const models = createModels({
+  identity: { userAgent: 'detailed', version: '2.1.0', attribution: 'my-app' },
+});
+
+await models.completeSimple(model, context, { identity: { attribution: false } });
+```
+
+- `userAgent`: `"detailed"` (default) sends `pi/<version> (<platform>; <runtime>; <arch>)`, `"short"` sends `pi`, and `{ custom: "..." }` sends the given value. On Bedrock the value is appended to the AWS SDK user agent.
+- `version`: the version in the detailed `User-Agent`. Default: the pi-ai version.
+- `attribution`: provider attribution headers. `false` (default) sends none. `true` attributes requests to pi: OpenRouter gets `HTTP-Referer: https://pi.dev` and `X-OpenRouter-Title: pi`, NVIDIA NIM gets `X-BILLING-INVOKE-ORIGIN: Pi`, and OpenCode gets `x-opencode-client: pi`. A string attributes requests to that name instead. An object sets `name`, `url` (OpenRouter `HTTP-Referer`), and `categories` (OpenRouter `X-OpenRouter-Categories`); fields left out use pi's values only when `name` is left out too. The attribution name is also the Codex `originator` and the default `agentName` of `Models.login()`.
+
+Identity headers are defaults below provider, model, and request headers, so configured headers win and a `null` request header removes one. Providers that send a fixed client identity, such as GitHub Copilot and Anthropic OAuth, keep it. `withClientIdentity(models, identity)` returns a view of a `Models` whose requests use `identity` over the one the `Models` was created with, for libraries that receive a `Models` from their host. `identity` is plain JSON, so it can be persisted with other request options.
 
 ### Credential Store
 

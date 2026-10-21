@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Added
+
+- Added `AgentOptions.identity` and `Agent.identity` (a pi-ai `ClientIdentity`). Agent loop requests use `DEFAULT_AGENT_IDENTITY` (`{ attribution: true }`) under it, so OpenRouter, NVIDIA NIM, and OpenCode requests are attributed to pi by default; pass `{ attribution: false }` to send no attribution headers.
+
 ## [1.3.0] - 2026-10-15
 
 ## [1.2.0] - 2026-10-12

@@ -74,6 +74,8 @@ describe("HarnessOptions.models and settings as functions", () => {
 		]);
 		first.setProvider(faux.provider);
 		second.setProvider(faux.provider);
+		// Marks the second Models: tools see views of the host's Models that add the Harness identity.
+		second.setProvider(fauxProvider({ provider: "second-only" }).provider);
 		let current = first;
 		const seen: Models[] = [];
 		const registry = createRegistry();
@@ -97,9 +99,8 @@ describe("HarnessOptions.models and settings as functions", () => {
 		);
 		const { harness, root } = await open({ models: () => current }, registry);
 		expect(await turn(root, "go")).toBe("done");
-		expect(seen).toEqual([first, second]);
-		expect(seen[0]).toBe(first);
-		expect(seen[1]).toBe(second);
+		expect(seen[0]!.getProvider("second-only")).toBeUndefined();
+		expect(seen[1]!.getProvider("second-only")).toBeDefined();
 		await harness.close(context);
 	});
 

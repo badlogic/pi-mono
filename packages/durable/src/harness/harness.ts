@@ -1,6 +1,7 @@
 import type { AttachedReplicatedState, Context, JsonValue } from "@earendil-works/chord";
 import { withAbortSignal, withoutAbortSignal } from "@earendil-works/chord/context";
 import type { Models } from "@earendil-works/pi-ai";
+import { type ClientIdentity, mergeClientIdentity, withClientIdentity } from "@earendil-works/pi-ai/utils/identity";
 import {
 	createTypedMetrics,
 	NOOP_TELEMETRY_CONTEXT,
@@ -178,9 +179,29 @@ class ConversationImpl<Tool extends ToolRegistration> implements Conversation {
 	}
 }
 
-/** `HarnessOptions.models` as a function: a plain `Models` is returned at every call. */
-function currentModels(models: HarnessOptions["models"]): () => Models {
-	return typeof models === "function" ? models : () => models;
+/** Request identity of a Harness's model requests: pi-ai's defaults with provider attribution to pi. */
+export const DEFAULT_HARNESS_IDENTITY: ClientIdentity = { attribution: true };
+
+/**
+ * `HarnessOptions.models` as a function with `HarnessOptions.identity` applied. A plain `Models` is wrapped once and
+ * returned at every call; a function's results are wrapped once per `Models` it returns.
+ */
+function currentModels(models: HarnessOptions["models"], identity: ClientIdentity | undefined): () => Models {
+	const merged = mergeClientIdentity(DEFAULT_HARNESS_IDENTITY, identity) ?? DEFAULT_HARNESS_IDENTITY;
+	if (typeof models !== "function") {
+		const wrapped = withClientIdentity(models, merged);
+		return () => wrapped;
+	}
+	const wrappers = new WeakMap<Models, Models>();
+	return () => {
+		const current = models();
+		let wrapped = wrappers.get(current);
+		if (wrapped === undefined) {
+			wrapped = withClientIdentity(current, merged);
+			wrappers.set(current, wrapped);
+		}
+		return wrapped;
+	};
 }
 
 /** `HarnessOptions.settings` as a function: plain settings, or none, are returned at every call. */
@@ -215,7 +236,7 @@ class HarnessImpl<Tool extends ToolRegistration> extends SessionImpl implements 
 			session: this,
 			storage,
 			registry: options.registry,
-			models: currentModels(options.models),
+			models: currentModels(options.models, options.identity),
 			agent: (id, snapshot, callContext) => this.resolveAgent(id, snapshot as RegistrySnapshot<Tool>, callContext),
 			settings,
 			env: (id, callContext) => this.buildEnv(id, callContext),

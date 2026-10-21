@@ -56,6 +56,7 @@ import type {
 	Usage,
 } from "./types.ts";
 import { operationSignal, raceWithAbortSignal } from "./utils/abort.ts";
+import { type ClientIdentity, getAttributionName, mergeClientIdentity } from "./utils/identity.ts";
 import {
 	assertChatModel,
 	assertClassifierInputSupported,
@@ -376,6 +377,11 @@ export interface CreateModelsOptions {
 	credentials?: CredentialStore;
 	modelsStore?: ModelsStore;
 	authContext?: AuthContext;
+	/**
+	 * Default identity of every request; a request's `identity` overrides it field by field. Its attribution name is
+	 * also the default `LoginOptions.agentName`.
+	 */
+	identity?: ClientIdentity;
 }
 
 function mergeHeaders(
@@ -399,6 +405,7 @@ class ModelsImpl implements MutableModels {
 	private credentials: CredentialStore;
 	private modelsStore: ModelsStore;
 	private authContext: AuthContext;
+	private identity: ClientIdentity | undefined;
 	private refreshGenerations = new Map<string, number>();
 	private refreshControllers = new Map<string, AbortController>();
 	private publicationChains = new Map<string, Promise<unknown>>();
@@ -407,6 +414,7 @@ class ModelsImpl implements MutableModels {
 		this.credentials = options?.credentials ?? new InMemoryCredentialStore();
 		this.modelsStore = options?.modelsStore ?? new InMemoryModelsStore();
 		this.authContext = options?.authContext ?? defaultAuthContext();
+		this.identity = options?.identity;
 	}
 
 	setProvider(provider: Provider): void {
@@ -781,7 +789,9 @@ class ModelsImpl implements MutableModels {
 		if (!method?.login) {
 			throw new ModelsError("auth", `${provider.name} does not support ${type} login`);
 		}
-		const loginOperation: Promise<Credential> = method.login({ ...interaction, signal }, options);
+		const agentName = options?.agentName ?? getAttributionName(this.identity);
+		const loginOptions = agentName === undefined ? options : { ...options, agentName };
+		const loginOperation: Promise<Credential> = method.login({ ...interaction, signal }, loginOptions);
 		const credential = await raceWithAbortSignal(loginOperation, signal);
 		let mutationStarted = false;
 		let markMutationStarted: (() => void) | undefined;
@@ -875,9 +885,15 @@ class ModelsImpl implements MutableModels {
 		if (options?.transformHeaders) headers = await options.transformHeaders(headers ?? {});
 		const env = resolution.env || options?.env ? { ...(resolution.env ?? {}), ...(options?.env ?? {}) } : undefined;
 		const requestModel: TModel = auth.baseUrl ? { ...model, baseUrl: auth.baseUrl } : model;
+		const identity = mergeClientIdentity(this.identity, options?.identity);
 		const { transformHeaders: _transformHeaders, ...providerOptions } = options ?? {};
-		const requestOptions = { ...providerOptions, apiKey, headers, env } as Omit<TOptions, "transformHeaders"> &
-			ProviderRequestOptions<TModel>;
+		const requestOptions = {
+			...providerOptions,
+			apiKey,
+			headers,
+			env,
+			...(identity === undefined ? {} : { identity }),
+		} as Omit<TOptions, "transformHeaders"> & ProviderRequestOptions<TModel>;
 
 		return { requestModel, requestOptions };
 	}

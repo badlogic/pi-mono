@@ -232,6 +232,11 @@ const agent = new Agent({
   // Session ID for provider caching
   sessionId: "session-123",
 
+  // How requests identify the app to providers (pi-ai ClientIdentity), merged over
+  // DEFAULT_AGENT_IDENTITY ({ attribution: true }: provider attribution headers name pi).
+  // Pass a name to attribute requests to your app, or false to send none.
+  identity: { attribution: "my-app" },
+
   // Dynamic API key resolution (for expiring OAuth tokens)
   getApiKey: async (provider) => refreshToken(),
 

@@ -8,6 +8,7 @@ import {
 	fauxAssistantMessage,
 	fauxText,
 	fauxToolCall,
+	type Models,
 	type SystemMessage,
 	type ToolResultMessage,
 	Type,
@@ -130,8 +131,10 @@ describe("tool round", () => {
 		});
 		const { harness, status } = await run(setup, [calls(["echo", {}, "c1"]), DONE]);
 		expect(status).toBe("done");
-		expect(seen).toEqual([setup.models, setup.models]);
-		expect(seen.every((models) => models === setup.models)).toBe(true);
+		// One view of the host's Models that adds the Harness identity, shared by tools and hooks.
+		expect(seen).toHaveLength(2);
+		expect(seen[0]).toBe(seen[1]);
+		expect((seen[0] as Models).getProviders()).toEqual(setup.models.getProviders());
 		await harness.close(context);
 	});
 
