@@ -114,6 +114,7 @@ cp permission-gate.ts ~/.pi/agent/extensions/
 | `message-renderer.ts` | Custom message rendering with colors and expandable details via `registerMessageRenderer` |
 | `entry-renderer.ts` | TUI-only session entry rendering via `appendEntry` and `registerEntryRenderer` |
 | `debug-provider.ts` | Toggle raw provider stream capture with `/debug-provider` and inspect each assistant message in a TUI-only session entry |
+| `empty-tool-call-recovery.ts` | Send hidden feedback and request up to three recovery turns when a provider returns `toolUse` without any tool calls |
 | `event-bus.ts` | Inter-extension communication via `pi.events` |
 
 ### Session Metadata
@@ -139,6 +140,13 @@ cp permission-gate.ts ~/.pi/agent/extensions/
 | `file-trigger.ts` | Watches a trigger file and injects contents into conversation |
 
 ## Writing Extensions
+
+The `empty-tool-call-recovery.ts` example is opt-in. It uses `turn_end` boundary drafts to persist
+hidden feedback and continue without fabricating a tool call ID or tool result. Three consecutive
+recovery requests are allowed; completed tool exchanges, final text, and new user prompts reset
+the budget. After exhaustion it reports an error notification and stops requesting recovery.
+Other extensions can still request their own continuation. It does not recover cancellations,
+output limits, or missing results for real tool calls; those remain on their existing paths.
 
 See [docs/extensions.md](../../docs/extensions.md) for full documentation.
 
