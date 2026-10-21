@@ -966,6 +966,75 @@ Inline \(A_{sf}\)`,
 			);
 		});
 
+		// Regression tests for https://github.com/earendil-works/pi/issues/11159
+		describe("unclosed display math before tables (#11159)", () => {
+			const table = ["| A | B |", "|---|---|", "| 1 | 2 |"];
+			const renderedTable = ["┌───┬───┐", "│ A │ B │", "├───┼───┤", "│ 1 │ 2 │", "└───┴───┘"];
+			const render = (source: string) =>
+				new Markdown(source, 0, 0, defaultMarkdownTheme).render(80).map((line) => stripAnsi(line).trimEnd());
+
+			it("renders a table after an orphan $$ opener", () => {
+				const source = ["Intro", "", "$$", "", ...table, "", "After"].join("\n");
+				assert.deepStrictEqual(render(source), ["Intro", "", "$$", "", ...renderedTable, "", "After"]);
+			});
+
+			it("renders a table after an orphan $$ opener with math-like content", () => {
+				const source = ["$$", "x = 1", "", ...table].join("\n");
+				assert.deepStrictEqual(render(source), ["$$", "x = 1", "", ...renderedTable]);
+			});
+
+			it("does not pair an unclosed $$ with a later $$ across a table", () => {
+				const source = ["Intro", "", "$$", "x = 1", "", ...table, "", "$$", "y^2", "$$"].join("\n");
+				assert.deepStrictEqual(render(source), ["Intro", "", "$$", "x = 1", "", ...renderedTable, "", "y²"]);
+			});
+
+			it("renders a single-column table with a pipe-free aligned delimiter after an orphan $$", () => {
+				const source = ["$$", "", "| A |", ":---:", "| 1 |"].join("\n");
+				assert.deepStrictEqual(render(source), ["$$", "", "┌───┐", "│ A │", "├───┤", "│ 1 │", "└───┘"]);
+			});
+
+			it("renders a table after an orphan \\[ opener", () => {
+				const source = ["\\\\[", "x^2", "", ...table].join("\n");
+				assert.deepStrictEqual(render(source), ["", "\\[", "x^2", "", ...renderedTable]);
+			});
+
+			it("does not pair an unclosed \\[ with a later \\[ across a table", () => {
+				const source = ["\\\\[", "x = 1", "", ...table, "", "\\\\[", "y^2", "\\\\]"].join("\n");
+				assert.deepStrictEqual(render(source), [
+					"",
+					"\\[",
+					"x = 1",
+					"",
+					...renderedTable,
+					"",
+					"\\",
+					"",
+					"\\[",
+					"y^2",
+					"\\\\]",
+				]);
+			});
+
+			it("renders a table with a pipe-free header after an orphan $$", () => {
+				const source = ["$$", "x^2", "", "Value", "| --- |", "1"].join("\n");
+				assert.deepStrictEqual(render(source), [
+					"$$",
+					"x^2",
+					"",
+					"┌───────┐",
+					"│ Value │",
+					"├───────┤",
+					"│ 1     │",
+					"└───────┘",
+				]);
+			});
+
+			it("still renders closed multi-line display math followed by a table", () => {
+				const source = ["$$", "a", "+ b", "$$", "", ...table].join("\n");
+				assert.deepStrictEqual(render(source), ["a + b", "", ...renderedTable]);
+			});
+		});
+
 		it("switches from raw to rendered math when a streamed delimiter closes", () => {
 			const markdown = new Markdown(String.raw`Map $\mathbb{C}^3`, 0, 0, defaultMarkdownTheme);
 			assert.deepStrictEqual(
