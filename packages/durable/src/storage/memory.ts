@@ -1,6 +1,6 @@
 import type { Context, JsonValue } from "@earendil-works/chord";
 import { applyImmutableBatches, type Op } from "@earendil-works/chord/delta";
-import { StorageRequestError } from "../errors.ts";
+import { LogInterruptedError, StorageRequestError } from "../errors.ts";
 import { idFromNumber, seqFromNumber } from "../ids.ts";
 import type {
 	ConversationId,
@@ -483,7 +483,7 @@ export class MemoryStorage implements ReplayableStorage {
 			writes.push(...documentWrites(clone(stored.record), clone(stored.revisions), since));
 		}
 		for await (const record of groupLog(head, since, [streamOf(sortBySeq(writes))])) {
-			if (this.headSeq() !== head) throw new Error("Storage changed while its log was read");
+			if (this.headSeq() !== head) throw new LogInterruptedError();
 			yield record;
 		}
 	}

@@ -33,6 +33,14 @@ export class StorageRequestError extends Error {
 	}
 }
 
+/** A commit landed while a storage's log was read, so the records read so far may not fit together. Read it again. */
+export class LogInterruptedError extends Error {
+	constructor() {
+		super("Storage changed while its log was read");
+		this.name = "LogInterruptedError";
+	}
+}
+
 /**
  * The Session failed, so nothing runs or commits any more. It fails when a Storage method throws, a commit cannot be
  * adopted, or the Harness's own bookkeeping throws (a scheduler commit, an internal commit listener, a registry whose

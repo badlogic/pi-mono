@@ -815,9 +815,25 @@ current-only document such as `pi.live` only with what followed its newest base.
 they became. A commit while a log is read makes it reject; read it again. Only the device that drives a session opens
 a Harness on it: `Harness.open` commits, so a replica that keeps replaying records must be read through its storage.
 
-`@earendil-works/pi-durable/sync` has `compactRecords(records)`, which folds a run of log records the same way (for
-example a snapshot and the batches after it) without a storage, and versioned JSON lines (`encodeLogLine`,
-`decodeLogLines`).
+`@earendil-works/pi-durable/sync` moves sessions between devices through a remote store. Every device continues a
+session as its own. Its uploads are batches, the log after the last sequence it shares with the remote, in gzip JSON
+lines. A store keeps one slot per start sequence and creates it once, so the device whose upload creates a slot
+continues the session from there. A device that finds the slot taken by another device has diverged: its commits after
+that point are a different history, so the host renames its copy to a new session (forked at that point) and the
+session restores fresh. The remote folds the history into snapshots, keeping folded slots taken.
+
+The host keeps `{ syncedHead }` per copy (`SyncStateStore`), gives each device a stable ID, and implements the store
+(`SessionSyncStore`); `FileSystemSyncRemote` is one in a directory, for development and tests.
+
+```typescript
+const result = await uploadSession({ sessionId, device, source: storage, store, state, context }); // after commits
+if (result.type === "diverged") forkLocalCopy(sessionId, result.at); // host: rename, upload under the new ID
+await pullSession({ sessionId, store, storage, state, context }); // catch up, resume, or restore into an empty storage
+```
+
+Pulling refuses a copy with commits it has not uploaded (`UnsyncedCommitsError`): upload first. A pull needs the
+Harness closed; a device that falls behind while its Harness is open closes it, pulls, and reopens, or commits first and
+diverges on its next upload. `FlushScheduler` and `isUrgentCommit()` decide when to upload.
 
 Custom backends can run the shared conformance suite with any Vitest- or Jest-compatible runner:
 

@@ -132,6 +132,8 @@ describe("log and replay", () => {
 				const replica = (await target.open()).storage;
 				for (const record of log) await replica.replay(record, context);
 				expect(await reads(replica)).toEqual(await reads(reopened));
+				// The replica mints past every replayed ID, as the source does.
+				expect(await replica.mintId()).toBe(await reopened.mintId());
 			});
 
 			it(`catches ${target.name} up with ${source.name} after every commit`, async () => {

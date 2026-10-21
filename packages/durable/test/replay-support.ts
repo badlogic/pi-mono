@@ -206,7 +206,6 @@ export async function reads(storage: Storage & Pick<ReplayableStorage, "head">):
 			}
 		}
 	}
-	out.nextId = await storage.mintId();
 	return out;
 }
 

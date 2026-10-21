@@ -2,7 +2,7 @@
 
 import type { Context, JsonValue } from "@earendil-works/chord";
 import { apply, type Op } from "@earendil-works/chord/delta";
-import { StorageRequestError } from "../errors.ts";
+import { LogInterruptedError, StorageRequestError } from "../errors.ts";
 import { idFromNumber, seqFromNumber } from "../ids.ts";
 import type {
 	ConversationId,
@@ -517,7 +517,7 @@ export class IndexedDbStorage implements ReplayableStorage {
 		}
 		for (const record of created.values()) writes.push(creationWrite(record, atCreation.get(record.id)));
 		for await (const record of groupLog(read.head, since, [streamOf(sortBySeq(writes))])) {
-			if ((await this.head(context)) !== read.head) throw new Error("Storage changed while its log was read");
+			if ((await this.head(context)) !== read.head) throw new LogInterruptedError();
 			yield record;
 		}
 	}

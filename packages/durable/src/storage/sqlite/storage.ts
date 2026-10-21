@@ -1,7 +1,7 @@
 import type { Context, JsonValue } from "@earendil-works/chord";
 import { apply, type Op } from "@earendil-works/chord/delta";
 import type { SqliteDatabase, SqliteExecutor, SqliteValue } from "@earendil-works/chord/sqlite";
-import { StorageRequestError } from "../../errors.ts";
+import { LogInterruptedError, StorageRequestError } from "../../errors.ts";
 import { idFromNumber, seqFromNumber } from "../../ids.ts";
 import type {
 	ConversationId,
@@ -239,7 +239,7 @@ export class SqliteStorage implements ReplayableStorage {
 		const since = after ?? LOG_START;
 		const unchanged = async (): Promise<void> => {
 			this.assertOpen();
-			if ((await this.readHead()) !== head) throw new Error("Storage changed while its log was read");
+			if ((await this.readHead()) !== head) throw new LogInterruptedError();
 		};
 		const { tables } = this.schema;
 		const stamped = <T extends LogWrite>(table: string, write: (record: string) => T) =>
