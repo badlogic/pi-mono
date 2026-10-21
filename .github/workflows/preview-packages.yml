@@ -2,6 +2,8 @@
 # Runs the version of this file on the default branch, with this repo's permissions. It never checks out or runs
 # PR code: the artifact is only read as data, and the commit, ref and PR number come from the event.
 # The worker (earendil-works/earendil-pkg) accepts uploads only from exactly this file on main.
+# Only main and PRs from branches of this repo are published: the registry is private, so fork authors could not
+# install their previews anyway, and fork code stays out of it.
 
 name: Preview packages
 
@@ -17,18 +19,19 @@ permissions: {}
 # Publishing and cleanup for the same branch run one at a time, in order, so a slow publish cannot recreate the ref
 # of a PR that cleanup just removed. `queue: max` keeps every waiting run; the default replaces a waiting cleanup.
 concurrency:
-  group: preview-packages-${{ github.event.workflow_run.head_repository.full_name || github.event.pull_request.head.repo.full_name }}-${{ github.event.workflow_run.head_branch || github.event.pull_request.head.ref }}
+  group: preview-packages-${{ github.event.workflow_run.head_branch || github.event.pull_request.head.ref }}
   queue: max
 
 jobs:
   publish:
-    if: github.event_name == 'workflow_run' && github.event.workflow_run.conclusion != 'cancelled'
+    if: >-
+      github.event_name == 'workflow_run' && github.event.workflow_run.conclusion != 'cancelled' &&
+      github.event.workflow_run.head_repository.full_name == github.repository
     runs-on: ubuntu-latest
     permissions:
       actions: read # download the artifact from the CI run
       contents: read # check out the client script
       id-token: write # GitHub OIDC token for pkg.earendil.com
-      pull-requests: write # install comment
     steps:
       - name: Find packed packages
         id: find
@@ -60,30 +63,27 @@ jobs:
       - name: Publish
         if: steps.find.outputs.found == 'true'
         env:
-          GH_TOKEN: ${{ github.token }}
-          GITHUB_TOKEN: ${{ github.token }}
           # Event data is passed through env, never interpolated into the script: branch names are PR-controlled.
           EVENT: ${{ github.event.workflow_run.event }}
           HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
           HEAD_BRANCH: ${{ github.event.workflow_run.head_branch }}
-          HEAD_OWNER: ${{ github.event.workflow_run.head_repository.owner.login }}
+          PR: ${{ github.event.workflow_run.pull_requests[0].number }}
           RUN_ID: ${{ github.event.workflow_run.id }}
           DIR: ${{ runner.temp }}/preview-packages
         run: |
           args=(--dir "$DIR" --sha "$HEAD_SHA" --run "$RUN_ID" --event "$EVENT")
           if [ "$EVENT" = push ] && [ "$HEAD_BRANCH" = main ]; then
             args+=(--ref main)
-          elif [ "$EVENT" = pull_request ]; then
-            # workflow_run lists no PRs for fork PRs, so look the PR up by head branch and verify the head commit.
-            pr=$(gh api -X GET "repos/$GITHUB_REPOSITORY/pulls" -f state=open -f head="$HEAD_OWNER:$HEAD_BRANCH" \
-              --jq 'map(select(.head.sha == env.HEAD_SHA)) | .[0].number // empty')
-            if [ -n "$pr" ]; then args+=(--ref "pr-$pr" --comment-pr "$pr"); fi
+          elif [ "$EVENT" = pull_request ] && [ -n "$PR" ]; then
+            args+=(--ref "pr-$PR")
           fi
           node scripts/preview-packages.mjs publish "${args[@]}"
 
   cleanup:
     # pull_request_target runs this file from the PR's base branch; the worker only accepts it from main.
-    if: github.event_name == 'pull_request_target' && github.event.pull_request.base.ref == github.event.repository.default_branch
+    if: >-
+      github.event_name == 'pull_request_target' && github.event.pull_request.base.ref == github.event.repository.default_branch &&
+      github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ubuntu-latest
     permissions:
       contents: read # check out the client script (base branch, not PR code)

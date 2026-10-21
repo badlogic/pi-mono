@@ -3,7 +3,7 @@
 // Used by .github/workflows/ci.yml (pack) and .github/workflows/preview-packages.yml (publish, delete-ref).
 //
 //   pack        Point internal dependencies at this commit's builds, then `npm pack` every public package.
-//               Runs in the regular CI job after the build. Needs no credentials, so fork PRs work.
+//               Runs in the regular CI job after the build.
 //   publish     Upload the packed tarballs and move refs (main, pr-1234). Runs in the trusted workflow_run job and
 //               authenticates with the job's GitHub OIDC token (`permissions: id-token: write`).
 //   delete-ref  Remove a ref, e.g. pr-1234 when the PR closes.
@@ -15,7 +15,6 @@ import { execNpmSync } from "./npm-command.mjs";
 import { getPublicWorkspacePackages } from "./release-packages.mjs";
 
 const BASE_URL = "https://pkg.earendil.com";
-const COMMENT_MARKER = "<!-- preview-packages -->";
 const FULL_SHA = /^[0-9a-f]{40}$/;
 // Its daemon binaries are cross-compiled only by the release workflow; previews would ship without them.
 const EXCLUDED = new Set(["@earendil-works/pi-env"]);
@@ -92,7 +91,7 @@ async function call(method, url, token, body) {
 }
 
 function renderSummary({ baseUrl, sha, refs, names }) {
-	const lines = [COMMENT_MARKER, "### Preview packages", "", `Built from \`${sha.slice(0, 7)}\`.`, ""];
+	const lines = ["### Preview packages", "", `Built from \`${sha.slice(0, 7)}\`.`, ""];
 	if (refs.length > 0) {
 		lines.push(`Latest build of \`${refs[0]}\` (updates with new pushes):`, "", "```sh");
 		for (const name of names) lines.push(`npm i ${baseUrl}/${name}@${refs[0]}`);
@@ -105,36 +104,6 @@ function renderSummary({ baseUrl, sha, refs, names }) {
 	return `${lines.join("\n")}\n`;
 }
 
-async function github(method, path, body) {
-	const response = await fetch(`${process.env.GITHUB_API_URL}${path}`, {
-		method,
-		headers: {
-			authorization: `Bearer ${process.env.GITHUB_TOKEN}`,
-			accept: "application/vnd.github+json",
-			"content-type": "application/json",
-		},
-		body: body === undefined ? undefined : JSON.stringify(body),
-	});
-	if (!response.ok) throw new Error(`GitHub ${method} ${path} failed: ${response.status} ${await response.text()}`);
-	return response.json();
-}
-
-async function upsertComment(pr, body) {
-	const repo = process.env.GITHUB_REPOSITORY;
-	for (let page = 1; ; page++) {
-		const comments = await github("GET", `/repos/${repo}/issues/${pr}/comments?per_page=100&page=${page}`);
-		const existing = comments.find(
-			(comment) => comment.user?.login === "github-actions[bot]" && comment.body?.includes(COMMENT_MARKER),
-		);
-		if (existing) {
-			await github("PATCH", `/repos/${repo}/issues/comments/${existing.id}`, { body });
-			return;
-		}
-		if (comments.length < 100) break;
-	}
-	await github("POST", `/repos/${repo}/issues/${pr}/comments`, { body });
-}
-
 async function publish(argv) {
 	const { values } = parseArgs({
 		args: argv,
@@ -144,7 +113,6 @@ async function publish(argv) {
 			ref: { type: "string", multiple: true, default: [] },
 			run: { type: "string" },
 			event: { type: "string" },
-			"comment-pr": { type: "string" },
 			"base-url": { type: "string", default: BASE_URL },
 		},
 	});
@@ -157,13 +125,11 @@ async function publish(argv) {
 	if (event !== "push" && event !== "pull_request") {
 		throw new UsageError(`--event must be push or pull_request, got ${event}`);
 	}
-	const commentPr = values["comment-pr"];
-	if (commentPr !== undefined && !/^\d+$/.test(commentPr)) throw new UsageError(`Invalid --comment-pr: ${commentPr}`);
 	const baseUrl = values["base-url"];
 	const dir = resolve(values.dir);
 
-	// The artifact comes from an untrusted PR build: only read tarballs from it. The SHA, run, event, refs and PR
-	// number come from the trusted workflow_run event; the worker authorizes package names against its config.
+	// The artifact comes from an untrusted PR build: only read tarballs from it. The SHA, run, event, and refs
+	// come from the trusted workflow_run event; the worker authorizes package names against its config.
 	const manifest = JSON.parse(await readFile(join(dir, "manifest.json"), "utf8"));
 	if (manifest.sha !== sha) throw new Error(`Artifact was packed for ${manifest.sha}, expected ${sha}`);
 	if (!Array.isArray(manifest.packages) || manifest.packages.length === 0) throw new Error("Artifact has no packages");
@@ -183,7 +149,7 @@ async function publish(argv) {
 		const result = await call("POST", `${baseUrl}/_/refs`, token, JSON.stringify({ sha, refs, run }));
 		const newer = result.refs.filter((ref) => ref.sha !== sha);
 		if (newer.length > 0) {
-			// A newer run already published these refs and its comment; leave both in place.
+			// A newer run already published these refs; its summary has the current install commands.
 			console.error(`a newer run already published ${newer.map((ref) => `${ref.ref} (${ref.sha})`).join(", ")}`);
 			return;
 		}
@@ -193,7 +159,6 @@ async function publish(argv) {
 	const summary = renderSummary({ baseUrl, sha, refs, names: names.sort() });
 	process.stdout.write(summary);
 	if (process.env.GITHUB_STEP_SUMMARY) await appendFile(process.env.GITHUB_STEP_SUMMARY, summary);
-	if (commentPr !== undefined) await upsertComment(commentPr, summary);
 }
 
 async function deleteRef(argv) {
@@ -209,7 +174,7 @@ async function deleteRef(argv) {
 const USAGE = `Usage:
   node scripts/preview-packages.mjs pack --sha <sha> [--out dir]
   node scripts/preview-packages.mjs publish --sha <sha> --run <CI run id> --event <push|pull_request>
-                                            [--dir dir] [--ref name]... [--comment-pr n]
+                                            [--dir dir] [--ref name]...
   node scripts/preview-packages.mjs delete-ref --ref <name>`;
 
 const [command, ...argv] = process.argv.slice(2);
