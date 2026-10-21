@@ -159,7 +159,9 @@ export function createGrepToolDefinition(
 							return lines;
 						};
 
-						const args: string[] = ["--json", "--line-number", "--color=never", "--hidden"];
+						// --no-config: the tool contract (literal, glob, limit, ...) must not depend on
+						// ambient user config like RIPGREP_CONFIG_PATH. Users can customize via bash or extensions.
+						const args: string[] = ["--no-config", "--json", "--line-number", "--color=never", "--hidden"];
 						if (ignoreCase) args.push("--ignore-case");
 						if (literal) args.push("--fixed-strings");
 						if (glob) args.push("--glob", glob);
