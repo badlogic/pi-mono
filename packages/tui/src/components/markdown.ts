@@ -1,4 +1,5 @@
 import { Marked, type Token, Tokenizer, type TokenizerExtension, type Tokens } from "marked";
+import markedCjkFriendly from "marked-cjk-friendly";
 import { renderLatex } from "../latex.ts";
 import { getCapabilities, hyperlink, isImageLine } from "../terminal-image.ts";
 import type { Component } from "../tui.ts";
@@ -98,23 +99,41 @@ function tokenizeInlineLatex(source: string): LatexToken | undefined {
 	return { type: "latex", raw, text };
 }
 
+const TABLE_DELIMITER_ROW_REGEX = /^ {0,3}\|?[ \t]*:?-+:?[ \t]*(?:\|[ \t]*:?-+:?[ \t]*)*\|?[ \t]*$/;
+
+// A GFM table starts with a header row followed by a delimiter row such as "|---|---|" or "| --- |".
+// The header needs a "|" only when the delimiter has none: a pipe-free delimiter without a pipe in the
+// header is a thematic break, not a table.
+function containsTableStart(source: string): boolean {
+	const lines = source.split("\n");
+	for (let index = 0; index < lines.length - 1; index++) {
+		const delimiterRow = lines[index + 1];
+		if ((delimiterRow.includes("|") || lines[index].includes("|")) && TABLE_DELIMITER_ROW_REGEX.test(delimiterRow)) {
+			return true;
+		}
+	}
+	return false;
+}
+
 function tokenizeBlockLatex(source: string): LatexToken | undefined {
+	// Display math never spans a table. Without this check, an unclosed "$$" or "\[" pairs with a later
+	// opener or stays pending, swallowing the table. See https://github.com/earendil-works/pi/issues/11159.
 	const dollarMatch = /^ {0,3}\$\$[ \t]*(?:\n)?([\s\S]*?)\$\$[ \t]*(?:\n|$)/.exec(source);
-	if (dollarMatch?.[1]) {
+	if (dollarMatch?.[1] && !containsTableStart(dollarMatch[1])) {
 		return { type: "latexBlock", raw: dollarMatch[0], text: dollarMatch[1].trim() };
 	}
 
 	const bracketMatch = /^ {0,3}\\\[[ \t]*(?:\n)?([\s\S]*?)\\\][ \t]*(?:\n|$)/.exec(source);
-	if (bracketMatch?.[1]) {
+	if (bracketMatch?.[1] && !containsTableStart(bracketMatch[1])) {
 		return { type: "latexBlock", raw: bracketMatch[0], text: bracketMatch[1].trim() };
 	}
 
 	const pendingBracket = /^ {0,3}\\\[[ \t]*(?:\n)?([\s\S]*)$/.exec(source);
-	if (pendingBracket) {
+	if (pendingBracket?.[1] && !containsTableStart(pendingBracket[1])) {
 		return { type: "latexBlock", raw: pendingBracket[0], text: pendingBracket[1], pending: true };
 	}
 	const pendingDollar = /^ {0,3}\$\$[ \t]*(?:\n)?([\s\S]*)$/.exec(source);
-	if (pendingDollar?.[1] && looksLikePendingDollarMath(pendingDollar[1])) {
+	if (pendingDollar?.[1] && looksLikePendingDollarMath(pendingDollar[1]) && !containsTableStart(pendingDollar[1])) {
 		return { type: "latexBlock", raw: pendingDollar[0], text: pendingDollar[1], pending: true };
 	}
 	return undefined;
@@ -172,7 +191,10 @@ const markdownParser = new Marked();
 markdownParser.setOptions({
 	tokenizer: new StrictStrikethroughTokenizer(),
 });
-markdownParser.use({ extensions: [...LATEX_MARKDOWN_EXTENSIONS] });
+markdownParser.use({
+	tokenizer: { emStrong: markedCjkFriendly().tokenizer?.emStrong },
+	extensions: [...LATEX_MARKDOWN_EXTENSIONS],
+});
 
 /**
  * Default text styling for markdown content.

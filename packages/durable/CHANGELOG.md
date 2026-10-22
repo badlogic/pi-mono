@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [1.4.0] - 2026-10-21
+
 ### Breaking Changes
 
 - `TaskRuntime.sleep()` is removed: it waited inside a phase, which holds an invocation and, after a restart, reruns the phase and restarts the wait. A task now ends its phase asleep with `runtime.sleepUntil(until, checkpoint, context)` or by returning `{ status: "sleeping", until, checkpoint }` from `runtime.commit()`; move the work after the wait into the next phase and carry what it needs in the checkpoint. `TaskRuntime.setTimer()` paces work inside a phase without waiting for it.
@@ -13,6 +15,7 @@
 
 ### Added
 
+- Added `IndexedDbStorage` (`@earendil-works/pi-durable/storage/indexeddb`), a browser storage backed by IndexedDB.
 - `HarnessOptions.telemetry` emits the content-free `DURABLE_TELEMETRY_SCHEMA`: public submission admission spans, task phase spans (including extension tasks), committed entry and submission events, running phase-change checkpoints, and nested-tool replay events. Optional propagation stores opaque carriers on submissions and tasks so queued inputs and reopened tasks retain their trace; `TaskOptions.trace` accepts a carrier override or `"root"` (absence inherits the creator's carrier); creation-time `links` connect inputs sharing a run, while steer admissions link to the running trace. Internal admissions emit events without a submit span. Optional metrics record phase duration and live task counts. Failed phases record fixed error-status categories (`task_faulted`, `task_failed`, `task_orphaned`) and diagnostics capped at 500 characters; aborted phases keep status `ok`. Every `onReport` report also emits a fixed-field `pi.durable.report` event on its current span (dropped by the NOOP span when there is none), plus a `pi.durable.reports` counter by type; report telemetry contains no error payload and leaves the callback unchanged. Clock failures report without a phase context. Generation and compaction forward their phase context to pi-ai requests.
 - `settings.compaction.modelOverrides` sets compaction thresholds per model, keyed by exact `"provider/modelId"`, so one harness can serve small- and large-window models; the threshold check, overflow recovery, and the compaction task use the entry of the model they act for ([#10942](https://github.com/earendil-works/pi/issues/10942)).
 - Durable sleeps: a sleeping task holds no invocation, survives restarts, and resumes at its checkpoint once the Harness clock reaches `until`.
@@ -22,6 +25,7 @@
 - `onReport(error, info)`: `info` (`ReportInfo`) says what happened in `type`: `session_failed`; `task_faulted`, `task_parked`, `migration_failed`, `task_outdated`, or `task_error` with the task and the extension that installed it; `extension_error` with the extension's name; `host_error` with the failing `HostCallback`; or `listener_error`.
 - `settings.afterFailedRun`: a run that fails with `model_error` or `no_model` keeps the inputs queued behind it (`keep`, the default), starts the next run with them (`continue`), or settles them `unanswered` with reason `run_failed` (`withdraw`).
 - The task graph shows why a task cannot run (`TaskGraphNode.blocked`: `missing_task`, `task_too_old`, `migration_failed`, or `restart_limit`) and follows registry changes and failed migrations.
+- Added `HarnessOptions.identity` (a pi-ai `ClientIdentity`) to set the `User-Agent` and provider attribution of every model request through the Harness, including hooks and tools. `api.models` in tools and hooks is now a wrapper of the host's `Models` that adds the identity, not the same object.
 - `HarnessOptions.models` and `HarnessOptions.settings` also accept a function returning the current value, like `env`. Generation, compaction, hooks and tools call it at each use (`api.models` reads the current value at each access), so a host can replace its model configuration or settings without reopening the Harness. A plain object still works.
 
 ### Changed
@@ -31,13 +35,13 @@
 - Generation retry backoffs, deferred-response polls, and compaction retry backoffs sleep instead of waiting in a running phase, so a process can stop or hibernate during them. A record an earlier version stored mid-backoff sleeps again when it resumes before its time. A deferred poll whose model is gone after a reopen now fails `no_model` once the poll is due, not at once.
 - Code mode measures script deadlines and wall time on the Harness clock (`HarnessOptions.now`) instead of `Date.now()`.
 - SQLite drivers, portable interfaces, and the generic migration runner now come from `@earendil-works/chord/sqlite`. Existing Durable SQLite entry points keep re-exporting their public names; storage helpers and Durable schema migrations stay here.
-
 - `ToolControl.terminate` is now typed `boolean` instead of `true`, matching `pi-agent-core` and `pi-coding-agent`; `false` does not end the run ([#10858](https://github.com/earendil-works/pi/issues/10858)).
 
 ### Fixed
 
 - In Cloudflare Workers with `nodejs_compat`, the timers that evict idle documents and contexts were armed, since timers there have an `unref()`; a pending one kept a Durable Object from hibernating and blocked its eviction. They are now declined in Workers, and memory is freed at later commits.
 - The README's Errors section now limits the `StorageRequestError` exemption to reads: a `StorageRequestError` thrown by `commit()` or `mintId()` fails the Harness like any other storage error ([#11014](https://github.com/earendil-works/pi/issues/11014)).
+- The Node environment now detects the legacy WSL `bash.exe` launcher from `%SystemRoot%` instead of assuming `C:\Windows` ([#9501](https://github.com/earendil-works/pi/pull/9501) by [@petrroll](https://github.com/petrroll)).
 
 ## [1.3.0] - 2026-10-15
 

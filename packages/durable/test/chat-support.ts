@@ -31,6 +31,8 @@ export type ChatSetup = {
 	/** Live Harness settings; tests assign fields to change them between decisions. */
 	readonly settings: { -readonly [K in keyof HarnessSettings]: HarnessSettings[K] };
 	now: () => number;
+	/** `HarnessOptions.identity`. */
+	identity?: HarnessOptions["identity"];
 };
 
 export function chatSetup(options: RegisterFauxProviderOptions = {}): ChatSetup {
@@ -53,6 +55,7 @@ export async function openChat(
 			models: setup.models,
 			registry: setup.registry,
 			settings: setup.settings,
+			...(setup.identity === undefined ? {} : { identity: setup.identity }),
 			...(options.env === undefined
 				? {}
 				: { env: typeof options.env === "function" ? options.env : () => options.env as ExecutionEnv }),

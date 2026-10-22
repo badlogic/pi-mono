@@ -189,18 +189,8 @@ const TOGETHER_TOGGLE_REASONING_EFFORT_COMPAT: OpenAICompletionsCompat = {
 	...TOGETHER_TOGGLE_REASONING_COMPAT,
 	supportsReasoningEffort: true,
 };
-const TOGETHER_REASONING_ONLY_MODELS = new Set([
-	"deepseek-ai/DeepSeek-R1",
-	"MiniMaxAI/MiniMax-M2.7",
-]);
 const TOGETHER_REASONING_EFFORT_MODELS = new Set(["openai/gpt-oss-20b", "openai/gpt-oss-120b"]);
 const TOGETHER_TOGGLE_REASONING_EFFORT_MODELS = new Set(["deepseek-ai/DeepSeek-V4-Pro-0813"]);
-const TOGETHER_FIXED_REASONING_LEVEL_MAP = {
-	off: null,
-	minimal: null,
-	low: null,
-	medium: null,
-} as const;
 const TOGETHER_REASONING_EFFORT_LEVEL_MAP = {
 	off: null,
 	minimal: null,
@@ -493,16 +483,12 @@ const OPENCODE_OPENAI_COMPLETIONS_LONG_CACHE_RETENTION_UNSUPPORTED_MODELS = new 
 // the extended 1 million token context window.
 const GITHUB_COPILOT_EXTENDED_CONTEXT_MODELS = new Set([
 	"claude-fable-5",
-	"claude-opus-4.6",
-	"claude-opus-4.7",
 	"claude-opus-4.8",
 	"claude-opus-5",
 	"claude-opus-5.5",
 	"claude-sonnet-4.6",
 	"claude-sonnet-5",
 	"gpt-5.3-codex",
-	"gpt-5.4",
-	"gpt-5.5",
 	"gpt-6-astra",
 	"gpt-6-luna",
 	"gpt-6-sol",
@@ -511,7 +497,6 @@ const GITHUB_COPILOT_EXTENDED_CONTEXT_MODELS = new Set([
 // Checked manually against the authenticated GitHub Copilot /models endpoint on 2026-06-15.
 // Keep this to narrow corrections over models.dev metadata instead of snapshotting Copilot's catalog.
 const GITHUB_COPILOT_THINKING_LEVEL_OVERRIDES = {
-	"claude-opus-4.7": { minimal: "low" },
 	"claude-opus-4.8": { minimal: "low" },
 	"claude-opus-5": { minimal: "low" },
 	"claude-sonnet-4.6": { minimal: "low", max: "max" },
@@ -562,7 +547,6 @@ function getTogetherCompat(modelId: string, reasoning: boolean): OpenAICompletio
 	if (!reasoning) return TOGETHER_BASE_COMPAT;
 	if (TOGETHER_REASONING_EFFORT_MODELS.has(modelId)) return TOGETHER_REASONING_EFFORT_COMPAT;
 	if (TOGETHER_TOGGLE_REASONING_EFFORT_MODELS.has(modelId)) return TOGETHER_TOGGLE_REASONING_EFFORT_COMPAT;
-	if (TOGETHER_REASONING_ONLY_MODELS.has(modelId)) return TOGETHER_BASE_COMPAT;
 	return TOGETHER_TOGGLE_REASONING_COMPAT;
 }
 
@@ -573,7 +557,6 @@ function getTogetherThinkingLevelMap(
 	if (!reasoning) return undefined;
 	if (TOGETHER_REASONING_EFFORT_MODELS.has(modelId)) return { ...TOGETHER_REASONING_EFFORT_LEVEL_MAP };
 	if (TOGETHER_TOGGLE_REASONING_EFFORT_MODELS.has(modelId)) return { ...TOGETHER_DEEPSEEK_V4_THINKING_LEVEL_MAP };
-	if (TOGETHER_REASONING_ONLY_MODELS.has(modelId)) return { ...TOGETHER_FIXED_REASONING_LEVEL_MAP };
 	return { ...TOGETHER_TOGGLE_REASONING_LEVEL_MAP };
 }
 
@@ -730,7 +713,6 @@ function detectOpenAICompletionsCompat(model: Model<"openai-completions">): Open
 	const isNvidia = provider === "nvidia" || baseUrl.includes("integrate.api.nvidia.com");
 	const isAntLing = provider === "ant-ling" || baseUrl.includes("api.ant-ling.com");
 	const isCerebras = provider === "cerebras" || baseUrl.includes("cerebras.ai");
-	const isTogetherReasoningOnly = isTogether && TOGETHER_REASONING_ONLY_MODELS.has(model.id);
 	const isDeepSeek = provider === "deepseek" || baseUrl.toLowerCase().includes("deepseek.com");
 
 	const isNonStandard =
@@ -781,7 +763,7 @@ function detectOpenAICompletionsCompat(model: Model<"openai-completions">): Open
 			? "deepseek"
 			: isZai
 				? "zai"
-				: isTogether && !isTogetherReasoningOnly
+				: isTogether
 					? "together"
 						: isOpenRouter
 							? "openrouter"
@@ -2634,11 +2616,15 @@ async function loadModelsDevClassifierModels(): Promise<ClassifierModel<"typesaf
 				api: "typesafe-system-one",
 				provider: "typesafe",
 				baseUrl: "https://api.typesafe.ai/v1/",
-				input: metadata.modalities?.input?.includes("image") ? ["text", "image"] : ["text"],
+				// models.dev lists text input only, but the API accepts image assets as an experimental
+				// feature behind an opt-in header, which the typesafe-system-one API sends.
+				// https://github.com/typesafe-ai/typesafe-sdk-js (v0.7.0 changelog)
+				input: ["text", "image"],
 				// The canonical models.dev entry has no direct-provider pricing. System One reports token usage,
 				// so classify() results carry token counts but price them at zero.
 				cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
 				contextWindow: metadata.limit?.context || 64000,
+				compat: { imageInput: "assets", sendImageOptInHeader: true },
 			},
 		];
 	} catch (error) {
@@ -2648,9 +2634,6 @@ async function loadModelsDevClassifierModels(): Promise<ClassifierModel<"typesaf
 	}
 }
 
-// Workers AI has no unauthenticated catalog and models.dev does not list its
-// System One models yet. Cloudflare publishes pricing only in the dashboard.
-// https://developers.cloudflare.com/ai/models/typesafe/jev/
 // OpenCode Zen serves Jev through its TypeSafe-compatible System One endpoint.
 // Neither its /inference/v1/models listing nor models.dev carries metadata for it.
 // https://opencode.ai/docs/zen
@@ -2679,11 +2662,14 @@ const OPENCODE_CLASSIFIER_MODELS: ClassifierModel<"typesafe-system-one">[] = [
 	},
 ];
 
+// Workers AI has no unauthenticated catalog, so its System One models are listed here from
+// Cloudflare's model pages.
 const CLOUDFLARE_WORKERS_AI_CLASSIFIER_MODELS: ClassifierModel<"cloudflare-workers-ai-system-one">[] = [
-	// Cloudflare-hosted Clef decision models. They accept images, but classifier
-	// contexts carry text or JSON state only, so the catalog advertises text.
-	// Pricing: https://developers.cloudflare.com/workers-ai/models/clef/
-	// and https://developers.cloudflare.com/workers-ai/models/clef-flash/
+	// Cloudflare-hosted Clef decision models. They take up to four PNG, JPEG, or WebP images as data URLs.
+	// Clef Omni also takes audio and video, which classifier contexts do not carry.
+	// Pricing and context: https://developers.cloudflare.com/workers-ai/models/clef/,
+	// https://developers.cloudflare.com/workers-ai/models/clef-flash/,
+	// and https://developers.cloudflare.com/workers-ai/models/clef-omni/
 	{
 		type: "classifier",
 		id: "@cf/cloudflare/clef",
@@ -2691,9 +2677,10 @@ const CLOUDFLARE_WORKERS_AI_CLASSIFIER_MODELS: ClassifierModel<"cloudflare-worke
 		api: "cloudflare-workers-ai-system-one",
 		provider: "cloudflare-workers-ai",
 		baseUrl: CLOUDFLARE_WORKERS_AI_REST_BASE_URL,
-		input: ["text"],
+		input: ["text", "image"],
 		cost: { input: 0.24, output: 0, cacheRead: 0, cacheWrite: 0 },
 		contextWindow: 65536,
+		compat: { imageInput: "images" },
 	},
 	{
 		type: "classifier",
@@ -2702,10 +2689,26 @@ const CLOUDFLARE_WORKERS_AI_CLASSIFIER_MODELS: ClassifierModel<"cloudflare-worke
 		api: "cloudflare-workers-ai-system-one",
 		provider: "cloudflare-workers-ai",
 		baseUrl: CLOUDFLARE_WORKERS_AI_REST_BASE_URL,
-		input: ["text"],
-		cost: { input: 0.09, output: 0, cacheRead: 0, cacheWrite: 0 },
-		contextWindow: 65536,
+		input: ["text", "image"],
+		cost: { input: 0.038, output: 0, cacheRead: 0, cacheWrite: 0 },
+		contextWindow: 24576,
+		compat: { imageInput: "images" },
 	},
+	{
+		type: "classifier",
+		id: "@cf/cloudflare/clef-omni",
+		name: "Clef Omni",
+		api: "cloudflare-workers-ai-system-one",
+		provider: "cloudflare-workers-ai",
+		baseUrl: CLOUDFLARE_WORKERS_AI_REST_BASE_URL,
+		input: ["text", "image"],
+		cost: { input: 0.15, output: 0, cacheRead: 0, cacheWrite: 0 },
+		contextWindow: 64000,
+		compat: { imageInput: "images" },
+	},
+	// TypeSafe's Jev models take PNG and JPEG images as System One assets.
+	// https://developers.cloudflare.com/ai/models/typesafe/jev/ (jev-latest)
+	// and https://developers.cloudflare.com/ai/models/typesafe/jev-1.14.0/
 	{
 		type: "classifier",
 		id: "typesafe/jev",
@@ -2713,9 +2716,22 @@ const CLOUDFLARE_WORKERS_AI_CLASSIFIER_MODELS: ClassifierModel<"cloudflare-worke
 		api: "cloudflare-workers-ai-system-one",
 		provider: "cloudflare-workers-ai",
 		baseUrl: CLOUDFLARE_WORKERS_AI_REST_BASE_URL,
-		input: ["text"],
-		cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+		input: ["text", "image"],
+		cost: { input: 0.042, output: 0, cacheRead: 0, cacheWrite: 0 },
 		contextWindow: 32000,
+		compat: { imageInput: "assets" },
+	},
+	{
+		type: "classifier",
+		id: "typesafe/jev-1.14.0",
+		name: "Jev 1.14",
+		api: "cloudflare-workers-ai-system-one",
+		provider: "cloudflare-workers-ai",
+		baseUrl: CLOUDFLARE_WORKERS_AI_REST_BASE_URL,
+		input: ["text", "image"],
+		cost: { input: 0.042, output: 0, cacheRead: 0, cacheWrite: 0 },
+		contextWindow: 32000,
+		compat: { imageInput: "assets" },
 	},
 ];
 
@@ -3137,13 +3153,14 @@ async function generateModels() {
 
 	// OpenAI Codex (ChatGPT OAuth) models
 	// NOTE: These are not fetched from models.dev; we keep a small, explicit list to avoid aliases.
-	// Older model limits are based on observed server behavior; GPT-5.6 and GPT-6 use Codex's 272k default catalog limit.
+	// Only list models the Codex backend accepts for ChatGPT accounts. GPT-5.5 and GPT-5.3 Codex Spark are rejected
+	// with "not supported when using Codex with a ChatGPT account".
+	// GPT-5.6 and GPT-6 use Codex's 272k default catalog limit.
 	// GPT-6.1 Sol uses the 500k default returned by /backend-api/codex/models.
 	const CODEX_BASE_URL = "https://chatgpt.com/backend-api";
 	const CODEX_CONTEXT = 272000;
 	const CODEX_GPT_61_SOL_CONTEXT = 500000;
 	const CODEX_GPT_56_CONTEXT = 272000;
-	const CODEX_SPARK_CONTEXT = 128000;
 	const CODEX_MAX_TOKENS = 128000;
 	const codexModels: Model<"openai-codex-responses">[] = [
 		{
@@ -3191,30 +3208,6 @@ async function generateModels() {
 			reasoning: true,
 			input: ["text", "image"],
 			cost: withOpenAiLongContextPricing(OPENAI_STANDARD_COSTS["gpt-6-luna"]),
-			contextWindow: CODEX_CONTEXT,
-			maxTokens: CODEX_MAX_TOKENS,
-		},
-		{
-			id: "gpt-5.3-codex-spark",
-			name: "GPT-5.3 Codex Spark",
-			api: "openai-codex-responses",
-			provider: "openai-codex",
-			baseUrl: CODEX_BASE_URL,
-			reasoning: true,
-			input: ["text"],
-			cost: { input: 1.75, output: 14, cacheRead: 0.175, cacheWrite: 0 },
-			contextWindow: CODEX_SPARK_CONTEXT,
-			maxTokens: CODEX_MAX_TOKENS,
-		},
-		{
-			id: "gpt-5.5",
-			name: "GPT-5.5",
-			api: "openai-codex-responses",
-			provider: "openai-codex",
-			baseUrl: CODEX_BASE_URL,
-			reasoning: true,
-			input: ["text", "image"],
-			cost: withOpenAiLongContextPricing({ input: 5, output: 30, cacheRead: 0.5, cacheWrite: 0 }),
 			contextWindow: CODEX_CONTEXT,
 			maxTokens: CODEX_MAX_TOKENS,
 		},

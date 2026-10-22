@@ -38,7 +38,7 @@ export {
 	type GenerationResult,
 	GenerationTask,
 } from "./harness/generation.ts";
-export { Harness } from "./harness/harness.ts";
+export { DEFAULT_HARNESS_IDENTITY, Harness } from "./harness/harness.ts";
 export { InboxDoc, type InboxItem, type InboxState } from "./harness/inbox.ts";
 export {
 	type CompactionFailure,

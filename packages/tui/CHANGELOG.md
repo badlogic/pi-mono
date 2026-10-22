@@ -2,6 +2,19 @@
 
 ## [Unreleased]
 
+## [1.4.0] - 2026-10-21
+
+### Added
+
+- Added detection of the Rex terminal (`TERM_PROGRAM=rex`) with OSC 8 hyperlinks, truecolor, and Kitty images. Links previously fell back to the `text (url)` format ([#11131](https://github.com/earendil-works/pi/issues/11131), [#11150](https://github.com/earendil-works/pi/pull/11150) by [@petrroll](https://github.com/petrroll), [#11183](https://github.com/earendil-works/pi/pull/11183) by [@nihaals](https://github.com/nihaals))
+
+### Fixed
+
+- Fixed an unclosed `$$` display-math block swallowing or corrupting every Markdown table after it. A block-math token no longer spans a GFM table, and the streaming pending-math fallback no longer treats a following table as pending math ([#11159](https://github.com/earendil-works/pi/issues/11159))
+- Fixed Markdown bold and italic not rendering next to CJK punctuation ([#10730](https://github.com/earendil-works/pi/pull/10730) by [@theBucky](https://github.com/theBucky))
+- Fixed terminal modes (mouse tracking, focus reporting, Kitty keyboard protocol, bracketed paste, alternate screen) staying enabled when the process exits without calling `stop()`. A process `exit` handler now restores them synchronously ([#11170](https://github.com/earendil-works/pi/issues/11170))
+- Fixed `@` file autocomplete returning no results for queries containing regex metacharacters such as `[` or `(` ([#10972](https://github.com/earendil-works/pi/issues/10972))
+
 ## [1.3.0] - 2026-10-15
 
 ## [1.2.0] - 2026-10-12

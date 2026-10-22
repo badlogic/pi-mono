@@ -59,37 +59,54 @@ Do not start processes, sockets, watchers, or timers in the factory because some
 Start long-lived resources from `session_start` or from the command or tool that needs them.
 Close session-scoped resources from an idempotent `session_shutdown` handler.
 
-A normal prompt follows this hook sequence:
+A normal prompt starts a run. The run repeats turns, then checks whether more work starts another low-level agent run:
 
 ```mermaid
 flowchart TD
     Input["input"] --> Before["before_agent_start"]
     Before --> AgentStart["agent_start"]
-    AgentStart --> TurnStart["turn_start"]
-    TurnStart --> Context["context"]
-    Context --> ContextSystem["context_with_system"]
-    ContextSystem --> Headers["before_provider_headers"]
-    Headers --> Request["before_provider_request"]
-    Request --> Response["after_provider_response"]
-    Response --> Stream["provider_stream_event and assistant message events"]
-    Stream --> ToolDecision{"Assistant requested tools?"}
-    ToolDecision -->|yes| ToolStart["tool_execution_start"]
-    ToolStart --> ToolCall["tool_call"]
-    ToolCall --> Execute["execute and tool_execution_update"]
-    Execute --> ToolResult["tool_result"]
-    ToolResult --> ToolEnd["tool_execution_end"]
-    ToolEnd --> TurnEnd["turn_end"]
-    ToolDecision -->|no| TurnEnd
-    TurnEnd --> MoreTurns{"Another model turn required?"}
-    MoreTurns -->|yes| TurnStart
-    MoreTurns -->|no| AgentEnd["agent_end"]
-    AgentEnd --> MoreRuns{"Retry, recovery, compaction retry, or queued work?"}
+    AgentStart --> Turns[["turns"]]
+    Turns --> AgentEnd["agent_end"]
+    AgentEnd --> MoreRuns{"More work?"}
     MoreRuns -->|yes| AgentStart
     MoreRuns -->|no| BeforeSettle["agent_before_settle"]
     BeforeSettle --> Continue{"Continuation requested?"}
     Continue -->|yes| AgentStart
     Continue -->|no| Settled["agent_settled"]
 ```
+
+More work means a retry, recovery, compaction retry, or queued work.
+
+Each turn sends one model request and executes the tool calls in the assistant response:
+
+```mermaid
+flowchart TD
+    TurnStart["turn_start"] --> Request[["model request"]]
+    Request --> ToolDecision{"Tool calls?"}
+    ToolDecision -->|yes| Tools[["tool execution"]]
+    Tools --> TurnEnd["turn_end"]
+    ToolDecision -->|no| TurnEnd
+    TurnEnd --> MoreTurns{"Another turn?"}
+    MoreTurns -->|yes| TurnStart
+    MoreTurns -->|no| AgentEnd(["agent_end"])
+```
+
+The model request runs these hooks in order:
+
+1. `context`
+2. `context_with_system`
+3. `before_provider_headers`
+4. `before_provider_request`
+5. `after_provider_response`
+6. `provider_stream_event` and assistant message events
+
+Tool execution runs these hooks in order for each tool call:
+
+1. `tool_execution_start`
+2. `tool_call`
+3. `tool_execution_update` while the tool executes
+4. `tool_result`
+5. `tool_execution_end`
 
 The lifecycle involves these event groups:
 
@@ -103,7 +120,7 @@ The lifecycle involves these event groups:
 | Tool execution | `tool_execution_start`, `tool_call`, `tool_execution_update`, `tool_result`, `tool_execution_end` |
 | Settlement | `agent_before_settle`, `agent_settled` |
 
-Pi counts as busy while a run starts, including the compaction check and `before_agent_start`, so messages sent meanwhile go into the starting run. Message lifecycle events also cover user and tool-result messages; the diagram places only the assistant stream where it occurs in each model turn.
+Pi counts as busy while a run starts, including the compaction check and `before_agent_start`, so messages sent meanwhile go into the starting run. Message lifecycle events also cover user and tool-result messages; the model request list places only the assistant stream where it occurs in each turn.
 
 Tool hooks run for each tool call, and one assistant response can start another turn by returning tool calls. Provider hooks run only when that transport exposes the corresponding stage. See the exported declarations in [`extensions/types.ts`](https://github.com/earendil-works/pi/blob/main/packages/coding-agent/src/core/extensions/types.ts) for exact event payloads and result types.
 
