@@ -25,7 +25,7 @@ function writePackage(repo, directory, manifest) {
 }
 
 /**
- * Stands in for the earendil-pkg worker and GitHub's OIDC token endpoint, recording requests. `refsSha` is what the
+ * Stands in for the pkg.earendil.com worker and GitHub's OIDC token endpoint, recording requests. `refsSha` is what the
  * worker reports each ref resolves to after the update; `uploadBody` overrides the upload response.
  */
 async function startServer(t, { refsSha = sha, uploadBody } = {}) {

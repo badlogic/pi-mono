@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// Preview builds of pi's packages on pkg.earendil.com, served by the earendil-works/earendil-pkg worker.
+// Preview builds of pi's packages on pkg.earendil.com, served by the earendil-works/pkg worker.
 // Used by .github/workflows/ci.yml (pack) and .github/workflows/preview-packages.yml (publish, delete-ref).
 //
 //   pack        Point internal dependencies at this commit's builds, then `npm pack` every public package.
