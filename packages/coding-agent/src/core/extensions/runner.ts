@@ -575,15 +575,19 @@ export class ExtensionRunner {
 	}
 
 	private wrapUIPromptContext(ui: ExtensionUIContext): ExtensionUIContext {
-		return {
-			...ui,
-			select: (title, options, opts) => this.withUIPrompt("select", title, () => ui.select(title, options, opts)),
-			confirm: (title, message, opts) => this.withUIPrompt("confirm", title, () => ui.confirm(title, message, opts)),
-			input: (title, placeholder, opts) =>
-				this.withUIPrompt("input", title, () => ui.input(title, placeholder, opts)),
-			editor: (title, prefill) => this.withUIPrompt("editor", title, () => ui.editor(title, prefill)),
-			custom: (factory, options) => this.withUIPrompt("custom", undefined, () => ui.custom(factory, options)),
-		};
+		// Spreading resolves getters once (e.g. a host's `get theme()`), freezing
+		// whatever the global state was at bind time — often `undefined` before
+		// initTheme(). Prototype-chain the original context so accessors stay live.
+		const wrapped = Object.create(ui) as ExtensionUIContext;
+		wrapped.select = (title, options, opts) =>
+			this.withUIPrompt("select", title, () => ui.select(title, options, opts));
+		wrapped.confirm = (title, message, opts) =>
+			this.withUIPrompt("confirm", title, () => ui.confirm(title, message, opts));
+		wrapped.input = (title, placeholder, opts) =>
+			this.withUIPrompt("input", title, () => ui.input(title, placeholder, opts));
+		wrapped.editor = (title, prefill) => this.withUIPrompt("editor", title, () => ui.editor(title, prefill));
+		wrapped.custom = (factory, options) => this.withUIPrompt("custom", undefined, () => ui.custom(factory, options));
+		return wrapped;
 	}
 
 	private withUIPrompt<T>(kind: UIPromptKind, title: string | undefined, run: () => Promise<T>): Promise<T> {

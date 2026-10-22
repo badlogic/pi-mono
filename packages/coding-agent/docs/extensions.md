@@ -360,6 +360,16 @@ Register an entry or message renderer when custom stored content should appear i
 Use `ctx.ui.custom()` only when the interaction needs its own rendering and input.
 See [Terminal UI](tui.md) for component, focus, overlay, theme, and performance guidance.
 
+`ctx.ui` accessors stay live: if a host binds the UI context before initializing
+global state such as the theme, `ctx.ui.theme` returns the initialized value
+once it exists. Treat `ctx.ui.theme` as optional anyway (some hosts never
+initialize it) and degrade gracefully:
+
+```ts
+const theme = ctx.ui.theme ?? null;
+const label = theme ? theme.fg("muted", "ponytail: ") + text : `ponytail: ${text}`;
+```
+
 Extensions load in interactive, RPC, JSON, and print modes.
 Interactive mode provides the complete terminal UI.
 RPC can forward supported dialogs and notifications through the [RPC Extension UI protocol](rpc-extension-ui.md), but not custom terminal components; JSON and print modes have no UI.
