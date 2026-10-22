@@ -1,6 +1,6 @@
 // A chat turn.
 // Run from packages/durable:
-//   node --conditions=source --experimental-strip-types test/examples/14-chat.ts
+//   node --conditions=source --experimental-strip-types test/examples/13-chat.ts
 import { BACKGROUND_CONTEXT } from "@earendil-works/chord/context";
 import { createModels } from "@earendil-works/pi-ai/models";
 import { fauxAssistantMessage, fauxProvider } from "@earendil-works/pi-ai/providers/faux";
@@ -8,7 +8,7 @@ import { AssistantEntry, createRegistry, defineExtension, Harness, MemoryStorage
 
 const context = BACKGROUND_CONTEXT;
 
-// The faux provider stands in for a real model (see 16-real-model.ts).
+// The faux provider stands in for a real model (see 15-real-model.ts).
 const faux = fauxProvider();
 const models = createModels();
 models.setProvider(faux.provider);

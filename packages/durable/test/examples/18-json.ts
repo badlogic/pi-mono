@@ -5,7 +5,7 @@
 // neither is deleted, and the path is printed to stderr at the end.
 // Uses OpenAI when OPENAI_API_KEY is set, and a scripted faux model otherwise.
 // Run from packages/durable:
-//   node --conditions=source --experimental-strip-types test/examples/19-json.ts --events "What is in this directory?"
+//   node --conditions=source --experimental-strip-types test/examples/18-json.ts --events "What is in this directory?"
 import { mkdtemp } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";

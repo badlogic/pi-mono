@@ -1,6 +1,6 @@
 // Reload extension code through the registry.
 // Run from packages/durable:
-//   node --conditions=source --experimental-strip-types test/examples/10-registry-reload.ts
+//   node --conditions=source --experimental-strip-types test/examples/09-registry-reload.ts
 import { BACKGROUND_CONTEXT } from "@earendil-works/chord/context";
 import { Type } from "@earendil-works/pi-ai";
 import { createModels } from "@earendil-works/pi-ai/models";

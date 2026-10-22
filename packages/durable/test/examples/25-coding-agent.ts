@@ -1,7 +1,7 @@
 // A small coding agent: the built-in coding tools, a prompt that knows the working directory, settings backed by the
 // app's settings file, and an environment that follows the conversation's directory.
 // Run from packages/durable:
-//   node --conditions=source --experimental-strip-types test/examples/26-coding-agent.ts
+//   node --conditions=source --experimental-strip-types test/examples/25-coding-agent.ts
 import { mkdir, mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";

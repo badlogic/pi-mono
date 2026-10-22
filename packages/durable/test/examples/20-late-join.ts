@@ -1,7 +1,7 @@
 // Late join: a client attaches while a run is already underway. It gets the current state first, the conversation
 // view or the snapshot event, and then only what changes after that.
 // Run from packages/durable:
-//   node --conditions=source --experimental-strip-types test/examples/21-late-join.ts
+//   node --conditions=source --experimental-strip-types test/examples/20-late-join.ts
 import { BACKGROUND_CONTEXT } from "@earendil-works/chord/context";
 import { Type } from "@earendil-works/pi-ai";
 import { createModels } from "@earendil-works/pi-ai/models";

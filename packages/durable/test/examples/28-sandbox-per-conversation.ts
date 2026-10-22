@@ -2,7 +2,7 @@
 // environment function looks it up for every tool call. Here a sandbox is a directory; a hosted product would return
 // an ExecutionEnv that runs inside the conversation's container.
 // Run from packages/durable:
-//   node --conditions=source --experimental-strip-types test/examples/29-sandbox-per-conversation.ts
+//   node --conditions=source --experimental-strip-types test/examples/28-sandbox-per-conversation.ts
 import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";

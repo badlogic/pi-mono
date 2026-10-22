@@ -1,7 +1,7 @@
 // Replace a tool for some conversations, and decorate whichever tool wins: a bash that runs inside a Python
 // virtualenv, and a wrapper that times every bash call.
 // Run from packages/durable:
-//   node --conditions=source --experimental-strip-types test/examples/30-tool-override.ts
+//   node --conditions=source --experimental-strip-types test/examples/29-tool-override.ts
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";

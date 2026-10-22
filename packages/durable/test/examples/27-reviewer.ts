@@ -1,7 +1,7 @@
 // A reviewer agent next to the main one: a cheaper model, a review role and loop, read-only tools, and its own
 // checkout of the project.
 // Run from packages/durable:
-//   node --conditions=source --experimental-strip-types test/examples/28-reviewer.ts
+//   node --conditions=source --experimental-strip-types test/examples/27-reviewer.ts
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";

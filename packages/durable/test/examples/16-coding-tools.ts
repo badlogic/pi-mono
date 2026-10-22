@@ -2,7 +2,7 @@
 // `cat` of /tmp/1gb.txt (create it first to measure; without it that call ends in an error result). The storage
 // directory is left behind for inspection.
 // Run from packages/durable:
-//   node --conditions=source --experimental-strip-types test/examples/17-coding-tools.ts
+//   node --conditions=source --experimental-strip-types test/examples/16-coding-tools.ts
 import { mkdtemp, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";

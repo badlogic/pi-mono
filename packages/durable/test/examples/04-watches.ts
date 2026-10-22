@@ -1,6 +1,6 @@
 // Serialize asynchronous document work with a watch.
 // Run from packages/durable:
-//   node --conditions=source --experimental-strip-types test/examples/05-watches.ts
+//   node --conditions=source --experimental-strip-types test/examples/04-watches.ts
 import { BACKGROUND_CONTEXT } from "@earendil-works/chord/context";
 import { createSession, defineDoc, MemoryStorage } from "../../src/index.ts";
 

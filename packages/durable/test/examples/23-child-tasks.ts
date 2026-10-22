@@ -1,7 +1,7 @@
 // A task that owns child tasks: a checkout charges four payments at once and waits for them.
 // The task graph view prints the checkout's tree while its payments run.
 // Run from packages/durable:
-//   node --conditions=source --experimental-strip-types test/examples/24-child-tasks.ts
+//   node --conditions=source --experimental-strip-types test/examples/23-child-tasks.ts
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";

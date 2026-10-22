@@ -1,7 +1,7 @@
 // Reload an extension while a call runs, then restart the process. Running work finishes on the code it started
 // with; stored choices are names, so they survive a restart and bind to whatever code the new process installs.
 // Run from packages/durable:
-//   node --conditions=source --experimental-strip-types test/examples/31-reload-and-restart.ts
+//   node --conditions=source --experimental-strip-types test/examples/30-reload-and-restart.ts
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";

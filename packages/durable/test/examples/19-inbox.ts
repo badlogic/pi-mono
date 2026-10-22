@@ -1,6 +1,6 @@
 // The inbox: what happens to submissions while a conversation is busy.
 // Run from packages/durable:
-//   node --conditions=source --experimental-strip-types test/examples/20-inbox.ts
+//   node --conditions=source --experimental-strip-types test/examples/19-inbox.ts
 import { BACKGROUND_CONTEXT } from "@earendil-works/chord/context";
 import type { FauxResponseStep } from "@earendil-works/pi-ai";
 import { createModels } from "@earendil-works/pi-ai/models";

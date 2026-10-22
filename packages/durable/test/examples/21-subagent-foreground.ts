@@ -3,7 +3,7 @@
 // details and shows its events under the call.
 // Uses OpenAI when OPENAI_API_KEY is set, and a scripted faux model otherwise.
 // Run from packages/durable:
-//   node --conditions=source --experimental-strip-types test/examples/22-subagent-foreground.ts
+//   node --conditions=source --experimental-strip-types test/examples/21-subagent-foreground.ts
 import type { Context } from "@earendil-works/chord";
 import { BACKGROUND_CONTEXT } from "@earendil-works/chord/context";
 import { type AssistantMessage, type FauxResponseStep, Type } from "@earendil-works/pi-ai";

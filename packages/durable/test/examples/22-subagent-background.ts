@@ -4,7 +4,7 @@
 // survives a restart: the example closes the Harness while a subagent works and reopens it.
 // Uses OpenAI when OPENAI_API_KEY is set, and a scripted faux model otherwise.
 // Run from packages/durable:
-//   node --conditions=source --experimental-strip-types test/examples/23-subagent-background.ts
+//   node --conditions=source --experimental-strip-types test/examples/22-subagent-background.ts
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";

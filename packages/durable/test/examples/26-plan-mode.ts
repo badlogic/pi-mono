@@ -1,7 +1,7 @@
 // Plan mode: the user switches a conversation into a read-only planning mode, the agent writes a plan into the
 // extension's own document, and switching back restores the full tool set.
 // Run from packages/durable:
-//   node --conditions=source --experimental-strip-types test/examples/27-plan-mode.ts
+//   node --conditions=source --experimental-strip-types test/examples/26-plan-mode.ts
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";

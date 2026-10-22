@@ -1,6 +1,6 @@
 // Run a durable task.
 // Run from packages/durable:
-//   node --conditions=source --experimental-strip-types test/examples/12-tasks.ts
+//   node --conditions=source --experimental-strip-types test/examples/11-tasks.ts
 import { BACKGROUND_CONTEXT } from "@earendil-works/chord/context";
 import { createModels } from "@earendil-works/pi-ai/models";
 import { createRegistry, defineExtension, defineTask, Harness, MemoryStorage } from "../../src/index.ts";
@@ -52,7 +52,7 @@ registry.install(defineExtension({ name: "payments", tasks: [Payment] }));
 const harness = await Harness.open(new MemoryStorage(), { models: createModels(), registry }, context);
 const root = await harness.root(context);
 // Every task names its owner. This one belongs to the conversation; a task can
-// also own child tasks and wait for them (24-child-tasks.ts).
+// also own child tasks and wait for them (23-child-tasks.ts).
 const paymentId = await root.commit(
 	(tx) => tx.createTask(Payment, { amount: 5 }, { ownership: { kind: "conversation" } }),
 	context,

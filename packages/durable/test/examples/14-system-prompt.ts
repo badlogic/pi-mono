@@ -1,6 +1,6 @@
 // System prompt sections and per-conversation instructions.
 // Run from packages/durable:
-//   node --conditions=source --experimental-strip-types test/examples/15-system-prompt.ts
+//   node --conditions=source --experimental-strip-types test/examples/14-system-prompt.ts
 import { BACKGROUND_CONTEXT } from "@earendil-works/chord/context";
 import { createModels } from "@earendil-works/pi-ai/models";
 import { fauxAssistantMessage, fauxProvider } from "@earendil-works/pi-ai/providers/faux";
