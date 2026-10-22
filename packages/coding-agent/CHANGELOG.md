@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Changed
+
+- Context files (`AGENTS.md`, `CLAUDE.md`) now drop whole-line HTML comments (`<!-- ... -->`) before they reach the model, matching Claude Code, which already skips them. Maintainers can keep notes for human reviewers in a context file without sending them to the model as prompt text. A comment that shares a line with rule text is kept, so no rule is lost.
+
 ## [1.4.0] - 2026-10-21
 
 ### New Features

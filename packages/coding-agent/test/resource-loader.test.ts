@@ -1389,4 +1389,67 @@ export default function(pi: ExtensionAPI) {
 			expect(files.map((f) => f.content)).toEqual(["repo instructions", "src instructions"]);
 		});
 	});
+
+	describe("loadProjectContextFiles - whole-line HTML comments", () => {
+		// Claude Code skips whole-line HTML comments in CLAUDE.md, so maintainers keep
+		// notes for human reviewers in them. Pi must not send those notes to the model.
+		it("should drop a whole-line HTML comment and keep the rule text", () => {
+			writeFileSync(
+				join(tempDir, "AGENTS.md"),
+				[
+					"<!-- a note for the human reviewer -->",
+					"WHEN you write a report, name the file.",
+					"<!-- another note -->",
+				].join("\n"),
+			);
+
+			const files = loadProjectContextFiles({ cwd: tempDir, agentDir });
+
+			expect(files[0].content).toBe("WHEN you write a report, name the file.");
+		});
+
+		it("should drop an indented HTML comment", () => {
+			writeFileSync(join(tempDir, "AGENTS.md"), "  <!-- indented note -->\nkeep this line");
+
+			const files = loadProjectContextFiles({ cwd: tempDir, agentDir });
+
+			expect(files[0].content).toBe("keep this line");
+		});
+
+		it("should keep a line that holds rule text before a comment", () => {
+			// Dropping this line would delete the rule, so only whole-line comments go.
+			writeFileSync(join(tempDir, "AGENTS.md"), "keep this rule <!-- trailing note -->");
+
+			const files = loadProjectContextFiles({ cwd: tempDir, agentDir });
+
+			expect(files[0].content).toBe("keep this rule <!-- trailing note -->");
+		});
+
+		it("should collapse the blank lines that a removed comment block leaves", () => {
+			writeFileSync(
+				join(tempDir, "AGENTS.md"),
+				["first rule", "", "<!-- note -->", "<!-- note -->", "", "second rule"].join("\n"),
+			);
+
+			const files = loadProjectContextFiles({ cwd: tempDir, agentDir });
+
+			expect(files[0].content).toBe("first rule\n\nsecond rule");
+		});
+
+		it("should leave a file with no comment unchanged", () => {
+			writeFileSync(join(tempDir, "AGENTS.md"), "rule one\nrule two\n");
+
+			const files = loadProjectContextFiles({ cwd: tempDir, agentDir });
+
+			expect(files[0].content).toBe("rule one\nrule two\n");
+		});
+
+		it("should strip comments from CLAUDE.md as well as AGENTS.md", () => {
+			writeFileSync(join(tempDir, "CLAUDE.md"), "<!-- note -->\nrule text");
+
+			const files = loadProjectContextFiles({ cwd: tempDir, agentDir });
+
+			expect(files[0].content).toBe("rule text");
+		});
+	});
 });
