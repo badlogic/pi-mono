@@ -291,6 +291,17 @@ describe.each(Object.keys(BACKENDS))("%s backend", (name) => {
 			expect(result.calls.every((call) => call.durationMs >= 0)).toBe(true);
 		});
 
+		it("lets scripts declare their own tools and console bindings", async () => {
+			const sandbox = createSandbox([echo]);
+			const result = await sandbox.execute(`
+				const tools = await globalThis.tools.echo(["a", "b"]);
+				const console = { log: () => {} };
+				console.log("ignored");
+				return tools;
+			`);
+			expect(result).toMatchObject({ ok: true, value: ["a", "b"] });
+		});
+
 		it("runs concurrent calls and lists tool names", async () => {
 			const sandbox = createSandbox([
 				echo,
