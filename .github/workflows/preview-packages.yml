@@ -3,8 +3,7 @@
 # and never checks out or runs PR code.
 #
 # Uploads are only accepted if pkg.earendil.com allows this repository, this workflow on main, and every package it
-# publishes. A commit first published for a PR cannot later be published for main: that run fails, and main keeps its
-# previous build until the next push.
+# publishes.
 
 name: Preview packages
 
