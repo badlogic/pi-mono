@@ -98,14 +98,17 @@
           }
         }
 
-        // Sort children by timestamp
-        function sortChildren(node) {
+        // Sort children by timestamp without depending on the JavaScript call stack
+        const sortStack = [...roots];
+        while (sortStack.length > 0) {
+          const node = sortStack.pop();
           node.children.sort((a, b) =>
             new Date(a.entry.timestamp).getTime() - new Date(b.entry.timestamp).getTime()
           );
-          node.children.forEach(sortChildren);
+          for (let i = node.children.length - 1; i >= 0; i--) {
+            sortStack.push(node.children[i]);
+          }
         }
-        roots.forEach(sortChildren);
 
         return roots;
       }
@@ -157,11 +160,14 @@
         if (!treeNodeMap) {
           treeNodeMap = new Map();
           const tree = buildTree();
-          function mapNodes(node) {
+          const mapStack = [...tree].reverse();
+          while (mapStack.length > 0) {
+            const node = mapStack.pop();
             treeNodeMap.set(node.entry.id, node);
-            node.children.forEach(mapNodes);
+            for (let i = node.children.length - 1; i >= 0; i--) {
+              mapStack.push(node.children[i]);
+            }
           }
-          tree.forEach(mapNodes);
         }
 
         const node = treeNodeMap.get(nodeId);
@@ -186,15 +192,23 @@
 
         // Mark which subtrees contain the active leaf
         const containsActive = new Map();
-        function markActive(node) {
+        const allNodes = [];
+        const preOrderStack = [...roots];
+        while (preOrderStack.length > 0) {
+          const node = preOrderStack.pop();
+          allNodes.push(node);
+          for (let i = node.children.length - 1; i >= 0; i--) {
+            preOrderStack.push(node.children[i]);
+          }
+        }
+        for (let i = allNodes.length - 1; i >= 0; i--) {
+          const node = allNodes[i];
           let has = activePathIds.has(node.entry.id);
           for (const child of node.children) {
-            if (markActive(child)) has = true;
+            if (containsActive.get(child)) has = true;
           }
           containsActive.set(node, has);
-          return has;
         }
-        roots.forEach(markActive);
 
         // Stack: [node, indent, justBranched, showConnector, isLast, gutters, isVirtualRootChild]
         const stack = [];
