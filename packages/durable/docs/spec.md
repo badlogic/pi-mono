@@ -753,6 +753,15 @@ with them. A viewer that only reads never enables scheduling: `inspect()`,
 `getTask()`, `submission()`, `Submission.status()`, `usage()`, document reads,
 every conversation read, state, and watch, and the task graph.
 
+`HarnessOptions.readOnly` opens a viewer of a session another process drives,
+such as a synced copy on a device that only shows it. Open loads live tasks as
+committed, `running` ones included, and reconciles nothing. Every commit with
+writes rejects with `ReadOnlySession` before it reaches Storage, so the Session
+stays healthy; a commit that writes nothing succeeds. `resume()` throws
+`ReadOnlySession`, and every call that enables scheduling rejects with it.
+`wake()` is always inactive and `onWake` is never called. Reopening without
+`readOnly` recovers as usual: the viewer counted no restart.
+
 `createConversation({ ownership, agent, init })` and
 `fork(at, { ownership, agent, init })` commit atomically: the conversation, its
 explicitly selected ownership, the creation hook's documents, the `agent`

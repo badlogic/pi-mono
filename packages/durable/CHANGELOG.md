@@ -9,6 +9,10 @@
 - Watches use Chord's `WatchHandle` and `WatchEnd` (Durable re-exports both). End reasons are `stopped`, `cancelled`, `retired`, `ended` (was `session_closed`), `listener_error`, and `failed` (was `session_failed`). Retirement is an explicit event of the watched document incarnation (last frame `[["r", null]]`, then `retired`), never inferred from a `null` value. An ended watch drops its listener and every reference into its Session, so a stopped watch that is still referenced keeps only its last value.
 - Removed the Chord state getters `Session.documentState()`, `Conversation.viewState()`, and `Harness.taskGraph()`, and the `DocumentState` type; use `watchDoc()`, `Conversation.watch()`, and `Harness.watchTaskGraph()`. Durable no longer uses Chord's `replicatedState()`.
 
+### Added
+
+- `HarnessOptions.readOnly` opens a Harness as a viewer of a session another process drives: open leaves running tasks as committed instead of recovering them, every commit with writes rejects with `ReadOnlySession` before it reaches Storage, and `resume()` and every call that would run tasks reject with it.
+
 ## [1.4.0] - 2026-10-21
 
 ### Breaking Changes

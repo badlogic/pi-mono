@@ -9,7 +9,7 @@ import {
 	materializeDocument,
 	resolveAddress,
 } from "../documents.ts";
-import { SessionFailed, StorageRequestError } from "../errors.ts";
+import { ReadOnlySession, SessionFailed, StorageRequestError } from "../errors.ts";
 import { idFromNumber } from "../ids.ts";
 import { hostTimers, type Timers } from "../timers.ts";
 import type {
@@ -121,6 +121,8 @@ export class SessionImpl implements Session {
 	readonly #attachedDocuments = new Map<DocumentId, number>();
 	readonly #clock: () => number;
 	readonly #documentRetentionMs: () => number;
+	/** Refuse every commit with writes (`HarnessOptions.readOnly`). */
+	readonly #readOnly: boolean;
 	readonly #timers: Timers;
 	/** The pending eviction: a timer for the oldest idle document, or a line job when the retention is 0. */
 	#documentSweep: { readonly at: number; disarm: (() => void) | undefined } | undefined;
@@ -158,9 +160,11 @@ export class SessionImpl implements Session {
 		now: () => number = Date.now,
 		documentRetentionMs: () => number | undefined = () => undefined,
 		setTimer?: SetTimer,
+		readOnly = false,
 	) {
 		// Waits race it; none has to.
 		this.#failed.promise.catch(() => {});
+		this.#readOnly = readOnly;
 		this.#storage = new GuardedStorage(storage, this);
 		this.#timers = hostTimers(setTimer, (error) => this.report(error, { type: "host_error", callback: "setTimer" }));
 		// Cache bookkeeping must never change the outcome of the operation it follows: a clock or a retention setting
@@ -674,6 +678,12 @@ export class SessionImpl implements Session {
 			tx.discard();
 			this.#sweepDocuments();
 			return result;
+		}
+		if (this.#readOnly) {
+			// Refused before Storage: the Session stays healthy, and the caller sees why.
+			tx.discard();
+			this.#sweepDocuments();
+			throw new ReadOnlySession("a commit with writes");
 		}
 		// Storage adopts the batch synchronously once it is durable, before its next commit; a throw here would reach
 		// Storage, so the callback keeps its own error.

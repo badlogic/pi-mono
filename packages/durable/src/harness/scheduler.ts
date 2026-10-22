@@ -9,7 +9,7 @@ import {
 	type TelemetryCarrier,
 } from "@earendil-works/pi-telemetry";
 import type { ExecutionEnv } from "../env/index.ts";
-import { errorMessage } from "../errors.ts";
+import { errorMessage, ReadOnlySession } from "../errors.ts";
 import type { SessionImpl } from "../session/session.ts";
 import type { Transaction } from "../session/transaction.ts";
 import type { Timers } from "../timers.ts";
@@ -226,6 +226,11 @@ export type TaskSchedulerOptions = {
 	) => Promise<ConversationHandle | undefined>;
 	/** Context for scheduler commits and invocations; carries no caller cancellation. */
 	readonly context: Context;
+	/**
+	 * `HarnessOptions.readOnly`: open loads live tasks as committed, `running` ones included, and the scheduler never
+	 * commits, runs anything, or asks for a wakeup.
+	 */
+	readonly readOnly?: boolean;
 };
 
 /**
@@ -340,6 +345,7 @@ export class TaskScheduler {
 	#cascadePending = false;
 	#unsubscribeRegistry: () => void = () => {};
 	#enabled = false;
+	readonly #readOnly: boolean;
 	#closing = false;
 	#dirty = false;
 	#draining = false;
@@ -365,11 +371,13 @@ export class TaskScheduler {
 		this.#withdrawInputs = options.withdrawInputs;
 		this.#conversation = options.conversation;
 		this.#context = options.context;
+		this.#readOnly = options.readOnly === true;
 	}
 
 	/**
 	 * Load live tasks and change surviving `running` tasks back to `pending`, counting the restart. Dispatches nothing. A
-	 * task that reaches the restart limit this way is parked and reported.
+	 * task that reaches the restart limit this way is parked and reported. Read-only, it only loads them: a `running`
+	 * task stays as committed, running in another process.
 	 */
 	async open(context: Context): Promise<void> {
 		this.#session.observeCommits((publication) => this.#observe(publication));
@@ -390,6 +398,7 @@ export class TaskScheduler {
 				for (const record of records) {
 					this.#track(undefined, record);
 					this.#resumed.add(record.id);
+					if (this.#readOnly) continue;
 					if (record.abandonOnRestart === true) this.#abandoned.add(record.id);
 					if (record.state.status === "running") {
 						const restarts = (record.restarts ?? 0) + 1;
@@ -410,6 +419,7 @@ export class TaskScheduler {
 			);
 			this.#report(error, { type: "task_parked", ...this.#aboutTask(recordTask(record)) });
 		}
+		if (this.#readOnly) return;
 		// Derive abort marks a crash left unapplied below cancelled owners, and finalize held outcomes.
 		this.#cascadePending = true;
 		this.#scheduleReconcile();
@@ -421,6 +431,7 @@ export class TaskScheduler {
 	 * Idempotent; the kick does nothing once closing.
 	 */
 	resume(): void {
+		if (this.#readOnly) throw new ReadOnlySession("running tasks");
 		this.#enabled = true;
 		this.#wakeDue();
 		this.#kick();
@@ -475,6 +486,8 @@ export class TaskScheduler {
 	 * sleep not yet due. Synchronous, from memory; a task whose chain is not loaded yet counts as it would alone.
 	 */
 	wake(): Wake {
+		// A read-only Harness runs nothing, so it never needs a process.
+		if (this.#readOnly) return { active: false };
 		const now = this.#now();
 		// A reconcile pass with work to do is work too: it finalizes held outcomes and marks cascades, at open as
 		// recovery. A process that dies before it lands must be woken again. A pass with nothing to do is not.
@@ -762,7 +775,8 @@ export class TaskScheduler {
 	// ─── Ownership ───────────────────────────────────────────────────────────
 
 	#scheduleReconcile(): void {
-		if (this.#reconcileScheduled || this.#closing) return;
+		// A read-only reconcile could only fail: what it writes is refused, and its own commits fail the Session.
+		if (this.#reconcileScheduled || this.#closing || this.#readOnly) return;
 		this.#reconcileScheduled = true;
 		queueMicrotask(() => void this.#reconcile());
 	}
@@ -1314,7 +1328,7 @@ export class TaskScheduler {
 
 	/** Recompute the wake in a microtask, off the Session line: arm the built-in timer, or tell `onWake` of a change. */
 	#scheduleWake(): void {
-		if (this.#wakeScheduled || this.#closing) return;
+		if (this.#wakeScheduled || this.#closing || this.#readOnly) return;
 		this.#wakeScheduled = true;
 		queueMicrotask(() => {
 			this.#wakeScheduled = false;
