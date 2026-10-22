@@ -313,6 +313,76 @@
         return '';
       }
 
+      // ============================================================
+      // SYSTEM MESSAGES (pure data)
+      // ============================================================
+
+      function systemContentText(content) {
+        if (typeof content === 'string') return content;
+        if (Array.isArray(content)) {
+          return content.filter(c => c.type === 'text' && c.text).map(c => c.text).join('\n');
+        }
+        return '';
+      }
+
+      /** Full prompt text of a system message, mirroring getSystemMessageText() in pi-ai. */
+      function getSystemMessageText(msg) {
+        const parts = [systemContentText(msg.content)];
+        for (const value of Object.values(msg.sections || {})) {
+          if (value !== null) parts.push(value);
+        }
+        return parts.filter(part => part.length > 0).join('\n\n');
+      }
+
+      /** Text of a later system message, mirroring renderSystemMessageUpdate() in pi-ai. */
+      function renderSystemMessageUpdate(msg) {
+        const parts = [];
+        const text = systemContentText(msg.content);
+        if (text.length > 0) parts.push(text);
+        for (const [name, value] of Object.entries(msg.sections || {})) {
+          parts.push(value === null
+            ? `Removed system prompt section "${name}".`
+            : `Updated system prompt section "${name}":\n\n${value}`);
+        }
+        return parts.join('\n\n');
+      }
+
+      function carriesSystemState(entry) {
+        return (entry.type === 'message' && entry.message.role === 'system') ||
+          (entry.type === 'compaction' && entry.systemMessage);
+      }
+
+      /**
+       * Whether a system entry starts the prompt on its branch. Later system entries
+       * patch the prompt, so they render as updates instead of a full prompt.
+       */
+      function isLeadingSystemEntry(entry) {
+        let current = entry.parentId && entry.parentId !== entry.id ? byId.get(entry.parentId) : undefined;
+        while (current) {
+          if (carriesSystemState(current)) return false;
+          if (!current.parentId || current.parentId === current.id) break;
+          current = byId.get(current.parentId);
+        }
+        return true;
+      }
+
+      /** Short description of what a later system message changes, e.g. "project_context, -rules, tools +bash". */
+      function describeSystemUpdate(msg) {
+        const parts = [];
+        if (systemContentText(msg.content).length > 0) parts.push('instructions');
+        for (const [name, value] of Object.entries(msg.sections || {})) {
+          parts.push(value === null ? `-${name}` : name);
+        }
+        const toolChanges = [
+          ...(msg.toolsAdded || []).map(t => `+${t.name}`),
+          ...(msg.toolsRemoved || []).map(t => `-${t.name}`),
+        ];
+        if (toolChanges.length > 0) parts.push(`tools ${toolChanges.join(' ')}`);
+        return parts.join(', ');
+      }
+
+      const hasSystemEntries = entries.some(entry => entry.type === 'message' && entry.message.role === 'system');
+
       /**
        * Parse a skill block from message text.
        * Returns null if the text doesn't contain a skill block.
@@ -337,6 +407,13 @@
           case 'message': {
             const msg = entry.message;
             parts.push(msg.role);
+            if (msg.role === 'system') {
+              parts.push(isLeadingSystemEntry(entry) ? 'system prompt' : 'system update');
+              parts.push(getSystemMessageText(msg));
+              for (const name of Object.keys(msg.sections || {})) parts.push(name);
+              for (const tool of [...(msg.toolsAdded || []), ...(msg.toolsRemoved || [])]) parts.push(tool.name);
+              break;
+            }
             if (msg.content) parts.push(extractContent(msg.content));
             if (msg.role === 'bashExecution' && msg.command) parts.push(msg.command);
             break;
@@ -674,6 +751,13 @@
             if (msg.role === 'bashExecution') {
               const cmd = truncate(normalize(msg.command || ''));
               return labelHtml + `<span class="tree-role-tool">[bash]:</span> ${escapeHtml(cmd)}`;
+            }
+            if (msg.role === 'system') {
+              if (isLeadingSystemEntry(entry)) {
+                return labelHtml + `<span class="tree-muted">[system prompt]</span>`;
+              }
+              const changes = describeSystemUpdate(msg);
+              return labelHtml + `<span class="tree-muted">[system update${changes ? ': ' + escapeHtml(truncate(changes)) : ''}]</span>`;
             }
             return labelHtml + `<span class="tree-muted">[${escapeHtml(msg.role)}]</span>`;
           }
@@ -1311,6 +1395,24 @@
           }
 
           if (msg.role === 'toolResult') return '';
+
+          if (msg.role === 'system') {
+            let html = '';
+            if (isLeadingSystemEntry(entry)) {
+              const text = getSystemMessageText(msg);
+              if (text) html += renderSystemPromptBlock('System Prompt', text);
+              html += renderToolsList('Available Tools', msg.toolsAdded);
+            } else {
+              const text = renderSystemMessageUpdate(msg);
+              const changes = describeSystemUpdate(msg);
+              if (text) html += renderSystemPromptBlock(`System Prompt Update${changes ? ': ' + changes : ''}`, text);
+              html += renderToolsList('Tools Added', msg.toolsAdded);
+              if (msg.toolsRemoved && msg.toolsRemoved.length > 0) {
+                html += `<div class="tools-list"><div class="tools-header">Tools Removed</div><div class="tools-content">${msg.toolsRemoved.map(t => `<div class="tool-item"><span class="tool-item-name">${escapeHtml(t.name)}</span></div>`).join('')}</div></div>`;
+              }
+            }
+            return html ? `<div class="system-entry" id="${entryDomId}">${tsHtml}${html}</div>` : '';
+          }
         }
 
         if (entry.type === 'model_change') {
@@ -1437,30 +1539,39 @@
             </div>
           </div>`;
 
-        // Render system prompt (user's base prompt, applies to all providers)
-        if (systemPrompt) {
-          const lines = systemPrompt.split('\n');
-          const previewLines = 10;
-          if (lines.length > previewLines) {
-            const preview = lines.slice(0, previewLines).join('\n');
-            const remaining = lines.length - previewLines;
-            html += `<div class="system-prompt expandable" onclick="if(window.getSelection().toString())return;this.classList.toggle('expanded')">
-              <div class="system-prompt-header">System Prompt</div>
-              <div class="system-prompt-preview">${escapeHtml(preview)}</div>
-              <div class="system-prompt-expand-hint">... (${remaining} more lines, click to expand)</div>
-              <div class="system-prompt-full">${escapeHtml(systemPrompt)}</div>
-            </div>`;
-          } else {
-            html += `<div class="system-prompt">
-              <div class="system-prompt-header">System Prompt</div>
-              <div class="system-prompt-full" style="display: block">${escapeHtml(systemPrompt)}</div>
-            </div>`;
-          }
+        // Sessions with system entries render the prompt and tools in the transcript, where they
+        // occur. Older sessions have none, so fall back to the exporting agent's current state.
+        if (!hasSystemEntries) {
+          if (systemPrompt) html += renderSystemPromptBlock('System Prompt', systemPrompt);
+          html += renderToolsList('Available Tools', tools);
         }
 
-        if (tools && tools.length > 0) {
-          html += `<div class="tools-list">
-            <div class="tools-header">Available Tools</div>
+        return html;
+      }
+
+      function renderSystemPromptBlock(title, text) {
+        const lines = text.split('\n');
+        const previewLines = 10;
+        if (lines.length > previewLines) {
+          const preview = lines.slice(0, previewLines).join('\n');
+          const remaining = lines.length - previewLines;
+          return `<div class="system-prompt expandable" onclick="if(window.getSelection().toString())return;this.classList.toggle('expanded')">
+            <div class="system-prompt-header">${escapeHtml(title)}</div>
+            <div class="system-prompt-preview">${escapeHtml(preview)}</div>
+            <div class="system-prompt-expand-hint">... (${remaining} more lines, click to expand)</div>
+            <div class="system-prompt-full">${escapeHtml(text)}</div>
+          </div>`;
+        }
+        return `<div class="system-prompt">
+          <div class="system-prompt-header">${escapeHtml(title)}</div>
+          <div class="system-prompt-full" style="display: block">${escapeHtml(text)}</div>
+        </div>`;
+      }
+
+      function renderToolsList(title, tools) {
+        if (!tools || tools.length === 0) return '';
+        return `<div class="tools-list">
+            <div class="tools-header">${escapeHtml(title)}</div>
             <div class="tools-content">
               ${tools.map(t => {
                 const hasParams = t.parameters && typeof t.parameters === 'object' && t.parameters.properties && Object.keys(t.parameters.properties).length > 0;
@@ -1485,9 +1596,6 @@
               }).join('')}
             </div>
           </div>`;
-        }
-
-        return html;
       }
 
       // ============================================================
