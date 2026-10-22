@@ -3,7 +3,8 @@
 # and never checks out or runs PR code.
 #
 # Uploads are only accepted if pkg.earendil.com allows this repository, this workflow on main, and every package it
-# publishes.
+# publishes. A commit first published for a PR cannot later be published for main: that run fails, and main keeps its
+# previous build until the next push.
 
 name: Preview packages
 
@@ -16,22 +17,26 @@ on:
 
 permissions: {}
 
-# Runs for the same branch execute one at a time, in order, so a late publish cannot recreate the ref of a PR that
-# cleanup just removed. `queue: max` keeps every waiting run instead of replacing a waiting cleanup.
-concurrency:
-  group: preview-packages-${{ github.event.workflow_run.head_branch || github.event.pull_request.head.ref }}
-  queue: max
-
 jobs:
   publish:
+    # Only CI runs for pushes to main and for PRs from branches of this repo. A branch can make its own copy of CI run
+    # on push; such runs are not reviewed and must not be published as push builds.
     if: >-
       github.event_name == 'workflow_run' && github.event.workflow_run.conclusion != 'cancelled' &&
-      github.event.workflow_run.head_repository.full_name == github.repository
+      github.event.workflow_run.head_repository.full_name == github.repository &&
+      ((github.event.workflow_run.event == 'push' && github.event.workflow_run.head_branch == 'main') ||
+      github.event.workflow_run.event == 'pull_request')
+    # Publish and cleanup runs for the same branch execute one at a time, in order. The group is set per job, so runs
+    # whose job is skipped (forks) never wait in it. `queue: max` keeps every waiting run instead of replacing one.
+    concurrency:
+      group: preview-packages-${{ github.event.workflow_run.head_branch }}
+      queue: max
     runs-on: ubuntu-latest
     permissions:
       actions: read # download the artifact from the CI run
       contents: read # check out scripts/
       id-token: write # authenticate to pkg.earendil.com
+      pull-requests: read # check that the PR is still open
     steps:
       - name: Find packed packages
         id: find
@@ -63,6 +68,7 @@ jobs:
       - name: Publish
         if: steps.find.outputs.found == 'true'
         env:
+          GH_TOKEN: ${{ github.token }}
           # Event data is passed through env, never interpolated into the script: branch names are PR-controlled.
           EVENT: ${{ github.event.workflow_run.event }}
           HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
@@ -74,10 +80,16 @@ jobs:
           args=(--dir "$DIR" --sha "$HEAD_SHA" --run "$RUN_ID" --event "$EVENT")
           if [ "$EVENT" = push ] && [ "$HEAD_BRANCH" = main ]; then
             args+=(--ref main)
-          elif [ "$EVENT" = pull_request ]; then
-            # The branch's PR into main; a branch can also have PRs into other branches.
+          else
+            # The branch's PR into main; a branch can also have PRs into other branches. It may have closed or received
+            # new commits since CI ran, so the ref moves only while the PR is open with this commit as its head.
             pr=$(jq -r 'map(select(.base.ref == "main")) | .[0].number // empty' <<< "$PULL_REQUESTS")
-            if [ -n "$pr" ]; then args+=(--ref "pr-$pr"); fi
+            state=$([ -z "$pr" ] || gh api "repos/$GITHUB_REPOSITORY/pulls/$pr" --jq '"\(.state) \(.base.ref) \(.head.sha)"')
+            if [ "$state" = "open main $HEAD_SHA" ]; then
+              args+=(--ref "pr-$pr")
+            else
+              echo "::notice::No open PR into main has head $HEAD_SHA; publishing without a pr-<number> ref"
+            fi
           fi
           node scripts/preview-packages.mjs publish "${args[@]}"
 
@@ -86,6 +98,9 @@ jobs:
     if: >-
       github.event_name == 'pull_request_target' && github.event.pull_request.base.ref == github.event.repository.default_branch &&
       github.event.pull_request.head.repo.full_name == github.repository
+    concurrency:
+      group: preview-packages-${{ github.event.pull_request.head.ref }}
+      queue: max
     runs-on: ubuntu-latest
     permissions:
       contents: read # check out scripts/ from the base branch, not PR code
