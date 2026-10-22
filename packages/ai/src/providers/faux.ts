@@ -263,11 +263,12 @@ function withUsageEstimate(
 		if (previousPrompt) {
 			const cachedChars = commonPromptPrefixLength(previousPrompt, prompt);
 			cacheRead = Math.ceil(cachedChars / 4);
-			cacheWrite = Math.ceil((promptLength - cachedChars) / 4);
-			input = Math.max(0, promptTokens - cacheRead);
+			cacheWrite = Math.max(0, promptTokens - cacheRead);
 		} else {
 			cacheWrite = promptTokens;
 		}
+		// Every prompt token is either read from or written to the simulated cache.
+		input = 0;
 		promptCache.set(sessionId, prompt);
 	}
 
