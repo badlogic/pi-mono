@@ -91,7 +91,7 @@
 	"devDependencies": {
 		"@types/ws": "8.18.2",
 		"shx": "0.3.4",
-		"vitest": "4.1.11",
+		"vitest": "4.1.12",
 		"ws": "8.21.0"
 	}
 }

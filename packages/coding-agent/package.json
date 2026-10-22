@@ -75,7 +75,7 @@
 		"@types/semver": "7.7.1",
 		"marked": "18.0.11",
 		"shx": "0.3.4",
-		"vitest": "4.1.11"
+		"vitest": "4.1.12"
 	},
 	"keywords": [
 		"coding-agent",

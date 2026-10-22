@@ -56,6 +56,6 @@
 	"devDependencies": {
 		"@types/cross-spawn": "6.0.6",
 		"shx": "0.3.4",
-		"vitest": "4.1.11"
+		"vitest": "4.1.12"
 	}
 }

@@ -17,7 +17,7 @@
 		"@vitest-evals/core": "0.15.0",
 		"autoevals": "0.3.0",
 		"shx": "0.3.4",
-		"vitest": "4.1.11",
+		"vitest": "4.1.12",
 		"vitest-evals": "0.15.0"
 	}
 }
