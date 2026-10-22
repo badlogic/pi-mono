@@ -1,4 +1,4 @@
-import type { AttachedReplicatedState, Context, JsonValue } from "@earendil-works/chord";
+import type { Context, JsonValue } from "@earendil-works/chord";
 import { withAbortSignal, withoutAbortSignal } from "@earendil-works/chord/context";
 import type { Models } from "@earendil-works/pi-ai";
 import {
@@ -45,7 +45,7 @@ import { ProviderDoc } from "./provider.ts";
 import { BUILTIN_TASKS } from "./registry.ts";
 import { type InvocationBinding, TaskScheduler } from "./scheduler.ts";
 import { Submissions } from "./submissions.ts";
-import { type TaskGraph, TaskGraphView, type TaskGraphWatch } from "./task-graph.ts";
+import { TaskGraphView, type TaskGraphWatch } from "./task-graph.ts";
 import { DURABLE_TELEMETRY_SCHEMA } from "./telemetry.ts";
 import type {
 	Agent,
@@ -71,7 +71,7 @@ import type {
 } from "./types.ts";
 import { addUsageState, UsageDoc, type UsageState } from "./usage.ts";
 import { scanAll } from "./util.ts";
-import { type ConversationView, ConversationViews } from "./view.ts";
+import { ConversationViews } from "./view.ts";
 
 const SCAN_PAGE_SIZE = 256;
 
@@ -173,10 +173,6 @@ class ConversationImpl<Tool extends ToolRegistration> implements Conversation {
 	waitForIdle(context: Context): Promise<void> {
 		this.#host.tasks.resume();
 		return this.#host.tasks.waitForIdle(this.id, context);
-	}
-
-	viewState(context: Context): Promise<AttachedReplicatedState<ConversationView>> {
-		return this.#host.views.state(this.id, context);
 	}
 
 	watch(context: Context): Promise<ConversationWatch> {
@@ -362,10 +358,6 @@ class HarnessImpl<Tool extends ToolRegistration> extends SessionImpl implements 
 			if (state !== undefined) addUsageState(total, state);
 		}
 		return total;
-	}
-
-	taskGraph(context: Context): Promise<AttachedReplicatedState<TaskGraph>> {
-		return this.#taskGraph.state(context);
 	}
 
 	watchTaskGraph(context: Context): Promise<TaskGraphWatch> {

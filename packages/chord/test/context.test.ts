@@ -91,15 +91,23 @@ describe("Context", () => {
 				expect(replaced.value(key)).toBe("owner");
 				expect(replaced.abortSignal).toBe(base.abortSignal);
 				expect(withoutAbortSignal(context).telemetry).toBe(parent);
-				await traceIn(context, { name: "outer" }, async (child) => {
-					expect(child.value(key)).toBe("owner");
-					expect(child.abortSignal).toBe(context.abortSignal);
-					child.telemetry.addEvent("started");
-					await traceIn(child, { name: "inner" }, (nested) => {
-						nested.telemetry.addLink({ context: child.telemetry });
-						return 42;
-					});
-				});
+				await traceIn(
+					{ name: "outer" },
+					async (child) => {
+						expect(child.value(key)).toBe("owner");
+						expect(child.abortSignal).toBe(context.abortSignal);
+						child.telemetry.addEvent("started");
+						await traceIn(
+							{ name: "inner" },
+							(nested) => {
+								nested.telemetry.addLink({ context: child.telemetry });
+								return 42;
+							},
+							child,
+						);
+					},
+					context,
+				);
 				const [caller, outer, inner] = telemetry.getSpans();
 				expect(outer?.parentId).toBe(caller?.id);
 				expect(inner?.parentId).toBe(outer?.id);
@@ -119,15 +127,23 @@ describe("Context", () => {
 			const gate = new Promise<void>((resolve) => {
 				release = resolve;
 			});
-			const first = traceIn(context, { name: "first" }, async (child) => {
-				await gate;
-				return traceIn(child, { name: "first.child" }, () => "first");
-			});
-			const second = traceIn(context, { name: "second" }, async (child) => {
-				const result = await traceIn(child, { name: "second.child" }, () => "second");
-				release?.();
-				return result;
-			});
+			const first = traceIn(
+				{ name: "first" },
+				async (child) => {
+					await gate;
+					return traceIn({ name: "first.child" }, () => "first", child);
+				},
+				context,
+			);
+			const second = traceIn(
+				{ name: "second" },
+				async (child) => {
+					const result = await traceIn({ name: "second.child" }, () => "second", child);
+					release?.();
+					return result;
+				},
+				context,
+			);
 			expect(await Promise.all([first, second])).toEqual(["first", "second"]);
 			const spans = telemetry.getSpans();
 			for (const name of ["first", "second"]) {
@@ -136,16 +152,24 @@ describe("Context", () => {
 			}
 			const failure = { reason: "same value" };
 			await expect(
-				traceIn(context, { name: "throw" }, () => {
-					throw failure;
-				}),
+				traceIn(
+					{ name: "throw" },
+					() => {
+						throw failure;
+					},
+					context,
+				),
 			).rejects.toBe(failure);
-			await expect(traceIn(context, { name: "reject" }, () => Promise.reject(failure))).rejects.toBe(failure);
+			await expect(traceIn({ name: "reject" }, () => Promise.reject(failure), context)).rejects.toBe(failure);
 			expect(
-				await traceIn(BACKGROUND_CONTEXT, { name: "noop" }, (child) => {
-					child.telemetry.addLink({ context: parent });
-					return 42;
-				}),
+				await traceIn(
+					{ name: "noop" },
+					(child) => {
+						child.telemetry.addLink({ context: parent });
+						return 42;
+					},
+					BACKGROUND_CONTEXT,
+				),
 			).toBe(42);
 		});
 	});

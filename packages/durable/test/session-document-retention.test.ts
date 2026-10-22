@@ -10,6 +10,7 @@ import {
 	defineTool,
 	type HarnessSettings,
 	MemoryStorage,
+	type Seq,
 	type StorageWrite,
 	watchEvents,
 } from "@earendil-works/pi-durable";
@@ -146,12 +147,13 @@ describe("document cache retention", () => {
 		await session.close(context);
 	});
 
-	it("never evicts a document a watch or a document state observes, and evicts it once the last detaches", async () => {
+	it("never evicts a document a watch observes, and evicts it once the last watch detaches", async () => {
 		const { session, storage, clock, sizes } = open(1_000);
 		const conversationId = await createConversation(session);
 		await bump(session, conversationId);
 		const watch = (await session.watchDoc(CounterDoc, conversationId, context))!;
-		const state = (await session.documentState(CounterDoc, conversationId, context))!;
+		const kept = (await session.watchDoc(CounterDoc, conversationId, context))!;
+		kept.start(async () => {});
 		const seen: number[] = [];
 		watch.start(async (value) => {
 			seen.push(value?.count ?? -1);
@@ -160,8 +162,7 @@ describe("document cache retention", () => {
 		await bump(session, conversationId);
 		await settleLine(session);
 		// Still cached: a read long after its retention passed loads nothing from Storage.
-		expect(state.value?.count).toBe(2);
-		await eventually(() => seen.includes(2));
+		await eventually(() => seen.includes(2) && kept.value?.count === 2);
 		const reads = storage.documentReadCount;
 		clock.now += 1_000_000;
 		await session.commit(async (tx) => {
@@ -174,8 +175,8 @@ describe("document cache retention", () => {
 		clock.now += 1_000_000;
 		await bump(session, conversationId);
 		await settleLine(session);
-		expect(state.value?.count).toBe(3);
-		state.dispose();
+		await eventually(() => kept.value?.count === 3);
+		await kept.stop();
 		clock.now += 1_000_000;
 		await session.commit(async () => {}, context);
 		await session.commit(async (tx) => {
@@ -215,9 +216,9 @@ describe("document cache retention", () => {
 		const conversationId = await createConversation(session);
 		const writes: StorageWrite[][] = [];
 		const commit = storage.commit.bind(storage);
-		storage.commit = (batch: readonly StorageWrite[], commitContext: Context) => {
+		storage.commit = (batch: readonly StorageWrite[], adopt: (seq: Seq) => void, commitContext: Context) => {
 			writes.push([...batch]);
-			return commit(batch, commitContext);
+			return commit(batch, adopt, commitContext);
 		};
 		for (let n = 0; n < 5; n++) {
 			await bump(session, conversationId);
@@ -353,16 +354,18 @@ describe("document cache retention", () => {
 		const { session, sizes } = open(0);
 		const conversationId = await createConversation(session);
 		await bump(session, conversationId);
-		const state = (await session.documentState(CounterDoc, conversationId, context))!;
+		const watch = (await session.watchDoc(CounterDoc, conversationId, context))!;
+		watch.start(async () => {});
 		await session.commit((tx) => tx.retireDoc(CounterDoc, conversationId), context);
-		expect(state.value).toBeNull();
+		expect(await watch.closed).toEqual({ reason: "retired" });
+		expect(watch.value).toBeNull();
 		await bump(session, conversationId, 5);
 		await eventually(async () => {
 			await settleLine(session);
 			return sizes().cached === 0;
 		});
 		expect(await session.snapshot(CounterDoc, conversationId, context)).toEqual({ count: 5 });
-		state.dispose();
+		await watch.stop();
 		await session.close(context);
 	});
 
@@ -375,7 +378,7 @@ describe("document cache retention", () => {
 			return session.documentCacheSizes.cached === 0;
 		});
 		const gate = storage.holdFindDocument();
-		const attaching = session.documentState(CounterDoc, conversationId, context);
+		const attaching = session.watchDoc(CounterDoc, conversationId, context);
 		await gate.entered;
 		const closing = session.close(context);
 		gate.release();
@@ -384,14 +387,14 @@ describe("document cache retention", () => {
 		expect(session.documentCacheSizes).toMatchObject({ cached: 0, idle: 0, attached: 0 });
 	});
 
-	it("evicts on its timer without a commit, and tolerates a detach called twice", async () => {
+	it("evicts on its timer without a commit, and tolerates a stop called twice", async () => {
 		const storage = new ControlledStorage();
 		const session = new SessionImpl(storage, Date.now, () => 20);
 		const conversationId = await createConversation(session);
 		await bump(session, conversationId);
-		const state = (await session.documentState(CounterDoc, conversationId, context))!;
-		state.dispose();
-		state.dispose();
+		const watch = (await session.watchDoc(CounterDoc, conversationId, context))!;
+		await watch.stop();
+		await watch.stop();
 		const until = Date.now() + 2_000;
 		while (session.documentCacheSizes.cached > 0 && Date.now() < until)
 			await new Promise((resolve) => setTimeout(resolve, 10));
@@ -561,11 +564,11 @@ describe("document cache retention", () => {
 		});
 		const { session, sizes } = open(0);
 		await session.commit((tx) => tx.doc(V1).then(() => undefined), context);
-		const state = (await session.documentState(V1, context))!;
+		const watch = (await session.watchDoc(V1, context))!;
 		expect(await session.snapshot(V2, context)).toEqual({ count: 3, v2: true });
 		await settleLine(session);
 		expect(sizes().cached).toBe(1);
-		state.dispose();
+		await watch.stop();
 		await eventually(async () => {
 			await settleLine(session);
 			return sizes().cached === 0;

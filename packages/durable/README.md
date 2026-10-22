@@ -473,29 +473,22 @@ Work that already started keeps the code it took: a running tool call finishes u
 
 ## Watching a Conversation
 
-Everything a UI needs is committed state. `viewState()` returns the conversation's structural view as a read-only Chord state, updated after every commit that touches it:
-
-```typescript
-const view = await root.viewState(context);
-view.subscribe((value) => {
-	// value.entries: the active transcript
-	// value.docs["pi.live"]: the running generation (streamed partial, retry, deferred) and tool calls (output, details)
-	// value.docs["pi.inbox"], value.docs["pi.usage"], value.docs["pi.agent"], value.docs["pi.provider"]
-	render(value);
-});
-// later: view.dispose();
-```
-
-`watch()` delivers the same view with the exact Chord operations of each commit, one callback at a time:
+Everything a UI needs is committed state. `watch()` returns a watch of the conversation's structural view: its value at attachment, then each commit that touches it, with the exact Chord operations of that commit, one callback at a time:
 
 ```typescript
 const watch = await root.watch(context);
 render(watch.value); // the state at attachment
 watch.start(async (value, ops) => {
+	// value.entries: the active transcript
+	// value.docs["pi.live"]: the running generation (streamed partial, retry, deferred) and tool calls (output, details)
+	// value.docs["pi.inbox"], value.docs["pi.usage"], value.docs["pi.agent"], value.docs["pi.provider"]
+	render(value);
 	await send(ops); // for example to a remote client that applies them
 });
 // later: await watch.stop();
 ```
+
+Watches are Chord's `WatchHandle` (exported by `@earendil-works/chord`; Durable re-exports it). A watch ends once, and `closed` (or `stop()`) gives the reason: `stopped`, `cancelled` (its acquisition context was cancelled), `retired` (a document watch whose incarnation retired, after it delivered `[["r", null]]`), `ended` (the Harness closed), `listener_error`, or `failed` (the Harness failed). An ended watch keeps its last value and no longer references the Harness.
 
 A slow watch keeps at most 100 undelivered frames. After that, the pending frames are replaced by one frame holding the whole newest view. A client that joins late or reconnects starts from the current view; nothing is replayed.
 
@@ -709,11 +702,11 @@ decide: async (task, runtime, context) => {
 
 ## Task Graph
 
-`harness.taskGraph(context)` shows every live task of the Session as one Chord state, for a task panel or debugging. Each node has its owner edge (`owner` task, or none for a task its conversation owns), its status, whether it is `background` or abort-marked, and the conversations it owns. `harness.watchTaskGraph(context)` delivers the same value as a watch, like a conversation's `watch()`.
+`harness.watchTaskGraph(context)` watches every live task of the Session as one value, for a task panel or debugging, like a conversation's `watch()`. Each node has its owner edge (`owner` task, or none for a task its conversation owns), its status, whether it is `background` or abort-marked, and the conversations it owns.
 
 ```typescript
-const graph = await harness.taskGraph(context);
-graph.subscribe((value) => {
+const graph = await harness.watchTaskGraph(context);
+graph.start(async (value) => {
 	for (const node of Object.values(value.tasks)) {
 		const status = node.state.status === "waiting" ? `waiting on ${node.state.on.join(", ")}` : node.state.status;
 		console.log(`${node.id} ${node.kind} ${status}`, node.owner ?? `conversation ${node.conversationId}`);
@@ -746,7 +739,7 @@ await root.commit(async (tx) => {
 console.log(await harness.snapshot(Todos, root.id, context));
 ```
 
-`harness.watchDoc()` and `harness.documentState()` observe one document like the view above. `HarnessOptions.conversationCreated(tx, conversation)` runs in every commit that creates or forks a conversation, including a tool's raw `tx.createConversation()`, so every conversation gets your documents; `init` in `createConversation()`, `fork()`, and `root()` writes per-call data in the same commit. An extension's tools, sections, and hooks read their own documents through `api` or `input.read`, and treat an absent one as its default ([`11-extension-state.ts`](test/examples/11-extension-state.ts)).
+`harness.watchDoc()` watches one document like the view above. `HarnessOptions.conversationCreated(tx, conversation)` runs in every commit that creates or forks a conversation, including a tool's raw `tx.createConversation()`, so every conversation gets your documents; `init` in `createConversation()`, `fork()`, and `root()` writes per-call data in the same commit. An extension's tools, sections, and hooks read their own documents through `api` or `input.read`, and treat an absent one as its default ([`11-extension-state.ts`](test/examples/11-extension-state.ts)).
 
 ## Usage and Cost
 
@@ -798,7 +791,7 @@ await database.transaction(async (transaction) => {
 });
 ```
 
-Custom backends can run the shared conformance suite with any Vitest- or Jest-compatible runner:
+A custom backend's `commit(writes, adopt, context)` calls `adopt(seq)` once the batch is durable, synchronously and before its next commit starts, and then resolves with `seq`; a commit that fails before the batch is durable never calls it. `adopt` is the Session's in-memory adoption of the batch, so memory never shows a partial log. Custom backends can run the shared conformance suite, which checks this too, with any Vitest- or Jest-compatible runner:
 
 ```typescript
 import { registerStorageConformance } from "@earendil-works/pi-durable/testing";
@@ -820,7 +813,7 @@ The package root loads TypeBox, because the tool task validates arguments with p
 
 Three rules decide what an error does:
 
-1. **A storage error ends the Harness.** The call that hit it rejects with the error. Everything after it, and every pending wait, rejects with `SessionFailed` (its `cause` is that error); watches and event streams end with `session_failed`; running tasks get their abort signal; `onReport` gets the error once. The Harness then closes itself. Nothing is retried; a custom storage retries its own transient failures. Reopen to recover: commits are atomic, so the store is consistent, and resubmitting with the same `requestId` finds a submission that was already admitted.
+1. **A storage error ends the Harness.** The call that hit it rejects with the error. Everything after it, and every pending wait, rejects with `SessionFailed` (its `cause` is that error); watches and event streams end with `failed`; running tasks get their abort signal; `onReport` gets the error once. The Harness then closes itself. Nothing is retried; a custom storage retries its own transient failures. Reopen to recover: commits are atomic, so the store is consistent, and resubmitting with the same `requestId` finds a submission that was already admitted.
 2. **An invalid read fails only that call:** a storage read throws `StorageRequestError` for a bad cursor, an unknown conversation, or history a document does not keep. A read you cancelled fails only itself too. The exemption covers reads only: any error from `commit()` or `mintId()`, `StorageRequestError` included, ends the Harness as in rule 1.
 3. **Your code fails only its own unit:** a throwing task phase faults that task, a throwing tool gets an error result, a throwing hook is reported and skipped (`beforeTool` blocks the call), and a throwing commit callback rolls back that commit. Listeners that throw, or return a rejected promise, are reported and the others still run. The exception is a host `RegistryReader` whose `snapshot()` throws: the Harness cannot schedule without it, so it fails the Harness like a storage error.
 

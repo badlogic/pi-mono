@@ -417,10 +417,10 @@ export class IndexedDbStorage implements Storage {
 		await requestResult(factory.deleteDatabase(name));
 	}
 
-	async commit(writes: readonly StorageWrite[], _context: Context): Promise<Seq> {
+	async commit(writes: readonly StorageWrite[], adopt: (seq: Seq) => void, _context: Context): Promise<Seq> {
 		this.assertOpen();
 		const documentActions = this.prepareDocumentActions(writes);
-		return this.transaction(ALL_STORES, "readwrite", async (transaction) => {
+		const seq = await this.transaction(ALL_STORES, "readwrite", async (transaction) => {
 			const metaStore = transaction.objectStore(STORES.meta);
 			const metadata = await requestResult(metaStore.get(META_KEY) as IDBRequest<MetaRow>);
 			if (metadata === undefined) throw new Error("Durable IndexedDB metadata is missing");
@@ -437,6 +437,9 @@ export class IndexedDbStorage implements Storage {
 			await requestResult(metaStore.put({ key: META_KEY, nextId, nextSeq: seq + 1 } satisfies MetaRow));
 			return seq;
 		});
+		// The transaction completed: the batch is durable.
+		adopt(seq);
+		return seq;
 	}
 
 	async mintId<I extends Id<string>>(): Promise<I> {

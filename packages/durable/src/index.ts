@@ -1,3 +1,4 @@
+export type { WatchEnd, WatchHandle } from "@earendil-works/chord";
 export { defineDoc, defineDocFamily } from "./documents.ts";
 export {
 	AssistantEntry,
@@ -155,7 +156,6 @@ export type {
 	DocumentReader,
 	DocumentRecord,
 	DocumentSemantics,
-	DocumentState,
 	DocumentWatch,
 	Entry,
 	EntryDraft,
@@ -210,7 +210,5 @@ export type {
 	Tx,
 	TypedEntry,
 	TypedEntryDraft,
-	WatchEnd,
-	WatchHandle,
 } from "./types.ts";
 export { ROOT_CONVERSATION_ID } from "./types.ts";

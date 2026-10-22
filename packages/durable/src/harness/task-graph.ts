@@ -1,7 +1,7 @@
-import { type AttachedReplicatedState, type Context, type JsonValue, replicatedState } from "@earendil-works/chord";
+import type { Context, JsonValue, WatchHandle } from "@earendil-works/chord";
 import { BACKGROUND_CONTEXT, withoutAbortSignal } from "@earendil-works/chord/context";
 import { applyImmutable, type Op } from "@earendil-works/chord/delta";
-import { CommittedStateSource, CommittedWatch } from "../session/observation.ts";
+import { CommittedWatch } from "../session/observation.ts";
 import { contained, type SessionImpl } from "../session/session.ts";
 import type {
 	CommitPublication,
@@ -11,7 +11,6 @@ import type {
 	TaskId,
 	TaskOutcome,
 	TaskRecord,
-	WatchHandle,
 } from "../types.ts";
 import { type BlockedReason, type BlockedSubject, blockedSubject } from "./scheduler.ts";
 import { closedError, scanAll } from "./util.ts";
@@ -57,7 +56,7 @@ export type TaskGraph = {
 export type TaskGraphWatch = WatchHandle<TaskGraph>;
 
 type AnyTaskRecord = TaskRecord<JsonValue, JsonValue, JsonValue>;
-type Observer = CommittedStateSource<TaskGraph> | CommittedWatch<TaskGraph>;
+type Observer = CommittedWatch<TaskGraph>;
 type Mount = {
 	value: TaskGraph;
 	readonly observers: Set<Observer>;
@@ -98,26 +97,12 @@ export class TaskGraphView {
 			this.#closed = true;
 			for (const observer of [...(this.#mount?.observers ?? [])]) {
 				contained(
-					() => observer.closeSession(this.#session.failure),
+					() => observer.end(this.#session.failure),
 					(error) => session.report(error),
 				);
 			}
 			this.#mount = undefined;
 		});
-	}
-
-	/** A disposable read-only Chord state of the graph. */
-	async state(context: Context): Promise<AttachedReplicatedState<TaskGraph>> {
-		const { observer, detach } = await this.#attach(
-			(value, release) => new CommittedStateSource<TaskGraph>(value, release),
-			context,
-		);
-		try {
-			return replicatedState(observer, { onError: (error) => this.#session.report(error) });
-		} catch (error) {
-			detach();
-			throw error;
-		}
 	}
 
 	/** A serialized exact-frame watch of the graph; cancelling `context` stops it. */

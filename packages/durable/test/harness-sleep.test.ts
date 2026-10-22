@@ -94,7 +94,9 @@ describe("sleeping tasks", () => {
 			now: () => clock,
 			onWake: (wake) => wakes.push(wake),
 		});
-		const graph = await harness.taskGraph(context);
+		const graph = await harness.watchTaskGraph(context);
+		// A started watch keeps its value current.
+		graph.start(async () => {});
 		const id = await startNap(harness, Nap);
 		harness.resume();
 		await eventually(async () => (await stateOf(harness, id))?.status === "sleeping");
@@ -133,7 +135,7 @@ describe("sleeping tasks", () => {
 		for (let index = 1; index < wakes.length; index++) expect(wakes[index]).not.toEqual(wakes[index - 1]);
 		expect(wakes).toContainEqual({ active: true });
 		expect(wakes).toContainEqual({ active: false, at: 2_000 });
-		graph.dispose();
+		await graph.stop();
 		await harness.close(context);
 	});
 

@@ -2,6 +2,14 @@
 
 ## [Unreleased]
 
+### Breaking Changes
+
+- `traceIn(options, fn, context)` takes the context last (was `traceIn(context, options, fn)`), like the rest of the API.
+
+### Added
+
+- `WatchHandle<T>` and `WatchEnd`, the one watch API, moved from Durable: a serialized exact-frame observation with `value`, `start(listener)`, `stop()`, and `closed`. `WatchEnd` reasons are `stopped`, `cancelled`, `retired`, `ended`, `listener_error`, and `failed`.
+
 ## [1.4.0] - 2026-10-21
 
 ### Breaking Changes

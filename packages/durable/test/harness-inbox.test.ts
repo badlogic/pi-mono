@@ -731,7 +731,8 @@ describe("inbox", () => {
 		class RecordingStorage extends MemoryStorage {
 			override async commit(
 				writes: Parameters<MemoryStorage["commit"]>[0],
-				callContext: Parameters<MemoryStorage["commit"]>[1],
+				adopt: Parameters<MemoryStorage["commit"]>[1],
+				callContext: Parameters<MemoryStorage["commit"]>[2],
 			) {
 				for (const write of writes) {
 					if (write.type !== "document.change" || write.id !== inboxId) continue;
@@ -739,7 +740,7 @@ describe("inbox", () => {
 					const empty = content.kind === "base" && (content.value as InboxState).items.length === 0;
 					written.push({ kind: content.kind, empty });
 				}
-				return super.commit(writes, callContext);
+				return super.commit(writes, adopt, callContext);
 			}
 		}
 		const setup = chatSetup();

@@ -260,8 +260,10 @@ export class MemoryStorage implements Storage {
 	private nextSeq = 1;
 	private closed = false;
 
-	async commit(writes: readonly StorageWrite[], _context: Context): Promise<Seq> {
-		return this.prepareCommit(writes).apply();
+	async commit(writes: readonly StorageWrite[], adopt: (seq: Seq) => void, _context: Context): Promise<Seq> {
+		const seq = this.prepareCommit(writes).apply();
+		adopt(seq);
+		return seq;
 	}
 
 	/** Validate and detach one commit without changing observable state. */

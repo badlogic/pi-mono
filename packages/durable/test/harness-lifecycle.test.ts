@@ -78,6 +78,7 @@ async function seedRunningTask(storage: Storage): Promise<void> {
 			{ type: "conversation", value: { id: conversationId } },
 			{ type: "task", value: { ...task, abortRequested: false } },
 		],
+		() => {},
 		context,
 	);
 }
@@ -274,7 +275,7 @@ describe("Harness close", () => {
 		await harness.close(context);
 	});
 
-	it("publishes no frame to states and watches from a commit that settles during close", async () => {
+	it("publishes no frame to watches from a commit that settles during close", async () => {
 		const Notes = defineDoc<{ text: string }>({
 			checkpointWhen: () => false,
 			kind: "test.close-frames",
@@ -288,27 +289,15 @@ describe("Harness close", () => {
 		await harness.commit(async (tx) => {
 			(await tx.doc(Notes)).text = "before";
 		}, context);
-		const docState = (await harness.documentState(Notes, context))!;
 		const docWatch = (await harness.watchDoc(Notes, context))!;
-		const viewState = await root.viewState(context);
 		const viewWatch = await root.watch(context);
-		const graphState = await harness.taskGraph(context);
 		const graphWatch = await harness.watchTaskGraph(context);
 		const frames: string[] = [];
-		graphState.subscribe((_value, _context, delivery) => {
-			if (delivery.kind === "update") frames.push("graphState");
-		});
 		graphWatch.start(async () => void frames.push("graphWatch"));
-		docState.subscribe((_value, _context, delivery) => {
-			if (delivery.kind === "update") frames.push("docState");
-		});
-		viewState.subscribe((_value, _context, delivery) => {
-			if (delivery.kind === "update") frames.push("viewState");
-		});
 		docWatch.start(async () => void frames.push("docWatch"));
 		viewWatch.start(async () => void frames.push("viewWatch"));
-		const docValue = docState.value;
-		const viewValue = viewState.value;
+		const docValue = docWatch.value;
+		const viewValue = viewWatch.value;
 
 		const held = storage.holdCommits();
 		const committing = harness.commit(async (tx) => {
@@ -326,12 +315,12 @@ describe("Harness close", () => {
 		await closing;
 		await flush();
 		expect(frames).toEqual([]);
-		expect(docState.value).toBe(docValue);
-		expect(viewState.value).toBe(viewValue);
-		expect(graphState.value).toEqual({ tasks: {} });
-		expect(await graphWatch.closed).toEqual({ reason: "session_closed" });
-		expect(await docWatch.closed).toEqual({ reason: "session_closed" });
-		expect(await viewWatch.closed).toEqual({ reason: "session_closed" });
+		expect(docWatch.value).toBe(docValue);
+		expect(viewWatch.value).toBe(viewValue);
+		expect(graphWatch.value).toEqual({ tasks: {} });
+		expect(await graphWatch.closed).toEqual({ reason: "ended" });
+		expect(await docWatch.closed).toEqual({ reason: "ended" });
+		expect(await viewWatch.closed).toEqual({ reason: "ended" });
 		// The commit itself settled.
 		expect(storage.commits.at(-1)).toContainEqual(expect.objectContaining({ type: "entry" }));
 	});
@@ -385,12 +374,12 @@ describe("Harness close", () => {
 		find.release();
 		await expect(viewWatch).rejects.toThrow("cancelled");
 		// No observer kept the mount: the next observer builds a new one, and the one after that another.
-		const first = await root.viewState(context);
+		const first = await root.watch(context);
 		const firstValue = first.value;
-		first.dispose();
-		const second = await root.viewState(context);
+		await first.stop();
+		const second = await root.watch(context);
 		expect(second.value).not.toBe(firstValue);
-		second.dispose();
+		await second.stop();
 		await harness.close(context);
 	});
 
@@ -418,9 +407,7 @@ describe("Harness close", () => {
 			reset: () => root.reset(undefined, context),
 			abort: () => root.abort(context),
 			conversationIdle: () => root.waitForIdle(context),
-			viewState: () => root.viewState(context),
 			watch: () => root.watch(context),
-			taskGraph: () => harness.taskGraph(context),
 			watchTaskGraph: () => harness.watchTaskGraph(context),
 			status: () => submission.status(context),
 			wait: () => submission.wait(context),
@@ -488,13 +475,10 @@ describe("Harness close", () => {
 			snapshot: settle(harness.snapshot(Notes, context)),
 			settledWait: settle(write.wait(context)),
 			absentWatch: settle(harness.watchDoc(Absent, context)),
-			absentState: settle(harness.documentState(Absent, context)),
 			waitForTask: settle(harness.waitForTask(taskId, context)),
-			documentState: settle(harness.documentState(Notes, context)),
 			watchDoc: settle(harness.watchDoc(Notes, context)),
-			viewState: settle(root.viewState(context)),
 			watch: settle(root.watch(context)),
-			taskGraph: settle(harness.taskGraph(context)),
+			watchTaskGraph: settle(harness.watchTaskGraph(context)),
 		};
 		const closing = harness.close(context);
 		held.release();
@@ -506,13 +490,10 @@ describe("Harness close", () => {
 			snapshot: "resolved",
 			settledWait: "resolved",
 			absentWatch: "undefined",
-			absentState: "undefined",
 			waitForTask: "closed",
-			documentState: "closed",
 			watchDoc: "closed",
-			viewState: "closed",
 			watch: "closed",
-			taskGraph: "closed",
+			watchTaskGraph: "closed",
 		});
 		await closing;
 	});
@@ -551,16 +532,13 @@ describe("scheduling on a paused Harness", () => {
 		await harness.usage(context);
 		await harness.conversation(root.id, context);
 		await harness.snapshot(Notes, context);
-		(await harness.documentState(Notes, context))!.dispose();
 		await (await harness.watchDoc(Notes, context))!.stop();
 		const submission = (await harness.submission(submissionId, context))!;
 		await submission.status(context);
 		await root.agent(context);
 		await root.context(context);
 		await root.entries({}, 10, undefined, context);
-		(await root.viewState(context)).dispose();
 		await (await root.watch(context)).stop();
-		(await harness.taskGraph(context)).dispose();
 		await (await harness.watchTaskGraph(context)).stop();
 		await flush();
 		await flush();

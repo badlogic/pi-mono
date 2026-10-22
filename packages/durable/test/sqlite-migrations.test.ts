@@ -128,6 +128,7 @@ describe("durable SQLite migrations", () => {
 					},
 				},
 			],
+			() => {},
 			BACKGROUND_CONTEXT,
 		);
 		await storage.close(BACKGROUND_CONTEXT);

@@ -1,5 +1,12 @@
 import type { Context } from "@earendil-works/chord";
-import { createSession, defineTask, MemoryStorage, type StorageWrite, type TaskId } from "@earendil-works/pi-durable";
+import {
+	createSession,
+	defineTask,
+	MemoryStorage,
+	type Seq,
+	type StorageWrite,
+	type TaskId,
+} from "@earendil-works/pi-durable";
 import { describe, expect, it } from "vitest";
 import { context, flush } from "./session-support.ts";
 import { aborted, deferred, eventually, openTasks } from "./task-support.ts";
@@ -24,14 +31,14 @@ class HoldMarks extends MemoryStorage {
 	target: TaskId | undefined;
 	readonly held = deferred();
 	readonly release = deferred();
-	override async commit(writes: readonly StorageWrite[], commitContext: Context) {
+	override async commit(writes: readonly StorageWrite[], adopt: (seq: Seq) => void, commitContext: Context) {
 		if (
 			writes.some((write) => write.type === "task" && write.value.id === this.target && write.value.abortRequested)
 		) {
 			this.held.resolve();
 			await this.release.promise;
 		}
-		return super.commit(writes, commitContext);
+		return super.commit(writes, adopt, commitContext);
 	}
 }
 
@@ -128,6 +135,7 @@ describe("work below a cancelled owner", () => {
 					value: { ...failedRecord, state: { status: "terminal", outcome: failure } } as typeof failedRecord,
 				},
 			],
+			() => {},
 			context,
 		);
 		// The child's definition is missing: a restart mark would keep it waiting, a request orphans it.
@@ -209,7 +217,11 @@ describe("work below a cancelled owner", () => {
 		);
 		const record = (await storage.task(holder, context))!;
 		const completing = { status: "completing", outcome: { status: "completed", result: null } } as const;
-		await storage.commit([{ type: "task", value: { ...record, state: completing } as typeof record }], context);
+		await storage.commit(
+			[{ type: "task", value: { ...record, state: completing } as typeof record }],
+			() => {},
+			context,
+		);
 		const { harness } = await openTasks(storage, [Dormant]);
 		try {
 			harness.resume();

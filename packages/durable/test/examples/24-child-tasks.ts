@@ -128,9 +128,9 @@ console.log("The customer cancels:");
 id = await checkout(root, ["visa-5", "visa-6", "visa-7", "visa-8"]);
 harness.resume();
 await new Promise((resolve) => setTimeout(resolve, 20));
-const graph = await harness.taskGraph(context);
+const graph = await harness.watchTaskGraph(context);
 printGraph(graph.value);
-graph.dispose();
+await graph.stop();
 await harness.abortTask(id, context);
 console.log(`  checkout: ${(await harness.waitForTask(id, context)).state.outcome.status}`);
 

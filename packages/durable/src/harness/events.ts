@@ -1,4 +1,4 @@
-import type { Context, JsonValue } from "@earendil-works/chord";
+import type { Context, JsonValue, WatchEnd } from "@earendil-works/chord";
 import type { Op, Path } from "@earendil-works/chord/delta";
 import type { AssistantMessage, Message, Usage } from "@earendil-works/pi-ai";
 import { CommittedWatch } from "../session/observation.ts";
@@ -11,7 +11,6 @@ import type {
 	SubmissionId,
 	SubmissionRecord,
 	TaskId,
-	WatchEnd,
 } from "../types.ts";
 import { AgentDoc } from "./agent.ts";
 import type { InboxItem, InboxState } from "./inbox.ts";
@@ -193,7 +192,7 @@ export async function watchEvents(
 					const events = translate(conversationId, before, after, ops, publication, held);
 					if (events.length > 0) watch.advance(events, [], commitContext);
 				},
-				closeSession: (failure) => watch.closeSession(failure),
+				end: (failure) => watch.end(failure),
 			};
 		},
 		context,
