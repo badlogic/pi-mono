@@ -96,12 +96,12 @@ export async function execCommand(
 				}
 				resolve({ stdout, stderr, code: code ?? 0, killed });
 			})
-			.catch((_err) => {
+			.catch((error: Error) => {
 				if (timeoutId) clearTimeout(timeoutId);
 				if (options?.signal) {
 					options.signal.removeEventListener("abort", killProcess);
 				}
-				resolve({ stdout, stderr, code: 1, killed });
+				resolve({ stdout, stderr: stderr || error.message, code: 1, killed });
 			});
 	});
 }
