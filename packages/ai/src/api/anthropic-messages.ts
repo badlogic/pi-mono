@@ -1216,7 +1216,7 @@ function buildParams(
 	const nativeToolChanges =
 		compat.supportsMidConvoSystemMessages && compat.supportsMidConvoToolChanges && initialTools.length > 0;
 	const thinkingDisabled =
-		model.reasoning && options?.thinkingEnabled === false && model.thinkingLevelMap?.off !== null;
+		model.reasoning && options?.thinkingEnabled === false && model.thinkingLevelMap != null && model.thinkingLevelMap.off !== null;
 	// Effort cannot change between messages while thinking is disabled, so "off" sends no effort markers.
 	const effortMessages = model.compat?.supportsMidConvoEffort === true && !thinkingDisabled;
 	const converted = convertMessages(

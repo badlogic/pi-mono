@@ -244,7 +244,7 @@ function buildParams(
 				summary: options?.reasoningSummary || "auto",
 			};
 			params.include = ["reasoning.encrypted_content"];
-		} else if (model.thinkingLevelMap?.off !== null) {
+		} else if (model.thinkingLevelMap != null && model.thinkingLevelMap.off !== null) {
 			params.reasoning = {
 				effort: (model.thinkingLevelMap?.off ?? "none") as NonNullable<typeof params.reasoning>["effort"],
 			};

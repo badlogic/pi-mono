@@ -850,7 +850,7 @@ function buildParams(
 		params.store = false;
 	}
 
-	if (options?.maxTokens) {
+	if (options?.maxTokens && options.maxTokens !== model.maxTokens) {
 		if (compat.maxTokensField === "max_tokens") {
 			// Deprecated by OpenAI, but some OpenAI-compatible providers only accept max_tokens.
 			(params as { max_tokens?: number }).max_tokens = options.maxTokens;
@@ -939,7 +939,7 @@ function buildParams(
 	} else if (compat.thinkingFormat === "deepseek" && model.reasoning) {
 		if (options?.reasoningEffort) {
 			(params as any).thinking = { type: "enabled" };
-		} else if (model.thinkingLevelMap?.off !== null) {
+		} else if (model.thinkingLevelMap != null && model.thinkingLevelMap.off !== null) {
 			(params as any).thinking = { type: "disabled" };
 		}
 		if (options?.reasoningEffort && compat.supportsReasoningEffort) {
@@ -953,7 +953,7 @@ function buildParams(
 			openRouterParams.reasoning = {
 				effort: model.thinkingLevelMap?.[options.reasoningEffort] ?? options.reasoningEffort,
 			};
-		} else if (model.thinkingLevelMap?.off !== null) {
+		} else if (model.thinkingLevelMap != null && model.thinkingLevelMap.off !== null) {
 			openRouterParams.reasoning = { effort: model.thinkingLevelMap?.off ?? "none" };
 		}
 	} else if (compat.thinkingFormat === "ant-ling" && model.reasoning && options?.reasoningEffort) {
@@ -974,7 +974,7 @@ function buildParams(
 		const stringThinkingParams = params as typeof params & { thinking?: string };
 		if (options?.reasoningEffort) {
 			stringThinkingParams.thinking = model.thinkingLevelMap?.[options.reasoningEffort] ?? options.reasoningEffort;
-		} else if (model.thinkingLevelMap?.off !== null) {
+		} else if (model.thinkingLevelMap != null && model.thinkingLevelMap.off !== null) {
 			stringThinkingParams.thinking = model.thinkingLevelMap?.off ?? "none";
 		}
 	} else if (options?.reasoningEffort && model.reasoning && compat.supportsReasoningEffort) {

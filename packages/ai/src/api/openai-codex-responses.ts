@@ -614,7 +614,7 @@ function buildRequestBody(
 				summary: options.reasoningSummary ?? "auto",
 			};
 		}
-	} else if (model.reasoning && model.thinkingLevelMap?.off !== null) {
+	} else if (model.reasoning && model.thinkingLevelMap != null && model.thinkingLevelMap.off !== null) {
 		body.reasoning = { effort: model.thinkingLevelMap?.off ?? "none" };
 	}
 
