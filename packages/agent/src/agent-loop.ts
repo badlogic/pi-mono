@@ -166,6 +166,298 @@ function createAgentStream(): EventStream<AgentEvent, AgentMessage[]> {
 	);
 }
 
+interface SingleTurnParams extends TurnModelCallParams {
+	// A one-shot step leaves queued messages for the caller to admit.
+	fetchNextPending: boolean;
+}
+
+interface SingleTurnOutcome {
+	// True once agent_end has been emitted (an error/abort or a stop decision); the
+	// caller must return without emitting agent_end again.
+	done: boolean;
+	hasMoreToolCalls: boolean;
+	// The app asked for another provider request after this turn even if nothing else schedules one.
+	continueRequested: boolean;
+	context: AgentContext;
+	config: AgentLoopConfig;
+	pendingMessages: AgentMessage[];
+	// What this turn produced, for the caller to hand to the next one as `previousTurn`. Absent
+	// when the turn ended on an error or an abort, which is not a turn to prepare from.
+	completedTurn?: PrepareNextTurnContext;
+}
+
+interface TurnModelCallParams {
+	context: AgentContext;
+	config: AgentLoopConfig;
+	newMessages: AgentMessage[];
+	pendingMessages: AgentMessage[];
+	// The turn this one follows, when it follows one. Preparation belongs to the turn that comes
+	// after, not to the one that just ended: it can be long-running (a compaction), and running it
+	// at the end would make the last turn of a run pay for a turn nobody asked for and would hand
+	// the stop decision a context it never saw.
+	previousTurn?: PrepareNextTurnContext;
+	emitTurnStart: boolean;
+	signal: AbortSignal | undefined;
+	emit: AgentEventSink;
+	streamFunction: StreamFn;
+}
+
+interface TurnModelCallOutcome {
+	message: AssistantMessage;
+	/** The calls the model asked for, in the order it asked for them. */
+	toolCalls: AgentToolCall[];
+	/**
+	 * The response ended the run on its own (an error or an abort), and agent_end has
+	 * been emitted. Nothing may be dispatched and nothing may be sealed.
+	 */
+	ended: boolean;
+	context: AgentContext;
+	/** Preparation can replace the model or the thinking level, so the rest of the step uses this. */
+	config: AgentLoopConfig;
+}
+
+interface TurnToolCallParams {
+	context: AgentContext;
+	/** The message that asked for this call. Its stop reason decides whether the call may run. */
+	assistantMessage: AssistantMessage;
+	toolCall: AgentToolCall;
+	config: AgentLoopConfig;
+	signal: AbortSignal | undefined;
+	emit: AgentEventSink;
+}
+
+interface TurnToolCallOutcome {
+	message: ToolResultMessage;
+	/** The tool asked for the run to stop. A batch ends the turn only when every call does. */
+	terminate: boolean;
+}
+
+interface SealTurnStepParams {
+	context: AgentContext;
+	config: AgentLoopConfig;
+	newMessages: AgentMessage[];
+	/** The message this step opened. */
+	message: AssistantMessage;
+	/** The step's settled calls, in the order the model asked for them. */
+	toolCalls: ReadonlyArray<TurnToolCallOutcome>;
+	fetchNextPending: boolean;
+	signal: AbortSignal | undefined;
+	emit: AgentEventSink;
+}
+
+/**
+ * The model call of one step: inject any pending messages and stream a single assistant
+ * response, stopping before the tools it asks for. The caller runs them.
+ */
+async function runTurnModelCall(params: TurnModelCallParams): Promise<TurnModelCallOutcome> {
+	const { newMessages, signal, emit, streamFunction: streamFn } = params;
+	let context = params.context;
+	let config = params.config;
+	let pendingMessages = params.pendingMessages;
+
+	let preparedMessages: AgentMessage[] = [];
+	if (params.previousTurn) {
+		const nextTurnSnapshot = await config.prepareNextTurn?.(params.previousTurn);
+		if (nextTurnSnapshot) {
+			context = nextTurnSnapshot.context ?? context;
+			preparedMessages = nextTurnSnapshot.messages ?? [];
+			config = {
+				...config,
+				model: nextTurnSnapshot.model ?? config.model,
+				reasoning:
+					nextTurnSnapshot.thinkingLevel === undefined
+						? config.reasoning
+						: nextTurnSnapshot.thinkingLevel === "off"
+							? undefined
+							: nextTurnSnapshot.thinkingLevel,
+			};
+		}
+		// Preparation can be long-running (for example, compaction). Pick up steering
+		// queued while it ran. Only poll again if the earlier poll returned nothing;
+		// otherwise one-at-a-time mode would deliver two messages in this turn.
+		if (pendingMessages.length === 0) {
+			pendingMessages = (await config.getSteeringMessages?.()) || [];
+		}
+	}
+
+	if (params.emitTurnStart) {
+		await emit({ type: "turn_start" });
+	}
+
+	// Process prepared and queued messages before the next assistant response.
+	for (const message of declareToolChanges(context, [...preparedMessages, ...pendingMessages])) {
+		await emit({ type: "message_start", message });
+		await emit({ type: "message_end", message });
+		context.messages.push(message);
+		newMessages.push(message);
+	}
+
+	const requestUpdate = await config.prepareRequest?.(
+		{
+			context,
+			model: config.model,
+			thinkingLevel: config.reasoning ?? "off",
+		},
+		signal,
+	);
+	if (requestUpdate) {
+		context = requestUpdate.context ?? context;
+		config = {
+			...config,
+			model: requestUpdate.model ?? config.model,
+			reasoning:
+				requestUpdate.thinkingLevel === undefined
+					? config.reasoning
+					: requestUpdate.thinkingLevel === "off"
+						? undefined
+						: requestUpdate.thinkingLevel,
+		};
+	}
+
+	const message = await streamAssistantResponse(context, config, signal, emit, streamFn);
+	newMessages.push(message);
+
+	if (message.stopReason === "error" || message.stopReason === "aborted") {
+		await config.finishTurn?.({ message, toolResults: [], context, newMessages }, signal);
+		await emit({ type: "turn_end", message, toolResults: [] });
+		await emit({ type: "agent_end", messages: newMessages });
+		return { message, toolCalls: [], ended: true, context, config };
+	}
+
+	return {
+		message,
+		toolCalls: message.content.filter((c) => c.type === "toolCall"),
+		ended: false,
+		context,
+		config,
+	};
+}
+
+/**
+ * One recorded tool call, start to finish. It reports its result rather than entering it in
+ * the transcript, because the results of a step go in together, in the order the model asked
+ * for them, and a caller running calls concurrently settles them out of order.
+ */
+async function runTurnToolCall(params: TurnToolCallParams): Promise<TurnToolCallOutcome> {
+	const { context, assistantMessage, toolCall, config, signal, emit } = params;
+
+	await emit({
+		type: "tool_execution_start",
+		toolCallId: toolCall.id,
+		toolName: toolCall.name,
+		args: toolCall.arguments,
+	});
+
+	// A "length" stop means the output was cut off by the token limit, so every tool call in
+	// the message may carry truncated arguments. Fail it instead of executing a borked call.
+	const finalized =
+		assistantMessage.stopReason === "length"
+			? truncatedToolCallOutcome(toolCall)
+			: await settleToolCall(context, assistantMessage, toolCall, config, signal, emit);
+
+	await emitToolExecutionEnd(finalized, emit);
+	return toTurnToolCallOutcome(finalized);
+}
+
+/**
+ * Close a step whose calls have settled: record their results, then decide whether the turn
+ * keeps going. A step that ran no tools seals the same way.
+ *
+ * Results reach the transcript here, together and in the model's order, not as each call
+ * ends. A run that dies part way through a batch therefore loses results that had settled,
+ * and a resumed turn reports those calls as unknown outcomes rather than their results.
+ */
+async function sealTurnStep(params: SealTurnStepParams): Promise<SingleTurnOutcome> {
+	const { newMessages, signal, emit, message } = params;
+	const currentContext = params.context;
+	const config = params.config;
+
+	const toolResults: ToolResultMessage[] = [];
+	for (const call of params.toolCalls) {
+		toolResults.push(call.message);
+		await emitToolResultMessage(call.message, emit);
+		currentContext.messages.push(call.message);
+		newMessages.push(call.message);
+	}
+	const hasMoreToolCalls = params.toolCalls.length > 0 && !shouldTerminateToolBatch(params.toolCalls);
+
+	const completedTurn = {
+		message,
+		toolResults,
+		context: currentContext,
+		newMessages,
+	};
+	const decision = await config.finishTurn?.(completedTurn, signal);
+	await emit({ type: "turn_end", message, toolResults });
+
+	if (decision?.action === "end") {
+		await emit({ type: "agent_end", messages: newMessages });
+		return {
+			done: true,
+			hasMoreToolCalls,
+			continueRequested: false,
+			context: currentContext,
+			config,
+			pendingMessages: [],
+			completedTurn,
+		};
+	}
+
+	const steering = params.fetchNextPending ? await config.getSteeringMessages?.() : undefined;
+	return {
+		done: false,
+		hasMoreToolCalls,
+		continueRequested: decision?.action === "continue",
+		context: currentContext,
+		config,
+		pendingMessages: steering || [],
+		completedTurn,
+	};
+}
+
+/**
+ * One iteration of the agent loop: inject any pending messages, stream a single
+ * assistant response, run the tools it requests, and report whether the loop
+ * should keep going.
+ *
+ * Three pieces, each of which stands on its own: the model call, one tool call, the seal.
+ */
+async function runSingleTurn(params: SingleTurnParams): Promise<SingleTurnOutcome> {
+	const modelCall = await runTurnModelCall(params);
+	if (modelCall.ended) {
+		return {
+			done: true,
+			hasMoreToolCalls: false,
+			continueRequested: false,
+			context: modelCall.context,
+			config: modelCall.config,
+			pendingMessages: [],
+		};
+	}
+
+	// The model call's config, not the one handed in: preparing the turn can have replaced the
+	// model or the thinking level, and the rest of the step belongs to the turn that ran.
+	const toolCalls = await dispatchToolCalls(
+		modelCall.context,
+		modelCall.message,
+		modelCall.toolCalls,
+		modelCall.config,
+		params.signal,
+		params.emit,
+	);
+
+	return sealTurnStep({
+		context: modelCall.context,
+		config: modelCall.config,
+		newMessages: params.newMessages,
+		message: modelCall.message,
+		toolCalls,
+		fetchNextPending: params.fetchNextPending,
+		signal: params.signal,
+		emit: params.emit,
+	});
+}
+
 /**
  * Main loop logic shared by agentLoop and agentLoopContinue.
  */
@@ -181,6 +473,8 @@ async function runLoop(
 	let config = initialConfig;
 	let lastCompletedTurn: PrepareNextTurnContext | undefined;
 	let explicitContinuation = false;
+	// The run entry point already emitted turn_start for the first one.
+	let firstTurn = true;
 	// Check for steering messages at start (user may have typed while waiting)
 	let pendingMessages: AgentMessage[] = (await config.getSteeringMessages?.()) || [];
 
@@ -190,121 +484,28 @@ async function runLoop(
 
 		// Inner loop: process tool calls and steering messages
 		while (hasMoreToolCalls || pendingMessages.length > 0) {
-			let preparedMessages: AgentMessage[] = [];
-			if (lastCompletedTurn) {
-				const nextTurnSnapshot = await config.prepareNextTurn?.(lastCompletedTurn);
-				if (nextTurnSnapshot) {
-					currentContext = nextTurnSnapshot.context ?? currentContext;
-					preparedMessages = nextTurnSnapshot.messages ?? [];
-					config = {
-						...config,
-						model: nextTurnSnapshot.model ?? config.model,
-						reasoning:
-							nextTurnSnapshot.thinkingLevel === undefined
-								? config.reasoning
-								: nextTurnSnapshot.thinkingLevel === "off"
-									? undefined
-									: nextTurnSnapshot.thinkingLevel,
-					};
-				}
-				// Preparation can be long-running (for example, compaction). Pick up steering
-				// queued while it ran. Only poll again if the earlier poll returned nothing;
-				// otherwise one-at-a-time mode would deliver two messages in this turn.
-				if (pendingMessages.length === 0) {
-					pendingMessages = (await config.getSteeringMessages?.()) || [];
-				}
-				await emit({ type: "turn_start" });
-			}
-
-			// Process prepared and queued messages before the next assistant response.
-			for (const message of declareToolChanges(currentContext, [...preparedMessages, ...pendingMessages])) {
-				await emit({ type: "message_start", message });
-				await emit({ type: "message_end", message });
-				currentContext.messages.push(message);
-				newMessages.push(message);
-			}
-			pendingMessages = [];
-
-			const requestUpdate = await config.prepareRequest?.(
-				{
-					context: currentContext,
-					model: config.model,
-					thinkingLevel: config.reasoning ?? "off",
-				},
-				signal,
-			);
-			if (requestUpdate) {
-				currentContext = requestUpdate.context ?? currentContext;
-				config = {
-					...config,
-					model: requestUpdate.model ?? config.model,
-					reasoning:
-						requestUpdate.thinkingLevel === undefined
-							? config.reasoning
-							: requestUpdate.thinkingLevel === "off"
-								? undefined
-								: requestUpdate.thinkingLevel,
-				};
-			}
-
-			// Stream assistant response
-			const message = await streamAssistantResponse(currentContext, config, signal, emit, streamFunction);
-			newMessages.push(message);
-
-			if (message.stopReason === "error" || message.stopReason === "aborted") {
-				lastCompletedTurn = {
-					message,
-					toolResults: [],
-					context: currentContext,
-					newMessages,
-				};
-				await config.finishTurn?.(lastCompletedTurn, signal);
-				await emit({ type: "turn_end", message, toolResults: [] });
-				await emit({ type: "agent_end", messages: newMessages });
-				return;
-			}
-
-			// Check for tool calls
-			const toolCalls = message.content.filter((c) => c.type === "toolCall");
-
-			const toolResults: ToolResultMessage[] = [];
-			hasMoreToolCalls = false;
-			if (toolCalls.length > 0) {
-				// A "length" stop means the output was cut off by the token limit, so
-				// every tool call in the message may carry truncated arguments. Fail
-				// them all instead of executing potentially borked calls.
-				const executedToolBatch =
-					message.stopReason === "length"
-						? await failToolCallsFromTruncatedMessage(toolCalls, emit)
-						: await executeToolCalls(currentContext, message, config, signal, emit);
-				toolResults.push(...executedToolBatch.messages);
-				hasMoreToolCalls = !executedToolBatch.terminate;
-
-				for (const result of toolResults) {
-					currentContext.messages.push(result);
-					newMessages.push(result);
-				}
-			}
-
-			lastCompletedTurn = {
-				message,
-				toolResults,
+			const outcome = await runSingleTurn({
 				context: currentContext,
+				config,
 				newMessages,
-			};
-			const decision = await config.finishTurn?.(lastCompletedTurn, signal);
-			await emit({ type: "turn_end", message, toolResults });
-
-			if (decision?.action === "end") {
-				await emit({ type: "agent_end", messages: newMessages });
+				pendingMessages,
+				previousTurn: lastCompletedTurn,
+				emitTurnStart: !firstTurn,
+				fetchNextPending: true,
+				signal,
+				emit,
+				streamFunction,
+			});
+			firstTurn = false;
+			if (outcome.done) {
 				return;
 			}
-
-			explicitContinuation = decision?.action === "continue";
-			pendingMessages = (await config.getSteeringMessages?.()) || [];
-			if (hasMoreToolCalls || pendingMessages.length > 0) {
-				explicitContinuation = false;
-			}
+			lastCompletedTurn = outcome.completedTurn;
+			hasMoreToolCalls = outcome.hasMoreToolCalls;
+			currentContext = outcome.context;
+			config = outcome.config;
+			pendingMessages = outcome.pendingMessages;
+			explicitContinuation = outcome.continueRequested && !hasMoreToolCalls && pendingMessages.length === 0;
 		}
 
 		// Agent would stop here. Check for follow-up messages.
@@ -479,130 +680,117 @@ async function streamAssistantResponse(
 }
 
 /**
- * Fail all tool calls from an assistant message that was truncated by the
- * output token limit. Streamed tool-call arguments are finalized with a
- * best-effort JSON salvage parser, so a truncated message can yield tool calls
- * whose arguments parse and validate but are silently incomplete. None of them
- * are safe to execute; report each as an error so the model can re-issue them.
+ * The result a call gets when the response that asked for it was cut off by the output
+ * token limit. Streamed tool-call arguments are finalized with a best-effort JSON salvage
+ * parser, so a truncated message can yield tool calls whose arguments parse and validate but
+ * are silently incomplete. None of them are safe to execute; report each as an error so the
+ * model can re-issue it.
  */
-async function failToolCallsFromTruncatedMessage(
-	toolCalls: AgentToolCall[],
+function truncatedToolCallOutcome(toolCall: AgentToolCall): FinalizedToolCallOutcome {
+	return {
+		toolCall,
+		result: createErrorToolResult(
+			`Tool call "${toolCall.name}" was not executed: the response hit the output token limit, so its arguments may be truncated. Re-issue the tool call with complete arguments.`,
+		),
+		isError: true,
+	};
+}
+
+/** Prepare, run and finalize one call, without deciding anything about the batch it is in. */
+async function settleToolCall(
+	currentContext: AgentContext,
+	assistantMessage: AssistantMessage,
+	toolCall: AgentToolCall,
+	config: AgentLoopConfig,
+	signal: AbortSignal | undefined,
 	emit: AgentEventSink,
-): Promise<ExecutedToolCallBatch> {
-	const messages: ToolResultMessage[] = [];
-	for (const toolCall of toolCalls) {
-		await emit({
-			type: "tool_execution_start",
-			toolCallId: toolCall.id,
-			toolName: toolCall.name,
-			args: toolCall.arguments,
-		});
-		const finalized: FinalizedToolCallOutcome = {
-			toolCall,
-			result: createErrorToolResult(
-				`Tool call "${toolCall.name}" was not executed: the response hit the output token limit, so its arguments may be truncated. Re-issue the tool call with complete arguments.`,
-			),
-			isError: true,
-		};
-		await emitToolExecutionEnd(finalized, emit);
-		const toolResultMessage = createToolResultMessage(finalized);
-		await emitToolResultMessage(toolResultMessage, emit);
-		messages.push(toolResultMessage);
+): Promise<FinalizedToolCallOutcome> {
+	const preparation = await prepareToolCall(currentContext, assistantMessage, toolCall, config, signal);
+	if (preparation.kind === "immediate") {
+		return { toolCall, result: preparation.result, isError: preparation.isError };
 	}
-	return { messages, terminate: false };
+	const executed = await executePreparedToolCall(preparation, signal, emitToolExecutionUpdate(toolCall, emit));
+	return finalizeExecutedToolCall(currentContext, assistantMessage, preparation, executed, config, signal);
+}
+
+function toTurnToolCallOutcome(finalized: FinalizedToolCallOutcome): TurnToolCallOutcome {
+	return {
+		message: createToolResultMessage(finalized),
+		terminate: finalized.result.terminate === true,
+	};
 }
 
 /**
- * Execute tool calls from an assistant message.
+ * Run the calls of one step and report them in the order the model asked for them.
  */
-async function executeToolCalls(
-	currentContext: AgentContext,
-	assistantMessage: AssistantMessage,
-	config: AgentLoopConfig,
-	signal: AbortSignal | undefined,
-	emit: AgentEventSink,
-): Promise<ExecutedToolCallBatch> {
-	const toolCalls = assistantMessage.content.filter((c) => c.type === "toolCall");
-	const hasSequentialToolCall = toolCalls.some(
-		(tc) => currentContext.tools?.find((t) => t.name === tc.name)?.executionMode === "sequential",
-	);
-	if (config.toolExecution === "sequential" || hasSequentialToolCall) {
-		return executeToolCallsSequential(currentContext, assistantMessage, toolCalls, config, signal, emit);
-	}
-	return executeToolCallsParallel(currentContext, assistantMessage, toolCalls, config, signal, emit);
-}
-
-type ExecutedToolCallBatch = {
-	messages: ToolResultMessage[];
-	terminate: boolean;
-};
-
-async function executeToolCallsSequential(
+async function dispatchToolCalls(
 	currentContext: AgentContext,
 	assistantMessage: AssistantMessage,
 	toolCalls: AgentToolCall[],
 	config: AgentLoopConfig,
 	signal: AbortSignal | undefined,
 	emit: AgentEventSink,
-): Promise<ExecutedToolCallBatch> {
-	const finalizedCalls: FinalizedToolCallOutcome[] = [];
-	const messages: ToolResultMessage[] = [];
+): Promise<TurnToolCallOutcome[]> {
+	if (toolCalls.length === 0) {
+		return [];
+	}
+	if (mustRunToolCallsInOrder(currentContext, config, assistantMessage, toolCalls)) {
+		return dispatchToolCallsSequential(currentContext, assistantMessage, toolCalls, config, signal, emit);
+	}
+	return dispatchToolCallsParallel(currentContext, assistantMessage, toolCalls, config, signal, emit);
+}
+
+/** Whether the calls of one step have to run one at a time. */
+function mustRunToolCallsInOrder(
+	context: AgentContext,
+	config: AgentLoopConfig,
+	assistantMessage: AssistantMessage,
+	toolCalls: ReadonlyArray<AgentToolCall>,
+): boolean {
+	// A truncated response runs nothing, so there is no execution to overlap.
+	if (assistantMessage.stopReason === "length" || config.toolExecution === "sequential") {
+		return true;
+	}
+	return toolCalls.some((tc) => context.tools?.find((t) => t.name === tc.name)?.executionMode === "sequential");
+}
+
+async function dispatchToolCallsSequential(
+	currentContext: AgentContext,
+	assistantMessage: AssistantMessage,
+	toolCalls: AgentToolCall[],
+	config: AgentLoopConfig,
+	signal: AbortSignal | undefined,
+	emit: AgentEventSink,
+): Promise<TurnToolCallOutcome[]> {
+	const outcomes: TurnToolCallOutcome[] = [];
 
 	for (const toolCall of toolCalls) {
-		await emit({
-			type: "tool_execution_start",
-			toolCallId: toolCall.id,
-			toolName: toolCall.name,
-			args: toolCall.arguments,
-		});
-
-		const preparation = await prepareToolCall(currentContext, assistantMessage, toolCall, config, signal);
-		let finalized: FinalizedToolCallOutcome;
-		if (preparation.kind === "immediate") {
-			finalized = {
-				toolCall,
-				result: preparation.result,
-				isError: preparation.isError,
-			};
-		} else {
-			const executed = await executePreparedToolCall(preparation, signal, emitToolExecutionUpdate(toolCall, emit));
-			finalized = await finalizeExecutedToolCall(
-				currentContext,
-				assistantMessage,
-				preparation,
-				executed,
-				config,
-				signal,
-			);
-		}
-
-		await emitToolExecutionEnd(finalized, emit);
-		const toolResultMessage = createToolResultMessage(finalized);
-		await emitToolResultMessage(toolResultMessage, emit);
-		finalizedCalls.push(finalized);
-		messages.push(toolResultMessage);
-
-		if (signal?.aborted) {
+		outcomes.push(
+			await runTurnToolCall({ context: currentContext, assistantMessage, toolCall, config, signal, emit }),
+		);
+		// An abort leaves the rest of the batch unsettled on purpose: the calls are still in the
+		// transcript, and settling them here would answer for tools that never ran. A truncated
+		// response runs no tool, so each of its calls gets its failure regardless.
+		if (signal?.aborted && assistantMessage.stopReason !== "length") {
 			break;
 		}
 	}
 
-	return {
-		messages,
-		terminate: shouldTerminateToolBatch(finalizedCalls),
-	};
+	return outcomes;
 }
 
-async function executeToolCallsParallel(
+async function dispatchToolCallsParallel(
 	currentContext: AgentContext,
 	assistantMessage: AssistantMessage,
 	toolCalls: AgentToolCall[],
 	config: AgentLoopConfig,
 	signal: AbortSignal | undefined,
 	emit: AgentEventSink,
-): Promise<ExecutedToolCallBatch> {
+): Promise<TurnToolCallOutcome[]> {
 	const finalizedCalls: FinalizedToolCallEntry[] = [];
 
+	// Preparation stays in the model's order, because a permission ask is a preparation and
+	// asking about four tools at once is not a question anyone can answer. Only execution overlaps.
 	for (const toolCall of toolCalls) {
 		await emit({
 			type: "tool_execution_start",
@@ -656,17 +844,7 @@ async function executeToolCallsParallel(
 	const orderedFinalizedCalls = await Promise.all(
 		finalizedCalls.map((entry) => (typeof entry === "function" ? entry() : Promise.resolve(entry))),
 	);
-	const messages: ToolResultMessage[] = [];
-	for (const finalized of orderedFinalizedCalls) {
-		const toolResultMessage = createToolResultMessage(finalized);
-		await emitToolResultMessage(toolResultMessage, emit);
-		messages.push(toolResultMessage);
-	}
-
-	return {
-		messages,
-		terminate: shouldTerminateToolBatch(orderedFinalizedCalls),
-	};
+	return orderedFinalizedCalls.map(toTurnToolCallOutcome);
 }
 
 type PreparedToolCall = {
@@ -697,8 +875,8 @@ type ToolUpdateSink = (partialResult: AgentToolResult<any>) => Promise<void> | v
 
 type FinalizedToolCallEntry = FinalizedToolCallOutcome | (() => Promise<FinalizedToolCallOutcome>);
 
-function shouldTerminateToolBatch(finalizedCalls: FinalizedToolCallOutcome[]): boolean {
-	return finalizedCalls.length > 0 && finalizedCalls.every((finalized) => finalized.result.terminate === true);
+function shouldTerminateToolBatch(calls: ReadonlyArray<{ terminate: boolean }>): boolean {
+	return calls.length > 0 && calls.every((call) => call.terminate);
 }
 
 function prepareToolCallArguments(tool: AgentTool<any>, toolCall: AgentToolCall): AgentToolCall {
