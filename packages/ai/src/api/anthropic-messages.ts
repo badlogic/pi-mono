@@ -1300,7 +1300,10 @@ function buildParams(
 			display: options?.thinkingDisplay ?? "summarized",
 			block_binding: { prefix_mismatch_behavior: "drop_block" },
 		};
-		params.output_config = { effort: "high" };
+		// Effort markers set the level for every reply. The top-level effort is part of the cached
+		// prompt, so it stays fixed. It is "low" because organizations can cap effort and reject
+		// requests containing any level above the cap.
+		params.output_config = { effort: "low" };
 	} else if (model.reasoning && options?.thinkingEnabled) {
 		// Default to "summarized" so Opus 4.7 and Mythos Preview behave like
 		// older Claude 4 models (whose API default is also "summarized").
