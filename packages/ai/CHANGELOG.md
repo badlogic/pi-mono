@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Added
+
+- Added Cloudflare AI Gateway custom domains (`CLOUDFLARE_GATEWAY_DOMAIN`) and Cloudflare Access authentication (`CLOUDFLARE_ACCESS_CLIENT_ID` + `CLOUDFLARE_ACCESS_CLIENT_SECRET`, or `CLOUDFLARE_ACCESS_TOKEN`). With a custom domain, `CLOUDFLARE_API_KEY`, `CLOUDFLARE_ACCOUNT_ID`, and `CLOUDFLARE_GATEWAY_ID` are optional ([#10627](https://github.com/earendil-works/pi/issues/10627))
+
 ### Fixed
 
 - Fixed Claude models that accept mid-conversation system messages rejecting a session with a 400 (`role 'system' must precede an 'assistant' message`) when a system update was followed by an assistant reply with nothing to send to Anthropic, such as an empty reply or another model's reasoning-only reply ([#11091](https://github.com/earendil-works/pi/issues/11091))
