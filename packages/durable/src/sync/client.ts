@@ -67,7 +67,13 @@ export type UploadResult =
 	 * the host renames the copy to a new session (forked from this one at `at`) and uploads it there, and the session
 	 * itself restores into a fresh storage.
 	 */
-	| { readonly type: "diverged"; readonly at: Seq };
+	| { readonly type: "diverged"; readonly at: Seq }
+	/**
+	 * The copy lost commits it had uploaded, for example to a power loss: its head is below `syncedHead`. Its next
+	 * commits would reuse their sequences, so nothing is uploaded. Pull what it lost before the copy commits again; a pull
+	 * replays from the local head.
+	 */
+	| { readonly type: "behind"; readonly head: Seq | undefined; readonly syncedHead: Seq };
 
 /**
  * Upload what this copy committed since it last shared the remote's history. Every device continues a session as its
@@ -87,6 +93,9 @@ export async function uploadSession(options: {
 	const { sessionId, device, source, store, state, context } = options;
 	let synced = sharedHead(await state.get(sessionId, context), await source.head(context));
 	while (true) {
+		// Read again on every pass: a slot this device already holds may end past what the copy still has.
+		const head = await source.head(context);
+		if (synced !== undefined && (head ?? LOG_START) < synced) return { type: "behind", head, syncedHead: synced };
 		const records = await readLog(source, synced, context);
 		if (records.length === 0) return { type: "idle" };
 		const after = synced ?? LOG_START;

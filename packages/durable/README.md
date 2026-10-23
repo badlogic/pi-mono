@@ -826,7 +826,7 @@ if (result.type === "diverged") forkLocalCopy(sessionId, result.at); // host: re
 await pullSession({ sessionId, store, storage, state, context }); // catch up, resume, or restore into an empty storage
 ```
 
-Pulling refuses a copy with commits it has not uploaded (`UnsyncedCommitsError`): upload first. A pull needs the
+Pulling refuses a copy with commits it has not uploaded (`UnsyncedCommitsError`): upload first. Uploading refuses a copy that lost commits it had uploaded, as to a power loss (`behind`): its next commits would reuse their sequences, so it pulls them back first. A pull needs the
 Harness closed; a device that falls behind while its Harness is open closes it, pulls, and reopens, or commits first and
 diverges on its next upload. `FlushScheduler` and `isUrgentCommit()` decide when to upload.
 

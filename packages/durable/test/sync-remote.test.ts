@@ -220,6 +220,25 @@ describe("syncing a session between devices", () => {
 		expect(await reads(replica.storage)).toEqual(await reads(laptop.storage));
 	});
 
+	it("refuses to upload a copy that lost uploaded commits, and pulls them back", async () => {
+		const store = await remote();
+		const batches = seedBatches();
+		const laptop = device("laptop", store);
+		await commitAll(laptop.storage, batches.slice(0, 7));
+		await laptop.upload();
+		// A power loss kept only the first 5 commits; the sync state still says 7.
+		const survived = new MemoryStorage();
+		await commitAll(survived, batches.slice(0, 5));
+		const upload = () =>
+			uploadSession({ sessionId: SESSION, device: "laptop", source: survived, store, state: laptop.state, context });
+		expect(await upload()).toEqual({ type: "behind", head: 5, syncedHead: 7 });
+
+		await pullSession({ sessionId: SESSION, store, storage: survived, state: laptop.state, context });
+		expect(await reads(survived)).toEqual(await reads(laptop.storage));
+		await commitAll(survived, batches.slice(7));
+		expect(await upload()).toEqual({ type: "uploaded", head: 10 });
+	});
+
 	it("resumes a pull that stopped inside a batch", async () => {
 		const store = await remote();
 		const laptop = device("laptop", store);
