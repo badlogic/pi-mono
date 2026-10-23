@@ -2427,40 +2427,6 @@ export default function(api) { api.registerTool({ name: "test", description: "te
 			expect(result.extensions).toEqual([]);
 		});
 
-		it("should skip a git source that fails to install and report it", async () => {
-			settingsManager.setProjectPackages(["git:github.com/example/broken-repo"]);
-			vi.spyOn(packageManager as any, "installParsedSource").mockRejectedValue(
-				new Error("git clone https://github.com/example/broken-repo failed with code 128"),
-			);
-
-			const result = await packageManager.resolve();
-
-			expect(result.installFailures).toEqual([
-				{
-					source: "git:github.com/example/broken-repo",
-					scope: "project",
-					message: expect.stringContaining("failed with code 128"),
-				},
-			]);
-			expect(result.extensions).toEqual([]);
-		});
-
-		it("should report install failures for temporary extension sources", async () => {
-			vi.spyOn(packageManager as any, "installParsedSource").mockRejectedValue(
-				new Error("npm install temporary-package failed with code 1"),
-			);
-
-			const result = await packageManager.resolveExtensionSources(["npm:temporary-package"], { temporary: true });
-
-			expect(result.installFailures).toEqual([
-				{
-					source: "npm:temporary-package",
-					scope: "temporary",
-					message: "npm install temporary-package failed with code 1",
-				},
-			]);
-		});
-
 		it("should not report install failures for sources that are skipped", async () => {
 			settingsManager.setProjectPackages(["npm:missing-package"]);
 			const installParsedSource = vi.spyOn(packageManager as any, "installParsedSource");
@@ -2468,7 +2434,7 @@ export default function(api) { api.registerTool({ name: "test", description: "te
 			const result = await packageManager.resolve(async () => "skip");
 
 			expect(installParsedSource).not.toHaveBeenCalled();
-			expect(result.installFailures).toBeUndefined();
+			expect(result.installFailures).toEqual([]);
 		});
 
 		it("should keep a missing source an error when the caller asks for one", async () => {

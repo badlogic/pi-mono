@@ -1000,7 +1000,7 @@ export class DefaultPackageManager implements PackageManager {
 			);
 		}
 
-		return this.withInstallFailures(this.toResolvedPaths(accumulator), installFailures);
+		return { ...this.toResolvedPaths(accumulator), installFailures };
 	}
 
 	async resolveExtensionSources(
@@ -1017,7 +1017,7 @@ export class DefaultPackageManager implements PackageManager {
 			.filter((source) => !source.startsWith(BUILTIN_PATH_PREFIX))
 			.map((source) => ({ pkg: source as PackageSource, scope }));
 		const installFailures = await this.resolvePackageSources(packageSources, accumulator);
-		return this.withInstallFailures(this.toResolvedPaths(accumulator), installFailures);
+		return { ...this.toResolvedPaths(accumulator), installFailures };
 	}
 
 	listConfiguredPackages(): ConfiguredPackage[] {
@@ -2658,10 +2658,6 @@ export class DefaultPackageManager implements PackageManager {
 			prompts: new Map(),
 			themes: new Map(),
 		};
-	}
-
-	private withInstallFailures(paths: ResolvedPaths, installFailures: PackageInstallFailure[]): ResolvedPaths {
-		return installFailures.length > 0 ? { ...paths, installFailures } : paths;
 	}
 
 	private toResolvedPaths(accumulator: ResourceAccumulator): ResolvedPaths {
