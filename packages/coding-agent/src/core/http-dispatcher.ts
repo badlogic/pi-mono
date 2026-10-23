@@ -42,11 +42,18 @@ export function formatHttpIdleTimeoutMs(timeoutMs: number): string {
 	return `${timeoutMs / 1000} sec`;
 }
 
+// Proxy env vars that applyHttpProxySettings filled from the httpProxy setting, with the value it wrote,
+// so a proxy error can name the setting instead of a variable the user never set.
+const proxyEnvFromSettings = new Map<string, string>();
+
 export function applyHttpProxySettings(httpProxy: string | undefined): void {
 	const proxy = httpProxy?.trim();
 	if (!proxy) return;
-	process.env.HTTP_PROXY ??= proxy;
-	process.env.HTTPS_PROXY ??= proxy;
+	for (const name of ["HTTP_PROXY", "HTTPS_PROXY"]) {
+		if (process.env[name] !== undefined) continue;
+		process.env[name] = proxy;
+		proxyEnvFromSettings.set(name, proxy);
+	}
 }
 
 const ignoreUndiciDispatcherError = (_error: unknown): void => {};
@@ -83,8 +90,9 @@ export function configureHttpDispatcher(timeoutMs: number = DEFAULT_HTTP_IDLE_TI
 	if (normalizedTimeoutMs === undefined) {
 		throw new Error(`Invalid HTTP idle timeout: ${String(timeoutMs)}`);
 	}
-	const dispatcher = withUndiciErrorListener(
-		new undici.EnvHttpProxyAgent({
+	let agent: undici.EnvHttpProxyAgent;
+	try {
+		agent = new undici.EnvHttpProxyAgent({
 			allowH2: false,
 			// Keep HTTP origins on CONNECT tunnels as they were before Undici 8.7.
 			proxyTunnel: true,
@@ -95,8 +103,26 @@ export function configureHttpDispatcher(timeoutMs: number = DEFAULT_HTTP_IDLE_TI
 			headersTimeout: normalizedTimeoutMs,
 			clientFactory: createUndiciClient,
 			factory: createUndiciOriginDispatcher,
-		}),
-	);
+		});
+	} catch (error) {
+		// undici rejects unusable proxy URLs here (e.g. socks5h:) without naming the variable, and its
+		// error can carry the URL, which may contain credentials. Name the variables EnvHttpProxyAgent
+		// reads instead (a defined lowercase name wins, even when empty).
+		const sources = new Set<string>();
+		for (const [lower, upper] of [
+			["http_proxy", "HTTP_PROXY"],
+			["https_proxy", "HTTPS_PROXY"],
+		]) {
+			const name = process.env[lower] !== undefined ? lower : upper;
+			const uri = process.env[name];
+			if (uri) sources.add(proxyEnvFromSettings.get(name) === uri ? "the httpProxy setting" : name);
+		}
+		if (sources.size === 0) throw error;
+		throw new Error(
+			`Invalid proxy URL in ${[...sources].join(" or ")}. Use an http://, https://, or socks5:// URL without a path.`,
+		);
+	}
+	const dispatcher = withUndiciErrorListener(agent);
 	undici.setGlobalDispatcher(dispatcher);
 	// Keep fetch and the dispatcher on the same undici implementation. Node 26.0's
 	// bundled fetch can otherwise consume compressed responses through npm undici's

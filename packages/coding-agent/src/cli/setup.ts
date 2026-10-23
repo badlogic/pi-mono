@@ -1,3 +1,4 @@
+import chalk from "chalk";
 import { APP_NAME } from "../config.ts";
 import { configureHttpDispatcher } from "../core/http-dispatcher.ts";
 
@@ -9,5 +10,11 @@ export function setupCli(): void {
 
 	// Configure undici before provider SDKs issue requests. Settings are applied
 	// once SettingsManager has loaded global/project configuration.
-	configureHttpDispatcher();
+	try {
+		configureHttpDispatcher();
+	} catch (error: unknown) {
+		const message = error instanceof Error ? error.message : String(error);
+		console.error(chalk.red(`Error: ${message}`));
+		process.exit(1);
+	}
 }

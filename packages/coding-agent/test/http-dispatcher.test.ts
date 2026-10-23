@@ -147,6 +147,33 @@ describe("http dispatcher", () => {
 		}
 	});
 
+	// https://github.com/earendil-works/pi/issues/11195
+	it("names the proxy variable when undici rejects its URL", () => {
+		// An Error argument requires an exact message match, so the credentials cannot appear.
+		const error = new Error(
+			"Invalid proxy URL in HTTPS_PROXY. Use an http://, https://, or socks5:// URL without a path.",
+		);
+		process.env.HTTPS_PROXY = "socks5h://user:secret@127.0.0.1:1080";
+		expect(() => configureHttpDispatcher()).toThrow(error);
+		// Not parseable as a URL; the resulting ERR_INVALID_URL carries the value in its input property.
+		process.env.HTTPS_PROXY = "http://user:secret@";
+		expect(() => configureHttpDispatcher()).toThrow(error);
+		expect(undici.getGlobalDispatcher()).toBe(originalDispatcher);
+
+		process.env.HTTPS_PROXY = "socks5://127.0.0.1:1080";
+		expect(() => configureHttpDispatcher()).not.toThrow();
+	});
+
+	it("names the httpProxy setting when it supplied the rejected proxy URL", () => {
+		applyHttpProxySettings("socks5h://127.0.0.1:1080");
+
+		expect(() => configureHttpDispatcher()).toThrow(
+			new Error(
+				"Invalid proxy URL in the httpProxy setting. Use an http://, https://, or socks5:// URL without a path.",
+			),
+		);
+	});
+
 	it("allows two seconds for HTTPS connection attempts without changing the Node default", async () => {
 		// Preserve a deliberate host fetch override while testing the dispatcher itself.
 		globalThis.fetch = async () => {
