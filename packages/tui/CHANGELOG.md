@@ -11,7 +11,7 @@
 
 ### Added
 
-- Added detection of the Rex terminal (`TERM_PROGRAM=rex`) with OSC 8 hyperlinks, truecolor, and Kitty images. Links previously fell back to the `text (url)` format ([#11131](https://github.com/earendil-works/pi/issues/11131), [#11150](https://github.com/earendil-works/pi/pull/11150), [#11183](https://github.com/earendil-works/pi/pull/11183) by [@nihaals](https://github.com/nihaals))
+- Added detection of the Rex terminal (`TERM_PROGRAM=rex`) with OSC 8 hyperlinks, truecolor, and Kitty images. Links previously fell back to the `text (url)` format ([#11131](https://github.com/earendil-works/pi/issues/11131), [#11150](https://github.com/earendil-works/pi/pull/11150) by [@petrroll](https://github.com/petrroll), [#11183](https://github.com/earendil-works/pi/pull/11183) by [@nihaals](https://github.com/nihaals))
 
 ### Fixed
 
@@ -266,7 +266,7 @@
 - Fixed the npm package omitting the source and build script needed to rebuild the Windows native addon.
 - Fixed the npm package omitting the source and build script needed to rebuild the Darwin native addon.
 - Fixed Windows console truecolor detection when Windows Terminal does not provide `WT_SESSION` to child shells.
-- Fixed terminal width accounting for Indic conjunct grapheme clusters ([#6987](https://github.com/earendil-works/pi/pull/6987)).
+- Fixed terminal width accounting for Indic conjunct grapheme clusters ([#6987](https://github.com/earendil-works/pi/pull/6987) by [@petrroll](https://github.com/petrroll)).
 - Fixed phantom alternate-screen text selection from unmatched mouse events when changing terminal pane focus.
 - Fixed spaces in searchable settings queries changing the selected value instead of filtering multi-word labels.
 - Fixed alternate-screen Kitty images crossing vertical layout clip boundaries and overlapping sticky regions while scrolling.
