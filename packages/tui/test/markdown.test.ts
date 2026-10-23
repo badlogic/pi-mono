@@ -1367,6 +1367,18 @@ again, hello world`,
 		});
 	});
 
+	describe("Deeply nested blockquotes", () => {
+		// Regression test for https://github.com/earendil-works/pi/issues/11272
+		it("should render quotes nested deeper than the width allows without exploding", () => {
+			const markdown = new Markdown(`${">".repeat(60)}x`, 1, 0, defaultMarkdownTheme);
+			const lines = markdown.render(80);
+			const plainLines = lines.map((line) => line.replace(/\x1b\[[0-9;]*m/g, "").trimEnd());
+
+			assert.strictEqual(plainLines.length, 1, `Expected a single line: ${JSON.stringify(plainLines)}`);
+			assert.ok(plainLines[0].endsWith("x"), `Expected content to be kept: ${JSON.stringify(plainLines)}`);
+		});
+	});
+
 	describe("Blockquotes with multiline content", () => {
 		it("should apply consistent styling to all lines in lazy continuation blockquote", () => {
 			// Markdown "lazy continuation" - second line without > is still part of the quote
