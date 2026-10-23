@@ -5,16 +5,19 @@
   autoPatchelfHook,
   source,
 }:
+let
+  inherit (lib) importJSON optionals licenses;
+in
 stdenv.mkDerivation (finalAttrs: {
   pname = "biome";
-  version = (lib.importJSON "${source}/package.json").devDependencies."@biomejs/biome";
+  version = (importJSON "${source}/package.json").devDependencies."@biomejs/biome";
 
   src =
     finalAttrs.passthru.sources.${stdenv.hostPlatform.system}
       or (throw "Unsupported system for Biome: ${stdenv.hostPlatform.system}");
 
-  nativeBuildInputs = lib.optionals stdenv.hostPlatform.isLinux [ autoPatchelfHook ];
-  buildInputs = lib.optionals stdenv.hostPlatform.isLinux [ stdenv.cc.cc.lib ];
+  nativeBuildInputs = optionals stdenv.hostPlatform.isLinux [ autoPatchelfHook ];
+  buildInputs = optionals stdenv.hostPlatform.isLinux [ stdenv.cc.cc.lib ];
 
   installPhase = ''
     runHook preInstall
@@ -44,7 +47,7 @@ stdenv.mkDerivation (finalAttrs: {
   meta = {
     description = "Toolchain of the web";
     homepage = "https://biomejs.dev/";
-    license = lib.licenses.mit;
+    license = licenses.mit;
     platforms = builtins.attrNames finalAttrs.passthru.sources;
     mainProgram = finalAttrs.pname;
   };
