@@ -369,7 +369,9 @@ function paintBox(box: LayoutBox, screen: string[], totalWidth: number): void {
 				}
 				break;
 			}
-			if (imageLine !== "") break;
+			// Image placeholder rows inside padded or colored boxes contain only
+			// spaces and SGR codes; keep searching past them for the image line.
+			if (imageLine.replace(/\x1b\[[0-9;:]*m/g, "").trim() !== "") break;
 		}
 	}
 
