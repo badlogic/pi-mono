@@ -33,6 +33,7 @@ Built on [`@earendil-works/pi-ai`](../ai/README.md) for model access and `@earen
 - [Your Own State](#your-own-state)
 - [Usage and Cost](#usage-and-cost)
 - [Storage](#storage)
+- [Deploy on Vercel](#deploy-on-vercel)
 - [Errors](#errors)
 - [Examples](#examples)
 - [Design Documents](#design-documents)
@@ -758,6 +759,7 @@ const usage = await harness.usage(context); // { models: { "openai/gpt-6-sol": U
 | SQLite | `openNodeSqliteStorage(file)` from `@earendil-works/pi-durable/storage/sqlite/node` | One database file. WAL mode with `synchronous = NORMAL`: commits survive process crashes; the newest may be lost on power or host failure. |
 | JSONL | `openNodeJsonlStorage(directory, context)` from `@earendil-works/pi-durable/storage/jsonl/node` | Append-only files in one directory. Pass `{ fsync: true }` to flush before each commit marker. Keeps the whole history in memory too, so memory grows with it; use SQLite for long-running agents. |
 | Cloudflare Durable Object | `openDurableObjectSqliteStorage(ctx.storage)` from `@earendil-works/pi-durable/storage/sqlite/cloudflare` | The SQLite storage of one SQLite-backed Durable Object; commits are its storage transactions. |
+| Workflow SDK World | `openWorldStorage(sessionId)` from `durable-harness/pi-durable` | One session is one workflow run and each commit is an event in it, so a turn resumes on another machine. See [Deploy on Vercel](#deploy-on-vercel). |
 
 In a browser, open IndexedDB storage with `await IndexedDbStorage.open(name)`. One owner must hold the database at a
 time; use a [Web Lock](https://developer.mozilla.org/docs/Web/API/Web_Locks_API) around its lifetime rather than opening
@@ -808,6 +810,26 @@ registerStorageConformance({ describe, expect, it }, "My Storage", async (use) =
 ```
 
 The package root loads TypeBox, because the tool task validates arguments with pi-ai's `validateToolArguments()`. That costs about 23 MB of peak RSS unbundled, about 4 MB in a tree-shaken bundle.
+
+## Deploy on Vercel
+
+A Vercel Function can be cut off at any point: it crashes, runs out of memory, reaches its time limit, or the deployment is replaced. [`durable-harness`](https://github.com/vercel-labs/durable-harness), Vercel's integration for this package, opens the Harness on a [Workflow SDK](https://workflow-sdk.dev/worlds) World, so a turn whose function disappears is picked up by a new function at the last commit instead of starting over. Only the storage changes:
+
+```typescript
+import { createRegistry, Harness, type Storage } from "@earendil-works/pi-durable";
+import { gatewayModels, openWorldStorage, resumeWith, virtualEnv } from "durable-harness/pi-durable";
+
+const models = gatewayModels(); // pi-ai Models on the Vercel AI Gateway provider
+const registry = createRegistry();
+// How a resuming function rebuilds this Harness, and what this process opens sessions with.
+const open = resumeWith((storage: Storage) =>
+	Harness.open(storage, { models, registry, env: virtualEnv() }, context),
+);
+
+const harness = await open(await openWorldStorage(sessionId)); // without an ID, a new session
+```
+
+[`docs/vercel.md`](docs/vercel.md) is the quick start: the chat route, the queue route each turn runs in, the environment a Function may give the model's commands, and what taking a session over does to the process that had it. Vercel documents the same setup, and the agent-loop-only variant, in [Running Pi Durably on Vercel](https://vercel.com/docs/agent-harnesses/pi).
 
 ## Errors
 
