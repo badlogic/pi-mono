@@ -9,6 +9,7 @@
 ### Fixed
 
 - MCP sign-in now rejects authorization endpoints and other OAuth metadata URLs that are not `http:` or `https:`. Before, a malicious MCP server could supply a `file:` or custom protocol URL, which pi passed to the platform URL handler.
+- Fixed `tui.select.pageUp` and `tui.select.pageDown` being ignored in slash command and file autocomplete, `/settings`, and the model, scoped models, login, fork, `/mcp`, and llama.cpp selectors. In fullscreen mode, PageUp/PageDown now move an open list or autocomplete menu instead of scrolling the transcript, and a page key bound to Ctrl+V pages autocomplete instead of pasting an image ([#7629](https://github.com/earendil-works/pi/issues/7629), based on [#7680](https://github.com/earendil-works/pi/pull/7680) by [@muyiyr](https://github.com/muyiyr))
 
 ## [1.4.0] - 2026-10-21
 
