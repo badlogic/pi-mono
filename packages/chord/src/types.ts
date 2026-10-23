@@ -1,26 +1,37 @@
-import type { AnyContract, Handle, InputOf } from "./contract.ts";
+import type { AnyContract, InputOf, Ref } from "./contract.ts";
 import type { Op } from "./delta/index.ts";
 
-/** App-defined, JSON-serializable identity of a caller. Mapped to a record key by `createHost({ principalKey })`. */
-export type Principal = unknown;
-
-export interface GetOptions {
-	/** Principal the record is created for. Defaults to the host principal. */
-	readonly principal?: Principal;
-	/** Host name. Only the local host in phase 1a. */
-	readonly at?: string;
+/**
+ * Options of `get`. `P` is the app's principal type: a JSON-serializable identity of a caller, mapped to an object key
+ * by `createHost({ principalKey })`.
+ */
+export interface GetOptions<P = unknown> {
+	/** Principal the object is created for. Defaults to the host's own principal (`createHost({ self })`). */
+	readonly principal?: P;
+	/**
+	 * False: a method-only reference. It receives no state (unless another reference to the same object wants it), and
+	 * is ready once its object is live.
+	 */
+	readonly state?: boolean;
 }
 
 /**
- * The explicit call context of one root (a short Chord call tree). Calls made with it carry its root id and epoch;
- * `get` holds are released when the call that received this ctx settles.
+ * The explicit call context of one root (a short Chord call tree). Calls made with it carry its root id and code
+ * version; `get` references are released when the call that received this ctx settles.
  */
-export interface Ctx {
+export interface Ctx<P = unknown> {
 	readonly signal: AbortSignal;
 	readonly rootId: string;
-	readonly epoch: number;
-	readonly principal: Principal;
-	get<C extends AnyContract>(type: C, input: InputOf<C>, options?: GetOptions): Handle<C>;
+	readonly codeVersion: number;
+	/** Who the root acts as: the caller at ingress, the host's own principal inside objects. */
+	readonly principal: P;
+	/**
+	 * A reference for this call, released when the call settles. Resolves once it is ready: live, with every state
+	 * member of its variant (unless `state: false`). Rejects with the activation error, `aborted` when the ctx is
+	 * aborted or the call settles first, or `unavailable/ready_timeout` after the host's `readyTimeout`; the reference
+	 * is released then.
+	 */
+	get<C extends AnyContract>(type: C, input: InputOf<C>, options?: GetOptions<P>): Promise<Ref<C>>;
 }
 
 export type StateEvent<T> =
@@ -28,7 +39,7 @@ export type StateEvent<T> =
 	| { readonly type: "ops"; readonly ops: readonly Op[]; readonly value: T }
 	| { readonly type: "reset"; readonly value: T };
 
-/** A readable state source: a cell, a derivation, or a handle's state member. Values are immutable by contract. */
+/** A readable state source: a cell, a derivation, or a reference's state member. Values are immutable by contract. */
 export interface Readable<T> {
 	readonly value: T;
 	/** Called with the current value immediately, then with every new value. */
@@ -38,42 +49,41 @@ export interface Readable<T> {
 }
 
 /**
- * What a behavior may expose as a state member: a cell, a derivation, or a held object's state member (whose value is
- * `undefined` only while that object is loading; a record is live only after its holds are).
+ * What an implementation may expose as a state member: a cell, a derivation, or a held object's state member (an
+ * object goes live only once the members it exposes have their values).
  */
-export type StateSource<T> = Readable<T> | Readable<T | undefined>;
+export type StateSource<T> = Readable<T>;
 
 declare const EXPOSED: unique symbol;
 
-/** A local member backed by a resource (`self.expose(res.x)`): handles read the resource's value once live. */
+/** A local member backed by a resource (`self.expose(res.x)`): references read the resource's value once live. */
 export interface Exposed<T> {
 	readonly [EXPOSED]: T;
 }
 
-export type HandleStatus = "loading" | "live" | "released" | "gone";
+export type RefStatus = "loading" | "live" | "released" | "gone";
 
 export interface Shape {
-	readonly kind: string | undefined;
+	readonly variant: string | undefined;
 	readonly members: readonly string[];
 	/** Fingerprint of the provider contract. */
 	readonly contract: string;
-	readonly epoch: number;
 }
 
-export interface HandleBase<C extends AnyContract> {
-	/** The consumer contract token this handle was bound with. */
+export interface RefBase<C extends AnyContract> {
+	/** The consumer contract token this reference was bound with. */
 	readonly contract: C;
-	readonly status: HandleStatus;
+	readonly status: RefStatus;
 	readonly ready: Promise<void>;
-	readonly kind: string | undefined;
+	readonly variant: string | undefined;
 	readonly shape: Shape | undefined;
-	/** Why the handle is gone, if it is. */
+	/** Why the reference is gone, if it is. */
 	readonly error: unknown;
 	onShape(listener: (shape: Shape) => void): () => void;
 	/**
 	 * Called after every status change (`loading` → `live`, `live` → `loading` while a link reconnects, `released`,
 	 * `gone` with `error`). A UI watches for `gone` to `get` again.
 	 */
-	onStatus(listener: (status: HandleStatus, error: unknown) => void): () => void;
+	onStatus(listener: (status: RefStatus, error: unknown) => void): () => void;
 	release(): void;
 }

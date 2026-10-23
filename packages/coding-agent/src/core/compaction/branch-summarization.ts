@@ -342,14 +342,12 @@ export async function generateBranchSummary(
 		},
 	];
 
-	const maxTokens = Math.min(4096, model.maxTokens > 0 ? model.maxTokens : Number.POSITIVE_INFINITY);
-
 	// Call LLM for summarization. Prefer the session stream function so SDK
 	// request behavior (timeouts, retries, attribution headers) stays consistent
 	// without running through agent state/events. Retried via completeSummarization
 	// so transient stream drops reuse the configured retry policy.
 	const context = normalizeContext({ systemPrompt: SUMMARIZATION_SYSTEM_PROMPT, messages: summarizationMessages });
-	const requestOptions: SimpleStreamOptions = { apiKey, headers, env, signal, maxTokens };
+	const requestOptions: SimpleStreamOptions = { apiKey, headers, env, signal };
 	const response = await completeSummarization(model, context, requestOptions, streamFn, retry, callbacks);
 
 	// Check if aborted or errored

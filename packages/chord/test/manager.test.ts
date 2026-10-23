@@ -45,13 +45,31 @@ describe("processLock", () => {
 });
 
 describe("host manager (real child processes)", () => {
+	// A child host that forks its own children used to pass its CHORD2_LOCK on, so they failed with "locked".
+	it("a child without a lock does not inherit the parent's lock", async () => {
+		const name = `chord2-test-${process.pid}-inherited`;
+		const release = await processLock(name);
+		const previous = process.env.CHORD2_LOCK;
+		process.env.CHORD2_LOCK = name;
+		const manager = createHostManager({ driver: driver() });
+		try {
+			await manager.start();
+			assert.equal(manager.status, "running");
+		} finally {
+			if (previous === undefined) delete process.env.CHORD2_LOCK;
+			else process.env.CHORD2_LOCK = previous;
+			await manager.stop();
+			await release();
+		}
+	});
+
 	it("starts a child host, links it, stops it gracefully", async () => {
 		const manager = createHostManager({ driver: driver() });
 		const instance = await manager.start();
 		assert.equal(manager.status, "running");
-		const server = createHost({ name: "server", onError: () => {} });
+		const server = createHost({ self: { kind: "host" }, name: "server", onError: () => {} });
 		server.accept(instance.link, { principal: { worker: "w1" }, kind: "host", name: "w1" });
-		const echo = server.get(Echo, {}, { at: "w1" });
+		const echo = server.hold(Echo, {});
 		assert.equal(await echo.echo("x"), `hi x from ${instance.pid}`);
 		assert.equal(await manager.start(), instance);
 		await manager.stop();

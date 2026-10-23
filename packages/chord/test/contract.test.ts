@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { Type } from "typebox";
 import { describe, it } from "vitest";
-import { bind, coverage, isChordError, local, method, opaque, remote } from "../src/index.ts";
+import { bind, coverage, hostFamily, hostNamed, isChordError, local, method, opaque, remote } from "../src/index.ts";
 import { canonicalIdentity, fits, normalize } from "../src/schema.ts";
 
 const View = Type.Object({ text: Type.String() });
@@ -9,6 +9,7 @@ const View = Type.Object({ text: Type.String() });
 const chatV1 = remote("t.chat", {
 	version: 1,
 	input: Type.Object({ session: Type.String(), conversation: Type.Number({ default: 0 }) }),
+	host: hostFamily("session:", "session"),
 	variants: {
 		viewer: { state: { view: View } },
 		participant: {
@@ -38,11 +39,10 @@ describe("contracts", () => {
 	});
 
 	it("rejects reserved member names and opaque remote members", () => {
-		assert.throws(() =>
-			local("t.x", { version: 1, input: Type.Object({}), members: { status: method(Type.Null(), Type.Null()) } }),
-		);
+		assert.throws(() => local("t.x", { version: 1, input: Type.Object({}), members: { status: method() } }));
 		assert.throws(() =>
 			remote("t.x", {
+				host: hostNamed("server"),
 				version: 1,
 				input: Type.Object({}),
 				variants: { a: { state: { h: opaque("x@1") as never } } },
@@ -97,13 +97,27 @@ describe("contracts", () => {
 		assert.match(coverage(retyped.description, chatV1.description) ?? "", /state/);
 	});
 
+	it("methods without arguments or result: described without them; their presence must match, a void consumer accepts a result", () => {
+		const of = (members: Parameters<typeof local>[1]["members"]) =>
+			local("t.methods", { version: 1, input: Type.Object({}), members }).description;
+		const none = of({ m: method() });
+		assert.deepEqual(none.variants[""]?.m, { kind: "method" });
+		const withArgs = of({ m: method(Type.String()) });
+		const withResult = of({ m: method(undefined, Type.Number()) });
+		assert.equal(coverage(none, none), undefined);
+		assert.match(coverage(withArgs, none) ?? "", /arguments/, "the consumer sends none, the provider expects some");
+		assert.match(coverage(none, withArgs) ?? "", /arguments/, "the consumer sends some, the provider takes none");
+		assert.equal(coverage(withResult, none), undefined, "a void consumer ignores a result");
+		assert.match(coverage(none, withResult) ?? "", /result/, "a consumer expecting a result needs one");
+	});
+
 	it("binds other versions only through accepts adapters", () => {
 		const v2 = remote("t.chat", { ...chatV1.def, version: 2, variants: { viewer: { state: { body: View } } } });
 		assert.throws(
 			() => bind(v2, undefined, chatV1),
 			(error) => isChordError(error, "contract_mismatch"),
 		);
-		const adapter = (current: Record<string, unknown>) => ({ kind: "viewer", view: current.body });
+		const adapter = (current: Record<string, unknown>) => ({ variant: "viewer", view: current.body });
 		assert.equal(bind(v2, { 1: adapter }, chatV1), adapter);
 	});
 
@@ -113,7 +127,7 @@ describe("contracts", () => {
 			input: Type.Object({}),
 			members: {
 				harness: opaque("h@1"),
-				onChange: method(Type.Function([Type.String()], Type.Void()), Type.Null()),
+				onChange: method(Type.Function([Type.String()], Type.Void())),
 			},
 		});
 		const b = local("t.idx", { ...a.def, members: { ...a.def.members, harness: opaque("h@2") } });

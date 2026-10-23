@@ -2,8 +2,8 @@
 
 Chord builds applications out of **objects** that live in several processes (a server, workers, browser tabs) and can be **hot reloaded** while they run.
 
-- An **object** is state plus code at an address. It is created on demand and lives while someone holds it.
-- Everyone gets a **handle**, never the object. Handles work the same locally and across processes, and survive reloads.
+- An **object** is state plus code at an address. It is created on demand and lives while someone references it.
+- Everyone gets a **reference**, never the object. References work the same locally and across processes, and survive reloads.
 - Every object knows its **principal**: an owner and a guest get different objects, with different methods.
 - **State** is observable JSON. Remote viewers get a snapshot followed by deltas.
 - **Hot reload** swaps code while it runs. Work in flight finishes on the code it started with, state is kept, and incompatible changes migrate at a safe point.
@@ -14,45 +14,50 @@ Contracts are runtime values described with [TypeBox](https://github.com/sinclai
 
 | Import | Contents | Runs in |
 |--------|----------|---------|
-| `@earendil-works/chord` | Contracts (`local`, `remote`, `method`, `opaque`), declarations (`cell`, `derivation`, `listener`, `resource`), hosts (`createHost`, `defineFacet`, `defineRegistry`), links (`memoryLinkPair`, `ipcLink`, `webSocketLink`, `acceptWebSockets`), errors (`ChordError`, `isChordError`, `forbidden`, `invalid`). Also the shared base: `Context`, `JsonValue`, `JsonRepresentation`, `Draft`, `copyJson`, `isJsonValue`, and `replicatedState` with its types. | Node and browsers |
+| `@earendil-works/chord` | Contracts (`local`, `remote`, `method`, `opaque`), declarations (through the factory's `self`: `state`, `derive`, `resource`, `on`, `task`), hosts (`createHost`, `defineFacet`, `defineRegistry`), links (`memoryLinkPair`, `ipcLink`, `webSocketLink`, `acceptWebSockets`), errors (`ChordError`, `isChordError`, `forbidden`, `invalid`). Also the shared base: `Context`, `JsonValue`, `JsonRepresentation`, `Draft`, `copyJson`, `isJsonValue`, `replicatedState` with its types, and the watch types `WatchHandle`, `NativeWatchHandle`, and `WatchEnd` with their implementations `Watch` and `NativeWatch`. | Node and browsers |
 | `@earendil-works/chord/node` | Child host processes: `createHostManager`, `forkDriver`, `childControl`, `processLock`; the facet module loader `nodeLoader`. | Node |
-| `@earendil-works/chord/context` | Explicit cancellation and invocation values: `BACKGROUND_CONTEXT`, `withCancel`, `withAbortSignal`, `withoutAbortSignal`, `withContextValue`, `awaitWithContext`. | Node and browsers |
+| `@earendil-works/chord/context` | Explicit cancellation, telemetry, and invocation values: `BACKGROUND_CONTEXT`, `withCancel`, `withAbortSignal`, `withoutAbortSignal`, `withTelemetry`, `traceIn`, `withContextValue`, `awaitWithContext`. | Node and browsers |
 | `@earendil-works/chord/delta` | The transactional JSON tracker, structural diff, immutable apply, and the wire encoder/decoder for operation batches. | Node and browsers |
+| `@earendil-works/chord/output` | Bounded output streams and paced progress: `OutputBuffer` (head or tail window of a stream, `OutputLimits`, `OutputSkip`), `boundOutput`, `sanitizeOutput`, `utf8ByteLength`, and `Progress` (adaptive commits of a changing value). | Node and browsers |
+| `@earendil-works/chord/telemetry-sqlite` | `createSqliteTelemetry(db, { retentionMs?, maxQueuedSpans? })`: buffered recording and backend-independent `TelemetryStore` queries. | Any SQLite adapter |
+| `@earendil-works/chord/sqlite` | Portable `SqliteDatabase`, `SqliteExecutor`, and `SqliteValue`, atomic `applySqliteMigrations(database, migrations, { table })`, and `validateSqliteSchemaPrefix`. The metadata table must be a valid, non-reserved SQLite identifier; migration versions start at 1 and are contiguous. | Any SQLite adapter |
+| `@earendil-works/chord/sqlite/node` | `NodeSqliteDatabase`, `openNodeSqliteDatabase`, and `NodeSqliteDatabaseOptions`. | Node |
+| `@earendil-works/chord/sqlite/cloudflare` | `DurableObjectSqliteDatabase` and the structural `DurableObjectSqliteStorage` binding type. | Cloudflare Durable Objects |
 
 ## Quick start
 
 ```ts
 import { Type } from "typebox";
-import { cell, createHost, method, remote } from "@earendil-works/chord";
+import { createHost, hostNamed, method, remote } from "@earendil-works/chord";
 
 // contract.ts: shared by provider and consumers
 export const Counter = remote("demo.counter", {
 	version: 1,
 	input: Type.Object({ name: Type.String() }),
+	host: hostNamed("server"), // where its objects live; callers never name a host
 	variants: {
 		default: {
 			state: { count: Type.Number() },
-			methods: { increment: method(Type.Object({ by: Type.Number() }), Type.Null()) },
+			methods: { increment: method(Type.Object({ by: Type.Number() })) },
 		},
 	},
 });
 
-const host = createHost({ name: "server", principalKey: (p) => p.kind });
+const host = createHost({ name: "server", self: { kind: "server" } });
 
 host.serve(Counter, ({ name }, _principal, self) => {
-	const state = self.state({ count: cell(Type.Number(), 0) });
+	const count = self.state("count", Type.Number(), 0);
 	return {
-		kind: "default",
-		count: state.count,
+		variant: "default",
+		count,
 		increment: async ({ by }, ctx) => {
-			state.count.change(ctx, (n) => n + by);
-			return null;
+			count.change(ctx, (n) => n + by);
 		},
 	};
 });
 
 await host.root(async (ctx) => {
-	const clicks = ctx.get(Counter, { name: "clicks" }); // a handle; held until this root ends
+	const clicks = await ctx.get(Counter, { name: "clicks" }); // ready, with its state; released when this root ends
 	clicks.count.subscribe((n) => console.log("count", n));
 	await clicks.increment({ by: 2 }, ctx); // logs 0, then 2
 });
@@ -64,6 +69,60 @@ await host.root(async (ctx) => {
 - [Usage guide](docs/guide.md): API reference for contracts, objects, state, roots, lifetime, plugins, hot reload, hosts, and links.
 - [Specification](docs/spec.md): compatibility, lifetime, and reload semantics, plus known limitations and implementation decisions.
 - [Delta guide](src/delta/README.md): ownership, lifecycle, operation, and replica contracts of `@earendil-works/chord/delta`.
+
+## Explicit Context telemetry
+
+`Context` always carries a `telemetry: TelemetrySpan`, alongside `abortSignal`. `BACKGROUND_CONTEXT` and `TODO_CONTEXT` use the shared no-op span `NOOP_TELEMETRY_CONTEXT`. Adapters (`TelemetryContext`) belong to hosts and start root spans; adapters are never placed in a `Context`.
+
+```ts
+import { BACKGROUND_CONTEXT, traceIn, withTelemetry } from '@earendil-works/chord/context';
+import { InMemoryTelemetryContext } from '@earendil-works/pi-telemetry';
+
+const telemetry = new InMemoryTelemetryContext();
+await telemetry.startSpan({ name: 'app.request' }, async (span) => {
+  const context = withTelemetry(span, BACKGROUND_CONTEXT);
+  await traceIn(
+    { name: 'app.load' },
+    async (child) => {
+      child.telemetry.addEvent('cache.miss');
+      return traceIn({ name: 'app.read' }, (nested) => readAccount(nested), child);
+    },
+    context,
+  );
+});
+```
+
+`withTelemetry(span, context)` derives a new context; it never changes its parent, cancellation, or typed values. `traceIn(options, fn, context)` creates a callback-managed child span, and `fn` receives its derived context. Every context already supports `telemetry.addEvent()` and `telemetry.addLink()`. Values, cancellation, callback results, and rejection identities are preserved. Concurrent calls keep independent parents; there is no ambient current span. `value()`, `ContextKey`, and `withContextValue()` remain supported.
+
+These helpers operate on the standalone `Context` API. They do not yet instrument Chord hosts, methods, or network frames.
+
+## SQLite telemetry
+
+```ts
+import { createSqliteTelemetry } from '@earendil-works/chord/telemetry-sqlite';
+import { openNodeSqliteDatabase } from '@earendil-works/chord/sqlite/node';
+import { renderTrace } from '@earendil-works/pi-telemetry/render';
+
+const db = await openNodeSqliteDatabase('telemetry.db');
+const telemetry = await createSqliteTelemetry(db);
+try {
+  await telemetry.startSpan({ name: 'app.request' }, async (span) => {
+    span.addEvent('request.accepted');
+    await span.startSpan({ name: 'app.read' }, () => readAccount());
+  });
+  await telemetry.flush();
+  const { traces } = await telemetry.findTraces({ name: 'app.request', limit: 10 });
+  for (const trace of traces) console.log(renderTrace(trace.spans));
+} finally {
+  try { await telemetry.close(); } finally { await db.close(); }
+}
+```
+
+The adapter is portable over `SqliteDatabase` and owns no connection. Recording performs no SQL. A one-second timer flushes settled spans and completed ten-second metric intervals in one transaction, including retention cleanup. Metrics retain count, sum, minimum, and maximum per name/kind/unit/attribute series, not raw samples, buckets, or exemplars. `close()` stops recording and drains partial metric intervals without waiting for business callbacks or closing the database. Late span completions are ignored.
+
+Retention defaults to seven days. `maxQueuedSpans` defaults to 10,000 and counts settled spans awaiting commit, including an in-flight batch. The same limit independently bounds pending metric interval/series pairs. Overflow increments `droppedSpans` or `droppedMeasurements`; the limits bound counts, not bytes or active spans. A write failure stops recording permanently: `flush()` and `close()` reject with the original error without retrying.
+
+The adapter implements `TelemetryStore`: `findTraces()`, `getTrace()`, and `findMetrics()` read committed rows, including after adapter close while the database remains open. See [stored telemetry](../telemetry/README.md#stored-telemetry) for filters, pagination, and cross-process trace assembly. Schema tables are `telemetry_spans`, `telemetry_metrics`, and `telemetry_schema`.
 
 ## Tracking JSON deltas
 
@@ -97,8 +156,7 @@ their containers with the provider; mutating a consumed value violates the contr
 and can corrupt authority. Clone or serialize at any mutable trust boundary.
 
 Replicated state provides the same model through a callback. `replicatedState` is a
-standalone observable value, independent of hosts; Durable uses it for document,
-view, and task-graph states:
+standalone observable value, independent of hosts:
 
 ```ts
 import { replicatedState } from "@earendil-works/chord";
@@ -112,7 +170,7 @@ status.change(context, (draft) => {
 ```
 
 A successful `change()` publishes exactly one atomic revision. If its callback
-throws, the original value and sequence remain unchanged. Draft handles become
+throws, the original value and sequence remain unchanged. Draft references become
 unusable when the callback returns. The tracker emits string append and
 front-truncate operations, array splices and permutations, sets, and deletes; large
 edit sets may fold into a complete replacement.
@@ -145,3 +203,30 @@ running callback.
 
 Cells of Chord objects and their remote readables have their own subscription
 model; see [State](docs/guide.md#state) in the usage guide.
+
+### Watches
+
+`WatchHandle<T>` is the one watch interface, implemented by watch sources such as
+Durable's documents, conversation views, and task graph. `watch.value` is the value
+at acquisition until `start(listener)` installs the sole asynchronous listener; each
+later change arrives as `(value, ops, context)`, one call at a time, and `value`
+advances to it. A source keeps at most 100 undelivered frames and then replaces them
+with one root replacement `[["r", newest]]`. `stop()` is idempotent, drops pending
+frames, and neither aborts nor awaits a running call; it and `closed` give the
+`WatchEnd`:
+
+- `stopped`: `stop()` was called;
+- `cancelled`: the context the watch was acquired with was cancelled;
+- `retired`: the source was retired, an explicit event after a last frame `[["r", null]]`;
+- `ended`: the source closed (its owner ended or closed);
+- `listener_error` with `error`: the listener threw or rejected;
+- `failed` with `error`: the source failed.
+
+An ended watch drops every reference into its source, so a stopped watch that is
+still referenced keeps only its last value alive.
+
+Sources implement handles with `Watch<T>`, fed through `advance(value, ops, context)`,
+`retire(context)`, `end()` or `end({ error })`, and `observeCancellation(signal)`.
+`NativeWatch<T>` implements `NativeWatchHandle<T>`, the same lifecycle for
+in-process values: the listener gets `(value, context)` without ops, and an
+overflow collapses to the newest value.

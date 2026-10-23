@@ -35,6 +35,23 @@ jobs:
       - name: Build
         run: npm run build
 
+      # Previews are published for main and PRs from branches of this repo only (see preview-packages.yml).
+      - name: Pack preview packages
+        if: github.event_name == 'push' || github.event.pull_request.head.repo.full_name == github.repository
+        env:
+          # Pull request runs check out a merge commit; tarballs are keyed by the PR head commit.
+          SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: node scripts/preview-packages.mjs pack --sha "$SHA" --out "$RUNNER_TEMP/preview-packages"
+
+      - name: Upload preview packages
+        if: github.event_name == 'push' || github.event.pull_request.head.repo.full_name == github.repository
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: preview-packages
+          path: ${{ runner.temp }}/preview-packages
+          retention-days: 3
+          if-no-files-found: error
+
       - name: Check
         run: npm run check
 

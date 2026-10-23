@@ -24,9 +24,14 @@ async function fetchRevision(revision) {
 	return bytes;
 }
 
-async function fetchLiveCatalog(root) {
-	const { version } = JSON.parse(readFileSync(join(root, "packages/coding-agent/package.json"), "utf8"));
-	const response = await fetch(`https://pi.dev/api/models?pi-version=${encodeURIComponent(version)}&${MODEL_TYPES}`);
+/**
+ * Discover the newest published catalog. It is generated from main, which is
+ * what this checkout builds. Do not send `pi-version`: on main it is the last
+ * released version, and pi.dev answers it with the catalog for released
+ * clients, which predates any `MINIMUM_PI_VERSION` bump main depends on.
+ */
+async function fetchLiveCatalog() {
+	const response = await fetch(`https://pi.dev/api/models?${MODEL_TYPES}`);
 	if (!response.ok) throw new Error(`Catalog discovery failed: HTTP ${response.status}`);
 	const revision = response.headers.get("x-pi-model-catalog-revision");
 	if (typeof revision !== "string" || !REVISION_RE.test(revision)) {
@@ -39,39 +44,49 @@ async function fetchLiveCatalog(root) {
 }
 
 /**
- * Return the `provider/type` model groups the catalog provides for this
+ * Return the `provider/type/api` model groups the catalog provides for this
  * checkout's providers. The generated `*.models.ts` types are derived from the
- * data, so code that uses a group (e.g. OPENCODE_CLASSIFIER_MODELS) only
- * type-checks when the catalog has models of that type for the provider.
+ * data, which is grouped by API, so code only type-checks when the catalog has
+ * the same groups as main: e.g. OPENCODE_CLASSIFIER_MODELS needs opencode
+ * classifier models, and a provider factory returning
+ * `Provider<"openai-completions">` fails when its models use another API.
  */
-function modelTypeGroups(root, bytes) {
+function modelApiGroups(root, bytes) {
 	const catalog = JSON.parse(bytes.toString("utf8"));
 	const groups = new Set();
 	for (const provider of readModelDataProviderIds(join(root, "packages/ai"))) {
-		for (const model of catalog[provider] ?? []) groups.add(`${provider}/${model.type}`);
+		for (const model of catalog[provider] ?? []) groups.add(`${provider}/${model.type}/${model.api}`);
 	}
 	return groups;
 }
 
-/** Return why the catalog cannot hydrate this checkout, or undefined if it can. */
-function hydrationProblem(root, bytes) {
+/** Hydrate the checkout's model data from catalog bytes, as the Nix build does. */
+export function hydrateModelCatalogBytes(root, bytes, options = {}) {
 	const directory = mkdtempSync(join(tmpdir(), "pi-model-catalog-pin-"));
 	try {
 		const catalogPath = join(directory, "models.all.json");
 		writeFileSync(catalogPath, bytes);
-		hydrateModelCatalog(join(root, "packages/ai"), catalogPath, { validateOnly: true });
-		return undefined;
-	} catch (error) {
-		return error instanceof Error ? error.message : String(error);
+		hydrateModelCatalog(join(root, "packages/ai"), catalogPath, options);
 	} finally {
 		rmSync(directory, { recursive: true, force: true });
 	}
 }
 
+/** Return why the catalog cannot hydrate this checkout, or undefined if it can. */
+function hydrationProblem(root, bytes) {
+	try {
+		hydrateModelCatalogBytes(root, bytes, { validateOnly: true });
+		return undefined;
+	} catch (error) {
+		return error instanceof Error ? error.message : String(error);
+	}
+}
+
 /**
  * Pin the live model catalog for Nix builds. With `ifStale`, keep the current
- * pin while it still hydrates this checkout and has every model type the live
- * catalog has for the checkout's providers.
+ * pin while it still hydrates this checkout and has the same model groups as
+ * the live catalog for the checkout's providers. Returns the pinned revision
+ * and its catalog bytes.
  */
 export async function updateModelCatalogPin(root, { ifStale = false } = {}) {
 	const pinPath = join(root, "nix/model-catalog.json");
@@ -87,21 +102,28 @@ export async function updateModelCatalogPin(root, { ifStale = false } = {}) {
 		}
 	}
 
-	const revision = await fetchLiveCatalog(root);
+	const revision = await fetchLiveCatalog();
 	// Do not record a pin until its immutable URL serves a catalog this checkout can build with.
 	const bytes = await fetchRevision(revision);
 	if (currentBytes) {
-		// The live catalog is generated from main. Main's code may use a model type
-		// the pin lacks, e.g. after a provider gained classifier models.
-		const pinned = modelTypeGroups(root, currentBytes);
-		const missing = [...modelTypeGroups(root, bytes)].filter((group) => !pinned.has(group));
-		if (missing.length === 0) return { revision: current, updated: false };
-		console.error(`Pinned model catalog is stale: missing model types ${missing.sort().join(", ")}`);
+		// The live catalog is generated from main. Main's code may depend on a model
+		// group the pin lacks, e.g. after a provider gained classifier models or
+		// switched APIs.
+		const pinned = modelApiGroups(root, currentBytes);
+		const live = modelApiGroups(root, bytes);
+		const missing = [...live].filter((group) => !pinned.has(group)).sort();
+		const extra = [...pinned].filter((group) => !live.has(group)).sort();
+		if (missing.length === 0 && extra.length === 0) return { revision: current, updated: false, bytes: currentBytes };
+		const differences = [
+			missing.length > 0 ? `missing ${missing.join(", ")}` : "",
+			extra.length > 0 ? `extra ${extra.join(", ")}` : "",
+		].filter(Boolean);
+		console.error(`Pinned model catalog is stale: model groups differ (${differences.join("; ")})`);
 	}
 	const problem = hydrationProblem(root, bytes);
 	if (problem) throw new Error(`Live model catalog ${revision} cannot hydrate this checkout: ${problem}`);
 	writeFileSync(pinPath, `${JSON.stringify({ revision }, null, 2)}\n`);
-	return { revision, updated: revision !== current };
+	return { revision, updated: revision !== current, bytes };
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1])).href) {

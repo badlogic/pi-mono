@@ -27,6 +27,7 @@ import type {
 import { appendAssistantMessageDiagnostic, createAssistantMessageDiagnostic } from "../utils/diagnostics.ts";
 import { AssistantMessageEventStream } from "../utils/event-stream.ts";
 import { headersToRecord, providerHeadersToRecord } from "../utils/headers.ts";
+import { getIdentityHeaders } from "../utils/identity.ts";
 import { parseStreamingJson } from "../utils/json-parse.ts";
 import { getProviderEnvValue } from "../utils/provider-env.ts";
 
@@ -73,6 +74,7 @@ export type PiMessagesEvent =
 			reason: Extract<PiMessagesStopReason, "stop" | "length" | "toolUse">;
 			usage: PiMessagesUsage;
 			responseId?: string;
+			responseModel?: string;
 			providerThinkingLevel?: string;
 			rewrite?: PiMessagesRewriteImpact;
 	  }
@@ -82,6 +84,7 @@ export type PiMessagesEvent =
 			usage: PiMessagesUsage;
 			errorMessage?: string;
 			responseId?: string;
+			responseModel?: string;
 			providerThinkingLevel?: string;
 			rewrite?: PiMessagesRewriteImpact;
 	  };
@@ -198,6 +201,9 @@ function createEventConverter(model: Model<"pi-messages">) {
 					usage: event.usage,
 					responseId: event.responseId,
 				});
+				if (event.responseModel !== undefined) {
+					partial.responseModel = event.responseModel;
+				}
 				if (event.providerThinkingLevel !== undefined) {
 					partial.providerThinkingLevel = event.providerThinkingLevel;
 				}
@@ -210,6 +216,9 @@ function createEventConverter(model: Model<"pi-messages">) {
 					errorMessage: event.errorMessage,
 					responseId: event.responseId,
 				});
+				if (event.responseModel !== undefined) {
+					partial.responseModel = event.responseModel;
+				}
 				if (event.providerThinkingLevel !== undefined) {
 					partial.providerThinkingLevel = event.providerThinkingLevel;
 				}
@@ -391,12 +400,15 @@ export const stream: StreamFunction<"pi-messages", PiMessagesOptions> = (
 
 			const response = await (options?.fetch ?? globalThis.fetch)(url, {
 				method: "POST",
-				headers: {
-					authorization: `Bearer ${apiKey}`,
-					accept: "text/event-stream",
-					"content-type": "application/json",
-					...providerHeadersToRecord(options?.headers),
-				},
+				headers: providerHeadersToRecord(
+					getIdentityHeaders(model, options?.identity),
+					{
+						authorization: `Bearer ${apiKey}`,
+						accept: "text/event-stream",
+						"content-type": "application/json",
+					},
+					options?.headers,
+				),
 				body: JSON.stringify(payload),
 				signal: options?.signal,
 			});

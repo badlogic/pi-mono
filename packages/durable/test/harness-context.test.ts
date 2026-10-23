@@ -191,6 +191,178 @@ describe("conversation context", () => {
 		expect(view.messages.map(describeMessage)).toEqual(["system:preamble", "user:handoff"]);
 	});
 
+	// #10904
+	it("leads with the baseline after a compaction that keeps assistant messages", async () => {
+		const { root, message, append } = await setup();
+		await message(user("old"));
+		const kept = await message(user("kept"));
+		await message(assistant("calling", { calls: ["a"] }));
+		await message(toolResult("a"));
+		await message(assistant("answer"));
+		await append({ kind: "summary", head: kept.id, model: [user("summary")] });
+		await message(user("next"));
+		await message(system({ preamble: "Baseline." }), "pi.system");
+		let view = await root.context(context);
+		expect(view.messages.map(describeMessage)).toEqual([
+			"system:preamble",
+			"user:summary",
+			"user:kept",
+			"assistant:calling",
+			"result:a:result a",
+			"assistant:answer",
+			"user:next",
+		]);
+
+		// Later system messages stay in place.
+		await message(assistant("done"));
+		await message(system({ cwd: "/repo" }), "pi.system");
+		view = await root.context(context);
+		expect(view.messages.map(describeMessage).slice(0, 2)).toEqual(["system:preamble", "user:summary"]);
+		expect(view.messages.map(describeMessage).slice(-2)).toEqual(["assistant:done", "system:cwd"]);
+	});
+
+	// #10904
+	it("leads with a baseline written after the first answers, when the agent had no section or tool before", async () => {
+		const { root, message } = await setup();
+		await message(user("first"), "pi.user");
+		await message(assistant("answer"), "pi.assistant");
+		await message(user("next"), "pi.user");
+		await message(system({ plan: "Plan." }), "pi.system");
+		const view = await root.context(context);
+		expect(view.messages.map(describeMessage)).toEqual([
+			"system:plan",
+			"user:first",
+			"assistant:answer",
+			"user:next",
+		]);
+	});
+
+	// #10904
+	it("keeps system messages other than the baseline in place once an assistant message precedes them", async () => {
+		const { root, message, append } = await setup();
+		await message(user("first"));
+		await message(assistant("answer"));
+		// Another kind's system message is positional; the baseline after it is not the first system message.
+		await message(system({ note: "From here on." }), "host.note");
+		await message(system({ preamble: "Baseline." }), "pi.system");
+		let view = await root.context(context);
+		expect(view.messages.map(describeMessage)).toEqual([
+			"user:first",
+			"assistant:answer",
+			"system:note",
+			"system:preamble",
+		]);
+
+		// After a compaction that keeps the other kind's system message, the new baseline does not move ahead of it.
+		const kept = await message(user("kept"));
+		await message(assistant("kept answer"));
+		await message(system({ mode: "plan" }), "host.note");
+		await append({ kind: "summary", head: kept.id, model: [user("summary")] });
+		await message(user("next"));
+		await message(system({ preamble: "Baseline." }), "pi.system");
+		view = await root.context(context);
+		expect(view.messages.map(describeMessage)).toEqual([
+			"user:summary",
+			"user:kept",
+			"assistant:kept answer",
+			"system:mode",
+			"user:next",
+			"system:preamble",
+		]);
+	});
+
+	// #10904
+	it("does not lead with a first system entry written after another system message, even once that is omitted", async () => {
+		const { root, message, append } = await setup();
+		const host = await message(system({ legacy: "Use the legacy format." }), "host.system");
+		await message(user("first"));
+		await message(assistant("answer"));
+		// Generation wrote this entry against the host's message: it only removes a section, so it is no baseline.
+		await message(system({ legacy: null }), "pi.system");
+		await append({ kind: "edit", edits: [{ target: host.id, action: "omit" }] });
+		let view = await root.context(context);
+		expect(view.messages.map(describeMessage)).toEqual(["user:first", "assistant:answer", "system:legacy"]);
+
+		// The same holds for a system message an edit put before it.
+		const other = await setup();
+		const first = await other.message(user("first"));
+		await other.append({
+			kind: "edit",
+			edits: [{ target: first.id, action: "replace", messages: [user("first"), system({ note: "Note." })] }],
+		});
+		await other.message(assistant("answer"));
+		await other.message(system({ note: null }), "pi.system");
+		await other.append({ kind: "edit", edits: [{ target: first.id, action: "replace", messages: [user("first")] }] });
+		view = await other.root.context(context);
+		expect(view.messages.map(describeMessage)).toEqual(["user:first", "assistant:answer", "system:note"]);
+	});
+
+	// #10904
+	it("does not lead with a retained, edited, or later system entry in place of the baseline", async () => {
+		const { root, message, append } = await setup();
+		const kept = await message(user("kept"));
+		await message(assistant("answer"));
+		const retained = await message(system({ cwd: "/repo" }), "pi.system");
+		// Before generation writes the baseline after the head marker, a retained system entry stays in place.
+		await append({ kind: "summary", head: kept.id, model: [user("summary")] });
+		await message(user("next"));
+		let view = await root.context(context);
+		expect(view.messages.map(describeMessage)).toEqual([
+			"user:summary",
+			"user:kept",
+			"assistant:answer",
+			"system:cwd",
+			"user:next",
+		]);
+
+		// The baseline omits the retained entry, as generation writes it, and leads.
+		const baseline = await append({
+			kind: "pi.system",
+			model: [system({ preamble: "Baseline." })],
+			edits: [{ target: retained.id, action: "omit" }],
+		});
+		await message(assistant("done"));
+		await message(system({ preamble: null }), "pi.system");
+		view = await root.context(context);
+		expect(view.messages.map(describeMessage)).toEqual([
+			"system:preamble",
+			"user:summary",
+			"user:kept",
+			"assistant:answer",
+			"user:next",
+			"assistant:done",
+			"system:preamble",
+		]);
+
+		// An omitted baseline leaves no message to lead; the delta after it is not a baseline and stays in place.
+		await append({ kind: "edit", edits: [{ target: baseline.id, action: "omit" }] });
+		view = await root.context(context);
+		expect(view.messages.map(describeMessage)).toEqual([
+			"user:summary",
+			"user:kept",
+			"assistant:answer",
+			"user:next",
+			"assistant:done",
+			"system:preamble",
+		]);
+
+		// A replacement of the baseline is not one either.
+		await append({
+			kind: "edit",
+			edits: [{ target: baseline.id, action: "replace", messages: [system({ other: "Other." })] }],
+		});
+		view = await root.context(context);
+		expect(view.messages.map(describeMessage)).toEqual([
+			"user:summary",
+			"user:kept",
+			"assistant:answer",
+			"user:next",
+			"system:other",
+			"assistant:done",
+			"system:preamble",
+		]);
+	});
+
 	it("synthesizes missing tool results after a fork and drops results cut from their call", async () => {
 		const { root, message } = await setup();
 		await message(user("go"));
@@ -436,8 +608,10 @@ describe("conversation context", () => {
 							return { kind: "message", model: [toolResult(id)] };
 						}
 						if (pick < 9) {
-							count("system");
-							return { kind: "message", model: [system({ s: `v${next++}` })] };
+							// `pi.system` entries can be the baseline that leads the context (#10904).
+							const kind = random(2) === 0 ? "pi.system" : "message";
+							count(kind === "pi.system" ? "baseline system" : "system");
+							return { kind, model: [system({ s: `v${next++}` })] };
 						}
 						if (pick < 10) {
 							count("note");
@@ -469,7 +643,17 @@ describe("conversation context", () => {
 						}, taskContext);
 					for (let step = 0; step < 150; step++) {
 						await append(root.id);
-						expect(await runtime.context(root.id, taskContext)).toEqual(await root.context(taskContext));
+						const whole = await root.context(taskContext);
+						expect(await runtime.context(root.id, taskContext)).toEqual(whole);
+						const contributed = whole.contributions.flat();
+						const first = contributed.findIndex((message) => message.role === "system");
+						if (
+							first > 0 &&
+							whole.messages[0] === contributed[first] &&
+							contributed.slice(0, first).some((message) => message.role === "assistant")
+						) {
+							count("baseline past assistant");
+						}
 						if (step % 10 === 9) {
 							// Overlapping reads, one with an earlier cutoff, share the kept range.
 							const at = written[random(written.length)]!.id;
@@ -514,9 +698,95 @@ describe("conversation context", () => {
 			"result",
 			"stray result",
 			"system",
+			"baseline system",
+			"baseline past assistant",
 			"note",
 		];
 		for (const category of [...categories, "omit", "replace", "head"]) expect(seen.get(category)).toBeGreaterThan(0);
+		await harness.close(context);
+	});
+
+	// #10904
+	it("finds the baseline among the entries an extended read adds", async () => {
+		const { harness, registry, root, first, scanned } = await countingSetup();
+		const Steps = defineTask<Record<string, never>, { phase: "run" }, null>({
+			name: "test.context-baseline",
+			version: 1,
+			initial: () => ({ phase: "run" }),
+			phases: {
+				run: async (_task, runtime, taskContext) => {
+					const append = (conversationId: typeof root.id, draft: EntryDraft) =>
+						runtime.commit(async (tx) => {
+							await tx.appendEntry(conversationId, draft);
+							return undefined;
+						}, taskContext);
+					const read = async (conversation: typeof root) => {
+						const before = scanned.rows;
+						const view = await runtime.context(conversation.id, taskContext);
+						const rows = scanned.rows - before;
+						expect(view).toEqual(await conversation.context(taskContext));
+						return { messages: view.messages.map(describeMessage), rows };
+					};
+
+					// The cached range has answers and no system message; the baseline arrives in a later read.
+					expect((await read(root)).messages[0]).toBe("user:first");
+					await append(root.id, { kind: "pi.system", model: [system({ plan: "Plan." })] });
+					let read2 = await read(root);
+					// One bounds probe and the added entry: the range was extended, not derived again.
+					expect(read2.rows).toBe(2);
+					expect(read2.messages.slice(0, 3)).toEqual(["system:plan", "user:first", "assistant:old 0"]);
+
+					// A system message the cached range already has keeps a later first `pi.system` entry in place.
+					const fork = await root.fork(first.id, { ownership: { kind: "ownerless" } }, taskContext);
+					await append(fork.id, { kind: "message", model: [assistant("answer")] });
+					await append(fork.id, { kind: "host.system", model: [system({ note: "Note." })] });
+					expect((await read(fork)).messages).toEqual(["user:first", "assistant:answer", "system:note"]);
+					await append(fork.id, { kind: "pi.system", model: [system({ note: null })] });
+					read2 = await read(fork);
+					expect(read2.rows).toBe(2);
+					expect(read2.messages).toEqual(["user:first", "assistant:answer", "system:note", "system:note"]);
+
+					// An omitted system message still rules out a later baseline; the extended read keeps that.
+					const omitted = await root.fork(first.id, { ownership: { kind: "ownerless" } }, taskContext);
+					await append(omitted.id, { kind: "message", model: [assistant("answer")] });
+					let host: EntryRecord | undefined;
+					await runtime.commit(async (tx) => {
+						host = await tx.appendEntry(omitted.id, {
+							kind: "host.system",
+							model: [system({ legacy: "Legacy." })],
+						});
+						return undefined;
+					}, taskContext);
+					await append(omitted.id, { kind: "edit", edits: [{ target: host!.id, action: "omit" }] });
+					expect((await read(omitted)).messages).toEqual(["user:first", "assistant:answer"]);
+					await append(omitted.id, { kind: "pi.system", model: [system({ legacy: null })] });
+					read2 = await read(omitted);
+					expect(read2.rows).toBe(2);
+					expect(read2.messages).toEqual(["user:first", "assistant:answer", "system:legacy"]);
+
+					// A first `pi.system` entry without a system message leaves no baseline for a later one to take.
+					const empty = await root.fork(first.id, { ownership: { kind: "ownerless" } }, taskContext);
+					await append(empty.id, { kind: "pi.system" });
+					await append(empty.id, { kind: "message", model: [assistant("answer")] });
+					expect((await read(empty)).messages).toEqual(["user:first", "assistant:answer"]);
+					await append(empty.id, { kind: "pi.system", model: [system({ s: "Delta." })] });
+					read2 = await read(empty);
+					expect(read2.rows).toBe(2);
+					expect(read2.messages).toEqual(["user:first", "assistant:answer", "system:s"]);
+					await runtime.commit(() => DONE, taskContext);
+				},
+			},
+			abort: async (_task, runtime, taskContext) => {
+				await runtime.commit(() => ABORTED, taskContext);
+			},
+		});
+		addTask(registry, Steps);
+		harness.resume();
+		const id = await harness.commit(
+			(tx) => tx.createTask(Steps, {}, { ownership: { kind: "conversation" }, conversationId: root.id }),
+			context,
+		);
+		expect((await harness.waitForTask(id, context)).state.outcome).toEqual(DONE.outcome);
 		await harness.close(context);
 	});
 

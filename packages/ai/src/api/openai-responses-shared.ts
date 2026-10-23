@@ -1,6 +1,7 @@
 import type OpenAI from "openai";
 import type {
 	Tool as OpenAITool,
+	ResponseConfigurationUpdateItemParam,
 	ResponseCreateParamsStreaming,
 	ResponseInput,
 	ResponseInputContent,
@@ -32,10 +33,10 @@ import type {
 } from "../types.ts";
 import type { AssistantMessageEventStream } from "../utils/event-stream.ts";
 import { shortHash } from "../utils/hash.ts";
-import { parseStreamingJson } from "../utils/json-parse.ts";
+import { parseStreamingJson, parseToolCallArguments } from "../utils/json-parse.ts";
 import { sanitizeSurrogates } from "../utils/sanitize-unicode.ts";
 import { getSystemMessageText, renderSystemMessageUpdate } from "../utils/text.ts";
-import { resolveTranscript, resolveTranscriptTools } from "../utils/transcript.ts";
+import { resolveTranscript, resolveTranscriptTools, type TranscriptToolSupport } from "../utils/transcript.ts";
 import {
 	appendGrammarToolInputJsonDelta,
 	type GrammarToolInputJsonBuffer,
@@ -87,7 +88,7 @@ function convertToolResultOutput<TApi extends Api>(
 		.map((c) => c.text)
 		.join("\n");
 	const images = content.filter((c): c is ImageContent => c.type === "image");
-	const hasText = textResult.length > 0;
+	const hasText = textResult.trim().length > 0;
 
 	if (images.length === 0 || !model.input.includes("image")) {
 		return sanitizeSurrogates(hasText ? textResult : images.length > 0 ? "(see attached image)" : "(no tool output)");
@@ -129,6 +130,16 @@ export interface ConvertResponsesMessagesOptions {
 	supportsAdditionalTools?: boolean;
 	supportsToolSearch?: boolean;
 	toolOptions?: ConvertResponsesToolsOptions;
+	/**
+	 * Effort for the reply being generated. When set, the thinking level is sent as
+	 * configuration_update items instead of a changing reasoning.effort, which would invalidate the
+	 * prompt cache. Each item sets the effort from that point on: one goes before every earlier
+	 * reply with the level recorded on it (`providerThinkingLevel`), and one with this effort goes
+	 * at the end. Earlier input therefore never changes. OpenAI documents the item before user
+	 * messages only. After tool results it was verified on gpt-6-luna (October 2026) to be accepted
+	 * and to apply to the next reply.
+	 */
+	configurationUpdateEffort?: string;
 }
 
 export interface ConvertResponsesToolsOptions {
@@ -141,6 +152,41 @@ export interface ConvertResponsesToolsOptions {
 // =============================================================================
 // Message conversion
 // =============================================================================
+
+/**
+ * How a Responses transport expresses tool changes.
+ *
+ * `additional_tools` items accumulate: a later item adds tools and replaces same-name
+ * definitions from earlier items, but it cannot replace a top-level tool and cannot remove any
+ * tool (verified with strict schemas on the OpenAI, Codex, and Copilot backends, October 2026).
+ * Like Codex, every tool is therefore declared in `additional_tools` items, starting with one
+ * at the head of the input, and removals are announced as text. Synthetic tool search can
+ * only add tools. Without mid-conversation system messages there is nothing to anchor.
+ */
+export function getResponsesToolSupport(options: {
+	supportsMidConvoSystemMessages?: boolean;
+	supportsAdditionalTools?: boolean;
+	supportsToolSearch?: boolean;
+}): TranscriptToolSupport {
+	if (options.supportsMidConvoSystemMessages && options.supportsAdditionalTools) return "changes";
+	return options.supportsToolSearch ? "additions" : "none";
+}
+
+/**
+ * Precedes every additional_tools item after the first. Without it, models read the latest item as
+ * the complete tool set once a removal was announced; Codex precedes its incremental tool batches
+ * with the same guidance. Restating the tools that are still unavailable keeps smaller models
+ * (gpt-5.6-luna, gpt-6-luna) from calling them again after later loads (verified October 2026).
+ */
+function renderIncrementalToolsNotice(unavailable: ReadonlySet<string>): string {
+	const notice =
+		"This is an incremental tools update. Previously declared tools remain available unless explicitly marked unavailable. A tool declared again here is available again, and its latest definition replaces the earlier one.";
+	return unavailable.size > 0 ? `${notice}\nStill unavailable: ${[...unavailable].join(", ")}.` : notice;
+}
+
+function renderToolRemovalNotice(names: readonly string[]): string {
+	return `The following tools are no longer available. Do not call them:\n${names.map((name) => `- ${name}`).join("\n")}`;
+}
 
 export function convertResponsesMessages<TApi extends Api>(
 	model: Model<TApi>,
@@ -177,22 +223,28 @@ export function convertResponsesMessages<TApi extends Api>(
 	};
 
 	const transformedMessages = transformMessages(normalizedContext.messages, model, normalizeToolCallId);
-	const transcriptTools = resolveTranscriptTools(
-		normalizedContext.messages,
-		(options?.supportsAdditionalTools ?? false) || (options?.supportsToolSearch ?? false),
-	);
+	const toolSupport = getResponsesToolSupport(options ?? {});
+	const transcriptTools = resolveTranscriptTools(normalizedContext.messages, toolSupport);
+	let declaredAdditionalTools = false;
+	/** Tools announced as removed and not declared again since. */
+	const unavailableTools = new Set<string>();
 	const appendSystemToolAdditions = (message: SystemMessage, seed: string): void => {
-		const tools = transcriptTools.anchorsAdditions ? (message.toolsAdded ?? []) : [];
+		const tools = message.toolsAdded ?? [];
+		for (const tool of tools) unavailableTools.delete(tool.name);
 		if (tools.length === 0) return;
-		if (options?.supportsAdditionalTools) {
+		if (toolSupport === "changes") {
+			if (declaredAdditionalTools) {
+				messages.push({ role: instructionRole, content: renderIncrementalToolsNotice(unavailableTools) });
+			}
+			declaredAdditionalTools = true;
 			messages.push({
 				type: "additional_tools",
 				role: "developer",
-				tools: convertResponsesTools(tools, options.toolOptions),
+				tools: convertResponsesTools(tools, options?.toolOptions),
 			} satisfies ResponseInputItem);
 			return;
 		}
-		if (!options?.supportsToolSearch) return;
+		if (toolSupport !== "additions") return;
 		const names = tools.map((tool) => tool.name);
 		const callId = `pi_tool_load_${shortHash(`${seed}:${names.join(",")}`)}`;
 		messages.push({
@@ -207,21 +259,39 @@ export function convertResponsesMessages<TApi extends Api>(
 			call_id: callId,
 			execution: "client",
 			status: "completed",
-			tools: convertResponsesTools(tools, { ...options.toolOptions, toolSearchResult: true }),
+			tools: convertResponsesTools(tools, { ...options?.toolOptions, toolSearchResult: true }),
 		} satisfies ResponseToolSearchOutputItemParam);
 	};
 	const includeInitialSystemMessage = options?.includeSystemPrompt ?? true;
+	const pushConfigurationUpdate = (effort: string): void => {
+		messages.push({
+			type: "configuration_update",
+			reasoning: { effort: effort as NonNullable<ResponseConfigurationUpdateItemParam.Reasoning["effort"]> },
+		} satisfies ResponseConfigurationUpdateItemParam);
+	};
 	const compat = model.compat as { supportsDeveloperRole?: boolean } | undefined;
 	const instructionRole = model.reasoning && compat?.supportsDeveloperRole !== false ? "developer" : "system";
 
 	let msgIndex = 0;
 	let sourceIndex = 0;
+	let systemIndex = 0;
 	for (const msg of transformedMessages) {
 		const isLeadingSystemMessage = sourceIndex++ === 0 && msg.role === "system";
 		if (msg.role === "system") {
-			if (!isLeadingSystemMessage) appendSystemToolAdditions(msg, `system:${msgIndex}`);
+			// transformMessages keeps system messages in order, so their position matches the transcript.
+			const anchorsToolChanges = systemIndex++ >= transcriptTools.foldedSystemMessages;
+			if (anchorsToolChanges) appendSystemToolAdditions(msg, `system:${msgIndex}`);
 			if (!isLeadingSystemMessage || includeInitialSystemMessage) {
-				const text = isLeadingSystemMessage ? getSystemMessageText(msg) : renderSystemMessageUpdate(msg);
+				const parts = [isLeadingSystemMessage ? getSystemMessageText(msg) : renderSystemMessageUpdate(msg)];
+				if (anchorsToolChanges) {
+					// A redefinition is a removal plus an addition of the same name; only true removals are announced.
+					const added = new Set((msg.toolsAdded ?? []).map((tool) => tool.name));
+					const removed = (msg.toolsRemoved ?? []).map((tool) => tool.name).filter((name) => !added.has(name));
+					if (removed.length > 0) parts.push(renderToolRemovalNotice(removed));
+					// Recorded after this message's additions, whose notice precedes this removal notice.
+					for (const name of removed) unavailableTools.add(name);
+				}
+				const text = parts.filter((part) => part.length > 0).join("\n\n");
 				if (text.length > 0) {
 					messages.push({ role: instructionRole, content: sanitizeSurrogates(text) });
 				}
@@ -328,6 +398,13 @@ export function convertResponsesMessages<TApi extends Api>(
 				}
 			}
 			if (output.length === 0) continue;
+			if (
+				options?.configurationUpdateEffort !== undefined &&
+				isSameModel &&
+				msg.providerThinkingLevel !== undefined
+			) {
+				pushConfigurationUpdate(msg.providerThinkingLevel);
+			}
 			messages.push(...output);
 		} else if (msg.role === "toolResult") {
 			const [callId] = msg.toolCallId.split("|");
@@ -349,6 +426,7 @@ export function convertResponsesMessages<TApi extends Api>(
 		}
 		if (!isLeadingSystemMessage) msgIndex++;
 	}
+	if (options?.configurationUpdateEffort !== undefined) pushConfigurationUpdate(options.configurationUpdateEffort);
 
 	return messages;
 }
@@ -713,7 +791,7 @@ export async function processResponsesStream<TApi extends Api>(
 				slot?.type === "toolCall" &&
 				slot.block.partialJson !== undefined
 			) {
-				slot.block.arguments = parseStreamingJson(item.arguments || slot.block.partialJson || "{}");
+				Object.assign(slot.block, parseToolCallArguments(item.arguments || slot.block.partialJson));
 				if (item.namespace !== undefined) slot.block.namespace = item.namespace;
 				// Finalize in-place and strip the scratch buffer so replay only
 				// carries parsed arguments.

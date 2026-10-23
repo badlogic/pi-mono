@@ -39,8 +39,13 @@ import { formatProviderError, normalizeProviderError } from "../utils/error-body
 import { AssistantMessageEventStream } from "../utils/event-stream.ts";
 import { shortHash } from "../utils/hash.ts";
 import { headersToRecord } from "../utils/headers.ts";
-import { parseStreamingJson } from "../utils/json-parse.ts";
-import { getPiUserAgent } from "../utils/pi-user-agent.ts";
+import { type ClientIdentity, getIdentityHeaders } from "../utils/identity.ts";
+import { parseStreamingJson, parseToolCallArguments } from "../utils/json-parse.ts";
+import {
+	applyOpenRouterReportedCost,
+	isOpenRouterModel,
+	type OpenRouterUsageAccounting,
+} from "../utils/openrouter-cost.ts";
 import { getProviderEnvValue } from "../utils/provider-env.ts";
 import { retryProviderRequest } from "../utils/provider-retry.ts";
 import { sanitizeSurrogates } from "../utils/sanitize-unicode.ts";
@@ -351,6 +356,7 @@ export const stream: StreamFunction<"openai-completions", OpenAICompletionsOptio
 				normalizedContext,
 				apiKey,
 				options?.headers,
+				options?.identity,
 				options?.fetch,
 				cacheSessionId,
 				compat,
@@ -461,7 +467,7 @@ export const stream: StreamFunction<"openai-completions", OpenAICompletionsOptio
 							});
 						}
 					} else {
-						block.arguments = parseStreamingJson(block.partialArgs);
+						Object.assign(block, parseToolCallArguments(block.partialArgs));
 					}
 					// Finalize in-place and strip the scratch buffers so replay only
 					// carries parsed arguments.
@@ -589,21 +595,8 @@ export const stream: StreamFunction<"openai-completions", OpenAICompletionsOptio
 				}
 
 				if (choice.delta) {
-					if (
-						choice.delta.content !== null &&
-						choice.delta.content !== undefined &&
-						choice.delta.content.length > 0
-					) {
-						const block = ensureTextBlock();
-						block.text += choice.delta.content;
-						stream.push({
-							type: "text_delta",
-							contentIndex: getContentIndex(block),
-							delta: choice.delta.content,
-							partial: output,
-						});
-					}
-
+					// Handle reasoning before content: some proxies (e.g. LiteLLM) aggregate reasoning and
+					// answer into one delta, and the thinking block must precede the text block.
 					// Some endpoints return reasoning in reasoning_content (llama.cpp),
 					// or reasoning (other openai compatible endpoints)
 					// Use the first non-empty reasoning field to avoid duplication
@@ -637,6 +630,34 @@ export const stream: StreamFunction<"openai-completions", OpenAICompletionsOptio
 						}
 					}
 
+					const reasoningDetails = (choice.delta as { reasoning_details?: unknown }).reasoning_details;
+					if (Array.isArray(reasoningDetails)) {
+						for (const detail of reasoningDetails) {
+							if (!isOpenAIReasoningDetail(detail)) continue;
+							ensureThinkingBlock("");
+							streamedReasoningDetails ??= [];
+							// Keep provider replay data in the existing signature slot. OpenRouter streams
+							// reasoning_details as deltas: consecutive text/summary deltas are merged into
+							// logical entries, while encrypted entries remain opaque and discrete.
+							appendOpenAIReasoningDetail(streamedReasoningDetails, detail);
+						}
+					}
+
+					if (
+						choice.delta.content !== null &&
+						choice.delta.content !== undefined &&
+						choice.delta.content.length > 0
+					) {
+						const block = ensureTextBlock();
+						block.text += choice.delta.content;
+						stream.push({
+							type: "text_delta",
+							contentIndex: getContentIndex(block),
+							delta: choice.delta.content,
+							partial: output,
+						});
+					}
+
 					if (choice?.delta?.tool_calls) {
 						for (const toolCall of choice.delta.tool_calls as StreamingToolCallDelta[]) {
 							const block = ensureToolCallBlock(toolCall);
@@ -664,19 +685,6 @@ export const stream: StreamFunction<"openai-completions", OpenAICompletionsOptio
 								delta,
 								partial: output,
 							});
-						}
-					}
-
-					const reasoningDetails = (choice.delta as { reasoning_details?: unknown }).reasoning_details;
-					if (Array.isArray(reasoningDetails)) {
-						for (const detail of reasoningDetails) {
-							if (!isOpenAIReasoningDetail(detail)) continue;
-							ensureThinkingBlock("");
-							streamedReasoningDetails ??= [];
-							// Keep provider replay data in the existing signature slot. OpenRouter streams
-							// reasoning_details as deltas: consecutive text/summary deltas are merged into
-							// logical entries, while encrypted entries remain opaque and discrete.
-							appendOpenAIReasoningDetail(streamedReasoningDetails, detail);
 						}
 					}
 				}
@@ -759,11 +767,12 @@ function createClient(
 	context: TranscriptContext,
 	apiKey: string,
 	optionsHeaders?: ProviderHeaders,
+	identity?: ClientIdentity,
 	fetch?: typeof globalThis.fetch,
 	sessionId?: string,
 	compat: ResolvedOpenAICompletionsCompat = getCompat(model),
 ) {
-	const headers: ProviderHeaders = { "User-Agent": getPiUserAgent(), ...model.headers };
+	const headers: ProviderHeaders = { ...getIdentityHeaders(model, identity), ...model.headers };
 	if (model.provider === "github-copilot") {
 		const hasImages = hasCopilotVisionInput(context.messages);
 		const copilotHeaders = buildCopilotDynamicHeaders({
@@ -812,7 +821,9 @@ function buildParams(
 ) {
 	const transcriptTools = resolveTranscriptTools(
 		context.messages,
-		compat.supportsMidConvoSystemMessages === true && compat.supportsMidConvoToolAdditions === true,
+		compat.supportsMidConvoSystemMessages === true && compat.supportsMidConvoToolAdditions === true
+			? "additions"
+			: "none",
 	);
 	const messages = convertMessages(model, context, compat, {
 		grammarToolInputProperties,
@@ -1228,11 +1239,14 @@ export function convertMessages(
 	const transformedMessages = transformMessages(normalizedContext.messages, model, (id) => normalizeToolCallId(id));
 	const transcriptTools = resolveTranscriptTools(
 		normalizedContext.messages,
-		compat.supportsMidConvoSystemMessages === true && compat.supportsMidConvoToolAdditions === true,
+		compat.supportsMidConvoSystemMessages === true && compat.supportsMidConvoToolAdditions === true
+			? "additions"
+			: "none",
 	);
 	const instructionRole = model.reasoning && compat.supportsDeveloperRole ? "developer" : "system";
 
 	let lastRole: string | null = null;
+	let systemIndex = 0;
 
 	for (let i = 0; i < transformedMessages.length; i++) {
 		const msg = transformedMessages[i];
@@ -1246,7 +1260,8 @@ export function convertMessages(
 		}
 
 		if (msg.role === "system") {
-			const addedTools = i > 0 && transcriptTools.anchorsAdditions ? (msg.toolsAdded ?? []) : [];
+			// transformMessages keeps system messages in order, so their position matches the transcript.
+			const addedTools = systemIndex++ >= transcriptTools.foldedSystemMessages ? (msg.toolsAdded ?? []) : [];
 			if (addedTools.length > 0) {
 				const kimiToolMessage: KimiToolSystemMessageParam = {
 					role: "system",
@@ -1418,7 +1433,7 @@ export function convertMessages(
 				const hasImages = toolMsg.content.some((c) => c.type === "image");
 
 				// Always send tool result with text (or placeholder if only images)
-				const hasText = textResult.length > 0;
+				const hasText = textResult.trim().length > 0;
 				const toolResultText = hasText ? textResult : hasImages ? "(see attached image)" : "(no tool output)";
 				// Some providers require the 'name' field in tool results
 				const toolResultMsg: ChatCompletionToolMessageParam = {
@@ -1517,6 +1532,8 @@ function convertTools(
 }
 
 function parseChunkUsage(
+	// OpenRouter adds billing fields to streamed usage at runtime,
+	// although the OpenAI SDK does not type those fields.
 	rawUsage: {
 		prompt_tokens?: number;
 		completion_tokens?: number;
@@ -1556,6 +1573,9 @@ function parseChunkUsage(
 		cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
 	};
 	calculateCost(model, usage);
+	if (isOpenRouterModel(model)) {
+		applyOpenRouterReportedCost(usage, rawUsage as typeof rawUsage & OpenRouterUsageAccounting);
+	}
 	return usage;
 }
 

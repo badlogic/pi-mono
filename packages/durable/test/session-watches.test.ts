@@ -1,3 +1,5 @@
+import { setFlagsFromString } from "node:v8";
+import { runInNewContext } from "node:vm";
 import type { Context } from "@earendil-works/chord";
 import {
 	BACKGROUND_CONTEXT,
@@ -7,13 +9,15 @@ import {
 	withContextValue,
 } from "@earendil-works/chord/context";
 import { applyImmutable } from "@earendil-works/chord/delta";
-import { defineDoc } from "@earendil-works/pi-durable";
+import { type DocumentWatch, defineDoc, MemoryStorage } from "@earendil-works/pi-durable";
 import { describe, expect, it } from "vitest";
+import { SessionImpl } from "../src/session/session.ts";
 import { context, documentChanges, flush, openTestSession } from "./session-support.ts";
 
 type State = { value: number; items: string[]; retained: { label: string } };
 
 const StateDoc = defineDoc<State>({
+	checkpointWhen: () => false,
 	kind: "watch.state",
 	version: 1,
 	scope: "session",
@@ -307,7 +311,7 @@ describe("Session document watches", () => {
 		const baseline = watch.value;
 		await session.commit((tx) => tx.retireDoc(StateDoc), context);
 		await session.close(context);
-		expect(await watch.closed).toEqual({ reason: "session_closed" });
+		expect(await watch.closed).toEqual({ reason: "ended" });
 		expect(watch.value).toBe(baseline);
 		expect(() => watch.start(async () => undefined)).toThrow("stopped");
 	});
@@ -329,7 +333,7 @@ describe("Session document watches", () => {
 		await entered.promise;
 		await session.commit((tx) => tx.retireDoc(StateDoc), context);
 		await session.close(context);
-		expect(await watch.closed).toEqual({ reason: "session_closed" });
+		expect(await watch.closed).toEqual({ reason: "ended" });
 		release.resolve();
 		await flush();
 		expect(values).toEqual([1]);
@@ -402,7 +406,7 @@ describe("Session document watches", () => {
 		await entered.promise;
 		await session.close(context);
 		expect(deliveryContext!.abortSignal).toBeUndefined();
-		expect(await watch.closed).toEqual({ reason: "session_closed" });
+		expect(await watch.closed).toEqual({ reason: "ended" });
 		release.resolve();
 	});
 
@@ -430,12 +434,14 @@ describe("Session document watches", () => {
 
 	it("hydrates migration without writing and observes the later exact edit", async () => {
 		const Old = defineDoc<{ value: number }>({
+			checkpointWhen: () => false,
 			kind: "watch.migration",
 			version: 1,
 			scope: "session",
 			initial: () => ({ value: 3 }),
 		});
 		const Current = defineDoc<{ value: number; migrated: boolean }>({
+			checkpointWhen: () => false,
 			kind: "watch.migration",
 			version: 2,
 			scope: "session",
@@ -499,5 +505,50 @@ describe("Session document watches", () => {
 		await flush();
 		expect(watch.value?.value).toBe(7);
 		await watch.stop();
+	});
+
+	it("retains neither its Session nor its listener once stopped, while still referenced", async () => {
+		setFlagsFromString("--expose-gc");
+		const gc = runInNewContext("gc") as () => void;
+		const collect = async (): Promise<void> => {
+			for (let round = 0; round < 5; round++) {
+				await new Promise((resolve) => setTimeout(resolve, 0));
+				gc();
+			}
+		};
+		/** A watch of a Session nothing else references; `stop` says whether to stop it before returning. */
+		const acquire = async (stop: boolean) => {
+			// No eviction timer, so nothing but the watch can keep the Session alive.
+			const session = new SessionImpl(
+				new MemoryStorage(),
+				Date.now,
+				() => Number.POSITIVE_INFINITY,
+				() => () => {},
+			);
+			await session.commit((tx) => tx.doc(StateDoc).then(() => undefined), context);
+			const watch: DocumentWatch<State> = (await session.watchDoc(StateDoc, context))!;
+			const listener = async (): Promise<void> => {};
+			watch.start(listener);
+			await session.commit(async (tx) => {
+				(await tx.doc(StateDoc)).value = 1;
+			}, context);
+			await flush();
+			if (stop) await watch.stop();
+			return { watch, session: new WeakRef(session), listener: new WeakRef(listener) };
+		};
+
+		// Control: a running watch keeps its Session, so the collection below is real.
+		const running = await acquire(false);
+		await collect();
+		expect(running.session.deref()).toBeDefined();
+		await running.watch.stop();
+
+		const stopped = await acquire(true);
+		await collect();
+		expect(stopped.session.deref()).toBeUndefined();
+		expect(stopped.listener.deref()).toBeUndefined();
+		// What it delivered last stays readable.
+		expect(stopped.watch.value?.value).toBe(1);
+		expect(await stopped.watch.closed).toEqual({ reason: "stopped" });
 	});
 });

@@ -39,28 +39,17 @@ export type ImageProcessor = {
 /** Formats every provider takes inline; others, such as BMP, need converting. */
 export const INLINE_IMAGE_TYPES: ReadonlySet<string> = new Set(["image/png", "image/jpeg", "image/gif", "image/webp"]);
 
-const BASE64 = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
-
-/** Standard base64 of `bytes`, without platform APIs such as `Buffer` or `btoa`. */
+/**
+ * Standard base64 of `bytes`. `btoa` takes a binary string, built 8 KiB at a time: a single `String.fromCharCode`
+ * call with megabytes of arguments overflows the stack.
+ */
 export function toBase64(bytes: Uint8Array): string {
 	const parts: string[] = [];
-	let chunk = "";
-	for (let i = 0; i < bytes.length; i += 3) {
-		const a = bytes[i]!;
-		const b = bytes[i + 1];
-		const c = bytes[i + 2];
-		chunk += BASE64[a >> 2]!;
-		chunk += BASE64[((a & 3) << 4) | ((b ?? 0) >> 4)]!;
-		chunk += b === undefined ? "=" : BASE64[((b & 15) << 2) | ((c ?? 0) >> 6)]!;
-		chunk += c === undefined ? "=" : BASE64[c & 63]!;
-		// Join in pieces: one string grown a character at a time is slow for megabytes.
-		if (chunk.length >= 8192) {
-			parts.push(chunk);
-			chunk = "";
-		}
+	for (let i = 0; i < bytes.length; i += 8192) {
+		// `apply` takes any array-like, though its type asks for an array.
+		parts.push(String.fromCharCode.apply(null, bytes.subarray(i, i + 8192) as unknown as number[]));
 	}
-	parts.push(chunk);
-	return parts.join("");
+	return btoa(parts.join(""));
 }
 
 /** The length of the base64 of `byteLength` bytes. */

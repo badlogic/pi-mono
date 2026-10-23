@@ -330,6 +330,19 @@ describe("detectCapabilities", () => {
 		});
 	});
 
+	// #11131
+	it("enables hyperlinks without images for Rex", () => {
+		withEnv({ TERM_PROGRAM: "rex", TERM: "xterm-256color", KITTY_WINDOW_ID: "1" }, () => {
+			const caps = detectCapabilities();
+			assert.strictEqual(caps.hyperlinks, true);
+			assert.strictEqual(caps.images, "kitty");
+			assert.strictEqual(caps.trueColor, true);
+		});
+		withEnv({ TERM_PROGRAM: "rex", PI_HYPERLINKS: "0" }, () => {
+			assert.strictEqual(detectCapabilities().hyperlinks, false);
+		});
+	});
+
 	it("enables hyperlinks for Ghostty", () => {
 		withEnv({ TERM_PROGRAM: "ghostty" }, () => {
 			const caps = detectCapabilities();

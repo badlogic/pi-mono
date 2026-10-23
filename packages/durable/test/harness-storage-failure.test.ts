@@ -106,8 +106,8 @@ describe("a failed Storage call", () => {
 		const failed = { name: "SessionFailed", cause: failure };
 		await expect(task).rejects.toMatchObject(failed);
 		await expect(idle).rejects.toMatchObject(failed);
-		expect(await watch.closed).toEqual({ reason: "session_failed", error: failure });
-		expect(await stream.closed).toEqual({ reason: "session_failed", error: failure });
+		expect(await watch.closed).toEqual({ reason: "failed", error: failure });
+		expect(await stream.closed).toEqual({ reason: "failed", error: failure });
 		// Every later call, and a wait that starts now.
 		await expect(harness.getTask(id, context)).rejects.toMatchObject(failed);
 		await expect(harness.waitForIdle(context)).rejects.toMatchObject(failed);
@@ -229,7 +229,7 @@ describe("a failed Storage call", () => {
 		await harness.close(context);
 	});
 
-	it("ends what a task holds with session_failed, not as cancelled by its signal", async () => {
+	it("ends what a task holds as failed, not as cancelled by its signal", async () => {
 		const ends: unknown[] = [];
 		const watching = deferred();
 		const Watcher = defineTask<null, { phase: "work" }, null>({
@@ -260,7 +260,7 @@ describe("a failed Storage call", () => {
 		storage.failNextCommit(failure);
 		await expect(root.commit((tx) => tx.appendEntry(root.id, { kind: "note" }), context)).rejects.toBe(failure);
 		await opened.harness.closed;
-		expect(ends).toEqual([{ reason: "session_failed", error: failure }, "SessionFailed"]);
+		expect(ends).toEqual([{ reason: "failed", error: failure }, "SessionFailed"]);
 		await opened.harness.close(context);
 	});
 
@@ -491,7 +491,7 @@ describe("listener and report errors", () => {
 				publication: () => {
 					throw failure;
 				},
-				closeSession: () => {},
+				end: () => {},
 			}),
 			context,
 		);
@@ -504,7 +504,7 @@ describe("listener and report errors", () => {
 		while (seen.length === 0) await new Promise((resolve) => setTimeout(resolve, 1));
 		expect(reports).toEqual([failure]);
 		await harness.close(context);
-		expect(await watch.closed).toEqual({ reason: "session_closed" });
+		expect(await watch.closed).toEqual({ reason: "ended" });
 	});
 
 	it("contains a fulfilled thenable that calls only its fulfillment handler", async () => {

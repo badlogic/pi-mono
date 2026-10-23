@@ -31,12 +31,13 @@ import type { InlineExtension } from "./core/extensions/types.ts";
 import { ModelRuntime } from "./core/model-runtime.ts";
 import { DefaultPackageManager } from "./core/package-manager.ts";
 import { type AppMode, resolveProjectTrusted } from "./core/project-trust.ts";
-import { DefaultResourceLoader, isBuiltinExtension } from "./core/resource-loader.ts";
+import { DefaultResourceLoader, formatPackageInstallWarning, isBuiltinExtension } from "./core/resource-loader.ts";
 import { SettingsManager } from "./core/settings-manager.ts";
 import { hasTrustRequiringProjectResources, ProjectTrustStore } from "./core/trust-manager.ts";
 import { spawnProcess, spawnProcessSync, waitForChildProcess } from "./utils/child-process.ts";
 import { canonicalizePath, getCwdRelativePath } from "./utils/paths.ts";
 import { getPiUserAgent } from "./utils/pi-user-agent.ts";
+import { stripBom } from "./utils/text.ts";
 import { formatVersionCheckError, getLatestPiRelease, isNewerPackageVersion } from "./utils/version-check.ts";
 import {
 	cleanupWindowsSelfUpdateQuarantine,
@@ -63,7 +64,7 @@ function getActiveManagedInstallRoot(): string | undefined {
 
 	const markerPath = join(managedRoot, MANAGED_INSTALL_MARKER);
 	try {
-		const marker = JSON.parse(readFileSync(markerPath, "utf8")) as {
+		const marker = JSON.parse(stripBom(readFileSync(markerPath, "utf8"))) as {
 			kind?: unknown;
 			layout?: unknown;
 			schemaVersion?: unknown;
@@ -87,10 +88,11 @@ async function fetchInstallerArtifact(url: string, label: string): Promise<strin
 }
 
 async function runManagedNpmCi(stageDir: string): Promise<void> {
+	// No age-gate override: the release lockfile pins every package, so npm never
+	// resolves versions and a configured min-release-age does not apply.
 	const args = [
 		"ci",
 		"--ignore-scripts",
-		"--min-release-age=0",
 		"--omit=dev",
 		"--include=optional",
 		"--no-fund",
@@ -874,6 +876,14 @@ export async function handleConfigCommand(
 	const projectResolvedPaths = settingsManager.isProjectTrusted()
 		? await new DefaultPackageManager({ cwd, agentDir, settingsManager, builtinExtensions }).resolve()
 		: globalResolvedPaths;
+	const installWarnings = new Set(
+		[...(globalResolvedPaths.installFailures ?? []), ...(projectResolvedPaths.installFailures ?? [])].map(
+			formatPackageInstallWarning,
+		),
+	);
+	for (const warning of installWarnings) {
+		console.error(chalk.yellow(`Warning: ${warning}`));
+	}
 
 	await selectConfig({
 		resolvedPaths: { global: globalResolvedPaths, project: projectResolvedPaths },

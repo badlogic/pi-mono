@@ -1,21 +1,23 @@
 /** Error codes callers see (guide table). A refused or aborted reload keeps the code of its cause. */
-export type ChordErrorCode =
-	| "aborted"
-	| "contract_mismatch"
-	| "forbidden"
-	| "gone"
-	| "invalid"
-	| "not_in_variant"
-	| "not_ready"
-	| "released"
-	| "superseded"
-	| "unavailable"
-	| "upgrade_conflict"
-	| "upgrade_required";
+export const CHORD_ERROR_CODES = [
+	"aborted",
+	"contract_mismatch",
+	"forbidden",
+	"gone",
+	"invalid",
+	"not_in_variant",
+	"not_ready",
+	"released",
+	"superseded",
+	"unavailable",
+	"upgrade_conflict",
+	"upgrade_required",
+] as const;
+export type ChordErrorCode = (typeof CHORD_ERROR_CODES)[number];
 
 /**
- * Finer cause inside a code, for logs and tests: e.g. `invalid` + `args`, `result`, `state`, `input`, `behavior`,
- * `duplicate`, `cycle`, `read_only`, `not_eager`, `registry_conflict`; `unavailable` + `unknown_type`.
+ * Finer cause inside a code, for logs and tests: e.g. `invalid` + `args`, `result`, `state`, `input`, `implementation`,
+ * `duplicate`, `cycle`, `read_only`, `not_host_lifetime`, `registry_conflict`; `unavailable` + `unknown_type`.
  */
 export type ChordErrorReason = string;
 

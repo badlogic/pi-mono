@@ -275,7 +275,7 @@ export class JsonlStorage implements Storage {
 		return storage;
 	}
 
-	async commit(writes: readonly StorageWrite[], context: Context): Promise<Seq> {
+	async commit(writes: readonly StorageWrite[], adopt: (seq: Seq) => void, context: Context): Promise<Seq> {
 		this.assertUsable();
 		const prepared = this.memory.prepareCommit(writes);
 		const encoded = this.encodeCommit(prepared.seq, prepared.writes);
@@ -302,6 +302,8 @@ export class JsonlStorage implements Storage {
 		if (!marker.ok) throw this.poison(errorFromFile(`append to ${MAIN_FILE}`, marker.error));
 		const seq = prepared.apply();
 		this.adoptSidecarState(prepared.writes);
+		// The marker is appended: the batch is durable. Reclaiming sidecars comes after adoption.
+		adopt(seq);
 		await this.reclaimSidecars(reclamations, context);
 		return seq;
 	}

@@ -3,6 +3,7 @@ import {
 	fauxAssistantMessage,
 	type Message,
 	type Models,
+	PI_ATTRIBUTION,
 	type SimpleStreamOptions,
 	type SystemMessage,
 } from "@earendil-works/pi-ai";
@@ -385,6 +386,25 @@ describe("generation", () => {
 		await harness.close(context);
 	});
 
+	it("attributes model requests to pi by default and merges the Harness identity over it", async () => {
+		const seen: (SimpleStreamOptions["identity"] | undefined)[] = [];
+		const capture = (_context: unknown, options?: SimpleStreamOptions) => {
+			seen.push(options?.identity);
+			return fauxAssistantMessage("ok");
+		};
+		const acme = { name: "acme", url: "https://acme.example" };
+		for (const identity of [undefined, { userAgent: "short" as const, attribution: acme }]) {
+			const setup = chatSetup();
+			setup.identity = identity;
+			setup.faux.setResponses([capture]);
+			const { harness, root } = await openChat(new MemoryStorage(), setup);
+			harness.resume();
+			await (await root.submit({ type: "input", content: "hi" }, context)).wait(context);
+			await harness.close(context);
+		}
+		expect(seen).toEqual([{ attribution: PI_ATTRIBUTION }, { attribution: acme, userAgent: "short" }]);
+	});
+
 	// Regression coverage for #10424.
 	it("keeps provider session IDs request-local across concurrent conversations", async () => {
 		const setup = chatSetup();
@@ -495,7 +515,11 @@ describe("generation", () => {
 			followUpMode: "one-at-a-time",
 			contextRetentionMs: 600_000,
 			documentRetentionMs: expect.any(Number),
+			afterFailedRun: "keep",
+			restartLimit: 5,
 		});
+		expect(resolveSettings({ restartLimit: 0 }).restartLimit).toBe(5);
+		expect(resolveSettings({ restartLimit: Number.POSITIVE_INFINITY }).restartLimit).toBe(Number.POSITIVE_INFINITY);
 		expect(resolveSettings({ retry: { enabled: false }, compaction: { backgroundTokens: 0 } })).toMatchObject({
 			retry: { enabled: false, maxRetries: 3, baseDelayMs: 2000 },
 			compaction: { enabled: true, backgroundTokens: 0 },
@@ -535,6 +559,7 @@ describe("generation", () => {
 
 	it("renders sections that read conversation documents through input.read", async () => {
 		const Agent = defineDoc<{ cwd: string; kind: string }>({
+			checkpointWhen: () => false,
 			kind: "test.agent",
 			version: 1,
 			scope: "conversation",

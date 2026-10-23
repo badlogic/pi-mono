@@ -7,7 +7,7 @@ export interface Registry<V> {
 	readonly value?: V;
 }
 
-/** `conflict: "error"` rejects two records registering one key; `"last"` keeps the later registration. */
+/** `conflict: "error"` rejects two objects registering one key; `"last"` keeps the later registration. */
 export const defineRegistry = <V>(name: string, options: { conflict?: "error" | "last" } = {}): Registry<V> => ({
 	name,
 	conflict: options.conflict ?? "error",
@@ -16,11 +16,11 @@ export const defineRegistry = <V>(name: string, options: { conflict?: "error" | 
 export type RegistryTable<V> = ReadonlyMap<string, V>;
 
 export interface RegistryView<V> {
-	/** Table of `ctx.epoch`, or of the current epoch without ctx. */
+	/** Table of `ctx.codeVersion`, or of the current code version without ctx. */
 	table(ctx?: Ctx): RegistryTable<V>;
 	get(key: string, ctx?: Ctx): V | undefined;
 	/** Called with the current table immediately and whenever a new table is installed. */
-	subscribe(listener: (table: RegistryTable<V>, epoch: number) => void): () => void;
+	subscribe(listener: (table: RegistryTable<V>, codeVersion: number) => void): () => void;
 }
 
 export interface Registration {

@@ -60,11 +60,11 @@ export type CodemodeErrorKind =
 	/** The script threw or failed to parse. `name` and `stack` come from the script's error. */
 	| "script"
 	/**
-	 * The overall deadline expired, or a VM on the calling thread used up its interrupt budget. The VM
-	 * was stopped.
+	 * The overall deadline expired, or a VM on the calling thread used up its interrupt budget.
+	 * The execution ended and the VM was asked to stop; a worker or remote VM may still be computing.
 	 */
 	| "timeout"
-	/** The caller's signal fired or the sandbox was closed. The VM was stopped. */
+	/** The caller's signal fired or the sandbox was closed. The execution ended and the VM was asked to stop. */
 	| "aborted"
 	/**
 	 * The VM or its transport failed outside the script's control (for example a wasm trap, a missing
@@ -146,6 +146,20 @@ export interface CodemodeSandboxOptions extends CodemodeSandboxBaseOptions {
 	 * specifier of an embedded build entrypoint; other hosts usually use a URL.
 	 */
 	workerUrl?: string | URL;
+	/**
+	 * Synchronously reserves capacity immediately before creating each worker, after loading wasm.
+	 * Throw to deny admission without starting a worker. Return a release callback, called once if
+	 * worker construction fails or when the worker actually exits, not when the result settles.
+	 * The release callback must not throw. Reservations can be shared across sandbox instances.
+	 */
+	acquireWorker?(): () => void;
+	/**
+	 * Called once for each worker started by execute() or start(). `exited` resolves when that worker
+	 * actually exits, which may be after the result and close() settle: on Bun a non-interruptible
+	 * built-in can delay termination. Use it to keep the worker counted against host concurrency
+	 * limits until it exits. A thrown callback error fails the execution and requests worker termination.
+	 */
+	onWorkerStarted?(exited: Promise<void>): void;
 }
 
 /** A call the script made in a {@link CodemodeSandboxBase.start} run, answered with `CodemodeRun.deliver()`. */
@@ -216,7 +230,7 @@ export interface CodemodeRun {
 	readonly result: Promise<CodemodeResult>;
 	/**
 	 * Whether the run has its outcome: the script ended, timed out, or failed, or the run was aborted. Set when that is
-	 * decided, before `result` settles (which waits for the VM to stop); calls can no longer be answered.
+	 * decided, before `result` settles; calls can no longer be answered. It does not mean the VM has exited.
 	 */
 	readonly finished: boolean;
 	/**

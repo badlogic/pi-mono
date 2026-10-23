@@ -40,8 +40,13 @@ import type {
 import { appendAssistantMessageDiagnostic } from "../utils/diagnostics.ts";
 import { AssistantMessageEventStream } from "../utils/event-stream.ts";
 import { headersToRecord } from "../utils/headers.ts";
-import { parseJsonWithRepair, parseStreamingJson } from "../utils/json-parse.ts";
-import { getPiUserAgent } from "../utils/pi-user-agent.ts";
+import { type ClientIdentity, getIdentityHeaders } from "../utils/identity.ts";
+import { parseJsonWithRepair, parseStreamingJson, parseToolCallArguments } from "../utils/json-parse.ts";
+import {
+	applyOpenRouterReportedCost,
+	isOpenRouterModel,
+	type OpenRouterUsageAccounting,
+} from "../utils/openrouter-cost.ts";
 import { getProviderEnvValue } from "../utils/provider-env.ts";
 import { retryProviderRequest } from "../utils/provider-retry.ts";
 import { sanitizeSurrogates } from "../utils/sanitize-unicode.ts";
@@ -60,7 +65,7 @@ import {
 } from "./constrained-sampling.ts";
 import { buildCopilotDynamicHeaders, hasCopilotVisionInput } from "./github-copilot-headers.ts";
 import { adjustMaxTokensForThinking, buildBaseOptions, clampMaxTokensToContext } from "./simple-options.ts";
-import { transformMessages } from "./transform-messages.ts";
+import { splitErrorToolResultImages, transformMessages } from "./transform-messages.ts";
 
 /**
  * Resolve cache retention preference.
@@ -131,6 +136,17 @@ const fromClaudeCodeName = (name: string, tools?: Tool[]) => {
 	return name;
 };
 
+function convertImageBlock(image: ImageContent) {
+	return {
+		type: "image" as const,
+		source: {
+			type: "base64" as const,
+			media_type: image.mimeType as "image/jpeg" | "image/png" | "image/gif" | "image/webp",
+			data: image.data,
+		},
+	};
+}
+
 /**
  * Convert content blocks to Anthropic API format
  */
@@ -161,14 +177,7 @@ function convertContentBlocks(content: (TextContent | ImageContent)[]):
 				text: sanitizeSurrogates(block.text),
 			};
 		}
-		return {
-			type: "image" as const,
-			source: {
-				type: "base64" as const,
-				media_type: block.mimeType as "image/jpeg" | "image/png" | "image/gif" | "image/webp",
-				data: block.data,
-			},
-		};
+		return convertImageBlock(block);
 	});
 
 	// If only images (no text), add placeholder text block
@@ -298,10 +307,6 @@ function mergeHeaders(...headerSources: (ProviderHeaders | undefined)[]): Provid
 		}
 	}
 	return merged;
-}
-
-function mergeClientHeaders(...headerSources: (ProviderHeaders | undefined)[]): ProviderHeaders {
-	return mergeHeaders({ "User-Agent": getPiUserAgent() }, ...headerSources);
 }
 
 function hasHeader(headers: ProviderHeaders | undefined, name: string): boolean {
@@ -578,14 +583,12 @@ export const stream: StreamFunction<"anthropic-messages", AnthropicOptions> = (
 	const currentTools = getCurrentTools(normalizedContext.messages);
 
 	(async () => {
-		const providerThinkingLevel = model.compat?.supportsMidConvoEffort ? (options?.effort ?? "high") : undefined;
 		const output: AssistantMessage = {
 			role: "assistant",
 			content: [],
 			api: model.api as Api,
 			provider: model.provider,
 			model: model.id,
-			...(providerThinkingLevel === undefined ? {} : { providerThinkingLevel }),
 			usage: {
 				input: 0,
 				output: 0,
@@ -632,6 +635,7 @@ export const stream: StreamFunction<"anthropic-messages", AnthropicOptions> = (
 					copilotDynamicHeaders,
 					cacheSessionId,
 					federation,
+					options?.identity,
 				);
 				client = created.client;
 				isOAuth = created.isOAuthToken;
@@ -646,6 +650,7 @@ export const stream: StreamFunction<"anthropic-messages", AnthropicOptions> = (
 			for (;;) {
 				options?.signal?.throwIfAborted();
 				const built = buildParams(model, normalizedContext, isOAuth, options, disablePreferredStrictTools);
+				if (built.providerThinkingLevel) output.providerThinkingLevel = built.providerThinkingLevel;
 				let params = built.params;
 				const nextParams = await options?.onPayload?.(params, model);
 				if (nextParams !== undefined) {
@@ -833,7 +838,7 @@ export const stream: StreamFunction<"anthropic-messages", AnthropicOptions> = (
 								partial: output,
 							});
 						} else if (block.type === "toolCall") {
-							block.arguments = parseStreamingJson(block.partialJson);
+							Object.assign(block, parseToolCallArguments(block.partialJson));
 							// Finalize in-place and strip the scratch buffer so replay only
 							// carries parsed arguments.
 							delete (block as { partialJson?: string }).partialJson;
@@ -888,6 +893,14 @@ export const stream: StreamFunction<"anthropic-messages", AnthropicOptions> = (
 					output.usage.totalTokens =
 						output.usage.input + output.usage.output + output.usage.cacheRead + output.usage.cacheWrite;
 					calculateCost(usageModel, output.usage);
+					if (isOpenRouterModel(model) && event.usage) {
+						// OpenRouter adds billing fields to streamed message_delta usage at runtime,
+						// although its OpenAPI schema and the Anthropic SDK do not type those fields.
+						applyOpenRouterReportedCost(
+							output.usage,
+							event.usage as typeof event.usage & OpenRouterUsageAccounting,
+						);
+					}
 				}
 			}
 
@@ -1020,6 +1033,7 @@ function createClient(
 	dynamicHeaders?: Record<string, string>,
 	sessionId?: string,
 	federation?: AnthropicFederationConfig,
+	identity?: ClientIdentity,
 ): { client: Anthropic; isOAuthToken: boolean } {
 	// Copilot: Bearer auth.
 	if (model.provider === "github-copilot") {
@@ -1029,7 +1043,8 @@ function createClient(
 			baseURL: model.baseUrl,
 			dangerouslyAllowBrowser: true,
 			fetch,
-			defaultHeaders: mergeClientHeaders(
+			defaultHeaders: mergeHeaders(
+				getIdentityHeaders(model, identity),
 				{
 					accept: "application/json",
 					"anthropic-dangerous-direct-browser-access": "true",
@@ -1043,7 +1058,7 @@ function createClient(
 		return { client, isOAuthToken: false };
 	}
 
-	// OAuth: Bearer auth, Claude Code identity headers
+	// OAuth: Bearer auth, Claude Code identity headers instead of the client identity.
 	if (apiKey && isOAuthToken(apiKey)) {
 		const client = new PiAnthropic({
 			apiKey: null,
@@ -1051,7 +1066,7 @@ function createClient(
 			baseURL: model.baseUrl,
 			dangerouslyAllowBrowser: true,
 			fetch,
-			defaultHeaders: mergeClientHeaders(
+			defaultHeaders: mergeHeaders(
 				{
 					accept: "application/json",
 					"anthropic-dangerous-direct-browser-access": "true",
@@ -1073,7 +1088,8 @@ function createClient(
 		const header = compat.sessionAffinityFormat === "openrouter" ? "x-session-id" : "x-session-affinity";
 		sessionAffinityHeaders[header] = sessionId;
 	}
-	const defaultHeaders = mergeClientHeaders(
+	const defaultHeaders = mergeHeaders(
+		getIdentityHeaders(model, identity),
 		{
 			accept: "application/json",
 			"anthropic-dangerous-direct-browser-access": "true",
@@ -1160,7 +1176,12 @@ function buildParams(
 	isOAuthToken: boolean,
 	options?: AnthropicOptions,
 	disablePreferredStrictTools = false,
-): { params: MessageCreateParamsStreaming; hasPreferredStrictTools: boolean } {
+): {
+	params: MessageCreateParamsStreaming;
+	hasPreferredStrictTools: boolean;
+	/** Effort of the final effort marker, recorded on the reply so later requests can replay it. */
+	providerThinkingLevel: AnthropicEffort | undefined;
+} {
 	const { cacheControl } = getCacheControl(model, options?.cacheRetention, options?.env);
 	const compat = getAnthropicCompat(model);
 	const initialSystemMessage = getInitialSystemMessage(context.messages);
@@ -1194,22 +1215,23 @@ function buildParams(
 	const initialTools = initialSystemMessage?.toolsAdded ?? [];
 	const nativeToolChanges =
 		compat.supportsMidConvoSystemMessages && compat.supportsMidConvoToolChanges && initialTools.length > 0;
+	const thinkingDisabled =
+		model.reasoning && options?.thinkingEnabled === false && model.thinkingLevelMap?.off !== null;
+	// Effort cannot change between messages while thinking is disabled, so "off" sends no effort markers.
+	const effortMessages = model.compat?.supportsMidConvoEffort === true && !thinkingDisabled;
 	const converted = convertMessages(
 		conversationMessages,
 		isOAuthToken,
 		cacheControl,
 		compat.allowEmptySignature,
-		model.compat?.supportsMidConvoEffort === true ? model.provider : undefined,
+		effortMessages ? model.provider : undefined,
 		nativeToolChanges ? convertToolDefinitions : undefined,
 	);
 	const activeEffort = options?.effort ?? "high";
 	const betaFeatures = getBetaFeatures(model, context, isOAuthToken, nativeToolChanges, options);
 	const params: MessageCreateParamsStreaming = {
 		model: model.id,
-		messages:
-			model.compat?.supportsMidConvoEffort === true
-				? insertThinkingLevelMessages(converted, activeEffort)
-				: converted.messages,
+		messages: effortMessages ? insertThinkingLevelMessages(converted, activeEffort) : converted.messages,
 		max_tokens: options?.maxTokens ?? model.maxTokens,
 		stream: true,
 		...(betaFeatures.length > 0 ? { betas: betaFeatures } : {}),
@@ -1266,36 +1288,39 @@ function buildParams(
 		}
 	}
 
-	// Managed effort models always use adaptive thinking so prefix mismatches can
-	// be dropped instead of surfacing as persistent 400 responses.
-	if (model.compat?.supportsMidConvoEffort === true) {
+	if (thinkingDisabled) {
+		// No effort is sent, so the model default applies. Anthropic rejects `block_binding`
+		// with disabled thinking.
+		params.thinking = { type: "disabled" };
+	} else if (effortMessages) {
+		// Managed effort models use adaptive thinking so prefix mismatches can
+		// be dropped instead of surfacing as persistent 400 responses.
 		params.thinking = {
 			type: "adaptive",
 			display: options?.thinkingDisplay ?? "summarized",
 			block_binding: { prefix_mismatch_behavior: "drop_block" },
 		};
-		params.output_config = { effort: "high" };
-	} else if (model.reasoning) {
-		if (options?.thinkingEnabled) {
-			// Default to "summarized" so Opus 4.7 and Mythos Preview behave like
-			// older Claude 4 models (whose API default is also "summarized").
-			const display: AnthropicThinkingDisplay = options.thinkingDisplay ?? "summarized";
-			if (model.compat?.forceAdaptiveThinking === true) {
-				// Adaptive thinking: Claude decides when and how much to think.
-				params.thinking = { type: "adaptive", display };
-				if (options.effort) {
-					params.output_config = { effort: options.effort };
-				}
-			} else {
-				// Budget-based thinking for older models
-				params.thinking = {
-					type: "enabled",
-					budget_tokens: options.thinkingBudgetTokens || 1024,
-					display,
-				};
+		// Effort markers set the level for every reply. The top-level effort is part of the cached
+		// prompt, so it stays fixed. It is "low" because organizations can cap effort and reject
+		// requests containing any level above the cap.
+		params.output_config = { effort: "low" };
+	} else if (model.reasoning && options?.thinkingEnabled) {
+		// Default to "summarized" so Opus 4.7 and Mythos Preview behave like
+		// older Claude 4 models (whose API default is also "summarized").
+		const display: AnthropicThinkingDisplay = options.thinkingDisplay ?? "summarized";
+		if (model.compat?.forceAdaptiveThinking === true) {
+			// Adaptive thinking: Claude decides when and how much to think.
+			params.thinking = { type: "adaptive", display };
+			if (options.effort) {
+				params.output_config = { effort: options.effort };
 			}
-		} else if (options?.thinkingEnabled === false && model.thinkingLevelMap?.off !== null) {
-			params.thinking = { type: "disabled" };
+		} else {
+			// Budget-based thinking for older models
+			params.thinking = {
+				type: "enabled",
+				budget_tokens: options.thinkingBudgetTokens || 1024,
+				display,
+			};
 		}
 	}
 
@@ -1319,7 +1344,7 @@ function buildParams(
 		params.fallbacks = allowedFallbackModels.map((fallback) => ({ model: fallback.model }));
 	}
 
-	return { params, hasPreferredStrictTools };
+	return { params, hasPreferredStrictTools, providerThinkingLevel: effortMessages ? activeEffort : undefined };
 }
 
 // Normalize tool call IDs to match Anthropic's required pattern and length
@@ -1327,11 +1352,11 @@ function normalizeToolCallId(id: string): string {
 	return id.replace(/[^a-zA-Z0-9_-]/g, "_").slice(0, 64);
 }
 
-function convertToolResult(msg: ToolResultMessage): ContentBlockParam {
+function convertToolResult(msg: ToolResultMessage, content = msg.content): ContentBlockParam {
 	return {
 		type: "tool_result",
 		tool_use_id: msg.toolCallId,
-		content: convertContentBlocks(msg.content),
+		content: convertContentBlocks(content),
 		is_error: msg.isError,
 	};
 }
@@ -1353,7 +1378,9 @@ function convertMessages(
 	const params: MessageParam[] = [];
 	const assistantLevels = new Map<number, AnthropicEffort>();
 	// Later system messages are held back and emitted directly before the next assistant
-	// message (or at the end of the transcript). Anthropic requires `tool_result` blocks to
+	// message that is sent (or at the end of the transcript). Assistant messages that convert to
+	// no blocks are dropped, so holding past them keeps an update from landing before a user
+	// message (#11091). Anthropic requires `tool_result` blocks to
 	// immediately follow their `tool_use`, so a system message between them is rejected; this
 	// also mirrors where the managed-effort system messages are inserted. As a result an
 	// update placed before a user message in the transcript lands after it on the wire.
@@ -1404,14 +1431,7 @@ function convertMessages(
 							text: sanitizeSurrogates(item.text),
 						};
 					} else {
-						return {
-							type: "image",
-							source: {
-								type: "base64",
-								media_type: item.mimeType as "image/jpeg" | "image/png" | "image/gif" | "image/webp",
-								data: item.data,
-							},
-						};
+						return convertImageBlock(item);
 					}
 				});
 				const filteredBlocks = blocks.filter((b) => {
@@ -1427,7 +1447,6 @@ function convertMessages(
 				});
 			}
 		} else if (msg.role === "assistant") {
-			flushPendingSystemMessages();
 			const blocks: ContentBlockParam[] = [];
 
 			for (const block of msg.content) {
@@ -1482,6 +1501,7 @@ function convertMessages(
 				}
 			}
 			if (blocks.length === 0) continue;
+			flushPendingSystemMessages();
 			const messageIndex = params.length;
 			params.push({
 				role: "assistant",
@@ -1498,9 +1518,17 @@ function convertMessages(
 		} else if (msg.role === "toolResult") {
 			// Collect all consecutive toolResult messages, needed for z.ai Anthropic endpoint.
 			const toolResults: ContentBlockParam[] = [];
+			// Anthropic rejects error tool results that contain anything but text, so their images follow
+			// all tool results of the turn, which must come first in the user message (#10794).
+			const errorImages: ContentBlockParam[] = [];
 			let j = i;
 			while (j < transformedMessages.length && transformedMessages[j].role === "toolResult") {
-				toolResults.push(convertToolResult(transformedMessages[j] as ToolResultMessage));
+				const toolMsg = transformedMessages[j] as ToolResultMessage;
+				const split = splitErrorToolResultImages(toolMsg);
+				toolResults.push(convertToolResult(toolMsg, split?.content));
+				if (split) {
+					errorImages.push({ type: "text", text: split.caption }, ...split.images.map(convertImageBlock));
+				}
 				j++;
 			}
 
@@ -1509,7 +1537,7 @@ function convertMessages(
 
 			params.push({
 				role: "user",
-				content: toolResults,
+				content: [...toolResults, ...errorImages],
 			});
 		}
 	}

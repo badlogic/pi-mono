@@ -59,6 +59,24 @@ await sandbox.close();
 
 `memoryLimitBytes` caps the VM's heap. Allocations beyond it fail inside the script as `InternalError: out of memory`.
 
+Aborts, timeouts, and `close()` request worker termination without waiting for the worker to exit. On Bun, a built-in such as a long `String.prototype.indexOf` may not poll QuickJS's interrupt handler, so its worker can keep computing until the built-in returns. Stopping unrefs the worker after requesting termination, because `terminate()` refs it internally. This does not guarantee computation has stopped. On Bun 1.4.0, a pending `terminate()` can still delay host process exit despite `unref()`; cancellation results and `close()` do not wait for it.
+
+Hosts that limit concurrency can track actual worker lifetime with `onWorkerStarted(exited)`, called for each worker started by `execute()` or `start()`. Its promise resolves when that worker exits, not when the script result settles:
+
+```ts
+const workers = new Set<Promise<void>>();
+const sandbox = new CodemodeSandbox({
+	onWorkerStarted(exited) {
+		workers.add(exited);
+		void exited.then(() => workers.delete(exited));
+	},
+});
+```
+
+Keep a concurrency slot occupied until `exited` resolves. `close()` does not wait for these promises.
+
+To enforce an admission limit, pass `acquireWorker()`. It runs synchronously after WASM loading, immediately before each worker is created. Throw to reject the execution without starting a worker; otherwise return a release callback. The sandbox calls it once on actual worker exit or if the worker constructor fails. Share reservation state across sandbox instances, and do not release it when a script result settles.
+
 ## Store
 
 `store`/`load` let scripts keep values across executions. The sandbox does not persist anything itself: pass the current values as `options.store`, and a successful result reports what the script changed as `result.storeWrites` (`{ set, delete }`). Failed executions report no writes.
@@ -167,7 +185,7 @@ Bind the class with `script_name`. Binding a class exported from the agent's own
 }
 ```
 
-Then replace the sandbox. Tools, options other than `wasm` and `workerUrl`, and results stay the same:
+Then replace the sandbox. Tools, options other than the worker-specific `wasm`, `workerUrl`, `acquireWorker`, and `onWorkerStarted`, and results stay the same:
 
 ```ts
 import type { CodemodeSandboxDurableObject } from "@earendil-works/pi-codemode/cloudflare";
@@ -331,8 +349,8 @@ A run has no deadline unless `timeoutMs` is given. Result numbers must run 1, 2,
 | kind      | meaning                                                                     |
 | --------- | --------------------------------------------------------------------------- |
 | `script`  | the script threw or failed to parse; `stack` points at `codemode.js:<line>` |
-| `timeout` | the deadline expired or the interrupt budget ran out; the VM was stopped    |
-| `aborted` | `options.signal` fired or `close()` was called; the VM was stopped          |
+| `timeout` | the deadline expired or the interrupt budget ran out; VM shutdown was requested |
+| `aborted` | `options.signal` fired or `close()` was called; VM shutdown was requested |
 | `sandbox` | the VM or its transport failed, for example a wasm trap, a missing worker file, or a failed remote |
 
 `result.output` holds the text and image items in the order the script produced them, also for failed executions. The host keeps all of it until the script ends, so output is limited to `MAX_OUTPUT_CHARS` (16 Mi) characters of text and base64 image data and `MAX_OUTPUT_ITEMS` (100000) items. Past either limit the script fails with a `RangeError`, even if it catches the error. `result.calls` lists every tool call with `status: "ok" | "error" | "cancelled"`. A call that is still running when the script returns (not awaited) is aborted through the tool's `signal` and reported as `cancelled`.
@@ -351,6 +369,6 @@ The worker keeps script execution off the host thread: QuickJS runs synchronousl
 
 ## Runtime notes
 
-- Works the same on Node and Bun, including memory limits, interrupts, and a catchable `RangeError` for deep recursion (QuickJS's stack guard is enabled; without it the wasm stack overflows and traps).
+- Node and Bun support memory limits, interrupts, and a catchable `RangeError` for deep recursion (QuickJS's stack guard is enabled; without it the wasm stack overflows and traps). Bun may delay worker exit during non-interruptible built-ins; results do not wait for exit.
 - Stack traces use QuickJS frames (`at f (codemode.js:2:31)`), prefixed with `Name: message` like V8. The wrapper prefix shares line 1 with the script, so line numbers are exact; column numbers on line 1 are shifted.
 - QuickJS is an interpreter. Glue code and filtering tool results are fast enough; heavy computation is slower than in V8.

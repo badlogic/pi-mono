@@ -18,20 +18,29 @@ import type {
 import { formatProviderError, normalizeProviderError } from "../utils/error-body.ts";
 import { AssistantMessageEventStream } from "../utils/event-stream.ts";
 import { headersToRecord } from "../utils/headers.ts";
-import { getPiUserAgent } from "../utils/pi-user-agent.ts";
+import { type ClientIdentity, getIdentityHeaders } from "../utils/identity.ts";
 import { getProviderEnvValue } from "../utils/provider-env.ts";
 import { retryProviderRequest } from "../utils/provider-retry.ts";
 import { getDeclaredTools, resolveTranscript, resolveTranscriptTools } from "../utils/transcript.ts";
 import { createGrammarToolInputProperties } from "./constrained-sampling.ts";
 import { buildCopilotDynamicHeaders, hasCopilotVisionInput } from "./github-copilot-headers.ts";
 import { clampOpenAIPromptCacheKey } from "./openai-prompt-cache.ts";
-import { convertResponsesMessages, convertResponsesTools, processResponsesStream } from "./openai-responses-shared.ts";
+import {
+	convertResponsesMessages,
+	convertResponsesTools,
+	getResponsesToolSupport,
+	processResponsesStream,
+} from "./openai-responses-shared.ts";
 import { buildBaseOptions, resolveSamplingParams } from "./simple-options.ts";
 
 const OPENAI_TOOL_CALL_PROVIDERS = new Set(["openai", "openai-codex", "opencode"]);
 // OpenAI Responses rejects max_output_tokens below 16: https://github.com/earendil-works/pi/issues/6265
 const OPENAI_RESPONSES_MIN_OUTPUT_TOKENS = 16;
 const CHATGPT_USAGE_URL = "https://chatgpt.com/settings/usage";
+const CHATGPT_WORKSPACE_LIMIT_HINT =
+	"You've reached your ChatGPT workspace's usage limit. Ask your workspace admin to increase it at admin.openai.com → Workspace → Usage limits.";
+// Fixed reasoning.effort while configuration_update items carry the thinking level.
+const CONFIGURATION_UPDATE_REQUEST_EFFORT = "medium";
 
 /**
  * OpenAI API keys start with `sk-`; a different credential sent directly to OpenAI
@@ -91,7 +100,25 @@ function getCompat(model: Model<"openai-responses">): Required<OpenAIResponsesCo
 		supportsToolSearch: model.compat?.supportsToolSearch ?? false,
 		supportsExplicitPromptCacheMode: model.compat?.supportsExplicitPromptCacheMode ?? false,
 		supportsMaxOutputTokens: model.compat?.supportsMaxOutputTokens ?? true,
+		supportsMidConvoEffort: model.compat?.supportsMidConvoEffort ?? false,
 	};
+}
+
+/** Effort to send in configuration_update items, or undefined to send it as reasoning.effort. */
+function getConfigurationUpdateEffort(
+	model: Model<"openai-responses">,
+	options: OpenAIResponsesOptions | undefined,
+	compat: Required<OpenAIResponsesCompat>,
+): string | undefined {
+	if (
+		!compat.supportsMidConvoEffort ||
+		!options?.reasoningEffort ||
+		// Sign in with ChatGPT rejects configuration_update items.
+		isChatGPTSignIn(model, options.apiKey)
+	) {
+		return undefined;
+	}
+	return model.thinkingLevelMap?.[options.reasoningEffort] ?? options.reasoningEffort;
 }
 
 function getPromptCacheRetention(
@@ -134,12 +161,15 @@ export const stream: StreamFunction<"openai-responses", OpenAIResponsesOptions> 
 
 	// Start async processing
 	(async () => {
+		const compat = getCompat(model);
+		const configurationUpdateEffort = getConfigurationUpdateEffort(model, options, compat);
 		const output: AssistantMessage = {
 			role: "assistant",
 			content: [],
 			api: model.api as Api,
 			provider: model.provider,
 			model: model.id,
+			...(configurationUpdateEffort === undefined ? {} : { providerThinkingLevel: configurationUpdateEffort }),
 			usage: {
 				input: 0,
 				output: 0,
@@ -157,7 +187,6 @@ export const stream: StreamFunction<"openai-responses", OpenAIResponsesOptions> 
 			const apiKey = getClientApiKey(model.provider, options?.apiKey, options?.headers);
 			const cacheRetention = resolveCacheRetention(options?.cacheRetention, options?.env);
 			const cacheSessionId = cacheRetention === "none" ? undefined : options?.sessionId;
-			const compat = getCompat(model);
 			const grammarToolInputProperties = createGrammarToolInputProperties(
 				getDeclaredTools(normalizedContext.messages),
 				compat.supportsOpenAIGrammarTools,
@@ -167,10 +196,18 @@ export const stream: StreamFunction<"openai-responses", OpenAIResponsesOptions> 
 				normalizedContext,
 				apiKey,
 				options?.headers,
+				options?.identity,
 				options?.fetch,
 				cacheSessionId,
 			);
-			let params = buildParams(model, normalizedContext, options, compat, grammarToolInputProperties);
+			let params = buildParams(
+				model,
+				normalizedContext,
+				options,
+				compat,
+				grammarToolInputProperties,
+				configurationUpdateEffort,
+			);
 			const nextParams = await options?.onPayload?.(params, model);
 			if (nextParams !== undefined) {
 				params = nextParams as ResponseCreateParamsStreaming;
@@ -224,9 +261,14 @@ export const stream: StreamFunction<"openai-responses", OpenAIResponsesOptions> 
 				`${model.provider === "openai" ? "OpenAI" : model.provider} API error`,
 			);
 			// Sign in with ChatGPT shares the subscription's usage limit with other apps.
-			output.errorMessage = errorMessage.includes("subscription_sharing_usage_limit_exceeded")
-				? `${errorMessage}\nCheck your ChatGPT usage: ${CHATGPT_USAGE_URL}`
-				: errorMessage;
+			// On ChatGPT Business plans, the workspace admin also sets a per-user limit.
+			if (errorMessage.includes("subscription_sharing_usage_limit_exceeded")) {
+				output.errorMessage = `${errorMessage}\nCheck your ChatGPT usage: ${CHATGPT_USAGE_URL}`;
+			} else if (errorMessage.includes("subscription_sharing_workplace_individual_usage_limit_exceeded")) {
+				output.errorMessage = `${errorMessage}\n${CHATGPT_WORKSPACE_LIMIT_HINT}`;
+			} else {
+				output.errorMessage = errorMessage;
+			}
 			stream.push({ type: "error", reason: output.stopReason, error: output });
 			stream.end();
 		}
@@ -260,11 +302,12 @@ function createClient(
 	context: TranscriptContext,
 	apiKey: string,
 	optionsHeaders?: ProviderHeaders,
+	identity?: ClientIdentity,
 	fetch?: typeof globalThis.fetch,
 	sessionId?: string,
 ) {
 	const compat = getCompat(model);
-	const headers: ProviderHeaders = { "User-Agent": getPiUserAgent(), ...model.headers };
+	const headers: ProviderHeaders = { ...getIdentityHeaders(model, identity), ...model.headers };
 	if (model.provider === "github-copilot") {
 		const hasImages = hasCopilotVisionInput(context.messages);
 		const copilotHeaders = buildCopilotDynamicHeaders({
@@ -303,16 +346,11 @@ function buildParams(
 	model: Model<"openai-responses">,
 	context: TranscriptContext,
 	options: OpenAIResponsesOptions | undefined,
-	compat: Required<OpenAIResponsesCompat> = getCompat(model),
-	grammarToolInputProperties: ReadonlyMap<string, string> = createGrammarToolInputProperties(
-		getDeclaredTools(context.messages),
-		compat.supportsOpenAIGrammarTools,
-	),
+	compat: Required<OpenAIResponsesCompat>,
+	grammarToolInputProperties: ReadonlyMap<string, string>,
+	configurationUpdateEffort: string | undefined,
 ) {
-	const transcriptTools = resolveTranscriptTools(
-		context.messages,
-		compat.supportsAdditionalTools || compat.supportsToolSearch,
-	);
+	const transcriptTools = resolveTranscriptTools(context.messages, getResponsesToolSupport(compat));
 	const messages = convertResponsesMessages(model, context, OPENAI_TOOL_CALL_PROVIDERS, {
 		grammarToolInputProperties,
 		supportsMidConvoSystemMessages: compat.supportsMidConvoSystemMessages,
@@ -322,6 +360,7 @@ function buildParams(
 			supportsStrictMode: compat.supportsStrictMode,
 			supportsOpenAIGrammarTools: compat.supportsOpenAIGrammarTools,
 		},
+		configurationUpdateEffort,
 	});
 
 	const cacheRetention = resolveCacheRetention(options?.cacheRetention, options?.env);
@@ -363,9 +402,10 @@ function buildParams(
 	const reasoningEffort = options?.reasoningEffort ?? (options?.reasoningSummary ? "medium" : undefined);
 	if (model.reasoning) {
 		if (reasoningEffort) {
-			const effort = options?.reasoningEffort
+			const requestedEffort = options?.reasoningEffort
 				? (model.thinkingLevelMap?.[options.reasoningEffort] ?? options.reasoningEffort)
 				: reasoningEffort;
+			const effort = configurationUpdateEffort === undefined ? requestedEffort : CONFIGURATION_UPDATE_REQUEST_EFFORT;
 			params.reasoning = {
 				effort: effort as NonNullable<typeof params.reasoning>["effort"],
 				summary: options?.reasoningSummary || "auto",

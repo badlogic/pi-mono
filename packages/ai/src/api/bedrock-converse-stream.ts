@@ -53,7 +53,8 @@ import { appendAssistantMessageDiagnostic } from "../utils/diagnostics.ts";
 import { normalizeProviderError } from "../utils/error-body.ts";
 import { AssistantMessageEventStream } from "../utils/event-stream.ts";
 import { providerHeadersToRecord } from "../utils/headers.ts";
-import { parseStreamingJson } from "../utils/json-parse.ts";
+import { type ClientIdentity, getClientVersion } from "../utils/identity.ts";
+import { parseStreamingJson, parseToolCallArguments } from "../utils/json-parse.ts";
 import { resolveHttpProxyUrlForTarget } from "../utils/node-http-proxy.ts";
 import { getProviderEnvValue } from "../utils/provider-env.ts";
 import { sanitizeSurrogates } from "../utils/sanitize-unicode.ts";
@@ -72,7 +73,7 @@ import {
 	clampMaxTokensToContext,
 	clampReasoning,
 } from "./simple-options.ts";
-import { transformMessages } from "./transform-messages.ts";
+import { splitErrorToolResultImages, transformMessages } from "./transform-messages.ts";
 
 export type BedrockThinkingDisplay = "summarized" | "omitted";
 
@@ -162,6 +163,7 @@ export const stream: StreamFunction<"bedrock-converse-stream", BedrockOptions> =
 		const optionsProfile = options.profile || options.env?.AWS_PROFILE;
 		const config: BedrockRuntimeClientConfig = {
 			profile: optionsProfile || getProviderEnvValue("AWS_PROFILE", options.env),
+			customUserAgent: bedrockUserAgent(options.identity),
 		};
 		const configuredRegion = getConfiguredBedrockRegion(options);
 		const hasAmbientConfiguredProfile = Boolean(getProviderEnvValue("AWS_PROFILE"));
@@ -471,6 +473,16 @@ function isReservedHeader(key: string): boolean {
 }
 
 /**
+ * The client identity as AWS SDK user agent pairs. The SDK appends them to its own `User-Agent` and escapes characters
+ * that are not valid in a user agent token, so the detailed form is reduced to name and version.
+ */
+function bedrockUserAgent(identity: ClientIdentity | undefined): string | [string, string?][] {
+	const mode = identity?.userAgent ?? "detailed";
+	if (typeof mode === "object") return mode.custom;
+	return mode === "short" ? [["pi"]] : [["pi", getClientVersion(identity)]];
+}
+
+/**
  * Attach caller-supplied headers to the outgoing Bedrock request via a Smithy
  * `build`-step middleware. The `build` step runs after request serialisation but
  * before SigV4 signing, so injected headers are covered by the signature. Reserved
@@ -741,7 +753,7 @@ function handleContentBlockStop(
 			stream.push({ type: "thinking_end", contentIndex: index, content: block.thinking, partial: output });
 			break;
 		case "toolCall":
-			block.arguments = parseStreamingJson(block.partialJson);
+			Object.assign(block, parseToolCallArguments(block.partialJson));
 			// Finalize in-place and strip the scratch buffer so replay only
 			// carries parsed arguments.
 			delete (block as Block).partialJson;
@@ -1093,35 +1105,34 @@ function convertMessages(
 			case "toolResult": {
 				// Collect all consecutive toolResult messages into a single user message
 				// Bedrock requires all tool results to be in one message
-				const toolResults: ContentBlock.ToolResultMember[] = [];
-
-				// Add current tool result with all content blocks combined
-				toolResults.push({
-					toolResult: {
-						toolUseId: m.toolCallId,
-						content: convertToolResultContent(m.content),
-						status: m.isError ? ToolResultStatus.ERROR : ToolResultStatus.SUCCESS,
-					},
-				});
-
-				// Look ahead for consecutive toolResult messages
-				let j = i + 1;
+				const toolResults: ContentBlock[] = [];
+				// Claude rejects error tool results that contain anything but text, so for Claude their
+				// images follow all tool results of the turn (#10794). Other models keep them in place.
+				const errorImages: ContentBlock[] = [];
+				let j = i;
 				while (j < transformedMessages.length && transformedMessages[j].role === "toolResult") {
-					const nextMsg = transformedMessages[j] as ToolResultMessage;
+					const toolMsg = transformedMessages[j] as ToolResultMessage;
+					const split = isAnthropicClaudeModel(model) ? splitErrorToolResultImages(toolMsg) : undefined;
 					toolResults.push({
 						toolResult: {
-							toolUseId: nextMsg.toolCallId,
-							content: convertToolResultContent(nextMsg.content),
-							status: nextMsg.isError ? ToolResultStatus.ERROR : ToolResultStatus.SUCCESS,
+							toolUseId: toolMsg.toolCallId,
+							content: convertToolResultContent(split?.content ?? toolMsg.content),
+							status: toolMsg.isError ? ToolResultStatus.ERROR : ToolResultStatus.SUCCESS,
 						},
 					});
+					if (split) {
+						errorImages.push(
+							{ text: split.caption },
+							...split.images.map((image) => ({ image: createImageBlock(image.mimeType, image.data) })),
+						);
+					}
 					j++;
 				}
 
 				// Skip the messages we've already processed
 				i = j - 1;
 
-				result.push({ role: ConversationRole.USER, content: toolResults });
+				result.push({ role: ConversationRole.USER, content: [...toolResults, ...errorImages] });
 				break;
 			}
 			default:

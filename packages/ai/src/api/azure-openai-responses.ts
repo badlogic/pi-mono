@@ -5,13 +5,18 @@ import type { Api, AssistantMessage, Model, SimpleStreamOptions, StreamFunction,
 import { formatProviderError, normalizeProviderError } from "../utils/error-body.ts";
 import { AssistantMessageEventStream } from "../utils/event-stream.ts";
 import { headersToRecord } from "../utils/headers.ts";
-import { getPiUserAgent } from "../utils/pi-user-agent.ts";
+import { getIdentityHeaders } from "../utils/identity.ts";
 import { retryProviderRequest } from "../utils/provider-retry.ts";
 import { getDeclaredTools, resolveTranscript, resolveTranscriptTools } from "../utils/transcript.ts";
 import { type AzureEndpointOptions, resolveAzureConfig, resolveDeploymentName } from "./azure-openai-config.ts";
 import { createGrammarToolInputProperties } from "./constrained-sampling.ts";
 import { clampOpenAIPromptCacheKey } from "./openai-prompt-cache.ts";
-import { convertResponsesMessages, convertResponsesTools, processResponsesStream } from "./openai-responses-shared.ts";
+import {
+	convertResponsesMessages,
+	convertResponsesTools,
+	getResponsesToolSupport,
+	processResponsesStream,
+} from "./openai-responses-shared.ts";
 import { buildBaseOptions, resolveSamplingParams } from "./simple-options.ts";
 
 const AZURE_TOOL_CALL_PROVIDERS = new Set(["openai", "openai-codex", "opencode", "azure"]);
@@ -153,7 +158,7 @@ export const streamSimple: StreamFunction<"azure-openai-responses", SimpleStream
 };
 
 function createClient(model: Model<"azure-openai-responses">, apiKey: string, options?: AzureOpenAIResponsesOptions) {
-	const headers = { "User-Agent": getPiUserAgent(), ...model.headers };
+	const headers = { ...getIdentityHeaders(model, options?.identity), ...model.headers };
 
 	if (options?.headers) {
 		Object.assign(headers, options.headers);
@@ -183,7 +188,14 @@ function buildParams(
 ) {
 	const supportsAdditionalTools = model.compat?.supportsAdditionalTools ?? false;
 	const supportsToolSearch = model.compat?.supportsToolSearch ?? false;
-	const transcriptTools = resolveTranscriptTools(context.messages, supportsAdditionalTools || supportsToolSearch);
+	const transcriptTools = resolveTranscriptTools(
+		context.messages,
+		getResponsesToolSupport({
+			supportsMidConvoSystemMessages: model.compat?.supportsMidConvoSystemMessages ?? false,
+			supportsAdditionalTools,
+			supportsToolSearch,
+		}),
+	);
 	const messages = convertResponsesMessages(model, context, AZURE_TOOL_CALL_PROVIDERS, {
 		grammarToolInputProperties,
 		supportsMidConvoSystemMessages: model.compat?.supportsMidConvoSystemMessages ?? false,

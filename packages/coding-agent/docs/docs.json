@@ -48,6 +48,10 @@
               "path": "llama-cpp.md"
             },
             {
+              "title": "Run Local Models on NVIDIA RTX",
+              "path": "nvidia-rtx-llama-cpp.md"
+            },
+            {
               "title": "Configure Your Terminal",
               "path": "terminal-setup.md"
             },
@@ -147,6 +151,10 @@
         {
           "title": "Settings",
           "path": "settings.md"
+        },
+        {
+          "title": "Models Configuration",
+          "path": "models-configuration.md"
         },
         {
           "title": "Environment Variables",

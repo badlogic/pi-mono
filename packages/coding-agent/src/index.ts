@@ -236,6 +236,7 @@ export {
 	type ModelRuntimeAuthOverrides,
 } from "./core/model-runtime.ts";
 export type {
+	PackageInstallFailure,
 	PackageManager,
 	PathMetadata,
 	ProgressCallback,
@@ -390,6 +391,7 @@ export {
 	type WriteToolOptions,
 	withFileMutationQueue,
 } from "./core/tools/index.ts";
+export { formatReadLineRange } from "./core/tools/render-utils.ts";
 export {
 	hasTrustRequiringProjectResources,
 	type ProjectTrustDecision,

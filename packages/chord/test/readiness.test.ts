@@ -6,11 +6,11 @@ import {
 	defineRegistry,
 	type FacetApi,
 	forbidden,
+	hostNamed,
 	isChordError,
 	local,
 	memoryLinkPair,
 	remote,
-	resource,
 } from "../src/index.ts";
 
 const tick = () => new Promise<void>((resolve) => setImmediate(resolve));
@@ -22,7 +22,7 @@ const Lazy = local("ready.lazy", { version: 1, input: Type.Object({}) });
 describe("host: eager readiness", () => {
 	for (const operation of ["install", "load"] as const) {
 		it(`${operation} awaits resource activation and registration, leaving lazy objects lazy`, async () => {
-			const host = createHost({ onError: unexpectedError });
+			const host = createHost({ self: { kind: "host" }, onError: unexpectedError });
 			const entries = defineRegistry<string>("ready.entries");
 			let opened = () => {};
 			let lazyRuns = 0;
@@ -33,19 +33,17 @@ describe("host: eager readiness", () => {
 					serve(
 						Eager,
 						(_input, _principal, self) => {
-							self.resources({
-								r: resource({
-									rev: 1,
-									open: () =>
-										new Promise<void>((resolve) => {
-											opened = resolve;
-										}),
-								}),
+							self.resource("r", {
+								version: 1,
+								open: () =>
+									new Promise<void>((resolve) => {
+										opened = resolve;
+									}),
 							});
 							self.register(entries, { eager: "live" });
 							return {};
 						},
-						{ eager: true },
+						{ lifetime: "host" },
 					);
 					serve(Lazy, () => {
 						lazyRuns++;
@@ -73,7 +71,7 @@ describe("host: eager readiness", () => {
 		for (const failure of ["factory", "dependency", "resource"] as const) {
 			it(`${operation} rejects eager ${failure} failure with the activation error`, async () => {
 				const errors: unknown[] = [];
-				const host = createHost({ onError: (error) => errors.push(error) });
+				const host = createHost({ self: { kind: "host" }, onError: (error) => errors.push(error) });
 				const cause = forbidden(`${failure} failed`);
 				const facet = {
 					name: "bad",
@@ -87,17 +85,15 @@ describe("host: eager readiness", () => {
 								if (failure === "factory") throw cause;
 								if (failure === "dependency") self.get(Lazy, {});
 								if (failure === "resource")
-									self.resources({
-										r: resource({
-											rev: 1,
-											open: () => {
-												throw cause;
-											},
-										}),
+									self.resource("r", {
+										version: 1,
+										open: () => {
+											throw cause;
+										},
 									});
 								return {};
 							},
-							{ eager: true },
+							{ lifetime: "host" },
 						);
 					},
 				};
@@ -116,7 +112,7 @@ describe("host: eager readiness", () => {
 	}
 
 	it("load installs every facet before awaiting eager consumers", async () => {
-		const host = createHost({ onError: unexpectedError });
+		const host = createHost({ self: { kind: "host" }, onError: unexpectedError });
 		try {
 			await host.load([
 				{
@@ -128,19 +124,19 @@ describe("host: eager readiness", () => {
 								self.get(Lazy, {});
 								return {};
 							},
-							{ eager: true },
+							{ lifetime: "host" },
 						),
 				},
 				{ name: "provider", setup: ({ serve }) => serve(Lazy, () => ({})) },
 			]);
-			assert.equal(host.get(Eager, {}).status, "live");
+			assert.equal(host.hold(Eager, {}).status, "live");
 		} finally {
 			await host.close();
 		}
 	});
 
 	it("missing eager dependencies reject load instead of only reaching onError", async () => {
-		const host = createHost({ onError: () => {} });
+		const host = createHost({ self: { kind: "host" }, onError: () => {} });
 		try {
 			await assert.rejects(
 				host.load([
@@ -153,7 +149,7 @@ describe("host: eager readiness", () => {
 									self.get(Lazy, {});
 									return {};
 								},
-								{ eager: true },
+								{ lifetime: "host" },
 							),
 					},
 				]),
@@ -164,18 +160,18 @@ describe("host: eager readiness", () => {
 		}
 	});
 
-	it("ready includes direct eager serves and their configured inputs, but not later serves", async () => {
-		const host = createHost({ onError: () => {} });
-		const WithInput = local("ready.input", { version: 1, input: Type.Object({ id: Type.String() }) });
-		let input: unknown;
+	it("ready includes direct host serves, but not later serves", async () => {
+		const host = createHost({ self: { kind: "host" }, onError: () => {} });
+		const First = local("ready.first", { version: 1, input: Type.Object({}) });
+		let created = 0;
 		try {
 			host.serve(
-				WithInput,
-				(value) => {
-					input = value;
+				First,
+				() => {
+					created++;
 					return {};
 				},
-				{ eager: { input: { id: "bootstrap" } } },
+				{ lifetime: "host" },
 			);
 			const first = host.ready();
 			host.serve(
@@ -183,10 +179,10 @@ describe("host: eager readiness", () => {
 				() => {
 					throw forbidden("later");
 				},
-				{ eager: true },
+				{ lifetime: "host" },
 			);
 			await first;
-			assert.deepEqual(input, { id: "bootstrap" });
+			assert.equal(created, 1);
 			await assert.rejects(host.ready(), /later/);
 		} finally {
 			await host.close();
@@ -195,11 +191,21 @@ describe("host: eager readiness", () => {
 
 	for (const operation of ["install", "load"] as const) {
 		it(`${operation} can defer eager readiness until the parent admits the worker`, { timeout: 2000 }, async () => {
-			const server = createHost({ name: "server", onError: unexpectedError });
+			const server = createHost({ self: { kind: "host" }, name: "server", onError: unexpectedError });
 			const [parent, upstream] = memoryLinkPair();
-			const worker = createHost({ name: "worker", upstream, onError: unexpectedError });
-			const Status = remote("ready.status", { version: 1, input: Type.Object({}), variants: { default: {} } });
-			server.serve(Status, () => ({ kind: "default" }));
+			const worker = createHost({
+				self: { kind: "host" },
+				name: "worker",
+				upstream: { link: upstream, principal: { kind: "server" } },
+				onError: unexpectedError,
+			});
+			const Status = remote("ready.status", {
+				version: 1,
+				input: Type.Object({}),
+				host: hostNamed("server"),
+				variants: { default: {} },
+			});
+			server.serve(Status, () => ({ variant: "default" }));
 			let bootstrap = false;
 			let reported = false;
 			const facet = {
@@ -211,32 +217,30 @@ describe("host: eager readiness", () => {
 							bootstrap = true;
 							return {};
 						},
-						{ eager: true },
+						{ lifetime: "host" },
 					);
 					serve(
 						Eager,
 						(_input, _principal, self) => {
-							const status = self.get(Status, {}, { at: "server" });
-							self.resources({
-								r: resource({
-									rev: 1,
-									deps: [status],
-									open: () => {
-										reported = true;
-									},
-								}),
+							const status = self.get(Status, {});
+							self.resource("r", {
+								version: 1,
+								deps: [status],
+								open: () => {
+									reported = true;
+								},
 							});
 							return {};
 						},
-						{ eager: true },
+						{ lifetime: "host" },
 					);
 				},
 			};
 			try {
 				await (operation === "install"
-					? worker.install(facet, { awaitEager: false })
-					: worker.load([facet], { awaitEager: false }));
-				await worker.get(Lazy, {}).ready;
+					? worker.install(facet, { awaitHostObjects: false })
+					: worker.load([facet], { awaitHostObjects: false }));
+				await worker.hold(Lazy, {}).ready;
 				assert.equal(bootstrap, true);
 				let settled = false;
 				const ready = worker.ready().then(() => {

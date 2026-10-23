@@ -14,27 +14,30 @@ import { isRetryableAssistantError, retryDelayMs } from "@earendil-works/pi-ai/u
 import { getCurrentTools } from "@earendil-works/pi-ai/utils/transcript";
 import { AssistantEntry, ResetEntry, SystemEntry, UserEntry } from "../entries.ts";
 import type { ExecutionEnv } from "../env/index.ts";
+import type { TaskCreationOptions } from "../session/transaction.ts";
 import { defineTask } from "../tasks.ts";
 import type {
 	ConversationId,
 	EntryId,
 	NextTaskState,
 	SubmissionId,
+	SubmissionSettlement,
 	TaskId,
 	TaskOutcome,
 	TaskRuntime,
 	Tx,
 	TypedEntry,
 } from "../types.ts";
-import { addTools } from "./agent.ts";
-import { createCompaction, estimateContext, selectCut } from "./compaction.ts";
-import { applyBoundary, prepareBoundary } from "./inbox.ts";
+import { addTools, sectionExtension } from "./agent.ts";
+import { compactionPolicy, createCompaction, estimateContext, selectCut } from "./compaction.ts";
+import { applyBoundary, type Boundary, prepareBoundary, withdrawQueuedInputs } from "./inbox.ts";
 import { assignJson } from "./json.ts";
 import { endRun, LiveDoc, type LiveState, type ToolSlot } from "./live.ts";
 import { planSystemEntries, renderSections, replaySections } from "./prompt.ts";
 import { ensureProviderSessionId } from "./provider.ts";
 import { appendToolResult, harnessError, ToolTask, type ToolTaskResult } from "./tool.ts";
 import type {
+	AfterFailedRun,
 	CompactionPolicy,
 	CompactionResult,
 	ContextView,
@@ -46,6 +49,7 @@ import type {
 	UserInput,
 } from "./types.ts";
 import { recordUsage } from "./usage.ts";
+import { optionalExtension } from "./util.ts";
 
 export type GenerationInput = Record<string, never>;
 
@@ -150,20 +154,29 @@ export const GenerationTask = defineTask<GenerationInput, GenerationCheckpoint, 
 			}
 			const view = await runtime.context(conversationId, context);
 			const shown = replaySections(view.messages);
-			const report = (error: unknown) => runtime.report(error);
 			let env: ExecutionEnv | undefined;
 			try {
 				env = await runtime.env(context);
 			} catch (error) {
 				if (context.abortSignal?.aborted) throw error;
-				report(error);
+				runtime.report(error, { type: "host", callback: "env" });
 			}
 			const input: PromptInput = { conversationId, agent, env, shown: Object.fromEntries(shown), read: runtime };
-			const desired = await renderSections(agent.sections, input, shown, report, context);
+			const desired = await renderSections(
+				agent.sections,
+				input,
+				shown,
+				(error, section) =>
+					runtime.report(error, {
+						type: "extension",
+						...optionalExtension(sectionExtension(agent, section.key)),
+					}),
+				context,
+			);
 			const entries = planSystemEntries(view, desired, agent.tools, runtime.now());
 			const threshold =
 				compacted === undefined
-					? thresholdCompaction(view, entries, resolved.contextWindow, settings.compaction)
+					? thresholdCompaction(view, entries, resolved.contextWindow, compactionPolicy(settings, model))
 					: undefined;
 			if (threshold === "blocking") {
 				// Compact first and prepare again; the transcript is unchanged until the compaction appends.
@@ -213,6 +226,7 @@ export const GenerationTask = defineTask<GenerationInput, GenerationCheckpoint, 
 			const options: SimpleStreamOptions = {
 				...streamOptions,
 				signal: runtime.signal,
+				telemetry: context.telemetry,
 				sessionId: await ensureProviderSessionId(runtime, context),
 				...(thinkingLevel === "off" ? {} : { reasoning: thinkingLevel }),
 			};
@@ -220,9 +234,10 @@ export const GenerationTask = defineTask<GenerationInput, GenerationCheckpoint, 
 			const request = { attempt, compacted, model: ref, cutoff, messages: view.messages };
 			await classify(runtime, request, message, context);
 		},
+		/** After the backoff's sleep; a run before `until` (an early wake, or a record of an earlier version) sleeps again. */
 		retry: async (task, runtime, context) => {
 			const { attempt, compacted, until } = task.state.checkpoint;
-			await runtime.sleep(until, context);
+			if (until > runtime.now()) return runtime.sleepUntil(until, task.state.checkpoint, context);
 			await runtime.commit(async (tx) => {
 				(await tx.doc(LiveDoc, runtime.conversationId)).generation = { attempt: attempt + 1 };
 				const checkpoint: GenerationCheckpoint = {
@@ -233,12 +248,16 @@ export const GenerationTask = defineTask<GenerationInput, GenerationCheckpoint, 
 				return { status: "running", checkpoint };
 			}, context);
 		},
+		/** After the sleep until `pollAt`; a run before it (an early wake, or a record of an earlier version) sleeps again. */
 		poll: async (task, runtime, context) => {
 			const { attempt, compacted, model: ref, cutoff, handle, pollAt } = task.state.checkpoint;
+			if (pollAt > runtime.now()) return runtime.sleepUntil(pollAt, task.state.checkpoint, context);
 			const model = runtime.models.getModel(ref.provider, ref.modelId);
 			if (model === undefined) return failNoModel(runtime, ref, context);
-			await runtime.sleep(pollAt, context);
-			const message = await runtime.models.fetchDeferred(model, handle, { signal: runtime.signal });
+			const message = await runtime.models.fetchDeferred(model, handle, {
+				signal: runtime.signal,
+				telemetry: context.telemetry,
+			});
 			const request = { attempt, compacted, model: ref, cutoff, pollAt };
 			await classify(runtime, request, message, context);
 		},
@@ -268,9 +287,12 @@ export const GenerationTask = defineTask<GenerationInput, GenerationCheckpoint, 
 			const model = runtime.models.getModel(checkpoint.model.provider, checkpoint.model.modelId);
 			if (model !== undefined) {
 				try {
-					await runtime.models.cancelDeferred(model, checkpoint.handle, { signal: runtime.signal });
+					await runtime.models.cancelDeferred(model, checkpoint.handle, {
+						signal: runtime.signal,
+						telemetry: context.telemetry,
+					});
 				} catch (error) {
-					runtime.report(error);
+					runtime.report(error, { type: "host", callback: "models" });
 				}
 			}
 		}
@@ -354,8 +376,9 @@ function compactionFailure(outcome: Exclude<TaskOutcome<CompactionResult>, { sta
 /** Settle the run's inputs `unanswered` with `model_error` and fail with `text`. */
 async function failModelError(runtime: Runtime, text: string, context: Context): Promise<void> {
 	await runtime.commit(async (tx) => {
+		const failure = await prepareFailure(tx, runtime);
 		const live = await tx.doc(LiveDoc, runtime.conversationId);
-		endRun(tx, live, runtime.taskId, { status: "unanswered", reason: "model_error", detail: text });
+		await endFailedRun(tx, runtime, live, failure, { status: "unanswered", reason: "model_error", detail: text });
 		return {
 			status: "terminal",
 			outcome: { status: "failed", error: { message: text, detail: { reason: "model_error" } } },
@@ -368,10 +391,40 @@ async function failNoModel(runtime: Runtime, ref: ModelRef | undefined, context:
 	const message =
 		ref === undefined ? "No model is configured" : `Model ${ref.provider}/${ref.modelId} is not available`;
 	await runtime.commit(async (tx) => {
+		const failure = await prepareFailure(tx, runtime);
 		const live = await tx.doc(LiveDoc, runtime.conversationId);
-		endRun(tx, live, runtime.taskId, { status: "unanswered", reason: "no_model" });
+		await endFailedRun(tx, runtime, live, failure, { status: "unanswered", reason: "no_model" });
 		return { status: "terminal", outcome: { status: "failed", error: { message, detail: { reason: "no_model" } } } };
 	}, context);
+}
+
+/** What a failed run's end needs from the table, read before the commit's first table write. */
+type Failure = { readonly policy: AfterFailedRun; readonly boundary?: Boundary };
+
+async function prepareFailure(tx: Tx, runtime: Runtime): Promise<Failure> {
+	const settings = runtime.settings;
+	const policy = settings.afterFailedRun;
+	if (policy !== "continue") return { policy };
+	return { policy, boundary: await prepareBoundary(tx, runtime.conversationId, settings) };
+}
+
+/**
+ * End a failed run, settling its inputs with `settlement`, and do with the inputs queued behind it what
+ * `settings.afterFailedRun` says (spec §6): keep them, start the next run with them, or withdraw them.
+ */
+async function endFailedRun(
+	tx: Tx,
+	runtime: Runtime,
+	live: Draft<LiveState>,
+	failure: Failure,
+	settlement: SubmissionSettlement,
+): Promise<void> {
+	const conversationId = runtime.conversationId;
+	endRun(tx, live, runtime.taskId, settlement);
+	if (failure.policy === "withdraw") await withdrawQueuedInputs(tx, conversationId, "run_failed");
+	if (failure.boundary === undefined) return;
+	const { users } = await applyBoundary(tx, failure.boundary, "final", runtime.now());
+	if (users.length > 0) await startRun(tx, conversationId, live, users);
 }
 
 /**
@@ -400,7 +453,7 @@ async function streamResponse(
 ): Promise<AssistantMessage> {
 	const interval = runtime.settings.progress.partialIntervalMs;
 	let pending: AssistantMessage | undefined;
-	let timer: ReturnType<typeof setTimeout> | undefined;
+	let timer: (() => void) | undefined;
 	let inFlight: Promise<void> | undefined;
 	let stopped = false;
 	const flush = (): void => {
@@ -424,7 +477,7 @@ async function streamResponse(
 			})
 			.finally(() => {
 				inFlight = undefined;
-				if (pending !== undefined && !stopped) timer = setTimeout(flush, interval);
+				if (pending !== undefined && !stopped) timer = runtime.setTimer(flush, interval);
 			});
 	};
 	try {
@@ -434,12 +487,12 @@ async function streamResponse(
 			// never gets past it, so it never leaves a partial.
 			if (event.type === "done" || event.type === "error" || event.partial.content.length === 0) continue;
 			pending = event.partial;
-			if (timer === undefined && inFlight === undefined) timer = setTimeout(flush, interval);
+			if (timer === undefined && inFlight === undefined) timer = runtime.setTimer(flush, interval);
 		}
 		return await events.result();
 	} finally {
 		stopped = true;
-		clearTimeout(timer);
+		timer?.();
 		await inFlight;
 	}
 }
@@ -461,7 +514,7 @@ async function classify(
 			runtime.now() + (handle.pollAfterMs ?? DEFAULT_POLL_AFTER_MS),
 			request.pollAt === undefined ? Number.NEGATIVE_INFINITY : request.pollAt + 1,
 		);
-		await runtime.commit(async (tx) => {
+		await runtime.commit(async (tx): Promise<Next> => {
 			(await tx.doc(LiveDoc, conversationId)).generation = { attempt, deferred: { pollAt } };
 			const checkpoint = {
 				phase: "poll",
@@ -472,7 +525,7 @@ async function classify(
 				handle,
 				pollAt,
 			} as const;
-			return { status: "running", checkpoint };
+			return { status: "sleeping", checkpoint, until: pollAt };
 		}, context);
 		return;
 	}
@@ -487,10 +540,10 @@ async function classify(
 	// The retry and compaction policies govern the next attempt, so they are read now rather than pinned at preparation.
 	const settings = runtime.settings;
 	const overflow = message.stopReason === "error" && isContextOverflow(message);
-	if (overflow && compacted === undefined && settings.compaction.enabled) {
-		const policy = settings.compaction;
+	const compaction = compactionPolicy(settings, ref);
+	if (overflow && compacted === undefined && compaction.enabled) {
 		const view = await runtime.context(conversationId, context, { at: cutoff });
-		if (selectCut(view, policy.keepRecentTokens) !== undefined) {
+		if (selectCut(view, compaction.keepRecentTokens) !== undefined) {
 			const text = message.errorMessage ?? "Context overflow";
 			await runtime.commit(async (tx): Promise<Next> => {
 				const live = await tx.doc(LiveDoc, conversationId);
@@ -513,9 +566,11 @@ async function classify(
 		attempt <= policy.maxRetries;
 	const until = retry ? runtime.now() + retryDelayMs(policy, attempt) : 0;
 	await runtime.commit(async (tx): Promise<Next> => {
+		// Read before the first table write; only a failure uses it.
+		const failure = retry ? undefined : await prepareFailure(tx, runtime);
 		const live = await tx.doc(LiveDoc, conversationId);
 		await appendAssistant(tx, conversationId, message);
-		if (retry) {
+		if (failure === undefined) {
 			live.generation = { attempt, retry: { at: until, error: message.errorMessage ?? "" } };
 			const checkpoint = {
 				phase: "retry",
@@ -523,10 +578,10 @@ async function classify(
 				...(compacted === undefined ? {} : { compacted }),
 				until,
 			} as const;
-			return { status: "running", checkpoint };
+			return { status: "sleeping", checkpoint, until };
 		}
 		const text = message.errorMessage ?? `Model response ended with stop reason ${message.stopReason}`;
-		endRun(tx, live, runtime.taskId, { status: "unanswered", reason: "model_error", detail: text });
+		await endFailedRun(tx, runtime, live, failure, { status: "unanswered", reason: "model_error", detail: text });
 		return {
 			status: "terminal",
 			outcome: { status: "failed", error: { message: text, detail: { reason: "model_error" } } },
@@ -701,12 +756,16 @@ export async function startRun(
 	live: Draft<LiveState>,
 	inputs: SubmissionId[],
 ): Promise<void> {
-	live.run = { taskId: await createGeneration(tx, conversationId), inputs };
+	live.run = { taskId: await createGeneration(tx, conversationId, { submissionIds: inputs }), inputs };
 }
 
 /** A generation owned by its conversation. */
-function createGeneration(tx: Tx, conversationId: ConversationId): Promise<TaskId<GenerationResult>> {
-	return tx.createTask(GenerationTask, {}, { ownership: { kind: "conversation" }, conversationId });
+function createGeneration(
+	tx: Tx,
+	conversationId: ConversationId,
+	telemetry: Pick<TaskCreationOptions, "submissionIds"> = {},
+): Promise<TaskId<GenerationResult>> {
+	return tx.createTask(GenerationTask, {}, { ownership: { kind: "conversation" }, conversationId, ...telemetry });
 }
 
 /** Hand run control from `from` to `to`; the run's inputs move with it. */

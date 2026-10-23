@@ -1,6 +1,7 @@
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { DatabaseSync } from "node:sqlite";
 import {
 	type AssistantMessage,
 	fauxAssistantMessage,
@@ -418,9 +419,9 @@ describe("manual compaction", () => {
 		expect(usage.input).toBeGreaterThan(usageBefore.input);
 		await turn(chat, "next", "done");
 		const agent = chat.faux.agentRequests.at(-1)!.messages;
-		// The next request: the summary, the kept turn, the new input, then one complete system baseline.
-		expect(agent.map((message) => message.role)).toEqual(["user", "user", "assistant", "user", "system"]);
-		expect(agent[4]).toMatchObject({ sections: { preamble: "You are helpful." } });
+		// The next request: one complete system baseline leading the summary, the kept turn, and the new input (#10904).
+		expect(agent.map((message) => message.role)).toEqual(["system", "user", "user", "assistant", "user"]);
+		expect(agent[0]).toMatchObject({ sections: { preamble: "You are helpful." } });
 		await chat.harness.close(context);
 	});
 
@@ -484,9 +485,10 @@ describe("manual compaction", () => {
 		await result(chat, await chat.root.compact(undefined, context));
 		gate.resolve();
 		expect((await input.wait(context)).status).toBe("done");
-		// The continuation request starts with the summary.
+		// The continuation request starts with the new baseline, then the summary, ahead of the kept tool call (#10904).
 		const continuation = chat.faux.agentRequests.at(-1)!.messages;
-		expect(userText(continuation[0])).toContain("<summary>\nSUMMARY\n</summary>");
+		expect(continuation[0]?.role).toBe("system");
+		expect(userText(continuation[1])).toContain("<summary>\nSUMMARY\n</summary>");
 		expect((await kinds(chat.root)).slice(-4)).toEqual([
 			"pi.tool-result",
 			"pi.compaction",
@@ -1246,7 +1248,8 @@ describe("overflow compaction", () => {
 		const [compaction] = (await allEntries(chat.root)).filter((record) => record.kind === "pi.compaction");
 		expect(compaction).toMatchObject({ data: { reason: "overflow" } });
 		const retry = chat.faux.agentRequests.at(-1)!.messages;
-		expect(userText(retry[0])).toContain("SUMMARY");
+		expect(retry[0]?.role).toBe("system");
+		expect(userText(retry[1])).toContain("SUMMARY");
 		expect(retry.some((message) => message.role === "assistant" && message.stopReason === "error")).toBe(false);
 		await chat.harness.close(context);
 	});
@@ -1446,9 +1449,9 @@ describe("compaction estimates and interactions", () => {
 		// The parent is untouched.
 		expect((await kinds(chat.root)).includes("pi.compaction")).toBe(false);
 		// The fork's view keeps the parent entries the summary kept.
-		const state = await fork.viewState(context);
-		expect(state.value.entries).toEqual(view.entries);
-		state.dispose();
+		const watch = await fork.watch(context);
+		expect(watch.value.entries).toEqual(view.entries);
+		await watch.stop();
 		await chat.harness.close(context);
 	});
 
@@ -1731,10 +1734,25 @@ describe("compaction recovery", () => {
 		chat.setup.settings.retry = { enabled: true, maxRetries: 2, baseDelayMs: 60_000 };
 		chat.faux.summaries.push(failure("overloaded"));
 		const id = await chat.root.compact(undefined, context);
-		await waitFor(async () => (await live(chat)).compactions?.[0]?.retry !== undefined);
+		await waitFor(async () => (await chat.harness.getTask(id, context))?.state.status === "sleeping");
+		const until = now + 60_000;
 		expect((await chat.harness.getTask(id, context))?.state).toMatchObject({
-			checkpoint: { phase: "retry", attempt: 1 },
+			status: "sleeping",
+			checkpoint: { phase: "retry", attempt: 1, until },
+			until,
 		});
+		await chat.harness.close(context);
+		// Earlier versions slept inside a running `retry` phase: reopened before its time, it sleeps again.
+		const database = new DatabaseSync(path);
+		database
+			.prepare(
+				"UPDATE tasks SET status = 'running', record = json_set(json_remove(record, '$.state.until'), '$.state.status', 'running') WHERE id = ?",
+			)
+			.run(id);
+		database.close();
+		chat = await reopen(path, chat.setup, chat.faux);
+		await waitFor(async () => (await chat.harness.getTask(id, context))?.state.status === "sleeping");
+		expect(chat.faux.summaryRequests).toHaveLength(1);
 		await chat.harness.close(context);
 		now += 120_000;
 		chat = await reopen(path, chat.setup, chat.faux);
@@ -1878,12 +1896,13 @@ describe("compaction and the inbox", () => {
 	it("keeps the kept entries mounted in the conversation view", async () => {
 		const chat = await open();
 		await history(chat);
-		const state = await chat.root.viewState(context);
+		const watch = await chat.root.watch(context);
+		watch.start(async () => {});
 		chat.faux.summaries.push(summary());
 		await result(chat, await chat.root.compact(undefined, context));
-		await waitFor(() => state.value.entries[0]?.kind === "pi.compaction");
-		expect(state.value.entries).toEqual((await chat.root.context(context)).entries);
-		state.dispose();
+		await waitFor(() => watch.value.entries[0]?.kind === "pi.compaction");
+		expect(watch.value.entries).toEqual((await chat.root.context(context)).entries);
+		await watch.stop();
 		await chat.harness.close(context);
 	});
 });
@@ -2385,6 +2404,55 @@ describe("context contributions", () => {
 		await result(chat, await chat.root.compact(undefined, context));
 		const prompt = userText(chat.faux.summaryRequests[0]!.messages[1]);
 		expect(prompt).toContain("<conversation>\n[User]: H\n\n[User]: a\n</conversation>");
+		await chat.harness.close(context);
+	});
+});
+
+// #10942: per-model compaction settings.
+describe("per-model compaction overrides", () => {
+	it("applies the current model's override to the blocking threshold", async () => {
+		for (const key of ["faux/faux-1", "faux/other"]) {
+			const chat = await open({ contextWindow: 1000 });
+			await history(chat);
+			// Harness-wide: blocking only above the full window; the override for faux-1 blocks above 700.
+			chat.setup.settings.compaction = {
+				...BLOCKING,
+				reserveTokens: 0,
+				modelOverrides: { [key]: { reserveTokens: 300 } },
+			};
+			chat.faux.summaries.push(summary());
+			await turn(chat, text("u4", 200), "a4");
+			expect(chat.faux.summaryRequests).toHaveLength(key === "faux/faux-1" ? 1 : 0);
+			await chat.harness.close(context);
+		}
+	});
+
+	it("applies the request model's override on a context overflow", async () => {
+		const chat = await open();
+		await history(chat);
+		chat.setup.settings.compaction = { ...MANUAL, modelOverrides: { "faux/faux-1": { enabled: true } } };
+		chat.faux.summaries.push(summary());
+		chat.faux.agent.push(failure(OVERFLOW), answer("fits"));
+		const input = await chat.root.submit({ type: "input", content: text("u4", 100) }, context);
+		expect((await input.wait(context)).status).toBe("done");
+		expect(chat.faux.summaryRequests).toHaveLength(1);
+		await chat.harness.close(context);
+	});
+
+	it("applies the model's override when a compaction selects and sizes its summary", async () => {
+		const chat = await open();
+		await history(chat);
+		chat.setup.settings.compaction = {
+			...MANUAL,
+			keepRecentTokens: 100_000,
+			modelOverrides: { "faux/faux-1": { keepRecentTokens: 150, reserveTokens: 500 } },
+		};
+		chat.faux.summaries.push(summary());
+		expect((await result(chat, await chat.root.compact(undefined, context))).status).toBe("completed");
+		// 0.8 * 500 from the override, below the model's 900.
+		expect(chat.faux.summaryRequests[0]!.options?.maxTokens).toBe(400);
+		const messages = (await chat.root.context(context)).messages;
+		expect(messages.slice(1).map(userText)).toEqual([text("u3", 100), text("a3", 100)]);
 		await chat.harness.close(context);
 	});
 });

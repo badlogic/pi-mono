@@ -593,7 +593,7 @@ describe("agent events", () => {
 		const { harness, root } = await openChat(new MemoryStorage(), chatSetup());
 		const stream: AgentEventStream = await watchEvents(harness, root.id, context);
 		await harness.close(context);
-		expect(await stream.closed).toEqual({ reason: "session_closed" });
+		expect(await stream.closed).toEqual({ reason: "ended" });
 	});
 
 	it("starts a message at the first committed partial and ends it with the converted entry on abort", async () => {

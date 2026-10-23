@@ -1,5 +1,6 @@
 import type { Context } from "@earendil-works/chord";
 import type { AssistantMessage, Message, ToolCall, ToolResultMessage } from "@earendil-works/pi-ai";
+import { SystemEntry } from "../entries.ts";
 import { idFromNumber } from "../ids.ts";
 import type { SessionImpl } from "../session/session.ts";
 import type { ContextEdit, ConversationId, Cursor, EntryId, EntryQuery, EntryRecord, Storage } from "../types.ts";
@@ -57,7 +58,12 @@ export type ContextRange = {
 	readonly settled: readonly Message[];
 	/** Contributed messages from the last assistant message on, before tool result ordering. */
 	readonly open: readonly Message[];
+	/** The baseline's system message; see `findBaseline()`. */
+	readonly baseline: Baseline;
 };
+
+/** A baseline's system message, `null` when the range cannot have one, or `undefined` while a later entry may be one. */
+type Baseline = Message | null | undefined;
 
 /**
  * `readContext()` that reuses `previous`, an earlier range of the same conversation: with the same head marker, only
@@ -142,9 +148,10 @@ function deriveRange(bounds: ContextBounds, entries: readonly EntryRecord[]): Co
 	const active = selectActive(bounds.head, entries);
 	const contributions = active.map((entry) => contribute(entry, edits.get(entry.id)));
 	const { settled, open } = settle([], contributions.flat());
-	const messages = leadWithSystem([...settled, ...orderToolResults(open)]);
+	const baseline = findBaseline(bounds.head, active);
+	const messages = leadWithSystem([...settled, ...orderToolResults(open)], baseline);
 	const view = { head: bounds.head, entries: active, contributions, messages };
-	return { bounds, entries, view, edited: new Set(edits.keys()), settled, open };
+	return { bounds, entries, view, edited: new Set(edits.keys()), settled, open, baseline };
 }
 
 /**
@@ -158,25 +165,58 @@ function extendRange(previous: ContextRange, bounds: ContextBounds, added: reado
 	}
 	const contributions = added.map((entry) => contribute(entry, undefined));
 	const { settled, open } = settle(previous.settled, [...previous.open, ...contributions.flat()]);
+	const baseline = previous.baseline !== undefined ? previous.baseline : findBaseline(bounds.head, added);
 	const view = {
 		head: bounds.head,
 		entries: [...previous.view.entries, ...added],
 		contributions: [...previous.view.contributions, ...contributions],
-		messages: leadWithSystem([...settled, ...orderToolResults(open)]),
+		messages: leadWithSystem([...settled, ...orderToolResults(open)], baseline),
 	};
-	return { bounds, entries, view, edited: previous.edited, settled, open };
+	return { bounds, entries, view, edited: previous.edited, settled, open, baseline };
 }
 
 /**
- * Move a system message that only user messages precede to the front. A run's input is committed before generation
- * renders the system prompt, so a transcript, or the range after a compaction or reset, starts with user messages
- * followed by the baseline system message. Providers treat only a leading system message as the initial prompt and tool
- * set; without it, a later tool change rewrites the request's tool list and invalidates the whole prompt cache.
+ * The baseline among `entries`, oldest first: the system message of the first `pi.system` entry after the head
+ * marker, or of the transcript without one, when generation wrote it with every section and tool in effect. After a
+ * head marker it always does, and omits the retained `pi.system` entries. Without one it does when it saw no system
+ * message before, which holds unless an earlier entry carries one, even if an edit omits it later. An edit that targets
+ * the baseline contributes other messages, or none, so none leads; a later entry does not take its place.
  */
-function leadWithSystem(messages: Message[]): Message[] {
-	const index = messages.findIndex((message) => message.role !== "user");
-	if (index <= 0 || messages[index]!.role !== "system") return messages;
-	return [messages[index]!, ...messages.slice(0, index), ...messages.slice(index + 1)];
+function findBaseline(head: ContextBounds["head"], entries: readonly EntryRecord[]): Baseline {
+	for (const entry of entries) {
+		if (head !== undefined && entry.id <= head.id) continue;
+		if (SystemEntry.is(entry)) return entry.model?.find((message) => message.role === "system") ?? null;
+		if (head === undefined && carriesSystemMessage(entry)) return null;
+	}
+	return undefined;
+}
+
+/** Whether an entry's own messages, or the replacement messages of its edits, include a system message. */
+function carriesSystemMessage(entry: EntryRecord): boolean {
+	const isSystem = (message: Message) => message.role === "system";
+	return (
+		(entry.model?.some(isSystem) ?? false) ||
+		(entry.edits?.some((edit) => edit.action === "replace" && edit.messages.some(isSystem)) ?? false)
+	);
+}
+
+/**
+ * Move the first system message to the front when only user messages precede it, or when it is the baseline's. A run's
+ * input is committed before generation renders the system prompt, so a transcript starts with the input followed by
+ * the baseline, and the range after a compaction with the kept history, assistant messages included. Providers treat
+ * only a leading system message as the initial prompt and tool set; without it, a later tool change rewrites the
+ * request's tool list and invalidates the whole prompt cache. Only the first system message moves, so replaying
+ * system messages in order gives the same sections and tools. Any other system message, before an assistant message,
+ * stays where it was committed: moving it would change what it means to the model.
+ */
+function leadWithSystem(messages: Message[], baseline: Baseline): Message[] {
+	const index = messages.findIndex((message) => message.role === "system");
+	if (index <= 0) return messages;
+	const system = messages[index]!;
+	if (system !== baseline && messages.slice(0, index).some((message) => message.role !== "user")) {
+		return messages;
+	}
+	return [system, ...messages.slice(0, index), ...messages.slice(index + 1)];
 }
 
 /** One active entry's model messages after its edit and excluded stop reasons, before tool result ordering. */

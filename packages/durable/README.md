@@ -75,7 +75,19 @@ What happened:
 - `submit()` durably admits your input and returns a `Submission`. A built-in generation task calls the model and appends the answer.
 - `wait()` resolves once the input is answered (`done`) or has failed (`unanswered`, with a reason).
 
-Every async call takes a Chord `Context`, which carries cancellation. `BACKGROUND_CONTEXT` never cancels. Cancelling a wait only cancels that wait, never the work.
+Every async call takes a Chord `Context`, which carries cancellation and its current `TelemetrySpan`. `BACKGROUND_CONTEXT` never cancels and uses a NOOP span. The Harness owns the root adapter; adapters are never stored in a `Context`. Cancelling a wait only cancels that wait, never the work.
+
+`HarnessOptions.identity` sets how model requests identify the app to providers (a pi-ai `ClientIdentity`), merged over `DEFAULT_HARNESS_IDENTITY` (`{ attribution: PI_ATTRIBUTION }`: OpenRouter, NVIDIA NIM, and OpenCode attribution headers name pi). It applies to generation, compaction, hooks, and tools, over the identity the host's `Models` was created with. Pass your app's attribution, for example `{ attribution: { name: "my-app", url: "https://my-app.example" } }`, or `{ attribution: null }` to send none.
+
+`HarnessOptions.telemetry` accepts a host-owned `TelemetryContext` from `@earendil-works/pi-telemetry`, with optional `propagation` and `metrics` capabilities; omitted, it is a no-op. `DURABLE_TELEMETRY_SCHEMA`, exported from the package root, documents its typed spans, events, and metrics. Attributes contain IDs and control metadata, never messages, arguments, or results; IDs point to the transcript.
+
+- `pi.durable.submit` covers the public submit call and its commit. Each input starts a new root trace with a link to its caller's current span; a write is a child of its caller. Duplicate `requestId` preserves the original submission and carrier. Internal admissions, such as compaction writes, emit events on their phase span without a submit span.
+- `pi.durable.phase` covers one run or abort phase of every task, including its decision commit, never the next phase, a durable wait, or a restart. Its attributes identify the task, phase, attempt when present, `resumed`, and outcome. Tool phases also identify the tool and call. Nested tasks and background compactions inherit the creating phase; model requests receive that phase context. Hooks add no spans.
+- Failed phase outcomes set error status with a fixed category (`task_faulted`, `task_failed`, or `task_orphaned`) and the outcome's diagnostic message, truncated to 500 characters (the reason for an orphaned task). Diagnostics can contain caller content; no error detail or exception name is recorded. An `aborted` outcome keeps status `ok`, including interruption by close or cancellation.
+- Every `onReport` report also emits a `pi.durable.report` event on its current span. Without a span, the NOOP span drops the event; no root report span is created. Only `type`, optional fixed `reason`, `extension`, and `task.id` are recorded; no error payload is included. `pi.durable.reports` counts all reports by `type` only, including those without a span. Clock failures report without a phase context. The `onReport` callback is unchanged.
+- Committed entries and settled submissions emit `pi.durable.entry` and `pi.durable.submission`. Committed running phase changes emit `pi.durable.checkpoint`; a nested call answered from its stored result emits `pi.durable.replay`.
+- Propagation stores optional opaque `trace` carriers in submission and task JSON without a storage migration. Phase spans extract their task's stored carrier, or start at the adapter root when absent or unknown. `TaskOptions.trace` inherits the creator's carrier when absent, accepts an explicit carrier override, or uses `"root"` to start at the adapter root without storing a carrier. A run started for several queued inputs takes the first input's trace; its first invocation's phase spans link to the other inputs through immutable task `links`. A steer stays in the running trace and its submit span links to that run's stored carrier. A reopened task's first invocation has `resumed: true` in the same trace.
+- Metrics record `pi.durable.phase.duration` (milliseconds; task, phase, outcome) and `pi.durable.tasks.active` (live tasks; task name), without record IDs. Closing the Harness releases its active counts.
 
 ## Concepts
 
@@ -112,7 +124,7 @@ const root = await harness.root(context); // the same root as last time
 harness.resume(); // continue any run the last process left unfinished
 ```
 
-Work interrupted by a crash or close stays pending. `resume()` starts the task scheduler; submitting or waiting starts it too. Each conversation has its own persisted UUIDv7 in `pi.provider`, forwarded to pi-ai as `sessionId` for provider prompt-cache and session affinity. It survives reopen, retries, reset, compaction, and model changes; a child or fork receives a fresh identity. A legacy conversation receives and persists one before its first generation or compaction request.
+Work interrupted by a crash or close stays pending. `resume()` starts the task scheduler; submitting or waiting starts it too. A process that only shows a session another one drives opens it with `readOnly: true`: open recovers nothing, and every write, `resume()`, and every call that would run tasks rejects with `ReadOnlySession`. Each conversation has its own persisted UUIDv7 in `pi.provider`, forwarded to pi-ai as `sessionId` for provider prompt-cache and session affinity. It survives reopen, retries, reset, compaction, and model changes; a child or fork receives a fresh identity. A legacy conversation receives and persists one before its first generation or compaction request.
 
 A retried submission with the same `requestId` returns the existing submission instead of submitting twice:
 
@@ -124,6 +136,90 @@ const again = await root.submit({ type: "input", content: "Hello", requestId: "g
 ```
 
 `harness.submission(id)` reacquires a submission by ID, for example to wait for it after a restart.
+
+### Sleeping and Waking Up
+
+A task waits for time by ending its phase asleep. The sleep is stored, so the task holds no invocation meanwhile, survives restarts, and resumes at the checkpoint once the Harness clock reaches `until`:
+
+```typescript
+const Reminder = defineTask<{ text: string; at: number }, { phase: "wait" } | { phase: "deliver" }, null>({
+	name: "app.reminder",
+	version: 1,
+	initial: () => ({ phase: "wait" }),
+	phases: {
+		// Resolves once the sleep is stored; the phase ends there.
+		wait: (task, runtime, context) => runtime.sleepUntil(task.input.at, { phase: "deliver" }, context),
+		deliver: async (task, runtime, context) => {
+			await notify(task.input.text);
+			await runtime.commit(() => ({ status: "terminal", outcome: { status: "completed", result: null } }), context);
+		},
+	},
+	abort: (_task, runtime, context) =>
+		runtime.commit(() => ({ status: "terminal", outcome: { status: "aborted" } }), context),
+});
+```
+
+There is no sleep in the middle of a phase: a phase reruns from its top after a restart, so work after the wait goes in the next phase, and what it needs goes in the checkpoint. `{ status: "sleeping", until, checkpoint }` returned from `runtime.commit()` is the same sleep, committed together with other writes. Retry backoffs and deferred-response polls of the built-in tasks sleep the same way.
+
+The timers of the Session, the scheduler, and its tasks go through `setTimer` (default `setTimeout`), and their times through `now` (default `Date.now`); pass both to run a Harness on a fake clock. The Node.js environment, file watcher, and image worker keep their own timers. Sleep deadlines are stored on `now`, so every process that opens one storage must use the same clock. While scheduling runs, a timer resumes sleeping tasks when they are due and keeps a Node.js process alive meanwhile.
+
+A host whose process can be evicted, such as a Cloudflare Durable Object, wakes it itself. With `onWake`, the Harness arms no timer for sleeps; it tells the host what `harness.wake()` says whenever that changes: `active` while some task can run now or is running, and `at`, the earliest sleep. The host keeps its alarm armed and calls `resume()` when it fires:
+
+```typescript
+export class Session extends DurableObject<Env> {
+	#harness!: Harness;
+
+	constructor(ctx: DurableObjectState, env: Env) {
+		super(ctx, env);
+		void ctx.blockConcurrencyWhile(async () => {
+			// A fallback before anything can throw: an object whose open or recovery fails is started again.
+			const fallback = Date.now() + 60_000;
+			const current = await ctx.storage.getAlarm();
+			if (current === null || current > fallback) await ctx.storage.setAlarm(fallback);
+			const storage = await openDurableObjectSqliteStorage(ctx.storage);
+			const onWake = (wake: Wake) =>
+				// A failed alarm write resets the object; it arms again when it next starts.
+				void this.#arm(wake).catch(() => ctx.abort("Alarm write failed"));
+			this.#harness = await Harness.open(storage, { models, registry, onWake }, context);
+			// Armed before `resume()` runs anything, as for any call that can start work.
+			await this.#arm(this.#harness.wake());
+			this.#harness.resume(); // work a lost instance left, and due sleeps
+		});
+	}
+
+	override async alarm(): Promise<void> {
+		await this.#arm({ ...this.#harness.wake(), active: true });
+		this.#harness.resume(); // due sleeps and work a lost instance left
+	}
+
+	// Arm before any call that can start work (submit, compact, abortTask, abort, a registry change): `onWake` runs
+	// after the commit. An early alarm is harmless, a missing one strands the work.
+	async submit(conversation: Conversation, input: string, requestId: string): Promise<void> {
+		await this.#arm({ ...this.#harness.wake(), active: true });
+		await conversation.submit({ type: "input", content: input, requestId }, context);
+	}
+
+	async #arm(wake: Wake): Promise<void> {
+		// A recovery heartbeat while work runs, never later than the earliest sleep.
+		const heartbeat = wake.active ? Date.now() + 60_000 : undefined;
+		const at = heartbeat === undefined || wake.at === undefined ? (heartbeat ?? wake.at) : Math.min(heartbeat, wake.at);
+		if (at === undefined) await this.ctx.storage.deleteAlarm();
+		else await this.ctx.storage.setAlarm(at);
+	}
+}
+```
+
+The default `setTimer` declines the timers that only free memory in Workers, so no pending timer keeps the object from hibernating or being evicted; memory is then freed at later commits.
+
+### Failures and Recovery
+
+**Crash loops.** Work that deterministically crashes its process, by exhausting memory or CPU before its next checkpoint, would otherwise be resumed and crash again forever. Open counts each task a crash, eviction, or reset cut off; a close is not counted, and a new state the task commits starts the count over. Once the count reaches `settings.restartLimit` (default 5; `Infinity` never parks), the task is parked: `inspect()` and the task graph show it as blocked with reason `restart_limit`, `wake()` does not count it as active, and `onReport` gets it once as `task_parked`. Every task running when a process dies is counted, so show parked tasks and offer `harness.retryTask(id)`, which runs one again. `abortTask()` still runs its abort handler; an abort handler cut off that many times ends the task `faulted`.
+
+**Reports.** `onReport(error, info)` says what happened in `info.type`: `session_failed` for the error that failed the Harness (a Storage error, often a platform reset); `task_faulted`, `task_parked`, `migration_failed`, `task_outdated`, or `task_error` for a task, with `info.task` (its `id`, `kind`, and `conversationId`) and the extension that installed it in `info.extension`; `extension_error` for hooks, sections, wrappers, and tools, with the extension's name; `host_error` for a host callback, named in `info.callback`; and `listener_error`. A host can feed `task_faulted` reports of one kind to its own breaker.
+
+**Queued inputs after a failed run.** A run that fails with a model error leaves the inputs queued behind it waiting until the next input arrives. `settings.afterFailedRun` changes that: `continue` starts the next run with them, as after an answer, and `withdraw` settles them `unanswered` with reason `run_failed`.
+
+**Blocked tasks.** Tasks blocked on a missing or unmigratable definition show their reason in the task graph too, and a registry change that unblocks them makes `onWake` report the Session active, so a host need not poll them.
 
 ## Extensions
 
@@ -319,7 +415,7 @@ const harness = await Harness.open(storage, {
 		compaction: { reserveTokens: 16384 },
 		progress: { partialIntervalMs: 100, outputIntervalMs: 100 },
 		toolExecution: "parallel",
-		contextRetentionMs: 600_000, // idle conversations keep their context in memory this long (checked lazily where timers cannot be unreferenced)
+		contextRetentionMs: 600_000, // idle conversations keep their context in memory this long (checked lazily where background timers are declined, as in Workers)
 		documentRetentionMs: 600_000, // loaded documents nothing observes stay in memory this long after their last use; observed ones always
 		get followUpMode() {
 			return userSettings.followUpMode;
@@ -377,29 +473,22 @@ Work that already started keeps the code it took: a running tool call finishes u
 
 ## Watching a Conversation
 
-Everything a UI needs is committed state. `viewState()` returns the conversation's structural view as a read-only Chord state, updated after every commit that touches it:
-
-```typescript
-const view = await root.viewState(context);
-view.subscribe((value) => {
-	// value.entries: the active transcript
-	// value.docs["pi.live"]: the running generation (streamed partial, retry, deferred) and tool calls (output, details)
-	// value.docs["pi.inbox"], value.docs["pi.usage"], value.docs["pi.agent"], value.docs["pi.provider"]
-	render(value);
-});
-// later: view.dispose();
-```
-
-`watch()` delivers the same view with the exact Chord operations of each commit, one callback at a time:
+Everything a UI needs is committed state. `watch()` returns a watch of the conversation's structural view: its value at attachment, then each commit that touches it, with the exact Chord operations of that commit, one callback at a time:
 
 ```typescript
 const watch = await root.watch(context);
 render(watch.value); // the state at attachment
 watch.start(async (value, ops) => {
+	// value.entries: the active transcript
+	// value.docs["pi.live"]: the running generation (streamed partial, retry, deferred) and tool calls (output, details)
+	// value.docs["pi.inbox"], value.docs["pi.usage"], value.docs["pi.agent"], value.docs["pi.provider"]
+	render(value);
 	await send(ops); // for example to a remote client that applies them
 });
 // later: await watch.stop();
 ```
+
+Watches are Chord's `WatchHandle` (exported by `@earendil-works/chord`; Durable re-exports it). A watch ends once, and `closed` (or `stop()`) gives the reason: `stopped`, `cancelled` (its acquisition context was cancelled), `retired` (a document watch whose incarnation retired, after it delivered `[["r", null]]`), `ended` (the Harness closed), `listener_error`, or `failed` (the Harness failed). An ended watch keeps its last value and no longer references the Harness.
 
 A slow watch keeps at most 100 undelivered frames. After that, the pending frames are replaced by one frame holding the whole newest view. A client that joins late or reconnects starts from the current view; nothing is replayed.
 
@@ -475,9 +564,15 @@ settings: {
 		reserveTokens: 16384, // above contextWindow - reserveTokens, the next request waits for a compaction
 		keepRecentTokens: 20000, // roughly how much recent context stays verbatim
 		backgroundTokens: 32768, // this far below that, a compaction starts in the background; 0 disables it
+		modelOverrides: {
+			// exact "provider/modelId"; each field set here replaces the one above for that model
+			"local/small-32k": { reserveTokens: 4096, keepRecentTokens: 8000, backgroundTokens: 4096 },
+		},
 	},
 }
 ```
+
+The fixed token counts rarely suit a 32k and a 1M context window alike; `modelOverrides` lets one harness serve both. The conversation's current model picks the entry, at the threshold check, after a context overflow, and when a compaction selects what to summarize.
 
 When a provider rejects a request because the context is too long, generation compacts and retries once. A summary that would cut before the start of the current context settles as `stale` when it is placed, so when several are in flight, the furthest cut stays in effect. Summarization spend counts in `pi.usage`. A `beforeCompact` hook on `CompactionTask` can decline or supply its own summary.
 
@@ -499,7 +594,7 @@ stream.start(async (events) => {
 });
 ```
 
-Events are derived from commits, one batch per commit, and apply on top of the snapshot. Message and tool updates carry deltas: text and thinking appends, appended tool-call argument text, and output trims and appends. When a consumer falls more than 100 batches behind, it receives a fresh `snapshot` event instead. See `test/examples/19-json.ts` for the full stream of one run.
+Events are derived from commits, one batch per commit, and apply on top of the snapshot. Message and tool updates carry deltas: text and thinking appends, appended tool-call argument text, and output trims and appends. When a consumer falls more than 100 batches behind, it receives a fresh `snapshot` event instead. See `test/examples/18-json.ts` for the full stream of one run.
 
 ## Hooks
 
@@ -575,8 +670,8 @@ Owned work belongs to its owner:
 
 The examples show both patterns as product code:
 
-- [`22-subagent-foreground.ts`](test/examples/22-subagent-foreground.ts): the tool above, returning the child's answer. The UI finds the child through the call's `details` and prints the child's events indented under the call.
-- [`23-subagent-background.ts`](test/examples/23-subagent-background.ts): persistent subagents behind one `subagent` tool that spawns, messages (steer or follow-up), waits for, stops, and lists them. Each child is owned by a background anchor task, so the parent's Esc and idle waits never reach it. Each message is delivered by a background reporter task that posts the answer back to the parent as a follow-up input once it arrives; request IDs keep a restart from sending a message or a report twice.
+- [`21-subagent-foreground.ts`](test/examples/21-subagent-foreground.ts): the tool above, returning the child's answer. The UI finds the child through the call's `details` and prints the child's events indented under the call.
+- [`22-subagent-background.ts`](test/examples/22-subagent-background.ts): persistent subagents behind one `subagent` tool that spawns, messages (steer or follow-up), waits for, stops, and lists them. Each child is owned by a background anchor task, so the parent's Esc and idle waits never reach it. Each message is delivered by a background reporter task that posts the answer back to the parent as a follow-up input once it arrives; request IDs keep a restart from sending a message or a report twice.
 
 ## Child Tasks
 
@@ -603,15 +698,15 @@ decide: async (task, runtime, context) => {
 - **Finishing:** a task that finishes while work it owns is still running is `completing`: its outcome is decided, but it becomes terminal, and `waitForTask()` returns, only once that work is done. A failed or aborted outcome aborts that work first.
 - **Aborting:** abort runs bottom-up. Aborting a task aborts the work it owns first, and its own abort handler starts only once that work is done, so each task undoes its own effects.
 
-[`24-child-tasks.ts`](test/examples/24-child-tasks.ts) runs a checkout with four payments: a declined card, a cancelled checkout, and a restart while the payments run.
+[`23-child-tasks.ts`](test/examples/23-child-tasks.ts) runs a checkout with four payments: a declined card, a cancelled checkout, and a restart while the payments run.
 
 ## Task Graph
 
-`harness.taskGraph(context)` shows every live task of the Session as one Chord state, for a task panel or debugging. Each node has its owner edge (`owner` task, or none for a task its conversation owns), its status, whether it is `background` or abort-marked, and the conversations it owns. `harness.watchTaskGraph(context)` delivers the same value as a watch, like a conversation's `watch()`.
+`harness.watchTaskGraph(context)` watches every live task of the Session as one value, for a task panel or debugging, like a conversation's `watch()`. Each node has its owner edge (`owner` task, or none for a task its conversation owns), its status, whether it is `background` or abort-marked, and the conversations it owns.
 
 ```typescript
-const graph = await harness.taskGraph(context);
-graph.subscribe((value) => {
+const graph = await harness.watchTaskGraph(context);
+graph.start(async (value) => {
 	for (const node of Object.values(value.tasks)) {
 		const status = node.state.status === "waiting" ? `waiting on ${node.state.on.join(", ")}` : node.state.status;
 		console.log(`${node.id} ${node.kind} ${status}`, node.owner ?? `conversation ${node.conversationId}`);
@@ -619,7 +714,7 @@ graph.subscribe((value) => {
 });
 ```
 
-A task appears with the commit that creates it and leaves with the commit that makes it terminal. Statuses are the committed ones: `pending`, `running`, `waiting` (with `on` and `policy`), and `completing` (with the held outcome's status). After a restart, tasks that were `running` show as `pending` until they run again. Whether a pending task is blocked by a missing definition is not part of the graph; `harness.inspect()` reports that. The graph lists live tasks only: once a subagent's owner task is terminal, a later task in its conversation is a top-level node, and the conversation's `ConversationRecord.owner` (also in its view's `conversation`) links it to its parent. [`24-child-tasks.ts`](test/examples/24-child-tasks.ts) prints the checkout's tree while its payments run.
+A task appears with the commit that creates it and leaves with the commit that makes it terminal. Statuses are the committed ones: `pending`, `running`, `waiting` (with `on` and `policy`), and `completing` (with the held outcome's status). After a restart, tasks that were `running` show as `pending` until they run again. Whether a pending task is blocked by a missing definition is not part of the graph; `harness.inspect()` reports that. The graph lists live tasks only: once a subagent's owner task is terminal, a later task in its conversation is a top-level node, and the conversation's `ConversationRecord.owner` (also in its view's `conversation`) links it to its parent. [`23-child-tasks.ts`](test/examples/23-child-tasks.ts) prints the checkout's tree while its payments run.
 
 ## Your Own State
 
@@ -635,6 +730,7 @@ const Todos = defineDoc<{ items: string[] }>({
 	history: "latest", // or "rewindable" to read old values with snapshotAsOf()
 	fork: "initial", // what a fork starts with: "initial", "current", or "asOf"
 	initial: () => ({ items: [] }),
+	checkpointWhen: () => false, // required: true stores this change as a complete base, bounding replay
 });
 
 await root.commit(async (tx) => {
@@ -643,7 +739,7 @@ await root.commit(async (tx) => {
 console.log(await harness.snapshot(Todos, root.id, context));
 ```
 
-`harness.watchDoc()` and `harness.documentState()` observe one document like the view above. `HarnessOptions.conversationCreated(tx, conversation)` runs in every commit that creates or forks a conversation, including a tool's raw `tx.createConversation()`, so every conversation gets your documents; `init` in `createConversation()`, `fork()`, and `root()` writes per-call data in the same commit. An extension's tools, sections, and hooks read their own documents through `api` or `input.read`, and treat an absent one as its default ([`11-extension-state.ts`](test/examples/11-extension-state.ts)).
+`harness.watchDoc()` watches one document like the view above. `HarnessOptions.conversationCreated(tx, conversation)` runs in every commit that creates or forks a conversation, including a tool's raw `tx.createConversation()`, so every conversation gets your documents; `init` in `createConversation()`, `fork()`, and `root()` writes per-call data in the same commit. An extension's tools, sections, and hooks read their own documents through `api` or `input.read`, and treat an absent one as its default ([`10-extension-state.ts`](test/examples/10-extension-state.ts)).
 
 ## Usage and Cost
 
@@ -658,9 +754,31 @@ const usage = await harness.usage(context); // { models: { "openai/gpt-6-sol": U
 | Backend | Import | Notes |
 |---|---|---|
 | Memory | `MemoryStorage` from the package root | Nothing is persisted. |
+| IndexedDB | `IndexedDbStorage.open(name)` from `@earendil-works/pi-durable/storage/indexeddb` | Browser-only storage in one IndexedDB database. |
 | SQLite | `openNodeSqliteStorage(file)` from `@earendil-works/pi-durable/storage/sqlite/node` | One database file. WAL mode with `synchronous = NORMAL`: commits survive process crashes; the newest may be lost on power or host failure. |
 | JSONL | `openNodeJsonlStorage(directory, context)` from `@earendil-works/pi-durable/storage/jsonl/node` | Append-only files in one directory. Pass `{ fsync: true }` to flush before each commit marker. Keeps the whole history in memory too, so memory grows with it; use SQLite for long-running agents. |
 | Cloudflare Durable Object | `openDurableObjectSqliteStorage(ctx.storage)` from `@earendil-works/pi-durable/storage/sqlite/cloudflare` | The SQLite storage of one SQLite-backed Durable Object; commits are its storage transactions. |
+
+In a browser, open IndexedDB storage with `await IndexedDbStorage.open(name)`. One owner must hold the database at a
+time; use a [Web Lock](https://developer.mozilla.org/docs/Web/API/Web_Locks_API) around its lifetime rather than opening
+it in competing tabs or workers. Call `await navigator.storage.persist()` when durable retention matters.
+
+SQLite storage can namespace its tables and indexes when sharing a database: pass `{ prefix: "pi_" }` to
+`SqliteStorage.open(database, options)`, `openNodeSqliteStorage(path, options)`, or
+`openDurableObjectSqliteStorage(ctx.storage, options)`. Storage renders the prefixed names into its SQL, so adapters
+need no support. A prefix must be a SQLite identifier and cannot begin with `sqlite_`; a host may reserve more, such
+as `_cf_` in Durable Objects. Changing the prefix does not migrate existing data.
+
+Multiple Pi storages opened through the Cloudflare adapter with the same storage object automatically share an
+operation queue. To share the database with host tables, create an adapter and use it for both Pi and all host queries;
+direct storage calls bypass the queue and may be rolled back with a Pi transaction:
+
+```typescript
+const database = new DurableObjectSqliteDatabase(ctx.storage);
+const piStorage = await SqliteStorage.open(database, { prefix: "pi_" });
+await database.exec("CREATE TABLE IF NOT EXISTS host_notes (text TEXT)");
+await database.run("INSERT INTO host_notes (text) VALUES (?)", text);
+```
 
 One process owns a storage at a time; there is no cross-process locking. The portable SQLite and JSONL cores (`/storage/sqlite`, `/storage/jsonl`) run without Node APIs, for example on Bun or in Cloudflare Durable Objects, given an asynchronous `SqliteDatabase` facade or a `FileSystem` from `@earendil-works/pi-durable/env`.
 
@@ -673,7 +791,7 @@ await database.transaction(async (transaction) => {
 });
 ```
 
-Custom backends can run the shared conformance suite with any Vitest- or Jest-compatible runner:
+A custom backend's `commit(writes, adopt, context)` calls `adopt(seq)` once the batch is durable, synchronously and before its next commit starts, and then resolves with `seq`; a commit that fails before the batch is durable never calls it. `adopt` is the Session's in-memory adoption of the batch, so memory never shows a partial log. Custom backends can run the shared conformance suite, which checks this too, with any Vitest- or Jest-compatible runner:
 
 ```typescript
 import { registerStorageConformance } from "@earendil-works/pi-durable/testing";
@@ -695,8 +813,8 @@ The package root loads TypeBox, because the tool task validates arguments with p
 
 Three rules decide what an error does:
 
-1. **A storage error ends the Harness.** The call that hit it rejects with the error. Everything after it, and every pending wait, rejects with `SessionFailed` (its `cause` is that error); watches and event streams end with `session_failed`; running tasks get their abort signal; `onReport` gets the error once. The Harness then closes itself. Nothing is retried; a custom storage retries its own transient failures. Reopen to recover: commits are atomic, so the store is consistent, and resubmitting with the same `requestId` finds a submission that was already admitted.
-2. **An invalid request fails only that call:** a storage throws `StorageRequestError` for a bad cursor, an unknown conversation, or history a document does not keep. A read you cancelled fails only itself too.
+1. **A storage error ends the Harness.** The call that hit it rejects with the error. Everything after it, and every pending wait, rejects with `SessionFailed` (its `cause` is that error); watches and event streams end with `failed`; running tasks get their abort signal; `onReport` gets the error once. The Harness then closes itself. Nothing is retried; a custom storage retries its own transient failures. Reopen to recover: commits are atomic, so the store is consistent, and resubmitting with the same `requestId` finds a submission that was already admitted.
+2. **An invalid read fails only that call:** a storage read throws `StorageRequestError` for a bad cursor, an unknown conversation, or history a document does not keep. A read you cancelled fails only itself too. The exemption covers reads only: any error from `commit()` or `mintId()`, `StorageRequestError` included, ends the Harness as in rule 1.
 3. **Your code fails only its own unit:** a throwing task phase faults that task, a throwing tool gets an error result, a throwing hook is reported and skipped (`beforeTool` blocks the call), and a throwing commit callback rolls back that commit. Listeners that throw, or return a rejected promise, are reported and the others still run. The exception is a host `RegistryReader` whose `snapshot()` throws: the Harness cannot schedule without it, so it fails the Harness like a storage error.
 
 `harness.closed` settles once the Harness has closed, by `close()` or after a storage error, so a host restarts on failure like this:
@@ -714,29 +832,29 @@ A failure closes the Harness by itself; `closed` settles once that close is done
 Runnable examples live in [`test/examples`](test/examples). Run one from this package directory with:
 
 ```bash
-node --conditions=source --experimental-strip-types test/examples/14-chat.ts
+node --conditions=source --experimental-strip-types test/examples/13-chat.ts
 ```
 
 | Example | Shows |
 |---|---|
-| [14-chat](test/examples/14-chat.ts) | One question and answer |
-| [16-real-model](test/examples/16-real-model.ts) | Streaming an answer from OpenAI |
-| [17-coding-tools](test/examples/17-coding-tools.ts) | A tool-using turn on JSONL storage |
-| [18-print](test/examples/18-print.ts) | Print mode: submit a prompt, print the answer |
-| [19-json](test/examples/19-json.ts) | JSON mode: agent events or raw view operations, on SQLite, JSONL, or memory |
-| [20-inbox](test/examples/20-inbox.ts) | Steers, follow-ups, writes, and withdrawal while busy |
-| [21-late-join](test/examples/21-late-join.ts) | Attaching a view and an event stream mid-run |
-| [22-subagent-foreground](test/examples/22-subagent-foreground.ts) | A replay-safe subagent tool whose child the call owns, with the child's events under the call |
-| [23-subagent-background](test/examples/23-subagent-background.ts) | Persistent subagents: spawn, steer, stop, list, answers reported back, restart-safe |
-| [24-child-tasks](test/examples/24-child-tasks.ts) | A checkout that owns and waits for four payments: failFast, abort, restart |
-| [25-compaction](test/examples/25-compaction.ts) | A long chat compacted in the background, manually, and after a context overflow |
-| [26-coding-agent](test/examples/26-coding-agent.ts) | CodingTools, live settings from a settings object, an environment that follows the conversation's directory |
-| [27-plan-mode](test/examples/27-plan-mode.ts) | A read-only plan mode as an extension with its own document, switched with `configure()` |
-| [28-reviewer](test/examples/28-reviewer.ts) | A reviewer conversation with its own model, extensions, tools, directory, and review loop |
-| [29-sandbox-per-conversation](test/examples/29-sandbox-per-conversation.ts) | An environment per conversation, looked up from an app document |
-| [30-tool-override](test/examples/30-tool-override.ts) | A same-name bash for some conversations, and a wrapper that times whichever bash won |
-| [31-reload-and-restart](test/examples/31-reload-and-restart.ts) | Reloading an extension mid-call, and stored choices surviving a restart |
-| [00](test/examples/00-conversation.ts)–[13](test/examples/13-recovery.ts) | The layers underneath: sessions, documents, forks, watches, the Harness, agent configuration, reload, extension state, tasks, recovery |
+| [13-chat](test/examples/13-chat.ts) | One question and answer |
+| [15-real-model](test/examples/15-real-model.ts) | Streaming an answer from OpenAI |
+| [16-coding-tools](test/examples/16-coding-tools.ts) | A tool-using turn on JSONL storage |
+| [17-print](test/examples/17-print.ts) | Print mode: submit a prompt, print the answer |
+| [18-json](test/examples/18-json.ts) | JSON mode: agent events or raw view operations, on SQLite, JSONL, or memory |
+| [19-inbox](test/examples/19-inbox.ts) | Steers, follow-ups, writes, and withdrawal while busy |
+| [20-late-join](test/examples/20-late-join.ts) | Attaching a view and an event stream mid-run |
+| [21-subagent-foreground](test/examples/21-subagent-foreground.ts) | A replay-safe subagent tool whose child the call owns, with the child's events under the call |
+| [22-subagent-background](test/examples/22-subagent-background.ts) | Persistent subagents: spawn, steer, stop, list, answers reported back, restart-safe |
+| [23-child-tasks](test/examples/23-child-tasks.ts) | A checkout that owns and waits for four payments: failFast, abort, restart |
+| [24-compaction](test/examples/24-compaction.ts) | A long chat compacted in the background, manually, and after a context overflow |
+| [25-coding-agent](test/examples/25-coding-agent.ts) | CodingTools, live settings from a settings object, an environment that follows the conversation's directory |
+| [26-plan-mode](test/examples/26-plan-mode.ts) | A read-only plan mode as an extension with its own document, switched with `configure()` |
+| [27-reviewer](test/examples/27-reviewer.ts) | A reviewer conversation with its own model, extensions, tools, directory, and review loop |
+| [28-sandbox-per-conversation](test/examples/28-sandbox-per-conversation.ts) | An environment per conversation, looked up from an app document |
+| [29-tool-override](test/examples/29-tool-override.ts) | A same-name bash for some conversations, and a wrapper that times whichever bash won |
+| [30-reload-and-restart](test/examples/30-reload-and-restart.ts) | Reloading an extension mid-call, and stored choices surviving a restart |
+| [00](test/examples/00-conversation.ts)–[12](test/examples/12-recovery.ts) | The layers underneath: sessions, documents, forks, watches, the Harness, agent configuration, reload, extension state, tasks, recovery |
 
 Examples that call OpenAI need `OPENAI_API_KEY`; most use the faux provider otherwise.
 

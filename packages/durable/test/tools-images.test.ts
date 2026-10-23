@@ -1,3 +1,4 @@
+import { spawnSync } from "node:child_process";
 import { appendFileSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
@@ -486,10 +487,24 @@ describe("imageDimensions", () => {
 
 describe("toBase64", () => {
 	it("matches Buffer for every remainder length", () => {
-		for (const length of [0, 1, 2, 3, 4, 5, 10_000]) {
+		for (const length of [0, 1, 2, 3, 4, 5, 8191, 8192, 8193, 10_000, 16_385]) {
 			const bytes = Uint8Array.from({ length }, (_, index) => (index * 37) % 256);
 			expect(toBase64(bytes)).toBe(Buffer.from(bytes).toString("base64"));
 		}
+	});
+
+	// #10923: building the output a character at a time took 138 MB of heap for a 3 MiB image.
+	it("encodes a 3 MiB image within a 128 MB heap", () => {
+		const source = new URL("../src/tools/image-processor.ts", import.meta.url).href;
+		const script = `
+			const { toBase64 } = await import(${JSON.stringify(source)});
+			const bytes = Uint8Array.from({ length: 3147295 }, (_, index) => (index * 37) % 256);
+			if (toBase64(bytes) !== Buffer.from(bytes).toString("base64")) throw new Error("mismatch");
+		`;
+		const args = ["--experimental-strip-types", "--max-heap-size=128", "--input-type=module", "-e", script];
+		const result = spawnSync(process.execPath, args, { encoding: "utf8" });
+		expect(result.stderr).not.toMatch(/heap out of memory|mismatch/);
+		expect(result.status).toBe(0);
 	});
 });
 

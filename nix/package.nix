@@ -123,12 +123,16 @@ stdenv.mkDerivation (finalAttrs: {
     mkdir -p "$out/lib/pi" "$out/bin"
     cp -R . "$out/lib/pi"
 
+    # The wrapper runs Pi with an absolute Node path. Node is only on PATH so Pi can
+    # find npm for package installs; append it so that shells started by the
+    # bash tool keep the user's node/npm (e.g. from mise or nvm). fd, ripgrep,
+    # and the clipboard tools are Pi's own dependencies and take precedence.
     makeBinaryWrapper ${lib.getExe nodejs} "$out/bin/pi" \
       --add-flags "$out/lib/pi/node_modules/@earendil-works/pi-coding-agent/dist/bundle/cli.js" \
+      --suffix PATH : ${lib.makeBinPath [ nodejs ]} \
       --prefix PATH : ${
         makeBinPath (
           [
-            nodejs
             fd
             ripgrep
           ]
