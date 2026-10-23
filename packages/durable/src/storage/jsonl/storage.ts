@@ -275,9 +275,9 @@ export class JsonlStorage implements ReplayableStorage {
 		return storage;
 	}
 
-	async commit(writes: readonly StorageWrite[], context: Context): Promise<Seq> {
+	async commit(writes: readonly StorageWrite[], adopt: (seq: Seq) => void, context: Context): Promise<Seq> {
 		this.assertUsable();
-		return this.persist(this.memory.prepareCommit(writes), context);
+		return this.persist(this.memory.prepareCommit(writes), adopt, context);
 	}
 
 	async head(context: Context): Promise<Seq | undefined> {
@@ -287,14 +287,15 @@ export class JsonlStorage implements ReplayableStorage {
 	async replay(record: LogRecord, context: Context): Promise<void> {
 		this.assertUsable();
 		assertLogRecord(record);
-		await this.persist(this.memory.prepareCommit(record.writes, record.seq), context);
+		// No Session holds a replayed storage: nothing adopts.
+		await this.persist(this.memory.prepareCommit(record.writes, record.seq), () => {}, context);
 	}
 
 	log(after: Seq | undefined, context: Context): AsyncIterable<LogRecord> {
 		return this.store.log(after, context);
 	}
 
-	private async persist(prepared: PreparedMemoryCommit, context: Context): Promise<Seq> {
+	private async persist(prepared: PreparedMemoryCommit, adopt: (seq: Seq) => void, context: Context): Promise<Seq> {
 		const encoded = this.encodeCommit(prepared.seq, prepared.writes);
 		const reclamations = this.planReclamations(prepared.writes, encoded);
 		const sidecars = await Promise.all(
@@ -319,6 +320,8 @@ export class JsonlStorage implements ReplayableStorage {
 		if (!marker.ok) throw this.poison(errorFromFile(`append to ${MAIN_FILE}`, marker.error));
 		const seq = prepared.apply();
 		this.adoptSidecarState(prepared.writes);
+		// The marker is appended: the batch is durable. Reclaiming sidecars comes after adoption.
+		adopt(seq);
 		await this.reclaimSidecars(reclamations, context);
 		return seq;
 	}

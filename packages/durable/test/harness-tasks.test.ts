@@ -1198,7 +1198,7 @@ describe("task close", () => {
 		await reached.promise;
 		await harness.close(context);
 		await expect(fromListener).rejects.toThrow("closed");
-		expect(watchEnd).toEqual({ reason: "session_closed" });
+		expect(watchEnd).toEqual({ reason: "ended" });
 	});
 
 	it("writes no fault when close seals while the step after a failed phase is queued", async () => {

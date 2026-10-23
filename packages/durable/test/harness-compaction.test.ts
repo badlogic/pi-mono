@@ -1449,9 +1449,9 @@ describe("compaction estimates and interactions", () => {
 		// The parent is untouched.
 		expect((await kinds(chat.root)).includes("pi.compaction")).toBe(false);
 		// The fork's view keeps the parent entries the summary kept.
-		const state = await fork.viewState(context);
-		expect(state.value.entries).toEqual(view.entries);
-		state.dispose();
+		const watch = await fork.watch(context);
+		expect(watch.value.entries).toEqual(view.entries);
+		await watch.stop();
 		await chat.harness.close(context);
 	});
 
@@ -1896,12 +1896,13 @@ describe("compaction and the inbox", () => {
 	it("keeps the kept entries mounted in the conversation view", async () => {
 		const chat = await open();
 		await history(chat);
-		const state = await chat.root.viewState(context);
+		const watch = await chat.root.watch(context);
+		watch.start(async () => {});
 		chat.faux.summaries.push(summary());
 		await result(chat, await chat.root.compact(undefined, context));
-		await waitFor(() => state.value.entries[0]?.kind === "pi.compaction");
-		expect(state.value.entries).toEqual((await chat.root.context(context)).entries);
-		state.dispose();
+		await waitFor(() => watch.value.entries[0]?.kind === "pi.compaction");
+		expect(watch.value.entries).toEqual((await chat.root.context(context)).entries);
+		await watch.stop();
 		await chat.harness.close(context);
 	});
 });

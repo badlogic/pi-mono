@@ -283,13 +283,14 @@ describe("pi.live deltas", () => {
 		class RecordingStorage extends MemoryStorage {
 			override async commit(
 				writes: Parameters<MemoryStorage["commit"]>[0],
-				context: Parameters<MemoryStorage["commit"]>[1],
+				adopt: Parameters<MemoryStorage["commit"]>[1],
+				context: Parameters<MemoryStorage["commit"]>[2],
 			) {
 				let kind: "base" | "delta" | undefined;
 				for (const write of writes) {
 					if (write.type === "document.change" && write.id === liveId) kind = write.content.kind;
 				}
-				const seq = await super.commit(writes, context);
+				const seq = await super.commit(writes, adopt, context);
 				if (kind !== undefined) written.set(seq, kind);
 				return seq;
 			}

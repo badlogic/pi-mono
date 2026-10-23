@@ -1,4 +1,4 @@
-import type { AttachedReplicatedState, Context, JsonValue } from "@earendil-works/chord";
+import type { Context, JsonValue } from "@earendil-works/chord";
 import { withAbortSignal, withoutAbortSignal } from "@earendil-works/chord/context";
 import type { Models } from "@earendil-works/pi-ai";
 import {
@@ -45,7 +45,7 @@ import { ProviderDoc } from "./provider.ts";
 import { BUILTIN_TASKS } from "./registry.ts";
 import { type InvocationBinding, TaskScheduler } from "./scheduler.ts";
 import { Submissions } from "./submissions.ts";
-import { type TaskGraph, TaskGraphView, type TaskGraphWatch } from "./task-graph.ts";
+import { TaskGraphView, type TaskGraphWatch } from "./task-graph.ts";
 import { DURABLE_TELEMETRY_SCHEMA } from "./telemetry.ts";
 import type {
 	Agent,
@@ -71,7 +71,7 @@ import type {
 } from "./types.ts";
 import { addUsageState, UsageDoc, type UsageState } from "./usage.ts";
 import { scanAll } from "./util.ts";
-import { type ConversationView, ConversationViews } from "./view.ts";
+import { ConversationViews } from "./view.ts";
 
 const SCAN_PAGE_SIZE = 256;
 
@@ -123,7 +123,7 @@ class ConversationImpl<Tool extends ToolRegistration> implements Conversation {
 		return this.#host.submissions.submit(this.id, submission, context);
 	}
 
-	compact(instructions: string | undefined, context: Context): Promise<TaskId<CompactionResult>> {
+	async compact(instructions: string | undefined, context: Context): Promise<TaskId<CompactionResult>> {
 		this.#host.tasks.resume();
 		const input = { reason: "manual", ...(instructions === undefined ? {} : { instructions }) } as const;
 		return this.#host.harness.commitWith((tx) => createCompaction(tx, this.id, input), context);
@@ -165,18 +165,14 @@ class ConversationImpl<Tool extends ToolRegistration> implements Conversation {
 		return this.#host.create({ kind: "fork", parentId: this.id, at, ownership: options.ownership }, options, context);
 	}
 
-	abort(context: Context, options?: ConversationAbortOptions): Promise<void> {
+	async abort(context: Context, options?: ConversationAbortOptions): Promise<void> {
 		this.#host.tasks.resume();
 		return this.#host.tasks.abortConversation(this.id, options?.background === true, context);
 	}
 
-	waitForIdle(context: Context): Promise<void> {
+	async waitForIdle(context: Context): Promise<void> {
 		this.#host.tasks.resume();
 		return this.#host.tasks.waitForIdle(this.id, context);
-	}
-
-	viewState(context: Context): Promise<AttachedReplicatedState<ConversationView>> {
-		return this.#host.views.state(this.id, context);
 	}
 
 	watch(context: Context): Promise<ConversationWatch> {
@@ -218,7 +214,7 @@ class HarnessImpl<Tool extends ToolRegistration> extends SessionImpl implements 
 		const now = safeNow(options.now, report);
 		const hostSettings = currentSettings(options.settings);
 		// Read at each use, as all settings are, but only this field: it is read on every commit.
-		super(rawStorage, now, () => hostSettings()?.documentRetentionMs, options.setTimer);
+		super(rawStorage, now, () => hostSettings()?.documentRetentionMs, options.setTimer, options.readOnly === true);
 		// Every component reads and writes through the Session's failure guard: `rawStorage` serves only `super()`.
 		const storage = this.storage;
 		this.#options = options;
@@ -246,6 +242,7 @@ class HarnessImpl<Tool extends ToolRegistration> extends SessionImpl implements 
 				return record === undefined ? undefined : boundConversation(id, binding, this.#submissions, this.#tasks);
 			},
 			context: withoutAbortSignal(context),
+			readOnly: options.readOnly === true,
 		});
 		this.#submissions = new Submissions(this, storage, now, settings, () => this.#tasks.resume(), options.telemetry);
 		this.#taskGraph = new TaskGraphView(this, storage, {
@@ -341,12 +338,12 @@ class HarnessImpl<Tool extends ToolRegistration> extends SessionImpl implements 
 		return this.#tasks.retry(id, context);
 	}
 
-	waitForTask<R>(id: TaskId<R>, context: Context): Promise<SettledTask<R>> {
+	async waitForTask<R>(id: TaskId<R>, context: Context): Promise<SettledTask<R>> {
 		this.#tasks.resume();
 		return this.#tasks.waitForTask(id, context) as Promise<SettledTask<R>>;
 	}
 
-	waitForIdle(context: Context): Promise<void> {
+	async waitForIdle(context: Context): Promise<void> {
 		this.#tasks.resume();
 		return this.#tasks.waitForIdle(undefined, context);
 	}
@@ -362,10 +359,6 @@ class HarnessImpl<Tool extends ToolRegistration> extends SessionImpl implements 
 			if (state !== undefined) addUsageState(total, state);
 		}
 		return total;
-	}
-
-	taskGraph(context: Context): Promise<AttachedReplicatedState<TaskGraph>> {
-		return this.#taskGraph.state(context);
 	}
 
 	watchTaskGraph(context: Context): Promise<TaskGraphWatch> {

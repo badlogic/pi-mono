@@ -4,6 +4,23 @@
 
 ### Breaking Changes
 
+- `Storage.commit(writes, adopt, context)` takes an `adopt(seq)` callback, the Session's in-memory adoption of the batch: a storage calls it exactly once, synchronously, once the batch is durable and before its next commit starts, then resolves with `seq`, and never for a commit that fails before the batch is durable. Memory, SQLite, JSONL, and IndexedDB storages do; custom storages and wrappers must call or forward it, and the storage conformance suite checks it. A commit that rejects after its adoption fails the Session without rolling the adopted changes back.
+- `Storage.mintId()`'s contract is narrowed to IDs greater than every ID minted since the storage was opened and every ID stored, also across reopen. The bundled storages already behave so.
+- Watches use Chord's `WatchHandle` and `WatchEnd` (Durable re-exports both). End reasons are `stopped`, `cancelled`, `retired`, `ended` (was `session_closed`), `listener_error`, and `failed` (was `session_failed`). Retirement is an explicit event of the watched document incarnation (last frame `[["r", null]]`, then `retired`), never inferred from a `null` value. An ended watch drops its listener and every reference into its Session, so a stopped watch that is still referenced keeps only its last value.
+- Removed the Chord state getters `Session.documentState()`, `Conversation.viewState()`, and `Harness.taskGraph()`, and the `DocumentState` type; use `watchDoc()`, `Conversation.watch()`, and `Harness.watchTaskGraph()`. Durable no longer uses Chord's `replicatedState()`.
+
+### Added
+
+- `HarnessOptions.readOnly` opens a Harness as a viewer of a session another process drives: open leaves running tasks as committed instead of recovering them, every commit with writes rejects with `ReadOnlySession` before it reaches Storage, and `resume()` and every call that would run tasks reject with it.
+
+### Changed
+
+- Document, conversation view, task graph, and event watches use Chord's `Watch` implementation; behaviour is unchanged.
+
+## [1.4.0] - 2026-10-21
+
+### Breaking Changes
+
 - `TaskRuntime.sleep()` is removed: it waited inside a phase, which holds an invocation and, after a restart, reruns the phase and restarts the wait. A task now ends its phase asleep with `runtime.sleepUntil(until, checkpoint, context)` or by returning `{ status: "sleeping", until, checkpoint }` from `runtime.commit()`; move the work after the wait into the next phase and carry what it needs in the checkpoint. `TaskRuntime.setTimer()` paces work inside a phase without waiting for it.
 - Tasks have a `sleeping` status, so code that handles every `TaskState`, `TaskGraphState`, or `TaskInspection` state needs a case for it.
 - Opening a SQLite storage migrates it to schema version 3 automatically, rebuilding its task table, stamping conversations, tasks, and submissions with a commit sequence, and indexing every stamp so a commit log can be read in ranges. A migrated database cannot be opened by 1.3.0 or earlier, so a deployment cannot roll back past this release. JSONL storage needs no migration, but 1.3.0 or earlier never resumes a sleeping task it finds (a run's conversation stays busy).
@@ -35,13 +52,13 @@
 - Generation retry backoffs, deferred-response polls, and compaction retry backoffs sleep instead of waiting in a running phase, so a process can stop or hibernate during them. A record an earlier version stored mid-backoff sleeps again when it resumes before its time. A deferred poll whose model is gone after a reopen now fails `no_model` once the poll is due, not at once.
 - Code mode measures script deadlines and wall time on the Harness clock (`HarnessOptions.now`) instead of `Date.now()`.
 - SQLite drivers, portable interfaces, and the generic migration runner now come from `@earendil-works/chord/sqlite`. Existing Durable SQLite entry points keep re-exporting their public names; storage helpers and Durable schema migrations stay here.
-
 - `ToolControl.terminate` is now typed `boolean` instead of `true`, matching `pi-agent-core` and `pi-coding-agent`; `false` does not end the run ([#10858](https://github.com/earendil-works/pi/issues/10858)).
 
 ### Fixed
 
 - In Cloudflare Workers with `nodejs_compat`, the timers that evict idle documents and contexts were armed, since timers there have an `unref()`; a pending one kept a Durable Object from hibernating and blocked its eviction. They are now declined in Workers, and memory is freed at later commits.
 - The README's Errors section now limits the `StorageRequestError` exemption to reads: a `StorageRequestError` thrown by `commit()` or `mintId()` fails the Harness like any other storage error ([#11014](https://github.com/earendil-works/pi/issues/11014)).
+- The Node environment now detects the legacy WSL `bash.exe` launcher from `%SystemRoot%` instead of assuming `C:\Windows` ([#9501](https://github.com/earendil-works/pi/pull/9501) by [@petrroll](https://github.com/petrroll)).
 
 ## [1.3.0] - 2026-10-15
 

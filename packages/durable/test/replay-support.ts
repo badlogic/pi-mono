@@ -158,7 +158,7 @@ export function seedBatches(): StorageWrite[][] {
 }
 
 export async function seed(storage: Storage): Promise<void> {
-	for (const batch of seedBatches()) await storage.commit(batch, context);
+	for (const batch of seedBatches()) await storage.commit(batch, () => {}, context);
 }
 
 type Reads = Record<string, unknown>;

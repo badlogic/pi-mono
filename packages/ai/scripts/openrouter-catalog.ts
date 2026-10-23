@@ -98,6 +98,8 @@ export function buildOpenRouterCatalog(
 			input: input.length > 0 ? input : ["text"],
 			cost: openRouterCost(model.pricing),
 			contextWindow: model.top_provider?.context_length || model.context_length || 4096,
+			// OpenRouter answers TypeSafe `assets` with 200 but drops the images.
+			compat: { imageInput: "state-image-urls", sendImageOptInHeader: false },
 		});
 	}
 

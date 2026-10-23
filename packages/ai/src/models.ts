@@ -1252,6 +1252,7 @@ export function calculateCost(model: AnyModel, usage: Usage): Usage["cost"] {
 	usage.cost.cacheRead = (rates.cacheRead / 1000000) * usage.cacheRead;
 	usage.cost.cacheWrite = (rates.cacheWrite * shortWrite + rates.input * 2 * longWrite) / 1000000;
 	usage.cost.total = usage.cost.input + usage.cost.output + usage.cost.cacheRead + usage.cost.cacheWrite;
+	usage.cost.totalFromProvider = false;
 	return usage.cost;
 }
 

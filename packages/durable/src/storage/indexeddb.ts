@@ -445,8 +445,8 @@ export class IndexedDbStorage implements ReplayableStorage {
 		await requestResult(factory.deleteDatabase(name));
 	}
 
-	async commit(writes: readonly StorageWrite[], _context: Context): Promise<Seq> {
-		return this.commitAt(writes, undefined);
+	async commit(writes: readonly StorageWrite[], adopt: (seq: Seq) => void, _context: Context): Promise<Seq> {
+		return this.commitAt(writes, undefined, adopt);
 	}
 
 	async head(_context: Context): Promise<Seq | undefined> {
@@ -462,7 +462,8 @@ export class IndexedDbStorage implements ReplayableStorage {
 
 	async replay(record: LogRecord, _context: Context): Promise<void> {
 		assertLogRecord(record);
-		await this.commitAt(record.writes, record.seq);
+		// No Session holds a replayed storage: nothing adopts.
+		await this.commitAt(record.writes, record.seq, () => {});
 	}
 
 	/** Reads the changes after `after` through the sequence indexes in one transaction, then groups them in memory. */
@@ -522,11 +523,15 @@ export class IndexedDbStorage implements ReplayableStorage {
 		}
 	}
 
-	/** Commit at `seq`, or at the next sequence when it is undefined. */
-	private async commitAt(writes: readonly StorageWrite[], at: Seq | undefined): Promise<Seq> {
+	/** Commit at `seq`, or at the next sequence when it is undefined; `adopt` as for `commit()`. */
+	private async commitAt(
+		writes: readonly StorageWrite[],
+		at: Seq | undefined,
+		adopt: (committed: Seq) => void,
+	): Promise<Seq> {
 		this.assertOpen();
 		const documentActions = this.prepareDocumentActions(writes);
-		return this.transaction(ALL_STORES, "readwrite", async (transaction) => {
+		const seq = await this.transaction(ALL_STORES, "readwrite", async (transaction) => {
 			const metaStore = transaction.objectStore(STORES.meta);
 			const metadata = await requestResult(metaStore.get(META_KEY) as IDBRequest<MetaRow>);
 			if (metadata === undefined) throw new Error("Durable IndexedDB metadata is missing");
@@ -546,6 +551,9 @@ export class IndexedDbStorage implements ReplayableStorage {
 			await requestResult(metaStore.put({ key: META_KEY, nextId, nextSeq: seq + 1 } satisfies MetaRow));
 			return seq;
 		});
+		// The transaction completed: the batch is durable.
+		adopt(seq);
+		return seq;
 	}
 
 	async mintId<I extends Id<string>>(): Promise<I> {

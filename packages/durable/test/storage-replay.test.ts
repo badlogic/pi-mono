@@ -140,7 +140,7 @@ describe("log and replay", () => {
 				const { storage } = await source.open();
 				const replica = (await target.open()).storage;
 				for (const batch of seedBatches()) {
-					await storage.commit(batch, context);
+					await storage.commit(batch, () => {}, context);
 					await catchUp(storage, replica);
 					expect(await reads(replica)).toEqual(await reads(storage));
 				}
@@ -153,7 +153,7 @@ describe("log and replay", () => {
 				const replica = new MemoryStorage();
 				const batches = seedBatches();
 				for (let index = 0; index < batches.length; index++) {
-					await storage.commit(batches[index]!, context);
+					await storage.commit(batches[index]!, () => {}, context);
 					if ((index + 1) % every === 0 || index === batches.length - 1) await catchUp(storage, replica);
 				}
 				expect(await reads(replica), `every ${every}`).toEqual(await reads(storage));
@@ -179,18 +179,19 @@ describe("log and replay", () => {
 
 			it("logs each record at its own stamp and ends at the head", async () => {
 				const { storage } = await backend.open();
-				await storage.commit([{ type: "conversation", value: { id: ROOT_CONVERSATION_ID } }], context);
-				await storage.commit([{ type: "task", value: task(2, "pending") }], context);
-				await storage.commit([entry(3)], context);
-				await storage.commit([{ type: "task", value: task(2, "running") }], context);
+				await storage.commit([{ type: "conversation", value: { id: ROOT_CONVERSATION_ID } }], () => {}, context);
+				await storage.commit([{ type: "task", value: task(2, "pending") }], () => {}, context);
+				await storage.commit([entry(3)], () => {}, context);
+				await storage.commit([{ type: "task", value: task(2, "running") }], () => {}, context);
 				await storage.commit(
 					[
 						{ type: "task", value: task(4, "pending") },
 						{ type: "task", value: task(4, "running") },
 					],
+					() => {},
 					context,
 				);
-				await storage.commit([entry(5)], context);
+				await storage.commit([entry(5)], () => {}, context);
 				expect(await collect(storage.log(undefined, context))).toEqual([
 					{ seq: 1, writes: [{ type: "conversation", value: { id: ROOT_CONVERSATION_ID } }] },
 					{ seq: 3, writes: [entry(3)] },
@@ -202,7 +203,7 @@ describe("log and replay", () => {
 					{ seq: 5, writes: [{ type: "task", value: task(4, "running") }] },
 					{ seq: 6, writes: [entry(5)] },
 				]);
-				await storage.commit([{ type: "task", value: task(2, "terminal") }], context);
+				await storage.commit([{ type: "task", value: task(2, "terminal") }], () => {}, context);
 				expect(await collect(storage.log(seqFromNumber(6), context))).toEqual([
 					{ seq: 7, writes: [{ type: "task", value: task(2, "terminal") }] },
 				]);
@@ -210,12 +211,12 @@ describe("log and replay", () => {
 
 			it("logs only what followed the newest base of a current-only document", async () => {
 				const { storage } = await backend.open();
-				await storage.commit([{ type: "conversation", value: { id: ROOT_CONVERSATION_ID } }], context);
-				await storage.commit([create(latestDoc(2), { n: 0 })], context);
-				await storage.commit([delta(2, "n", 1)], context);
-				await storage.commit([delta(2, "n", 2)], context);
-				await storage.commit([base(2, { n: 3 })], context);
-				await storage.commit([delta(2, "n", 4)], context);
+				await storage.commit([{ type: "conversation", value: { id: ROOT_CONVERSATION_ID } }], () => {}, context);
+				await storage.commit([create(latestDoc(2), { n: 0 })], () => {}, context);
+				await storage.commit([delta(2, "n", 1)], () => {}, context);
+				await storage.commit([delta(2, "n", 2)], () => {}, context);
+				await storage.commit([base(2, { n: 3 })], () => {}, context);
+				await storage.commit([delta(2, "n", 4)], () => {}, context);
 				expect(await collect(storage.log(seqFromNumber(2), context))).toEqual([
 					{ seq: 5, writes: [base(2, { n: 3 })] },
 					{ seq: 6, writes: [delta(2, "n", 4)] },
@@ -247,7 +248,7 @@ describe("log and replay", () => {
 				expect(await storage.head(context)).toBe(7);
 				expect((await storage.entry(entryId(9), context))?.commitSeq).toBe(7);
 				expect(await storage.mintId()).toBe(10);
-				expect(await storage.commit([entry(10)], context)).toBe(8);
+				expect(await storage.commit([entry(10)], () => {}, context)).toBe(8);
 				await expect(storage.replay({ seq: seqFromNumber(8), writes: [entry(11)] }, context)).rejects.toThrow(
 					"does not strictly increase",
 				);
@@ -256,7 +257,7 @@ describe("log and replay", () => {
 
 			it("refuses document copies in a log record", async () => {
 				const { storage } = await backend.open();
-				await storage.commit([{ type: "conversation", value: { id: ROOT_CONVERSATION_ID } }], context);
+				await storage.commit([{ type: "conversation", value: { id: ROOT_CONVERSATION_ID } }], () => {}, context);
 				const copy = {
 					type: "document.copy",
 					record: latestDoc(3),
@@ -272,7 +273,7 @@ describe("log and replay", () => {
 				await seed(storage);
 				const iterator = storage.log(undefined, context)[Symbol.asyncIterator]();
 				await iterator.next();
-				await storage.commit([entry(100)], context);
+				await storage.commit([entry(100)], () => {}, context);
 				await expect(async () => {
 					while (!(await iterator.next()).done);
 				}).rejects.toThrow("changed while its log was read");
@@ -283,9 +284,9 @@ describe("log and replay", () => {
 	it("streams a SQLite log across pages", async () => {
 		const sqlite = backends.find((backend) => backend.name === "sqlite")!;
 		const { storage } = await sqlite.open();
-		await storage.commit([{ type: "conversation", value: { id: ROOT_CONVERSATION_ID } }], context);
-		await storage.commit([create(rewindableDoc(2), { n: 0 })], context);
-		for (let id = 3; id < 1000; id += 2) await storage.commit([entry(id), delta(2, "n", id)], context);
+		await storage.commit([{ type: "conversation", value: { id: ROOT_CONVERSATION_ID } }], () => {}, context);
+		await storage.commit([create(rewindableDoc(2), { n: 0 })], () => {}, context);
+		for (let id = 3; id < 1000; id += 2) await storage.commit([entry(id), delta(2, "n", id)], () => {}, context);
 		const log = await collect(storage.log(undefined, context));
 		expect(log).toHaveLength(501);
 

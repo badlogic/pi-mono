@@ -78,7 +78,11 @@ export class ControlledStorage extends MemoryStorage {
 		held.gate.resolve();
 	}
 
-	override async commit(writes: readonly StorageWrite[], commitContext: Context): Promise<Seq> {
+	override async commit(
+		writes: readonly StorageWrite[],
+		adopt: (seq: Seq) => void,
+		commitContext: Context,
+	): Promise<Seq> {
 		this.admittedCommits.push(writes);
 		this.commits.push(structuredClone(writes));
 		const held = this.#commitGate;
@@ -91,7 +95,7 @@ export class ControlledStorage extends MemoryStorage {
 			this.#commitFailure = undefined;
 			throw failure;
 		}
-		return super.commit(writes, commitContext);
+		return super.commit(writes, adopt, commitContext);
 	}
 
 	override mintId<I extends Id<string>>(): Promise<I> {

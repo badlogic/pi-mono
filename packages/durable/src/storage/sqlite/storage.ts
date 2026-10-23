@@ -215,8 +215,8 @@ export class SqliteStorage implements ReplayableStorage {
 		}
 	}
 
-	async commit(writes: readonly StorageWrite[], _context: Context): Promise<Seq> {
-		return this.commitAt(writes, undefined);
+	async commit(writes: readonly StorageWrite[], adopt: (seq: Seq) => void, _context: Context): Promise<Seq> {
+		return this.commitAt(writes, undefined, adopt);
 	}
 
 	async head(_context: Context): Promise<Seq | undefined> {
@@ -226,7 +226,8 @@ export class SqliteStorage implements ReplayableStorage {
 
 	async replay(record: LogRecord, _context: Context): Promise<void> {
 		assertLogRecord(record);
-		await this.commitAt(record.writes, record.seq);
+		// No Session holds a replayed storage: nothing adopts.
+		await this.commitAt(record.writes, record.seq, () => {});
 	}
 
 	/**
@@ -351,8 +352,12 @@ export class SqliteStorage implements ReplayableStorage {
 		return metadata.next_seq === 1 ? undefined : seqFromNumber(metadata.next_seq - 1);
 	}
 
-	/** Commit at `seq`, or at the next sequence when it is undefined. */
-	private async commitAt(writes: readonly StorageWrite[], seq: Seq | undefined): Promise<Seq> {
+	/** Commit at `seq`, or at the next sequence when it is undefined; `adopt` as for `commit()`. */
+	private async commitAt(
+		writes: readonly StorageWrite[],
+		seq: Seq | undefined,
+		adopt: (committed: Seq) => void,
+	): Promise<Seq> {
 		this.assertOpen();
 		const documentActions = this.prepareDocumentActions(writes);
 		const candidateNextId = this.candidateNextId(writes);
@@ -377,6 +382,8 @@ export class SqliteStorage implements ReplayableStorage {
 			return committedSeq;
 		});
 		this.nextId = Math.max(this.nextId, candidateNextId);
+		// `COMMIT` returned: the batch is durable.
+		adopt(committed);
 		return committed;
 	}
 

@@ -2,7 +2,6 @@ import type { Draft } from "@earendil-works/chord";
 import {
 	type ConversationId,
 	createSession,
-	type DocumentState,
 	type DocumentWatch,
 	defineDoc,
 	defineDocFamily,
@@ -160,7 +159,6 @@ describe("document definitions", () => {
 		const Note = defineEntry<{ text: string }>("t.note");
 		const Marker = defineEntry("t.marker");
 		type Rewound = Promise<Readonly<State> | undefined>;
-		type StateOf = Promise<DocumentState<State> | undefined>;
 		type WatchOf = Promise<DocumentWatch<State> | undefined>;
 		const check = async (session: Session, tx: Tx, conversationId: ConversationId, taskId: TaskId, at: EntryId) => {
 			expectTypeOf(session.snapshotAsOf(RewindableDoc, conversationId, at, context)).toEqualTypeOf<Rewound>();
@@ -174,12 +172,6 @@ describe("document definitions", () => {
 			// @ts-expect-error task documents keep no history
 			void session.snapshotAsOf(TaskDoc, taskId, at, context);
 
-			expectTypeOf(session.documentState(SessionDoc, context)).toEqualTypeOf<StateOf>();
-			expectTypeOf(session.documentState(LatestDoc, conversationId, context)).toEqualTypeOf<StateOf>();
-			expectTypeOf(session.documentState(TaskDoc, taskId, context)).toEqualTypeOf<StateOf>();
-			expectTypeOf(session.documentState(SessionFamily, "k", context)).toEqualTypeOf<StateOf>();
-			expectTypeOf(session.documentState(ConversationFamily, conversationId, "k", context)).toEqualTypeOf<StateOf>();
-			expectTypeOf(session.documentState(TaskFamily, taskId, "k", context)).toEqualTypeOf<StateOf>();
 			expectTypeOf(session.watchDoc(SessionDoc, context)).toEqualTypeOf<WatchOf>();
 			expectTypeOf(session.watchDoc(LatestDoc, conversationId, context)).toEqualTypeOf<WatchOf>();
 			expectTypeOf(session.watchDoc(TaskDoc, taskId, context)).toEqualTypeOf<WatchOf>();

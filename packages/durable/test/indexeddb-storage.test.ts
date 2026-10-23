@@ -22,6 +22,9 @@ import type {
 } from "../src/types.ts";
 import { ROOT_CONVERSATION_ID } from "../src/types.ts";
 
+/** Storage-level commits here have no in-memory owner to adopt them. */
+const adopt = (): void => {};
+
 Object.defineProperty(globalThis, "IDBKeyRange", { configurable: true, value: FakeIDBKeyRange });
 
 const context = BACKGROUND_CONTEXT;
@@ -39,10 +42,10 @@ class ReopeningStorage implements Storage {
 		this.indexedDB = indexedDB;
 	}
 
-	async commit(writes: readonly StorageWrite[], commitContext: Context): Promise<Seq> {
-		if (this.closed) return this.current.commit(writes, commitContext);
+	async commit(writes: readonly StorageWrite[], adopt: (seq: Seq) => void, commitContext: Context): Promise<Seq> {
+		if (this.closed) return this.current.commit(writes, adopt, commitContext);
 		try {
-			return await this.current.commit(writes, commitContext);
+			return await this.current.commit(writes, adopt, commitContext);
 		} finally {
 			await this.current.close(context);
 			this.current = await IndexedDbStorage.open(this.name, { indexedDB: this.indexedDB });
@@ -132,7 +135,7 @@ function pendingTask(id: TaskId<JsonValue>, conversationId = ROOT_CONVERSATION_I
 }
 
 async function createRoot(storage: Storage): Promise<void> {
-	await storage.commit([{ type: "conversation", value: { id: ROOT_CONVERSATION_ID } }], context);
+	await storage.commit([{ type: "conversation", value: { id: ROOT_CONVERSATION_ID } }], adopt, context);
 }
 
 it("persists minted IDs across reopen", async () => {
@@ -163,6 +166,7 @@ it("rolls back table writes when a later document copy fails", async () => {
 		} satisfies DocumentCreate;
 		await storage.commit(
 			[{ type: "document.create", record: source, content: { kind: "base", version: 1, value: { count: 1 } } }],
+			adopt,
 			context,
 		);
 		const taskId = await storage.mintId<TaskId<JsonValue>>();
@@ -177,6 +181,7 @@ it("rolls back table writes when a later document copy fails", async () => {
 						source: { id: sourceId, at: "current" },
 					},
 				],
+				adopt,
 				context,
 			),
 		).rejects.toThrow("was rejected");
@@ -207,6 +212,7 @@ it("scans entries and head markers through fork ancestry", async () => {
 					},
 				},
 			],
+			adopt,
 			context,
 		);
 		const childId = await storage.mintId<ConversationId>();
@@ -217,11 +223,13 @@ it("scans entries and head markers through fork ancestry", async () => {
 					value: { id: childId, parent: { conversationId: ROOT_CONVERSATION_ID, at: rootMarker } },
 				},
 			],
+			adopt,
 			context,
 		);
 		const childEntry = await storage.mintId<EntryId>();
 		await storage.commit(
 			[{ type: "entry", value: { id: childEntry, conversationId: childId, kind: "child" } }],
+			adopt,
 			context,
 		);
 		expect(
@@ -271,7 +279,7 @@ it("keeps one readwrite transaction active through many mixed writes", async () 
 				},
 			);
 		}
-		await storage.commit(writes, context);
+		await storage.commit(writes, adopt, context);
 		expect((await storage.entry(lastEntryId!, context))?.entry.data).toEqual({ index: 39 });
 		expect(await storage.task(lastTaskId!, context)).toEqual(pendingTask(lastTaskId!));
 		expect((await storage.submission(lastSubmissionId!, context))?.requestId).toBe("bulk-39");

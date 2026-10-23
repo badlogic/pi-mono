@@ -107,13 +107,13 @@ describe("scheduler indexes", () => {
 		const storage = await openNodeSqliteStorage(path);
 		const reasons: (string | undefined)[] = [];
 		const commit = storage.commit.bind(storage);
-		storage.commit = (writes, commitContext) => {
+		storage.commit = (writes, adopt, commitContext) => {
 			for (const write of writes) {
 				if (write.type === "task" && write.value.id === ids.leaf && write.value.abortRequested) {
 					reasons.push(write.value.abortReason);
 				}
 			}
-			return commit(writes, commitContext);
+			return commit(writes, adopt, commitContext);
 		};
 		const { harness } = await openTasks(storage, [Hold]);
 		harness.resume();
@@ -128,12 +128,12 @@ describe("scheduler indexes", () => {
 		const endedIn = new Map<TaskId, number>();
 		let commits = 0;
 		const commit = storage.commit.bind(storage);
-		storage.commit = (writes, commitContext) => {
+		storage.commit = (writes, adopt, commitContext) => {
 			commits++;
 			for (const write of writes) {
 				if (write.type === "task" && write.value.state.status === "terminal") endedIn.set(write.value.id, commits);
 			}
-			return commit(writes, commitContext);
+			return commit(writes, adopt, commitContext);
 		};
 		const opened = await openTasks(storage, [Hold]);
 		const harness = opened.harness;

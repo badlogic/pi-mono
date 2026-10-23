@@ -1,4 +1,4 @@
-import type { AttachedReplicatedState, Context, JsonValue } from "@earendil-works/chord";
+import type { Context, JsonValue, WatchHandle } from "@earendil-works/chord";
 import type {
 	AssistantMessage,
 	CacheRetention,
@@ -41,9 +41,8 @@ import type {
 	TaskRecord,
 	TaskState,
 	Tx,
-	WatchHandle,
 } from "../types.ts";
-import type { TaskGraph, TaskGraphWatch } from "./task-graph.ts";
+import type { TaskGraphWatch } from "./task-graph.ts";
 import type { UsageState } from "./usage.ts";
 import type { ConversationView } from "./view.ts";
 
@@ -558,7 +557,7 @@ export type HarnessSettings = {
 	 */
 	readonly contextRetentionMs?: number;
 	/**
-	 * How long a loaded document that no watch or document state observes stays in memory after its last read or write;
+	 * How long a loaded document that no watch observes stays in memory after its last read or write;
 	 * the next access loads it from Storage. Observed documents always stay. Default ten minutes; `0` drops one right
 	 * after use; `Infinity` keeps them. Anything else that is not a number of milliseconds means the default.
 	 */
@@ -661,6 +660,14 @@ export type HarnessOptions<Tool extends ToolRegistration = ToolRegistration> = {
 	 * Its own throw or rejection is dropped.
 	 */
 	readonly onReport?: (error: unknown, info: ReportInfo) => void;
+	/**
+	 * Open for reading only, as a viewer of a session that another process drives, for example a synced copy on a device
+	 * that only shows it. Open recovers nothing: a `running` task stays as committed. Every commit with writes rejects
+	 * with `ReadOnlySession` before it reaches Storage, and so does `resume()` and every call that enables scheduling;
+	 * the Harness stays usable for reads and watches. `wake()` is always inactive, and `onWake` is never called. Reopen
+	 * without it to write.
+	 */
+	readonly readOnly?: boolean;
 };
 
 /**
@@ -771,9 +778,7 @@ export interface Conversation {
 	 * owned, transitively, by its non-background tasks.
 	 */
 	waitForIdle(context: Context): Promise<void>;
-	/** The structural view (spec §9.3) as a disposable read-only Chord state. */
-	viewState(context: Context): Promise<AttachedReplicatedState<ConversationView>>;
-	/** The structural view as a serialized exact-frame watch with bounded pending frames. */
+	/** The structural view (spec §9.3) as a serialized exact-frame watch with bounded pending frames. */
 	watch(context: Context): Promise<ConversationWatch>;
 }
 
@@ -782,9 +787,10 @@ export type ConversationWatch = WatchHandle<ConversationView>;
 /** Durable agent harness over one Session. */
 export interface Harness extends Session {
 	/**
-	 * Enable task scheduling. Idempotent; throws after close. Calls that ask for progress enable it too:
-	 * `Conversation.submit()`, `Conversation.compact()`, `Conversation.abort()`, `Submission.wait()`, `waitForTask()`,
-	 * `Harness.waitForIdle()`, and `Conversation.waitForIdle()`. Read-only viewers never do.
+	 * Enable task scheduling. Idempotent; throws after close, and `ReadOnlySession` on a read-only Harness. Calls that
+	 * ask for progress enable it too: `Conversation.submit()`, `Conversation.compact()`, `Conversation.abort()`,
+	 * `Submission.wait()`, `waitForTask()`, `Harness.waitForIdle()`, and `Conversation.waitForIdle()`. Read-only viewers
+	 * never do.
 	 */
 	resume(): void;
 	/**
@@ -830,9 +836,10 @@ export interface Harness extends Session {
 	waitForIdle(context: Context): Promise<void>;
 	/** Session total: every conversation's `pi.usage` summed. */
 	usage(context: Context): Promise<UsageState>;
-	/** Every live task with its owner edge, status, and owned conversations (spec §9.5), as a disposable Chord state. */
-	taskGraph(context: Context): Promise<AttachedReplicatedState<TaskGraph>>;
-	/** The task graph as a serialized exact-frame watch with bounded pending frames. */
+	/**
+	 * Every live task with its owner edge, status, and owned conversations (spec §9.5), as a serialized exact-frame
+	 * watch with bounded pending frames.
+	 */
 	watchTaskGraph(context: Context): Promise<TaskGraphWatch>;
 }
 

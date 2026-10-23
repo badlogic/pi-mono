@@ -1,7 +1,6 @@
-import { type AttachedReplicatedState, type Context, type JsonValue, replicatedState } from "@earendil-works/chord";
+import { type Context, type JsonValue, Watch, type WatchHandle } from "@earendil-works/chord";
 import { withoutAbortSignal } from "@earendil-works/chord/context";
 import { applyImmutable, type NonEmptyPath, type Op, type Path } from "@earendil-works/chord/delta";
-import { CommittedStateSource, CommittedWatch } from "../session/observation.ts";
 import { contained, type SessionImpl } from "../session/session.ts";
 import type {
 	CommitPublication,
@@ -12,7 +11,6 @@ import type {
 	EntryRecord,
 	JsonObject,
 	Storage,
-	WatchHandle,
 } from "../types.ts";
 import { AgentDoc } from "./agent.ts";
 import { activeEntries, captureContextBounds } from "./context.ts";
@@ -42,7 +40,8 @@ export type ViewObserver = {
 		publication: CommitPublication,
 		context: Context,
 	): void;
-	closeSession(failure: { readonly error: unknown } | undefined): void;
+	/** The Session closed, or failed with `failure`. */
+	end(failure: { readonly error: unknown } | undefined): void;
 };
 
 const MOUNTED = [
@@ -94,7 +93,7 @@ export class ConversationViews {
 			for (const mount of this.#mounts.values())
 				for (const observer of [...mount.observers]) {
 					contained(
-						() => observer.closeSession(this.#session.failure),
+						() => observer.end(this.#session.failure),
 						(error) => this.report(error),
 					);
 				}
@@ -107,27 +106,11 @@ export class ConversationViews {
 		this.#session.report(error);
 	}
 
-	/** A disposable read-only Chord state of the view. */
-	async state(id: ConversationId, context: Context): Promise<AttachedReplicatedState<ConversationView>> {
-		const { observer, detach } = await this.attach(
-			id,
-			(value, release) => new CommittedStateSource<ConversationView>(value, release),
-			context,
-		);
-		try {
-			return replicatedState(observer, { onError: (error) => this.#session.report(error) });
-		} catch (error) {
-			detach();
-			throw error;
-		}
-	}
-
 	/** A serialized exact-frame watch of the view; cancelling `context` stops it. */
 	async watch(id: ConversationId, context: Context): Promise<WatchHandle<ConversationView>> {
 		const { observer } = await this.attach(
 			id,
-			(value, release) =>
-				new CommittedWatch<ConversationView>(value, release, (error) => this.#session.report(error)),
+			(value, release) => new Watch<ConversationView>(value, release, (error) => this.#session.report(error)),
 			context,
 		);
 		const signal = context.abortSignal;

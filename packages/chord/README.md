@@ -14,7 +14,7 @@ Contracts are runtime values described with [TypeBox](https://github.com/sinclai
 
 | Import | Contents | Runs in |
 |--------|----------|---------|
-| `@earendil-works/chord` | Contracts (`local`, `remote`, `method`, `opaque`), declarations (through the factory's `self`: `state`, `derive`, `resource`, `on`, `task`), hosts (`createHost`, `defineFacet`, `defineRegistry`), links (`memoryLinkPair`, `ipcLink`, `webSocketLink`, `acceptWebSockets`), errors (`ChordError`, `isChordError`, `forbidden`, `invalid`). Also the shared base: `Context`, `JsonValue`, `JsonRepresentation`, `Draft`, `copyJson`, `isJsonValue`, and `replicatedState` with its types. | Node and browsers |
+| `@earendil-works/chord` | Contracts (`local`, `remote`, `method`, `opaque`), declarations (through the factory's `self`: `state`, `derive`, `resource`, `on`, `task`), hosts (`createHost`, `defineFacet`, `defineRegistry`), links (`memoryLinkPair`, `ipcLink`, `webSocketLink`, `acceptWebSockets`), errors (`ChordError`, `isChordError`, `forbidden`, `invalid`). Also the shared base: `Context`, `JsonValue`, `JsonRepresentation`, `Draft`, `copyJson`, `isJsonValue`, `replicatedState` with its types, and the watch types `WatchHandle`, `NativeWatchHandle`, and `WatchEnd` with their implementations `Watch` and `NativeWatch`. | Node and browsers |
 | `@earendil-works/chord/node` | Child host processes: `createHostManager`, `forkDriver`, `childControl`, `processLock`; the facet module loader `nodeLoader`. | Node |
 | `@earendil-works/chord/context` | Explicit cancellation, telemetry, and invocation values: `BACKGROUND_CONTEXT`, `withCancel`, `withAbortSignal`, `withoutAbortSignal`, `withTelemetry`, `traceIn`, `withContextValue`, `awaitWithContext`. | Node and browsers |
 | `@earendil-works/chord/delta` | The transactional JSON tracker, structural diff, immutable apply, and the wire encoder/decoder for operation batches. | Node and browsers |
@@ -81,14 +81,18 @@ import { InMemoryTelemetryContext } from '@earendil-works/pi-telemetry';
 const telemetry = new InMemoryTelemetryContext();
 await telemetry.startSpan({ name: 'app.request' }, async (span) => {
   const context = withTelemetry(span, BACKGROUND_CONTEXT);
-  await traceIn(context, { name: 'app.load' }, async (child) => {
-    child.telemetry.addEvent('cache.miss');
-    return traceIn(child, { name: 'app.read' }, (nested) => readAccount(nested));
-  });
+  await traceIn(
+    { name: 'app.load' },
+    async (child) => {
+      child.telemetry.addEvent('cache.miss');
+      return traceIn({ name: 'app.read' }, (nested) => readAccount(nested), child);
+    },
+    context,
+  );
 });
 ```
 
-`withTelemetry(span, context)` derives a new context; it never changes its parent, cancellation, or typed values. `traceIn(context, options, fn)` creates a callback-managed child span, and `fn` receives its derived context. Every context already supports `telemetry.addEvent()` and `telemetry.addLink()`. Values, cancellation, callback results, and rejection identities are preserved. Concurrent calls keep independent parents; there is no ambient current span. `value()`, `ContextKey`, and `withContextValue()` remain supported.
+`withTelemetry(span, context)` derives a new context; it never changes its parent, cancellation, or typed values. `traceIn(options, fn, context)` creates a callback-managed child span, and `fn` receives its derived context. Every context already supports `telemetry.addEvent()` and `telemetry.addLink()`. Values, cancellation, callback results, and rejection identities are preserved. Concurrent calls keep independent parents; there is no ambient current span. `value()`, `ContextKey`, and `withContextValue()` remain supported.
 
 These helpers operate on the standalone `Context` API. They do not yet instrument Chord hosts, methods, or network frames.
 
@@ -152,8 +156,7 @@ their containers with the provider; mutating a consumed value violates the contr
 and can corrupt authority. Clone or serialize at any mutable trust boundary.
 
 Replicated state provides the same model through a callback. `replicatedState` is a
-standalone observable value, independent of hosts; Durable uses it for document,
-view, and task-graph states:
+standalone observable value, independent of hosts:
 
 ```ts
 import { replicatedState } from "@earendil-works/chord";
@@ -200,3 +203,30 @@ running callback.
 
 Cells of Chord objects and their remote readables have their own subscription
 model; see [State](docs/guide.md#state) in the usage guide.
+
+### Watches
+
+`WatchHandle<T>` is the one watch interface, implemented by watch sources such as
+Durable's documents, conversation views, and task graph. `watch.value` is the value
+at acquisition until `start(listener)` installs the sole asynchronous listener; each
+later change arrives as `(value, ops, context)`, one call at a time, and `value`
+advances to it. A source keeps at most 100 undelivered frames and then replaces them
+with one root replacement `[["r", newest]]`. `stop()` is idempotent, drops pending
+frames, and neither aborts nor awaits a running call; it and `closed` give the
+`WatchEnd`:
+
+- `stopped`: `stop()` was called;
+- `cancelled`: the context the watch was acquired with was cancelled;
+- `retired`: the source was retired, an explicit event after a last frame `[["r", null]]`;
+- `ended`: the source closed (its owner ended or closed);
+- `listener_error` with `error`: the listener threw or rejected;
+- `failed` with `error`: the source failed.
+
+An ended watch drops every reference into its source, so a stopped watch that is
+still referenced keeps only its last value alive.
+
+Sources implement handles with `Watch<T>`, fed through `advance(value, ops, context)`,
+`retire(context)`, `end()` or `end({ error })`, and `observeCancellation(signal)`.
+`NativeWatch<T>` implements `NativeWatchHandle<T>`, the same lifecycle for
+in-process values: the listener gets `(value, context)` without ops, and an
+overflow collapses to the newest value.

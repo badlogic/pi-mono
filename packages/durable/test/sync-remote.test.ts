@@ -67,7 +67,7 @@ function device(name: string, store: FileSystemSyncRemote, storage: ReplayableSt
 }
 
 async function commitAll(storage: ReplayableStorage, batches: readonly (readonly unknown[])[]): Promise<void> {
-	for (const batch of batches) await storage.commit(batch as never, context);
+	for (const batch of batches) await storage.commit(batch as never, () => {}, context);
 }
 
 const slot = (after: number, to: number, device: string): BatchInfo => ({
@@ -156,7 +156,7 @@ describe("syncing a session between devices", () => {
 		const laptop = device("laptop", store);
 		const viewer = device("viewer", store);
 		for (const writes of seedBatches()) {
-			await laptop.storage.commit(writes, context);
+			await laptop.storage.commit(writes, () => {}, context);
 			await laptop.upload();
 			await viewer.pull();
 		}
@@ -251,7 +251,7 @@ describe("syncing a session between devices", () => {
 		const stale = device("stale", store);
 		const replica = device("replica", store);
 		for (const [index, writes] of seedBatches().entries()) {
-			await laptop.storage.commit(writes, context);
+			await laptop.storage.commit(writes, () => {}, context);
 			await laptop.upload();
 			if (index === 3) await stale.pull();
 		}
@@ -263,13 +263,13 @@ describe("syncing a session between devices", () => {
 		// A copy at 4 cannot continue through folded batches: it restores instead.
 		await expect(stale.pull()).rejects.toThrow(HistoryUnavailableError);
 		// Nor can it take a folded slot: its own commits from 4 on are a different history.
-		await stale.storage.commit([entry(300)], context);
+		await stale.storage.commit([entry(300)], () => {}, context);
 		expect(await stale.upload()).toEqual({ type: "diverged", at: 4 });
 
 		// Uploads go on after the fold, and the replica follows them; so does a second fold and a fresh restore.
 		await commitAll(laptop.storage, [[entry(100)], [entry(101)]]);
 		await laptop.upload();
-		await laptop.storage.commit([entry(102)], context);
+		await laptop.storage.commit([entry(102)], () => {}, context);
 		await laptop.upload();
 		await replica.pull();
 		expect(await reads(replica.storage)).toEqual(await reads(laptop.storage));
@@ -283,7 +283,7 @@ describe("syncing a session between devices", () => {
 		const store = await remote();
 		const laptop = device("laptop", store);
 		for (const writes of seedBatches().slice(0, 3)) {
-			await laptop.storage.commit(writes, context);
+			await laptop.storage.commit(writes, () => {}, context);
 			await laptop.upload();
 		}
 		const vanishing: SessionSyncMaintenance = {
@@ -307,7 +307,7 @@ describe("host pieces", () => {
 		const store = await remote();
 		expect(await store.sessions(context)).toEqual([]);
 		const laptop = device("laptop", store);
-		await laptop.storage.commit([entry(1)], context);
+		await laptop.storage.commit([entry(1)], () => {}, context);
 		await laptop.upload("s2");
 		await store.putMeta("s1", { title: "first" }, context);
 		await store.putMeta("s1", { title: "renamed", origin: "laptop" }, context);

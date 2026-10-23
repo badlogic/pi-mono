@@ -53,6 +53,7 @@ describe("Durable Object SQLite adapter", () => {
 					{ type: "conversation", value: { id: ROOT_CONVERSATION_ID } },
 					{ type: "entry", value: { id: entryId, conversationId: ROOT_CONVERSATION_ID, kind: "first" } },
 				],
+				() => {},
 				BACKGROUND_CONTEXT,
 			),
 			second.commit(
@@ -60,6 +61,7 @@ describe("Durable Object SQLite adapter", () => {
 					{ type: "conversation", value: { id: ROOT_CONVERSATION_ID } },
 					{ type: "entry", value: { id: entryId, conversationId: ROOT_CONVERSATION_ID, kind: "second" } },
 				],
+				() => {},
 				BACKGROUND_CONTEXT,
 			),
 		]);

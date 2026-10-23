@@ -1,7 +1,7 @@
 import { Type } from "typebox";
 import { describe, expect, test } from "vitest";
 import { getModel, streamSimple } from "../src/compat.ts";
-import type { Api, Context, Message, Model, SystemMessage, Tool } from "../src/types.ts";
+import type { Api, AssistantMessage, Context, Message, Model, SystemMessage, Tool } from "../src/types.ts";
 import { resolveTranscriptTools } from "../src/utils/transcript.ts";
 
 class PayloadCaptured extends Error {}
@@ -242,6 +242,50 @@ describe("transcript system messages", () => {
 		expect(payload.tools).toMatchObject([{ name: "late_tool", cache_control: { type: "ephemeral" } }]);
 		expect(payload.tools?.[0]?.defer_loading).toBeUndefined();
 		expect(payload.messages.at(-1)?.content.map((block) => block.type)).toEqual(["text"]);
+	});
+
+	// #11091
+	test("holds an Anthropic update past an assistant message that converts to no blocks", async () => {
+		const reply = (text: string, provider: string, api: Api, model: string): AssistantMessage => ({
+			role: "assistant",
+			content: [{ type: "text", text }],
+			api,
+			provider,
+			model,
+			usage: {
+				input: 0,
+				output: 0,
+				cacheRead: 0,
+				cacheWrite: 0,
+				totalTokens: 0,
+				cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+			},
+			stopReason: "stop",
+			timestamp: 3,
+		});
+		const messages: Message[] = [
+			{ role: "system", content: "base prompt", timestamp: 0 },
+			{ role: "user", content: "hi", timestamp: 1 },
+			{ role: "system", content: "updated guidance", timestamp: 2 },
+			// Another model's empty reply: Anthropic rejects empty text blocks, so it is dropped.
+			reply("", "openai-codex", "openai-codex-responses", "gpt-x"),
+			{ role: "user", content: "again", timestamp: 4 },
+		];
+		const roles = (payload: AnthropicPayload) => payload.messages.map((message) => message.role);
+
+		// No later assistant: the update goes at the end.
+		const atEnd = await capturePayload<AnthropicPayload>(anthropicNativeModel, { messages });
+		expect(roles(atEnd)).toEqual(["user", "user", "system"]);
+
+		// A later assistant that is sent: the update goes directly before it.
+		const beforeAssistant = await capturePayload<AnthropicPayload>(anthropicNativeModel, {
+			messages: [
+				...messages,
+				reply("answer", anthropicNativeModel.provider, anthropicNativeModel.api, anthropicNativeModel.id),
+				{ role: "user", content: "third", timestamp: 5 },
+			],
+		});
+		expect(roles(beforeAssistant)).toEqual(["user", "user", "system", "assistant", "user"]);
 	});
 
 	test("folds Anthropic updates into the system prompt without native support", async () => {

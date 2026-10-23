@@ -42,6 +42,11 @@ import { AssistantMessageEventStream } from "../utils/event-stream.ts";
 import { headersToRecord } from "../utils/headers.ts";
 import { type ClientIdentity, getIdentityHeaders } from "../utils/identity.ts";
 import { parseJsonWithRepair, parseStreamingJson, parseToolCallArguments } from "../utils/json-parse.ts";
+import {
+	applyOpenRouterReportedCost,
+	isOpenRouterModel,
+	type OpenRouterUsageAccounting,
+} from "../utils/openrouter-cost.ts";
 import { getProviderEnvValue } from "../utils/provider-env.ts";
 import { retryProviderRequest } from "../utils/provider-retry.ts";
 import { sanitizeSurrogates } from "../utils/sanitize-unicode.ts";
@@ -888,6 +893,14 @@ export const stream: StreamFunction<"anthropic-messages", AnthropicOptions> = (
 					output.usage.totalTokens =
 						output.usage.input + output.usage.output + output.usage.cacheRead + output.usage.cacheWrite;
 					calculateCost(usageModel, output.usage);
+					if (isOpenRouterModel(model) && event.usage) {
+						// OpenRouter adds billing fields to streamed message_delta usage at runtime,
+						// although its OpenAPI schema and the Anthropic SDK do not type those fields.
+						applyOpenRouterReportedCost(
+							output.usage,
+							event.usage as typeof event.usage & OpenRouterUsageAccounting,
+						);
+					}
 				}
 			}
 
@@ -1362,7 +1375,9 @@ function convertMessages(
 	const params: MessageParam[] = [];
 	const assistantLevels = new Map<number, AnthropicEffort>();
 	// Later system messages are held back and emitted directly before the next assistant
-	// message (or at the end of the transcript). Anthropic requires `tool_result` blocks to
+	// message that is sent (or at the end of the transcript). Assistant messages that convert to
+	// no blocks are dropped, so holding past them keeps an update from landing before a user
+	// message (#11091). Anthropic requires `tool_result` blocks to
 	// immediately follow their `tool_use`, so a system message between them is rejected; this
 	// also mirrors where the managed-effort system messages are inserted. As a result an
 	// update placed before a user message in the transcript lands after it on the wire.
@@ -1429,7 +1444,6 @@ function convertMessages(
 				});
 			}
 		} else if (msg.role === "assistant") {
-			flushPendingSystemMessages();
 			const blocks: ContentBlockParam[] = [];
 
 			for (const block of msg.content) {
@@ -1484,6 +1498,7 @@ function convertMessages(
 				}
 			}
 			if (blocks.length === 0) continue;
+			flushPendingSystemMessages();
 			const messageIndex = params.length;
 			params.push({
 				role: "assistant",

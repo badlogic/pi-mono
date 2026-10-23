@@ -23,12 +23,12 @@ async function uploaded(
 	snapshotAfter = 0,
 ): Promise<{ readonly storage: MemoryStorage; readonly snapshot: LogRecord[]; readonly records: LogRecord[] }> {
 	const storage = new MemoryStorage();
-	for (const batch of batches.slice(0, snapshotAfter)) await storage.commit(batch, context);
+	for (const batch of batches.slice(0, snapshotAfter)) await storage.commit(batch, () => {}, context);
 	const snapshot = await collect(storage.log(undefined, context));
 	const records: LogRecord[] = [];
 	for (const batch of batches.slice(snapshotAfter)) {
 		const head = await storage.head(context);
-		await storage.commit(batch, context);
+		await storage.commit(batch, () => {}, context);
 		records.push(...(await collect(storage.log(head, context))));
 	}
 	return { storage, snapshot, records };

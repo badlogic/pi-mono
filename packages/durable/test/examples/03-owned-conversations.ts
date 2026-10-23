@@ -13,7 +13,7 @@ const session = createSession(new MemoryStorage());
 // all of them exist or none do.
 
 // A task definition needs a name, a version, the task's starting state, a
-// handler for every phase, and an abort handler (12-tasks.ts runs a task).
+// handler for every phase, and an abort handler (11-tasks.ts runs a task).
 // This example only creates the task record; a plain Session never runs it.
 const Supervisor = defineTask<null, { phase: "ready" }, null>({
 	name: "example.supervisor",

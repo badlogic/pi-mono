@@ -1,7 +1,6 @@
-import type { Context, JsonValue } from "@earendil-works/chord";
+import { type Context, type JsonValue, Watch, type WatchEnd } from "@earendil-works/chord";
 import type { Op, Path } from "@earendil-works/chord/delta";
 import type { AssistantMessage, Message, Usage } from "@earendil-works/pi-ai";
-import { CommittedWatch } from "../session/observation.ts";
 import type {
 	CommitChange,
 	CommitPublication,
@@ -11,7 +10,6 @@ import type {
 	SubmissionId,
 	SubmissionRecord,
 	TaskId,
-	WatchEnd,
 } from "../types.ts";
 import { AgentDoc } from "./agent.ts";
 import type { InboxItem, InboxState } from "./inbox.ts";
@@ -169,7 +167,7 @@ export async function watchEvents(
 	context: Context,
 ): Promise<AgentEventStream> {
 	const views = conversationViews(harness);
-	let watch!: CommittedWatch<readonly AgentEvent[]>;
+	let watch!: Watch<readonly AgentEvent[]>;
 	let snapshot!: SnapshotEvent;
 	await views.attach(
 		conversationId,
@@ -181,7 +179,7 @@ export async function watchEvents(
 			let current = initial;
 			snapshot = snapshotOf(initial);
 			// Batches are the watch's values; an overflow delivers a snapshot of the newest view instead.
-			watch = new CommittedWatch<readonly AgentEvent[]>(
+			watch = new Watch<readonly AgentEvent[]>(
 				[],
 				release,
 				(error) => views.report(error),
@@ -193,7 +191,7 @@ export async function watchEvents(
 					const events = translate(conversationId, before, after, ops, publication, held);
 					if (events.length > 0) watch.advance(events, [], commitContext);
 				},
-				closeSession: (failure) => watch.closeSession(failure),
+				end: (failure) => watch.end(failure),
 			};
 		},
 		context,
