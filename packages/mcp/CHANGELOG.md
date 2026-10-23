@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- OAuth metadata parsing and `startAuthorization()` now accept only `http:` and `https:` URLs. Before, a server could supply a `file:` or custom protocol authorization endpoint (for example `search-ms:`), which the platform URL handler would launch on sign-in.
+
 ## [1.4.0] - 2026-10-21
 
 ## [1.3.0] - 2026-10-15

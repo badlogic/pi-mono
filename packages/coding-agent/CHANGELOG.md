@@ -6,6 +6,10 @@
 
 - `pi update` for installs from the pi.dev installer no longer passes `--min-release-age=0` to `npm ci`. The release lockfile pins every package, so the flag had no effect, and security scanners that block it stopped the update ([#11262](https://github.com/earendil-works/pi/issues/11262))
 
+### Fixed
+
+- MCP sign-in now rejects authorization endpoints and other OAuth metadata URLs that are not `http:` or `https:`. Before, a malicious MCP server could supply a `file:` or custom protocol URL, which pi passed to the platform URL handler.
+
 ## [1.4.0] - 2026-10-21
 
 ### New Features
