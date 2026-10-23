@@ -371,11 +371,37 @@ function sanitizeForOpenApi(schema: unknown): unknown {
 	return result;
 }
 
+/** Schema keywords whose values map names to subschemas, so their keys are not schema keywords. */
+const JSON_SCHEMA_NAME_MAPS = new Set(["properties", "patternProperties", "$defs", "definitions", "dependentSchemas"]);
+
+/**
+ * Rewrite string and number `const` values to single-value `enum`s.
+ * Gemini ignores `const` in `parametersJsonSchema` but honors `enum`.
+ */
+function rewriteConstAsEnum(schema: unknown, isNameMap = false): unknown {
+	if (Array.isArray(schema)) return schema.map((item) => rewriteConstAsEnum(item));
+	if (typeof schema !== "object" || schema === null) return schema;
+
+	const result: Record<string, unknown> = {};
+	for (const [key, value] of Object.entries(schema)) {
+		result[key] = isNameMap ? rewriteConstAsEnum(value) : rewriteConstAsEnum(value, JSON_SCHEMA_NAME_MAPS.has(key));
+	}
+	if (!isNameMap && "const" in result && result.enum === undefined) {
+		const value = result.const;
+		if (typeof value === "string" || typeof value === "number") {
+			delete result.const;
+			result.enum = [value];
+		}
+	}
+	return result;
+}
+
 /**
  * Convert tools to Gemini function declarations format.
  *
  * By default uses `parametersJsonSchema` which supports full JSON Schema (including
- * anyOf, oneOf, const, etc.). Set `useParameters` to true to use the legacy `parameters`
+ * anyOf, oneOf, etc.). Gemini ignores `const` there, so string and number `const`
+ * values are sent as single-value `enum`s. Set `useParameters` to true to use the legacy `parameters`
  * field instead (OpenAPI 3.03 Schema). This is needed for Cloud Code Assist with Claude
  * models, where the API translates `parameters` into Anthropic's `input_schema`.
  */
@@ -395,7 +421,7 @@ export function convertTools(
 					description: tool.description,
 					...(useParameters
 						? { parameters: sanitizeForOpenApi(parameters as unknown) }
-						: { parametersJsonSchema: parameters }),
+						: { parametersJsonSchema: rewriteConstAsEnum(parameters) }),
 				};
 			}),
 		},

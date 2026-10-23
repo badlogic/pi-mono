@@ -201,3 +201,48 @@ describe("google-shared convertTools", () => {
 		expect(convertTools([], true)).toBeUndefined();
 	});
 });
+
+describe("google-shared convertTools const handling", () => {
+	it("rewrites string and number const values to single-value enums in parametersJsonSchema", () => {
+		const parameters = {
+			type: "object",
+			properties: {
+				origin: { type: "string", const: "zq-src-7" },
+				mode: {
+					anyOf: [
+						{ type: "string", const: "a" },
+						{ type: "string", const: "b" },
+					],
+				},
+				level: { oneOf: [{ const: 1 }, { const: 2 }] },
+				flag: { type: "boolean", const: true },
+				list: { type: "array", items: { const: "x" } },
+				const: { type: "string" },
+			},
+			required: ["origin"],
+		};
+		const tools = [makeTool(parameters)];
+
+		const result = convertTools(tools);
+		const decl = result?.[0]?.functionDeclarations?.[0];
+
+		expect(decl?.parametersJsonSchema).toEqual({
+			type: "object",
+			properties: {
+				origin: { type: "string", enum: ["zq-src-7"] },
+				mode: {
+					anyOf: [
+						{ type: "string", enum: ["a"] },
+						{ type: "string", enum: ["b"] },
+					],
+				},
+				level: { oneOf: [{ enum: [1] }, { enum: [2] }] },
+				flag: { type: "boolean", const: true },
+				list: { type: "array", items: { enum: ["x"] } },
+				const: { type: "string" },
+			},
+			required: ["origin"],
+		});
+		expect(parameters.properties.origin).toEqual({ type: "string", const: "zq-src-7" });
+	});
+});
