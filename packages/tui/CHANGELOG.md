@@ -2,9 +2,15 @@
 
 ## [Unreleased]
 
+### Added
+
+- Added `Component.capturesViewportInput`. While a component that sets it has focus, `TuiAltScreen` sends viewport keys such as PageUp/PageDown to it instead of scrolling the transcript, as it already does for focused overlays. `SelectList`, `SettingsList`, and `Editor` with open autocomplete set it ([#7629](https://github.com/earendil-works/pi/issues/7629), based on [#7680](https://github.com/earendil-works/pi/pull/7680) by [@muyiyr](https://github.com/muyiyr))
+- Added `getSelectPageIndex()` to compute the selection after a `tui.select.pageUp` or `tui.select.pageDown` key ([#7629](https://github.com/earendil-works/pi/issues/7629), based on [#7680](https://github.com/earendil-works/pi/pull/7680) by [@muyiyr](https://github.com/muyiyr))
+
 ### Fixed
 
 - Fixed fullscreen double-click selection splitting paths and tokens at `~`, `.`, `\`, and `+`. Word characters now match iTerm2's defaults ([#10980](https://github.com/earendil-works/pi/issues/10980))
+- Fixed `tui.select.pageUp` and `tui.select.pageDown` being ignored by `SelectList`, `SettingsList`, and editor autocomplete ([#7629](https://github.com/earendil-works/pi/issues/7629), based on [#7680](https://github.com/earendil-works/pi/pull/7680) by [@muyiyr](https://github.com/muyiyr))
 
 ## [1.4.0] - 2026-10-21
 
