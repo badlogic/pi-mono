@@ -1544,6 +1544,9 @@ describe("TuiAltScreen", () => {
 		for (const { line, needle } of [
 			{ line: "extensions/starline/fixed-editor/compositor.ts", needle: "starline" },
 			{ line: "earendil-works/pi-tui", needle: "works" },
+			{ line: "~/.pi/agent/settings.json", needle: "agent" },
+			{ line: "~\\Documents\\pi", needle: "Documents" },
+			{ line: "foo+bar", needle: "bar" },
 		]) {
 			const copied: string[] = [];
 			const terminal = new RecordingTerminal(80, 1);
