@@ -9,6 +9,8 @@
 ### Added
 
 - `WatchHandle<T>` and `WatchEnd`, the one watch API, moved from Durable: a serialized exact-frame observation with `value`, `start(listener)`, `stop()`, and `closed`. `WatchEnd` reasons are `stopped`, `cancelled`, `retired`, `ended`, `listener_error`, and `failed`.
+- `Watch<T>`, the one watch handle implementation, moved from Durable: a source creates one per watch and feeds it with `advance(value, ops, context)`, `retire(context)` (last frame `[["r", null]]`, then `retired`), `end()` or `end({ error })`, and `observeCancellation(signal)`. More than 100 undelivered frames collapse to one root replacement `[["r", newest]]`; termination drops the listener and every reference into the source.
+- `NativeWatchHandle<T>` and its implementation `NativeWatch<T>`: the same lifecycle for in-process values, with listener `(value, context)` and no ops; an overflow collapses to the newest value.
 
 ## [1.4.0] - 2026-10-21
 

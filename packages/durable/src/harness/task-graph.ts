@@ -1,7 +1,6 @@
-import type { Context, JsonValue, WatchHandle } from "@earendil-works/chord";
+import { type Context, type JsonValue, Watch, type WatchHandle } from "@earendil-works/chord";
 import { BACKGROUND_CONTEXT, withoutAbortSignal } from "@earendil-works/chord/context";
 import { applyImmutable, type Op } from "@earendil-works/chord/delta";
-import { CommittedWatch } from "../session/observation.ts";
 import { contained, type SessionImpl } from "../session/session.ts";
 import type {
 	CommitPublication,
@@ -56,7 +55,7 @@ export type TaskGraph = {
 export type TaskGraphWatch = WatchHandle<TaskGraph>;
 
 type AnyTaskRecord = TaskRecord<JsonValue, JsonValue, JsonValue>;
-type Observer = CommittedWatch<TaskGraph>;
+type Observer = Watch<TaskGraph>;
 type Mount = {
 	value: TaskGraph;
 	readonly observers: Set<Observer>;
@@ -108,7 +107,7 @@ export class TaskGraphView {
 	/** A serialized exact-frame watch of the graph; cancelling `context` stops it. */
 	async watch(context: Context): Promise<TaskGraphWatch> {
 		const { observer } = await this.#attach(
-			(value, release) => new CommittedWatch<TaskGraph>(value, release, (error) => this.#session.report(error)),
+			(value, release) => new Watch<TaskGraph>(value, release, (error) => this.#session.report(error)),
 			context,
 		);
 		const signal = context.abortSignal;

@@ -1,6 +1,6 @@
 import { setFlagsFromString } from "node:v8";
 import { runInNewContext } from "node:vm";
-import type { Context, JsonValue } from "@earendil-works/chord";
+import type { Context } from "@earendil-works/chord";
 import {
 	BACKGROUND_CONTEXT,
 	createContextKey,
@@ -11,7 +11,6 @@ import {
 import { applyImmutable } from "@earendil-works/chord/delta";
 import { type DocumentWatch, defineDoc, MemoryStorage } from "@earendil-works/pi-durable";
 import { describe, expect, it } from "vitest";
-import { CommittedWatch } from "../src/session/observation.ts";
 import { SessionImpl } from "../src/session/session.ts";
 import { context, documentChanges, flush, openTestSession } from "./session-support.ts";
 
@@ -506,31 +505,6 @@ describe("Session document watches", () => {
 		await flush();
 		expect(watch.value?.value).toBe(7);
 		await watch.stop();
-	});
-
-	it("ends retired only on its source's retirement, never on a null value", async () => {
-		const watch = new CommittedWatch<JsonValue>(
-			1,
-			() => {},
-			() => {},
-		);
-		const frames: Array<{ value: JsonValue; ops: unknown }> = [];
-		watch.start(async (value, ops) => {
-			frames.push({ value, ops });
-		});
-		let end: unknown;
-		void watch.closed.then((settled) => {
-			end = settled;
-		});
-		watch.advance(null, [["r", null]], context);
-		watch.advance(2, [["r", 2]], context);
-		await flush();
-		expect(frames).toEqual([
-			{ value: null, ops: [["r", null]] },
-			{ value: 2, ops: [["r", 2]] },
-		]);
-		expect(end).toBeUndefined();
-		expect(await watch.stop()).toEqual({ reason: "stopped" });
 	});
 
 	it("retains neither its Session nor its listener once stopped, while still referenced", async () => {

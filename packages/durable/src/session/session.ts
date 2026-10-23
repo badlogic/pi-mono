@@ -1,4 +1,4 @@
-import type { Context, JsonValue } from "@earendil-works/chord";
+import { type Context, type JsonValue, Watch } from "@earendil-works/chord";
 import { awaitWithContext, BACKGROUND_CONTEXT, withoutAbortSignal } from "@earendil-works/chord/context";
 import { type Op, track } from "@earendil-works/chord/delta";
 import {
@@ -56,8 +56,10 @@ import type {
 	TaskRecord,
 	Tx,
 } from "../types.ts";
-import { CommittedWatch, type ObservedDocumentValue } from "./observation.ts";
 import { type LoadedDocument, Transaction, type TransactionHost, type TransactionScope } from "./transaction.ts";
+
+/** What a document watch observes: the committed value of its incarnation, `null` once it retired. */
+type ObservedDocumentValue = Readonly<JsonObject> | null;
 
 /** The default source of a report: a listener, which never fails what ran it. */
 const LISTENER: ReportInfo = { type: "listener_error" };
@@ -775,10 +777,7 @@ export class SessionImpl implements Session {
 	 * Attach a watch to one committed incarnation: check the definition, then forward this incarnation's committed
 	 * changes, its retirement, and close. The watch's detach removes both subscriptions.
 	 */
-	#attachDocument(
-		definition: AnyDocToken["definition"],
-		loaded: LoadedDocument,
-	): CommittedWatch<ObservedDocumentValue> {
+	#attachDocument(definition: AnyDocToken["definition"], loaded: LoadedDocument): Watch<ObservedDocumentValue> {
 		checkRecordScope(definition, loaded.record);
 		checkRecordVersion(definition, loaded.record, loaded.storedVersion);
 		let unsubscribeCommit = (): void => {};
@@ -790,9 +789,7 @@ export class SessionImpl implements Session {
 			unsubscribeClose();
 			unpin();
 		};
-		const observer = new CommittedWatch<ObservedDocumentValue>(loaded.tracker.value, detach, (error) =>
-			this.report(error),
-		);
+		const observer = new Watch<ObservedDocumentValue>(loaded.tracker.value, detach, (error) => this.report(error));
 		const observed = { version: loaded.valueVersion };
 		unsubscribeCommit = this.observeCommits((publication, context) => {
 			for (const change of publication.changes) {

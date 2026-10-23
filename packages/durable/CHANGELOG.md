@@ -13,6 +13,10 @@
 
 - `HarnessOptions.readOnly` opens a Harness as a viewer of a session another process drives: open leaves running tasks as committed instead of recovering them, every commit with writes rejects with `ReadOnlySession` before it reaches Storage, and `resume()` and every call that would run tasks reject with it.
 
+### Changed
+
+- Document, conversation view, task graph, and event watches use Chord's `Watch` implementation; behaviour is unchanged.
+
 ## [1.4.0] - 2026-10-21
 
 ### Breaking Changes

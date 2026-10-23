@@ -14,7 +14,7 @@ Contracts are runtime values described with [TypeBox](https://github.com/sinclai
 
 | Import | Contents | Runs in |
 |--------|----------|---------|
-| `@earendil-works/chord` | Contracts (`local`, `remote`, `method`, `opaque`), declarations (through the factory's `self`: `state`, `derive`, `resource`, `on`, `task`), hosts (`createHost`, `defineFacet`, `defineRegistry`), links (`memoryLinkPair`, `ipcLink`, `webSocketLink`, `acceptWebSockets`), errors (`ChordError`, `isChordError`, `forbidden`, `invalid`). Also the shared base: `Context`, `JsonValue`, `JsonRepresentation`, `Draft`, `copyJson`, `isJsonValue`, `replicatedState` with its types, and the watch types `WatchHandle` and `WatchEnd`. | Node and browsers |
+| `@earendil-works/chord` | Contracts (`local`, `remote`, `method`, `opaque`), declarations (through the factory's `self`: `state`, `derive`, `resource`, `on`, `task`), hosts (`createHost`, `defineFacet`, `defineRegistry`), links (`memoryLinkPair`, `ipcLink`, `webSocketLink`, `acceptWebSockets`), errors (`ChordError`, `isChordError`, `forbidden`, `invalid`). Also the shared base: `Context`, `JsonValue`, `JsonRepresentation`, `Draft`, `copyJson`, `isJsonValue`, `replicatedState` with its types, and the watch types `WatchHandle`, `NativeWatchHandle`, and `WatchEnd` with their implementations `Watch` and `NativeWatch`. | Node and browsers |
 | `@earendil-works/chord/node` | Child host processes: `createHostManager`, `forkDriver`, `childControl`, `processLock`; the facet module loader `nodeLoader`. | Node |
 | `@earendil-works/chord/context` | Explicit cancellation, telemetry, and invocation values: `BACKGROUND_CONTEXT`, `withCancel`, `withAbortSignal`, `withoutAbortSignal`, `withTelemetry`, `traceIn`, `withContextValue`, `awaitWithContext`. | Node and browsers |
 | `@earendil-works/chord/delta` | The transactional JSON tracker, structural diff, immutable apply, and the wire encoder/decoder for operation batches. | Node and browsers |
@@ -224,3 +224,9 @@ frames, and neither aborts nor awaits a running call; it and `closed` give the
 
 An ended watch drops every reference into its source, so a stopped watch that is
 still referenced keeps only its last value alive.
+
+Sources implement handles with `Watch<T>`, fed through `advance(value, ops, context)`,
+`retire(context)`, `end()` or `end({ error })`, and `observeCancellation(signal)`.
+`NativeWatch<T>` implements `NativeWatchHandle<T>`, the same lifecycle for
+in-process values: the listener gets `(value, context)` without ops, and an
+overflow collapses to the newest value.
