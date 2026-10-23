@@ -150,35 +150,22 @@ describe("DefaultResourceLoader", () => {
 		});
 
 		// #11088
-		it("should attempt a failing install once when project trust is resolved", async () => {
+		it("should warn once about a failing install when project trust is resolved", async () => {
 			vi.stubEnv("PI_OFFLINE", "");
-			const attemptsPath = join(tempDir, "install-attempts");
 			const loader = new DefaultResourceLoader({
 				cwd,
 				agentDir,
 				settingsManager: SettingsManager.inMemory({
 					packages: ["npm:broken-package"],
-					npmCommand: [
-						process.execPath,
-						"-e",
-						`require("node:fs").appendFileSync(${JSON.stringify(attemptsPath)}, process.argv.slice(1).join(" ") + "\\n"); process.exit(1)`,
-					],
+					npmCommand: [process.execPath, "-e", "process.exit(1)"],
 				}),
 			});
 
 			await loader.reload({ resolveProjectTrust: async () => false });
 
-			// Other spawns are `npm root -g` probes; only real installs count.
-			const installs = () =>
-				readFileSync(attemptsPath, "utf8")
-					.split("\n")
-					.filter((line) => line.startsWith("install "));
-			expect(installs()).toHaveLength(1);
-			expect(loader.getExtensions().warnings ?? []).toHaveLength(1);
-
-			// A source that failed once is not retried in the same process.
-			await loader.reload();
-			expect(installs()).toHaveLength(1);
+			const warnings = loader.getExtensions().warnings ?? [];
+			expect(warnings).toHaveLength(1);
+			expect(warnings[0].path).toBe("npm:broken-package");
 		});
 
 		it("should fail when an extension package manifest cannot be parsed", async () => {

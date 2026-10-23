@@ -832,9 +832,6 @@ export class DefaultPackageManager implements PackageManager {
 	private globalNpmRoot: string | undefined;
 	private globalNpmRootCommandKey: string | undefined;
 	private progressCallback: ProgressCallback | undefined;
-	// Sources that failed to install during this process. Startup resolves packages twice when project
-	// trust is resolved, so without this a failing install costs a second network attempt and child output.
-	private readonly failedInstallSources = new Map<string, PackageInstallFailure>();
 
 	constructor(options: PackageManagerOptions) {
 		this.cwd = resolvePath(options.cwd);
@@ -1325,24 +1322,17 @@ export class DefaultPackageManager implements PackageManager {
 					if (action === "skip") return false;
 					if (action === "error") throw new Error(`Missing source: ${resolvedSource}`);
 				}
-				const knownFailure = this.failedInstallSources.get(resolvedSource);
-				if (knownFailure) {
-					installFailures.push(knownFailure);
-					return false;
-				}
 				// A source that cannot be installed (no network, missing package, failing git prepare step)
 				// must not abort startup. Skip its resources, like offline mode does, and report the failure.
 				try {
 					await this.installParsedSource(parsed, resolvedScope);
 					return true;
 				} catch (error) {
-					const failure: PackageInstallFailure = {
+					installFailures.push({
 						source: resolvedSource,
 						scope: resolvedScope,
 						message: error instanceof Error ? error.message : String(error),
-					};
-					this.failedInstallSources.set(resolvedSource, failure);
-					installFailures.push(failure);
+					});
 					return false;
 				}
 			};
