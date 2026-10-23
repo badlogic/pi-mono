@@ -8,6 +8,7 @@
 
 ### Added
 
+- `NativeWatchable<T>`: an in-process value that changes and can be watched (`value`, `watch(context)` returning a `NativeWatchHandle<T>`), the in-process counterpart of `Watchable<T>`.
 - `WatchHandle<T>` and `WatchEnd`, the one watch API, moved from Durable: a serialized exact-frame observation with `value`, `start(listener)`, `stop()`, and `closed`. `WatchEnd` reasons are `stopped`, `cancelled`, `retired`, `ended`, `listener_error`, and `failed`.
 - `Watch<T>`, the one watch handle implementation, moved from Durable: a source creates one per watch and feeds it with `advance(value, ops, context)`, `retire(context)` (last frame `[["r", null]]`, then `retired`), `end()` or `end({ error })`, and `observeCancellation(signal)`. More than 100 undelivered frames collapse to one root replacement `[["r", newest]]`; termination drops the listener and every reference into the source.
 - `Watchable<T>`: a value that changes and can be watched (`value`, `watch(context)` returning a `WatchHandle<T>`), the common interface of documents, derives and other observable values.

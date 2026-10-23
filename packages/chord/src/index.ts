@@ -80,6 +80,7 @@ export {
 export type { Ctx, GetOptions, Readable, RefStatus, Shape, StateEvent } from "./types.ts";
 export {
 	NativeWatch,
+	type NativeWatchable,
 	type NativeWatchHandle,
 	Watch,
 	type Watchable,
