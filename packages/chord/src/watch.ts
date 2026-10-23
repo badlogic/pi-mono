@@ -30,6 +30,17 @@ export interface WatchHandle<T> {
 	readonly closed: Promise<WatchEnd>;
 }
 
+/**
+ * A value that changes and can be watched: documents, derives, members of references. Values are immutable by
+ * convention (JSON for state); each watch starts at the current value and then gets one frame per change.
+ */
+export interface Watchable<T> {
+	/** The current value. */
+	readonly value: T;
+	/** A watch holding the current value, then one frame per change; the context's cancellation ends it. */
+	watch(context: Context): Promise<WatchHandle<T>>;
+}
+
 /** Serialized observation of an in-process value: as `WatchHandle`, but a change is a new value without ops. */
 export interface NativeWatchHandle<T> {
 	/** Acquisition value before start; latest delivered value afterward. */
