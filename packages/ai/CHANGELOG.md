@@ -4,7 +4,7 @@
 
 ### Added
 
-- Added optional `openBrowserOnConfirm` and `copyCodeOnConfirm` to `device_code` auth events and `OAuthDeviceCodeInfo`. Both default to `true`; set them to `false` to stop clients from offering to open the verification page or copy the code ([#9282](https://github.com/earendil-works/pi/issues/9282), [#9301](https://github.com/earendil-works/pi/pull/9301) by [@petrroll](https://github.com/petrroll))
+- Added optional `openBrowserOnConfirm` and `copyCodeOnConfirm` to `device_code` auth events and `OAuthDeviceCodeInfo`. Both default to `true`; set them to `false` to stop clients from offering to open the verification page or copy the code ([#9282](https://github.com/earendil-works/pi/issues/9282), [#9301](https://github.com/earendil-works/pi/pull/9301))
 
 ### Fixed
 
@@ -45,7 +45,7 @@
 - Fixed automatic retry not triggering for `stream disconnected before completion` errors relayed by proxies that wrap the Codex CLI ([#11057](https://github.com/earendil-works/pi/issues/11057))
 - Fixed automatic retry treating digits inside request ids or other numbers (for example `req_011CU503xyz` or `5242880 bytes`) as retryable HTTP status codes ([#11057](https://github.com/earendil-works/pi/issues/11057))
 - Fixed OpenAI Responses deferred tool loads rewriting the top-level tool list, and losing the prompt cache, on every load after a tool removal. Models with `additional_tools` now declare all tools in `additional_tools` items, starting with one at the head of the input, so removals (announced as text) and redefinitions no longer rewrite the prefix. Tool search and Kimi tool messages rewrite the top-level tools once per removal or redeclaration and keep later loads anchored ([#10940](https://github.com/earendil-works/pi/issues/10940))
-- Fixed GitHub Copilot requests whose body exceeds Copilot's size limit (HTTP 413 `failed to parse request`, for example sessions with many large images) failing instead of being detected as context overflow. Any HTTP 413 now counts as context overflow, so callers can compact and retry ([#11016](https://github.com/earendil-works/pi/pull/11016) by [@petrroll](https://github.com/petrroll))
+- Fixed GitHub Copilot requests whose body exceeds Copilot's size limit (HTTP 413 `failed to parse request`, for example sessions with many large images) failing instead of being detected as context overflow. Any HTTP 413 now counts as context overflow, so callers can compact and retry ([#11016](https://github.com/earendil-works/pi/pull/11016))
 - Fixed the `openai-codex` provider listing `gpt-5.5` and `gpt-5.3-codex-spark`, which the Codex backend rejects for ChatGPT accounts. Both models are removed ([#11173](https://github.com/earendil-works/pi/pull/11173) by [@lucasmeijer](https://github.com/lucasmeijer))
 
 ## [1.3.0] - 2026-10-15
@@ -300,7 +300,7 @@
 
 ### Fixed
 
-- Fixed GitHub Copilot GPT models, including GPT-6 Astra, using the Chat Completions adapter instead of the required Responses adapter ([#9253](https://github.com/earendil-works/pi/pull/9253) by [@petrroll](https://github.com/petrroll)).
+- Fixed GitHub Copilot GPT models, including GPT-6 Astra, using the Chat Completions adapter instead of the required Responses adapter ([#9253](https://github.com/earendil-works/pi/pull/9253)).
 - Fixed DeepSeek V4.1 thinking levels on OpenRouter and OpenCode Go preserving provider effort metadata ([#9485](https://github.com/earendil-works/pi/issues/9485)).
 - Fixed bodyless HTTP 400/413 errors from non-Cerebras providers being misclassified as context overflow ([#9482](https://github.com/earendil-works/pi/issues/9482)).
 - Fixed Vercel AI Gateway replaying unsigned thinking as assistant text ([#9676](https://github.com/earendil-works/pi/issues/9676)).
@@ -551,7 +551,7 @@
 
 ### Breaking Changes
 
-- Upgraded the exported TypeBox dependency to 1.3.7, removing deprecated APIs including `Type.Base`, `Type.Awaited`, `Type.Promise`, `Type.AsyncIterator`, `Type.Iterator`, `Type.Options`, and `Value.Mutate`, while fixing compiled validation of nullable array tool arguments. Consumers using removed APIs must migrate to supported TypeBox APIs ([#7243](https://github.com/earendil-works/pi/pull/7243) by [@petrroll](https://github.com/petrroll)).
+- Upgraded the exported TypeBox dependency to 1.3.7, removing deprecated APIs including `Type.Base`, `Type.Awaited`, `Type.Promise`, `Type.AsyncIterator`, `Type.Iterator`, `Type.Options`, and `Value.Mutate`, while fixing compiled validation of nullable array tool arguments. Consumers using removed APIs must migrate to supported TypeBox APIs ([#7243](https://github.com/earendil-works/pi/pull/7243)).
 
 ### Added
 
@@ -610,7 +610,7 @@
 - Fixed `cacheRetention: "none"` to disable implicit prompt-cache writes for supported OpenAI models and session-based caching for OpenAI Codex ([#6618](https://github.com/earendil-works/pi/pull/6618) by [@tmustier](https://github.com/tmustier)).
 - Fixed DNS lookup failures such as `getaddrinfo`, `ENOTFOUND`, and `EAI_AGAIN` to trigger automatic assistant retries ([#6946](https://github.com/earendil-works/pi/pull/6946) by [@christianklotz](https://github.com/christianklotz)).
 - Fixed OpenAI Codex WebSocket sessions to retry once without a missing previous-response continuation after `previous_response_not_found` errors ([#6955](https://github.com/earendil-works/pi/pull/6955) by [@davidbrai](https://github.com/davidbrai)).
-- Fixed OpenAI and Anthropic provider retry waits to honor abort signals and configured delay limits ([#6980](https://github.com/earendil-works/pi/pull/6980) by [@petrroll](https://github.com/petrroll)).
+- Fixed OpenAI and Anthropic provider retry waits to honor abort signals and configured delay limits ([#6980](https://github.com/earendil-works/pi/pull/6980)).
 - Fixed OpenRouter Anthropic cache breakpoints to advance through tool results and enabled cache control for `~anthropic/*-latest` aliases ([#6941](https://github.com/earendil-works/pi/pull/6941) by [@mteam88](https://github.com/mteam88)).
 
 ## [0.81.1] - 2026-07-21
@@ -712,7 +712,7 @@
 
 ### Breaking Changes
 
-- Removed the `OpenAIResponsesCompat.sendSessionIdHeader` flag. Session-affinity behavior is now controlled by `compat.sessionAffinityFormat` (`"openai"`, `"openai-nosession"`, or `"openrouter"`). Replace `sendSessionIdHeader: false` with `sessionAffinityFormat: "openai-nosession"` ([#6496](https://github.com/earendil-works/pi-mono/pull/6496) by [@petrroll](https://github.com/petrroll)).
+- Removed the `OpenAIResponsesCompat.sendSessionIdHeader` flag. Session-affinity behavior is now controlled by `compat.sessionAffinityFormat` (`"openai"`, `"openai-nosession"`, or `"openrouter"`). Replace `sendSessionIdHeader: false` with `sessionAffinityFormat: "openai-nosession"` ([#6496](https://github.com/earendil-works/pi-mono/pull/6496)).
 
 ### Added
 
@@ -723,9 +723,9 @@
 ### Fixed
 
 - Fixed OpenRouter model context windows to use the top provider's actual context length ([#6481](https://github.com/earendil-works/pi-mono/pull/6481) by [@davidbrai](https://github.com/davidbrai)).
-- Fixed the GitHub Copilot `mai-code-1-flash-picker` model to route through the `/responses` endpoint ([#6544](https://github.com/earendil-works/pi-mono/pull/6544) by [@petrroll](https://github.com/petrroll)).
+- Fixed the GitHub Copilot `mai-code-1-flash-picker` model to route through the `/responses` endpoint ([#6544](https://github.com/earendil-works/pi-mono/pull/6544)).
 - Fixed Amazon Bedrock requests to use the generic `apiKey` stream option as a Bedrock bearer token.
-- Fixed OpenRouter OpenAI-compatible session IDs to use the `x-session-id` header instead of OpenAI-specific session-affinity fields ([#6496](https://github.com/earendil-works/pi-mono/pull/6496) by [@petrroll](https://github.com/petrroll)).
+- Fixed OpenRouter OpenAI-compatible session IDs to use the `x-session-id` header instead of OpenAI-specific session-affinity fields ([#6496](https://github.com/earendil-works/pi-mono/pull/6496)).
 - Fixed Amazon Bedrock ambient AWS credentials to keep using SigV4 authentication, including for custom model IDs ([#6532](https://github.com/earendil-works/pi-mono/pull/6532) by [@ribelo](https://github.com/ribelo)).
 - Fixed Cloudflare Workers AI and AI Gateway authentication to use ambient account and gateway IDs when stored credentials contain only an API key ([#6292](https://github.com/earendil-works/pi-mono/pull/6292) by [@markphelps](https://github.com/markphelps)).
 - Fixed Amazon Bedrock errors to report unhandled provider stop reasons instead of only `An unknown error occurred` ([#6598](https://github.com/earendil-works/pi-mono/pull/6598) by [@davidbrai](https://github.com/davidbrai)).
