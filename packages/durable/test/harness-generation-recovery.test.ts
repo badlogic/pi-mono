@@ -111,7 +111,7 @@ describe("generation recovery", () => {
 		});
 		opened.harness.resume();
 		expect((await (await opened.harness.submission(id, context))!.wait(context)).status).toBe("done");
-		expect(sent).toEqual([["user", "system"]]);
+		expect(sent).toEqual([["system", "user"]]);
 		expect(timeouts).toEqual([1234]);
 		expect((await allEntries(opened.root)).map((entry) => entry.kind)).toEqual([
 			"pi.user",

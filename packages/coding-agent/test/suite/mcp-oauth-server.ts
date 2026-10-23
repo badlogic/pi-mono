@@ -17,6 +17,8 @@ function json(response: ServerResponse, status: number, body: unknown, headers: 
  * `iss` is sent as the `iss` parameter of authorization responses (RFC 9207). `issParameter` advertises
  * that parameter and sends the server's issuer. `cimd` advertises Client ID Metadata Documents.
  * `redirectPath` replaces the path of the redirect URI, like a mixed-up authorization server.
+ * The MCP endpoint assigns a session, so closing a connection sends a DELETE. Paths added to `stall`
+ * accept requests and never answer them, like an unresponsive server.
  */
 export async function startOAuthMcpServer(
 	options: { iss?: string; issParameter?: boolean; cimd?: boolean; redirectPath?: string } = {},
@@ -25,6 +27,9 @@ export async function startOAuthMcpServer(
 	const registrations: Record<string, unknown>[] = [];
 	const authorizations: URLSearchParams[] = [];
 	const tokenRequests: URLSearchParams[] = [];
+	const deletes: (string | undefined)[] = [];
+	const stall = new Set<string>();
+	const stalled: { path: string; request: IncomingMessage }[] = [];
 	const validTokens = new Set<string>();
 	const refreshTokens = new Set<string>();
 	const challenges = new Map<string, string>();
@@ -40,11 +45,12 @@ export async function startOAuthMcpServer(
 	};
 
 	const handleMcp = async (request: IncomingMessage, response: ServerResponse) => {
+		const token = request.headers.authorization?.replace(/^Bearer /, "");
+		if (request.method === "DELETE") deletes.push(token);
 		if (request.method !== "POST") {
 			response.writeHead(request.method === "GET" ? 405 : 200).end();
 			return;
 		}
-		const token = request.headers.authorization?.replace(/^Bearer /, "");
 		if (!token || !validTokens.has(token)) {
 			log.push(`401 ${token ?? "none"}`);
 			response
@@ -74,11 +80,15 @@ export async function startOAuthMcpServer(
 		} else {
 			result = {};
 		}
-		json(response, 200, { jsonrpc: "2.0", id: message.id, result });
+		json(response, 200, { jsonrpc: "2.0", id: message.id, result }, { "mcp-session-id": "session-1" });
 	};
 
 	const handle = async (request: IncomingMessage, response: ServerResponse) => {
 		const url = new URL(request.url ?? "/", origin);
+		if (stall.has(url.pathname)) {
+			stalled.push({ path: url.pathname, request });
+			return;
+		}
 		switch (url.pathname) {
 			case "/mcp":
 				return handleMcp(request, response);
@@ -156,6 +166,11 @@ export async function startOAuthMcpServer(
 		authorizations,
 		/** Parameters of token requests. */
 		tokenRequests,
+		/** Access tokens of session DELETE requests. */
+		deletes,
+		stall,
+		/** Requests to stalled paths, still open unless the client gave up. */
+		stalled,
 		/** Simulates access token expiry. */
 		expireAccessTokens: () => validTokens.clear(),
 		close: () =>

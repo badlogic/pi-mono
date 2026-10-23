@@ -81,6 +81,10 @@ describe("codemode description catalog", () => {
 		expect(description).toContain("## mcp__docs\n\n### `mcp__docs");
 		// The search guidance is always there, so tools that appear later do not change it.
 		expect(description).toContain("find unlisted tools, such as MCP tools");
+		// #10555: the lookup helpers are async; without `await` scripts serialize the promise as {}.
+		expect(description).toContain("`await searchTools(query, { limit?, namespace? })`");
+		expect(description).toContain("`await describeTool(name)`");
+		expect(description).toContain("`await describeNamespace(name)`");
 	});
 
 	it("fills the budget round-robin, cheapest first, and says what is missing", () => {

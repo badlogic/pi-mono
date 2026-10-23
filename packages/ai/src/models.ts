@@ -1,7 +1,12 @@
 import { lazyStream } from "./api/lazy.ts";
 import { defaultProviderAuthContext as defaultAuthContext } from "./auth/context.ts";
 import { InMemoryCredentialStore } from "./auth/credential-store.ts";
-import { type AuthResolutionOverrides, ModelsError, resolveProviderAuth } from "./auth/resolve.ts";
+import {
+	type AuthResolutionOverrides,
+	ModelsError,
+	refreshStoredOAuthCredential,
+	resolveProviderAuth,
+} from "./auth/resolve.ts";
 import type {
 	AuthCheck,
 	AuthContext,
@@ -52,6 +57,7 @@ import type {
 import { operationSignal, raceWithAbortSignal } from "./utils/abort.ts";
 import {
 	assertChatModel,
+	assertClassifierInputSupported,
 	assertClassifierModel,
 	assertImageModel,
 	classifierErrorResult,
@@ -87,6 +93,11 @@ export interface RefreshModelsContext {
 	force?: boolean;
 	/** Always present, including when the public refresh caller omits its optional signal. */
 	signal: AbortSignal;
+	/**
+	 * Base URL of the registered provider, including configuration overrides that wrappers apply
+	 * outside the provider receiving this context.
+	 */
+	baseUrl?: string;
 }
 
 export interface ModelsRefreshOptions {
@@ -540,6 +551,7 @@ class ModelsImpl implements MutableModels {
 			allowNetwork,
 			force: allowNetwork ? force : undefined,
 			signal,
+			baseUrl: provider.baseUrl,
 		});
 	}
 
@@ -615,15 +627,15 @@ class ModelsImpl implements MutableModels {
 			if (!oauth) return undefined;
 			if (Date.now() < stored.expires) return stored;
 			if (signal.aborted) return undefined;
-			const post = await this.credentials.modify(
+			// A refresh that has started survives cancellation or a superseding model refresh, so a
+			// rotated refresh token is always persisted. A newer refresh then sees the fresh credential.
+			return refreshStoredOAuthCredential(
+				this.credentials,
 				provider.id,
-				async (current) => {
-					if (current?.type !== "oauth" || Date.now() < current.expires) return undefined;
-					return oauth.refresh(current, signal);
-				},
-				{ signal },
+				oauth,
+				(current) => Date.now() >= current.expires,
+				signal,
 			);
-			return post?.type === "oauth" ? post : undefined;
 		}
 
 		const apiKey = provider.auth.apiKey;
@@ -970,6 +982,7 @@ class ModelsImpl implements MutableModels {
 	): Promise<ClassifierResult> {
 		try {
 			assertClassifierModel(model);
+			assertClassifierInputSupported(model, context);
 			const provider = this.requireProvider(model);
 			if (!provider.classify) {
 				throw new ModelsError("provider", `Provider ${model.provider} does not support classification`);

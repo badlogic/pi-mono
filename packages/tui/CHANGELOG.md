@@ -2,6 +2,52 @@
 
 ## [Unreleased]
 
+## [1.2.0] - 2026-10-12
+
+### Breaking Changes
+
+- `Editor.render()` and `Input.render()` now wrap the drawn cursor in zero-width APC markers instead of emitting `\x1b[7m` directly. TUI renderers resolve them; code that renders these components outside a TUI must strip them, for example with `stripTerminalSequences()`
+
+### Added
+
+- Added `renderFakeCursor()`. Components wrap their drawn cursor with it, and the TUI renders it in reverse video, or omits it after `CURSOR_MARKER` when `showHardwareCursor` is enabled
+
+### Changed
+
+- Changed `showHardwareCursor` to show only the terminal cursor: focused `Editor` and `Input` components no longer draw a reverse-video cursor when it is enabled. This avoids terminals that extend edge cell colors into the window padding stretching the drawn cursor at the first or last column
+
+### Fixed
+
+- Fixed overlay compositing dropping `CURSOR_MARKER` when an overlay ends directly left of the cursor, which lost the hardware cursor position
+- Fixed focused fullscreen overlays blocking mouse-wheel scrolling of the transcript. Wheel events that no component handles now scroll the transcript instead of reaching the focused overlay's `handleInput` as raw input; overlays that scroll with the wheel must implement `handleMouse` ([#10769](https://github.com/earendil-works/pi/issues/10769))
+- Fixed fragmented terminal color replies leaking hex values into the prompt and triggering the external editor via their BEL terminator (related reports: [#10256](https://github.com/earendil-works/pi/issues/10256), [#10657](https://github.com/earendil-works/pi/issues/10657))
+- Fixed inline images not rendering in Herdr since 1.1.0; Herdr now uses the Kitty graphics protocol ([#10774](https://github.com/earendil-works/pi/pull/10774) by [@ogulcancelik](https://github.com/ogulcancelik))
+- Fixed key bindings that name a shifted symbol, such as `+` or `ctrl++`, not matching when the Kitty keyboard protocol or modifyOtherKeys reports the key as Shift plus the unshifted key. `parseKey()` now returns the produced symbol (`+` instead of `shift+=`); the physical `shift+=` spelling still matches, and key ids such as `ctrl++` are parsed correctly ([#9880](https://github.com/earendil-works/pi/pull/9880) by [@christianklotz](https://github.com/christianklotz))
+
+## [1.1.0] - 2026-10-07
+
+### Breaking Changes
+
+- `Terminal` implementations must provide `setProgramStatus(status)`; a terminal without OSC 7501 support can implement it as a no-op ([#10607](https://github.com/earendil-works/pi/issues/10607))
+
+### Added
+
+- Added `Box.setPaddingX(...)` and `Text.setPaddingX(...)` ([#10557](https://github.com/earendil-works/pi/pull/10557) by [@rwachtler](https://github.com/rwachtler))
+- Added `Terminal.setProgramStatus()` and `formatProgramStatus()` for the Program Status Protocol (OSC 7501). `ProcessTerminal` asks the terminal for support at startup and sends reports only if it answers; `PI_PROGRAM_STATUS=1|0` overrides detection ([#10607](https://github.com/earendil-works/pi/issues/10607))
+- Added `TuiAltScreen.resetTextSelection()`, which drops the text selection and multi-click state, for example before a host replaces the transcript ([#9311](https://github.com/earendil-works/pi/issues/9311), [#10567](https://github.com/earendil-works/pi/pull/10567) by [@christianklotz](https://github.com/christianklotz))
+
+### Fixed
+
+- Fixed Markdown links not being clickable in Herdr: `TERM_PROGRAM=herdr` is now detected as supporting OSC 8 hyperlinks ([#10573](https://github.com/earendil-works/pi/issues/10573))
+
+## [1.0.4] - 2026-10-05
+
+## [1.0.3] - 2026-10-05
+
+### Changed
+
+- `Home`/`End` now always move the editor cursor to the line start/end; fullscreen transcript top/bottom moved to `Ctrl+Home`/`Ctrl+End`, which no longer move the editor cursor ([#10314](https://github.com/earendil-works/pi/issues/10314))
+
 ## [1.0.2] - 2026-10-04
 
 ## [1.0.1] - 2026-10-03

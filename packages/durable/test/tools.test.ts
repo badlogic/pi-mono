@@ -1,6 +1,6 @@
 // Ported from packages/agent/test/harness/tools.test.ts and adapted to ToolRegistration: tools take the environment
 // from `api.env`, stream through `api.output()`, and report notices as diagnostics instead of content text.
-import { mkdirSync, rmSync } from "node:fs";
+import { appendFileSync, mkdirSync, rmSync } from "node:fs";
 import { symlink } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -23,11 +23,19 @@ import {
 	type Result,
 	type ShellExecOptions,
 	type ShellExecResult,
+	type ShellOutputSkip,
+	type ShellOutputWindow,
 } from "../src/env/index.ts";
 import { NodeExecutionEnv } from "../src/env/node.ts";
 import { withFileMutationQueue } from "../src/tools/file-mutation-queue.ts";
 import { detectSupportedImageMimeType } from "../src/tools/image.ts";
-import { createBashTool, createEditTool, createReadTool, createWriteTool } from "../src/tools/index.ts";
+import {
+	createBashTool,
+	createEditTool,
+	createPowerShellTool,
+	createReadTool,
+	createWriteTool,
+} from "../src/tools/index.ts";
 import { DEFAULT_MAX_LINES } from "../src/truncate.ts";
 
 const tempDirs: string[] = [];
@@ -62,8 +70,11 @@ function fakeApi(env: ExecutionEnv | undefined): {
 		env,
 		output: (chunk: string | Uint8Array) =>
 			output.push(typeof chunk === "string" ? chunk : new TextDecoder().decode(chunk)),
+		retainedOutput: () => ({ text: output.join(""), truncated: false }),
 		diagnostic: (diagnostic: ToolDiagnostic) => diagnostics.push(diagnostic),
 		details: async () => {},
+		// No model: `read` treats it as one that sees images.
+		agent: async () => ({}),
 	} as unknown as ToolExecutionApi;
 	return { api, output, diagnostics };
 }
@@ -73,9 +84,9 @@ async function run(
 	args: JsonValue,
 	env: ExecutionEnv | undefined,
 	context: Context = BACKGROUND_CONTEXT,
-): Promise<ToolExecutionResult & { output: string[]; reported: ToolDiagnostic[] }> {
+): Promise<ToolExecutionResult & { streamed: string[]; reported: ToolDiagnostic[] }> {
 	const { api, output, diagnostics } = fakeApi(env);
-	return { ...(await tool.execute(args, api, context)), output, reported: diagnostics };
+	return { ...(await tool.execute(args, api, context)), streamed: output, reported: diagnostics };
 }
 
 /** Run a tool expected to throw; returns the error with what it streamed and reported first. */
@@ -83,18 +94,18 @@ async function runFailing(
 	tool: ToolRegistration,
 	args: JsonValue,
 	env: ExecutionEnv,
-): Promise<{ error: Error; output: string[]; reported: ToolDiagnostic[] }> {
+): Promise<{ error: Error; streamed: string[]; reported: ToolDiagnostic[] }> {
 	const { api, output, diagnostics } = fakeApi(env);
 	try {
 		await tool.execute(args, api, BACKGROUND_CONTEXT);
 	} catch (error) {
-		return { error: error as Error, output, reported: diagnostics };
+		return { error: error as Error, streamed: output, reported: diagnostics };
 	}
 	throw new Error("Expected the tool to throw");
 }
 
 function textOutput(result: ToolExecutionResult): string {
-	return (result.content ?? []).flatMap((part) => (part.type === "text" ? [part.text] : [])).join("\n");
+	return (result.output ?? []).flatMap((part) => (part.type === "text" ? [part.text] : [])).join("\n");
 }
 
 function diagnosticText(result: ToolExecutionResult): string {
@@ -169,14 +180,14 @@ const TRUNCATED_OUTPUT_LINES = DEFAULT_MAX_LINES + 1;
 
 class TimeoutOutputExecutionEnv extends NodeExecutionEnv {
 	override async exec(
-		_command: string,
+		_command: string | readonly string[],
 		options: ShellExecOptions | undefined,
 		context: Context,
 	): Promise<Result<ShellExecResult, ExecutionError>> {
 		const output = `${Array.from({ length: TRUNCATED_OUTPUT_LINES }, (_, index) => `line-${index + 1}`).join("\n")}\n`;
 		const spillPath = getOrThrow(await this.createTempFile({ prefix: "timeout-", suffix: ".log" }, context));
 		getOrThrow(await this.writeFile(spillPath, output, context));
-		options?.onOutput?.(output, context);
+		options?.onOutput?.(output, context, { stream: "stdout" });
 		const error = new ExecutionError("timeout", `timeout:${options?.timeout}`);
 		error.spillPath = spillPath;
 		return err(error);
@@ -273,18 +284,36 @@ describe("durable tools", () => {
 			);
 		});
 
-		it("reports images by content as unsupported", async () => {
+		it("reads a log that grows while it is read", async () => {
 			const env = createEnv();
-			const png = Uint8Array.from(
-				Buffer.from(
-					"iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGNgYGD4DwABBAEAX+XDSwAAAABJRU5ErkJggg==",
-					"base64",
-				),
-			);
-			getOrThrow(await env.writeFile("image.txt", png, BACKGROUND_CONTEXT));
+			getOrThrow(await env.writeFile("app.log", "one\ntwo\n", BACKGROUND_CONTEXT));
+			const logPath = join(env.cwd, "app.log");
+			// Every read appends, as a busy writer would; the scanned lines stay as they were.
+			const growing = Object.create(env) as NodeExecutionEnv;
+			growing.openBinaryReader = async (path, options, context) => {
+				const opened = await env.openBinaryReader(path, options, context);
+				if (!opened.ok) return opened;
+				const reader = opened.value;
+				const read = reader.read.bind(reader);
+				reader.read = async (position, length, readContext) => {
+					appendFileSync(logPath, "more\n");
+					return read(position, length, readContext);
+				};
+				return opened;
+			};
+			const result = await run(createReadTool(), { path: "app.log", limit: 2 }, growing);
+			expect(textOutput(result)).toBe("one\ntwo");
+		});
+
+		it("returns images by content as one image block", async () => {
+			const env = createEnv();
+			const data =
+				"iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGNgYGD4DwABBAEAX+XDSwAAAABJRU5ErkJggg==";
+			getOrThrow(await env.writeFile("image.txt", Uint8Array.from(Buffer.from(data, "base64")), BACKGROUND_CONTEXT));
 			const result = await run(createReadTool(), { path: "image.txt" }, env);
-			expect(result).toMatchObject({ content: [], isError: true });
-			expect(diagnosticText(result)).toBe("image.txt is an image (image/png); reading images is not supported");
+			expect(result.output).toEqual([{ type: "image", data, mimeType: "image/png" }]);
+			expect(result.isError).toBeUndefined();
+			expect(diagnosticText(result)).toBe("Read image file [image/png].");
 		});
 	});
 
@@ -517,20 +546,126 @@ describe("durable tools", () => {
 		});
 	});
 
-	describe("bash", () => {
-		it("streams combined stdout and stderr and returns no content of its own", async () => {
-			const result = await run(createBashTool(), { command: "printf out; printf err >&2" }, createEnv());
-			expect(result.output.join("")).toContain("out");
-			expect(result.output.join("")).toContain("err");
-			expect(result.content).toBeUndefined();
+	describe("powershell", () => {
+		/** An environment where only the listed programs exist; it records each command and prints `output`. */
+		function programsEnv(installed: readonly string[], output: string, exitCode = 0) {
+			const commands: (string | readonly string[])[] = [];
+			class ProgramsEnv extends NodeExecutionEnv {
+				override async exec(
+					command: string | readonly string[],
+					options: ShellExecOptions | undefined,
+					context: Context,
+				): Promise<Result<ShellExecResult, ExecutionError>> {
+					commands.push(command);
+					if (typeof command === "string" || !installed.includes(command[0]!)) {
+						return err(new ExecutionError("spawn_error", `spawn ${command[0]} ENOENT`));
+					}
+					options?.onOutput?.(output, context, { stream: "stdout" });
+					return { ok: true, value: { exitCode } };
+				}
+			}
+			return { env: new ProgramsEnv({ cwd: createTempDir() }), commands };
+		}
+
+		it("runs the command with pwsh as one argument, forcing UTF-8 output", async () => {
+			const { env, commands } = programsEnv(["pwsh"], "héllo\n");
+			const result = await run(createPowerShellTool(), { command: "Write-Output 'héllo'" }, env);
+			expect(result.streamed.join("")).toBe("héllo\n");
+			expect(commands).toEqual([
+				[
+					"pwsh",
+					"-NoProfile",
+					"-NonInteractive",
+					"-ExecutionPolicy",
+					"Bypass",
+					"-Command",
+					"try { [Console]::OutputEncoding=[System.Text.Encoding]::UTF8 } catch {}\nWrite-Output 'héllo'",
+				],
+			]);
 		});
 
-		it("throws on nonzero exits and timeouts after streaming the output", async () => {
+		it("falls back to Windows PowerShell and reports the last start failure", async () => {
+			const windowsOnly = programsEnv(["powershell"], "ok");
+			const result = await run(
+				createPowerShellTool({ commandPrefix: "$x = 1" }),
+				{ command: "$x" },
+				windowsOnly.env,
+			);
+			expect(result.streamed.join("")).toBe("ok");
+			expect(windowsOnly.commands.map((command) => command[0])).toEqual(["pwsh", "powershell"]);
+			expect(String(windowsOnly.commands[1]?.at(-1))).toMatch(/\n\$x = 1\n\$x$/);
+
+			const none = programsEnv([], "");
+			const failed = await runFailing(createPowerShellTool(), { command: "1" }, none.env);
+			expect(failed.error.message).toBe("spawn powershell ENOENT");
+		});
+
+		it("answers a nonzero exit with an error result carrying the exit code", async () => {
+			const { env } = programsEnv(["pwsh"], "partial", 3);
+			const result = await run(createPowerShellTool(), { command: "exit 3" }, env);
+			expect(result).toMatchObject({
+				isError: true,
+				structuredOutput: { output: "partial", truncated: false, exitCode: 3 },
+				diagnostics: [{ severity: "error", code: "exit_code", message: "Command exited with code 3" }],
+			});
+			expect(result.streamed.join("")).toBe("partial");
+		});
+
+		it.runIf(process.platform === "win32")("runs real PowerShell with UTF-8 output", async () => {
+			const result = await run(
+				createPowerShellTool(),
+				{ command: "Write-Output ('h' + [char]0xe9 + 'llo'); exit 0" },
+				createEnv(),
+			);
+			expect(result.streamed.join("").trim()).toBe("héllo");
+		});
+	});
+
+	describe("bash", () => {
+		it("passes the retained window to the environment and forwards what it skipped", async () => {
+			const window: ShellOutputWindow = { maxBytes: 4, maxLines: 1, minIntervalMs: 100, bytesPerSecond: 1024 };
+			const skipped: ShellOutputSkip = { bytes: 6, newlines: 2, endsWithNewline: true };
+			let received: ShellOutputWindow | undefined;
+			class SkippingEnv extends NodeExecutionEnv {
+				override async exec(
+					_command: string | readonly string[],
+					options: ShellExecOptions | undefined,
+					context: Context,
+				): Promise<Result<ShellExecResult, ExecutionError>> {
+					received = options?.window;
+					options?.onOutput?.("tail\n", context, { stream: "stdout", skipped });
+					return { ok: true, value: { exitCode: 0 } };
+				}
+			}
+			const calls: [string, ShellOutputSkip | undefined][] = [];
+			const api = {
+				...fakeApi(new SkippingEnv({ cwd: createTempDir() })).api,
+				outputWindow: window,
+				output: (chunk: string | Uint8Array, skip?: ShellOutputSkip) => calls.push([String(chunk), skip]),
+			} as ToolExecutionApi;
+			await createBashTool().execute({ command: "anything" }, api, BACKGROUND_CONTEXT);
+			expect(received).toEqual(window);
+			expect(calls).toEqual([["tail\n", skipped]]);
+		});
+
+		it("streams combined stdout and stderr, returns no output of its own, and repeats it with the exit code", async () => {
+			const result = await run(createBashTool(), { command: "printf out; printf err >&2" }, createEnv());
+			expect(result.streamed.join("")).toContain("out");
+			expect(result.streamed.join("")).toContain("err");
+			expect(result.output).toBeUndefined();
+			expect(result.structuredOutput).toEqual({ output: result.streamed.join(""), truncated: false, exitCode: 0 });
+		});
+
+		it("answers a nonzero exit with an error result, and throws on a timeout, after streaming the output", async () => {
 			const env = createEnv();
 			const tool = createBashTool();
-			const failed = await runFailing(tool, { command: "printf failed; exit 7" }, env);
-			expect(failed.error.message).toBe("Command exited with code 7");
-			expect(failed.output.join("")).toBe("failed");
+			const failed = await run(tool, { command: "printf failed; exit 7" }, env);
+			expect(failed).toMatchObject({
+				isError: true,
+				structuredOutput: { output: "failed", truncated: false, exitCode: 7 },
+				diagnostics: [{ code: "exit_code", message: "Command exited with code 7" }],
+			});
+			expect(failed.streamed.join("")).toBe("failed");
 			const slow = await runFailing(tool, { command: "sleep 2", timeout: 0.01 }, env);
 			expect(slow.error.message).toBe("Command timed out after 0.01 seconds");
 		});
@@ -568,15 +703,20 @@ describe("durable tools", () => {
 					execution.cwd = workspace;
 					execution.env = { PI_BASH_PREPARE_EXPLICIT: "explicit" };
 					execution.inheritEnv = false;
-					execution.command += `\nprintf '%s:%s:%s:%s' "$prefix" "\${PI_BASH_PREPARE_INHERITED-}" "$PI_BASH_PREPARE_EXPLICIT" "$PWD"`;
+					execution.command += `\n: > prepared-cwd\nprintf '%s:%s:%s' "$prefix" "\${PI_BASH_PREPARE_INHERITED-}" "$PI_BASH_PREPARE_EXPLICIT"`;
+					// Git Bash on Windows reports $PWD as an MSYS path, so only POSIX compares it.
+					if (process.platform !== "win32") execution.command += `\nprintf ':%s' "$PWD"`;
 				},
 			});
 			const result = await run(tool, { command: ":" }, env, withAbortSignal(controller.signal, BACKGROUND_CONTEXT));
 			expect(receivedEnv).toBe(env);
 			expect(receivedSignal).toBe(controller.signal);
-			expect(result.output.join("")).toBe(
-				`ready::explicit:${getOrThrow(await env.canonicalPath(workspace, BACKGROUND_CONTEXT))}`,
-			);
+			const pwd =
+				process.platform === "win32"
+					? ""
+					: `:${getOrThrow(await env.canonicalPath(workspace, BACKGROUND_CONTEXT))}`;
+			expect(result.streamed.join("")).toBe(`ready::explicit${pwd}`);
+			expect(getOrThrow(await env.exists(`${workspace}/prepared-cwd`, BACKGROUND_CONTEXT))).toBe(true);
 		});
 
 		it("supports command prefixes", async () => {
@@ -585,7 +725,7 @@ describe("durable tools", () => {
 				{ command: "printf $value" },
 				createEnv(),
 			);
-			expect(result.output.join("")).toBe("hello");
+			expect(result.streamed.join("")).toBe("hello");
 		});
 
 		it("streams every byte and spills complete output beyond the default limits", async () => {
@@ -596,7 +736,7 @@ describe("durable tools", () => {
 				env,
 			);
 			const expected = Array.from({ length: 3000 }, (_, index) => `line-${index + 1}\n`).join("");
-			expect(result.output.join("")).toBe(expected);
+			expect(result.streamed.join("")).toBe(expected);
 			const fullOutputPath = result.reported[0]?.message.match(/^Full output: (.+)$/)?.[1];
 			expect(fullOutputPath).toBeDefined();
 			expect(getOrThrow(await env.readTextFile(fullOutputPath!, BACKGROUND_CONTEXT))).toBe(expected);

@@ -1,3 +1,4 @@
+import { createServer, type Server } from "node:http";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { anthropicOAuth } from "../src/auth/oauth/anthropic.ts";
 import type { AuthEvent, AuthPrompt } from "../src/auth/types.ts";
@@ -210,37 +211,89 @@ describe.sequential("Anthropic OAuth", () => {
 	});
 
 	it("completes login through the browser callback and shows the sign-in page", async () => {
-		let exchangedCode: string | undefined;
-		vi.stubGlobal(
-			"fetch",
-			vi.fn(async (input: unknown, init?: RequestInit): Promise<Response> => {
-				if (getUrl(input) !== "https://platform.claude.com/v1/oauth/token")
-					return nativeFetch(input as string, init);
-				exchangedCode = getJsonBody(init).code;
-				return jsonResponse({ access_token: "access", refresh_token: "refresh", expires_in: 3600 });
-			}),
-		);
+		const login = await loginThroughBrowserCallback();
 
-		let callbackPage: Promise<Response> | undefined;
-		const credential = await anthropicOAuth.login({
-			signal: neverAbortedSignal,
-			notify: (event) => {
-				if (event.type !== "auth_url") return;
-				const state = new URL(event.url).searchParams.get("state") ?? "";
-				callbackPage = nativeFetch(`http://127.0.0.1:53692/callback?code=browser-code&state=${state}`);
-			},
-			prompt: (prompt) =>
-				prompt.type === "select"
-					? Promise.resolve("browser")
-					: new Promise((_, reject) => {
-							prompt.signal?.addEventListener("abort", () => reject(new Error("aborted")), { once: true });
-						}),
-		});
+		expect(login.credential.access).toBe("access");
+		expect(login.exchangedCode).toBe("browser-code");
+		expect(login.exchangedRedirectUri).toBe(login.redirectUri);
+		expect(login.pageStatus).toBe(200);
+		expect(login.pageText).toContain("Signed in to Anthropic.");
+	});
 
-		expect(credential.access).toBe("access");
-		expect(exchangedCode).toBe("browser-code");
-		const response = await callbackPage;
-		expect(response?.status).toBe(200);
-		expect(await response?.text()).toContain("Signed in to Anthropic.");
+	// #10571
+	it("falls back to a free callback port when the preferred port cannot be bound", async () => {
+		const blocker = createServer();
+		await listen(blocker, 53692);
+		try {
+			const login = await loginThroughBrowserCallback();
+			const redirectUri = new URL(login.redirectUri);
+
+			expect(redirectUri.hostname).toBe("localhost");
+			expect(redirectUri.pathname).toBe("/callback");
+			expect(redirectUri.port).not.toBe("53692");
+			expect(login.credential.access).toBe("access");
+			expect(login.exchangedRedirectUri).toBe(login.redirectUri);
+			expect(login.pageStatus).toBe(200);
+		} finally {
+			await new Promise<void>((resolve) => blocker.close(() => resolve()));
+		}
 	});
 });
+
+function listen(server: Server, port: number): Promise<void> {
+	return new Promise((resolve, reject) => {
+		server.once("error", reject);
+		server.listen(port, "127.0.0.1", () => {
+			server.off("error", reject);
+			resolve();
+		});
+	});
+}
+
+async function loginThroughBrowserCallback() {
+	let exchangedCode: string | undefined;
+	let exchangedRedirectUri: string | undefined;
+	vi.stubGlobal(
+		"fetch",
+		vi.fn(async (input: unknown, init?: RequestInit): Promise<Response> => {
+			if (getUrl(input) !== "https://platform.claude.com/v1/oauth/token") return nativeFetch(input as string, init);
+			const body = getJsonBody(init);
+			exchangedCode = body.code;
+			exchangedRedirectUri = body.redirect_uri;
+			return jsonResponse({ access_token: "access", refresh_token: "refresh", expires_in: 3600 });
+		}),
+	);
+
+	let redirectUri = "";
+	let callbackPage: Promise<Response> | undefined;
+	const credential = await anthropicOAuth.login({
+		signal: neverAbortedSignal,
+		notify: (event) => {
+			if (event.type !== "auth_url") return;
+			const params = new URL(event.url).searchParams;
+			redirectUri = params.get("redirect_uri") ?? "";
+			const callbackUrl = new URL(redirectUri);
+			callbackUrl.hostname = "127.0.0.1";
+			callbackUrl.search = new URLSearchParams({
+				code: "browser-code",
+				state: params.get("state") ?? "",
+			}).toString();
+			callbackPage = nativeFetch(callbackUrl);
+		},
+		prompt: (prompt) =>
+			prompt.type === "select"
+				? Promise.resolve("browser")
+				: new Promise((_, reject) => {
+						prompt.signal?.addEventListener("abort", () => reject(new Error("aborted")), { once: true });
+					}),
+	});
+	const page = await callbackPage;
+	return {
+		credential,
+		redirectUri,
+		exchangedCode,
+		exchangedRedirectUri,
+		pageStatus: page?.status,
+		pageText: await page?.text(),
+	};
+}

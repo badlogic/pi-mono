@@ -1,14 +1,15 @@
 import { type Context, type JsonValue, replicatedState } from "@earendil-works/chord";
-import { awaitWithContext, withoutAbortSignal } from "@earendil-works/chord/context";
+import { awaitWithContext, BACKGROUND_CONTEXT, withoutAbortSignal } from "@earendil-works/chord/context";
 import { type Op, track } from "@earendil-works/chord/delta";
 import {
 	type AnyDocToken,
+	addressId,
 	checkRecordScope,
 	checkRecordVersion,
 	materializeDocument,
 	resolveAddress,
 } from "../documents.ts";
-import { StorageRejected } from "../errors.ts";
+import { SessionFailed, StorageRequestError } from "../errors.ts";
 import { idFromNumber } from "../ids.ts";
 import type {
 	CommitChange,
@@ -16,25 +17,41 @@ import type {
 	ConversationDocFamilyToken,
 	ConversationDocToken,
 	ConversationId,
+	ConversationQuery,
 	ConversationRecord,
+	Cursor,
 	DocumentAddress,
 	DocumentCommitChange,
+	DocumentId,
+	DocumentPoint,
+	DocumentQuery,
 	DocumentRecord,
 	DocumentState,
 	DocumentWatch,
 	EntryId,
+	EntryQuery,
+	EntryRecord,
+	Id,
 	JsonObject,
+	Page,
 	RewindableConversationDocFamilyToken,
 	RewindableConversationDocToken,
 	Seq,
 	Session,
 	SessionDocFamilyToken,
 	SessionDocToken,
+	SessionEnd,
 	Storage,
 	StorageWrite,
+	StoredDocument,
+	SubmissionId,
+	SubmissionQuery,
+	SubmissionRecord,
 	TaskDocFamilyToken,
 	TaskDocToken,
 	TaskId,
+	TaskQuery,
+	TaskRecord,
 	Tx,
 } from "../types.ts";
 import {
@@ -45,45 +62,159 @@ import {
 } from "./observation.ts";
 import { type LoadedDocument, Transaction, type TransactionHost, type TransactionScope } from "./transaction.ts";
 
-/** Open a Session kernel over one storage backend. */
-export function createSession(storage: Storage): Session {
-	return new SessionImpl(storage);
+/**
+ * Open a Session kernel over one storage backend. `now` is the wall clock for task times; default `Date.now`. The first
+ * error a Storage method throws fails the Session (`SessionFailed`); see `SessionImpl`.
+ */
+export function createSession(
+	storage: Storage,
+	options?: { readonly now?: () => number; readonly documentRetentionMs?: number },
+): Session {
+	const retention = options?.documentRetentionMs;
+	return new SessionImpl(storage, options?.now, retention === undefined ? undefined : () => retention);
 }
+
+/** Default document retention: ten minutes, as for kept contexts. */
+let defaultRetention = 600_000;
+
+/** Internal, for tests: the retention of every Session that keeps the default, as a suite run with eviction at once. */
+export function setDefaultDocumentRetention(ms: number): void {
+	defaultRetention = ms;
+}
+
+/**
+ * A retention as given, when it is a number of milliseconds, `0` or more (`Infinity` keeps documents); otherwise the
+ * default.
+ */
+export function documentRetention(ms: number | undefined): number {
+	return typeof ms === "number" && ms >= 0 ? ms : defaultRetention;
+}
+
+/** Longest delay `setTimeout` supports; a longer retention waits in several steps. */
+const MAX_TIMER_DELAY = 2_147_483_647;
 
 /**
  * Session kernel: one mutation line, the loaded document tracker cache, and committed publication.
  *
+ * The cache is bounded by use: a document with no watch or document state attached leaves it once it was not read or
+ * written for the retention period, and the next access loads it from Storage. Eviction runs as a job on the mutation
+ * line, so no transaction ever holds a tracker that leaves.
+ *
  * Only committed state is observable. Every commit callback, preparation, Storage settlement, adoption, and
  * publication enqueue runs while the line is held; listeners run later.
+ *
+ * Storage failures are final. Every Storage call goes through one guard: the first error a Storage method throws, other
+ * than for a cancelled caller, fails the Session, as does a commit it cannot adopt. That call gets the error; every later
+ * call and every Storage call still underway gets `SessionFailed`; close listeners run at once with the error, and the
+ * Session then closes itself, Storage included, and `closed` settles. Nothing retries: transient errors are the
+ * Storage's to retry. Reopening recovers from what was committed.
  */
 export class SessionImpl implements Session {
 	readonly #storage: Storage;
 	readonly #documents = new Map<string, LoadedDocument>();
+	/** Cached documents with no observer attached, by address, oldest use first, with the time of that use. */
+	readonly #idleDocuments = new Map<string, number>();
+	/** Observers attached per document incarnation (record ID); a cached incarnation with any is never evicted. */
+	readonly #attachedDocuments = new Map<DocumentId, number>();
+	readonly #clock: () => number;
+	readonly #documentRetentionMs: () => number;
+	/** The pending eviction: a timer for the oldest idle document, or a line job when the retention is 0. */
+	#documentSweep: { readonly at: number; readonly timer: ReturnType<typeof setTimeout> | undefined } | undefined;
+	#sweepJobs = 0;
+	/** Set once a timer could not be unreferenced: then none is kept, and the end of each commit evicts what expired. */
+	#documentTimersUnavailable = false;
 	readonly #commitListeners = new Set<(publication: CommitPublication, context: Context) => void>();
+	/** The Session's own listeners, such as its scheduler's: they keep memory in step with storage, so a throw fails it. */
+	readonly #internalListeners = new Set<(publication: CommitPublication, context: Context) => void>();
 	readonly #closeListeners = new Set<() => void>();
 	readonly #host: TransactionHost;
 	#tail: Promise<void> = Promise.resolve();
 	#closing: Promise<void> | undefined;
-	#poison: { readonly error: unknown } | undefined;
+	#failure: { readonly error: unknown } | undefined;
+	/** Set when close reaches the backend: calls that fail from then on fail because it closes. */
+	readonly #failed = Promise.withResolvers<never>();
+	readonly #closed = Promise.withResolvers<SessionEnd>();
 
-	constructor(storage: Storage) {
-		this.#storage = storage;
+	get closed(): Promise<SessionEnd> {
+		return this.#closed.promise;
+	}
+
+	/** Internal: the error that failed the Session, if one did. */
+	get failure(): { readonly error: unknown } | undefined {
+		return this.#failure;
+	}
+
+	/** Internal: rejects with `SessionFailed` the moment the Session fails, before work underway has ended; never resolves. */
+	get failed(): Promise<never> {
+		return this.#failed.promise;
+	}
+
+	constructor(
+		storage: Storage,
+		now: () => number = Date.now,
+		documentRetentionMs: () => number | undefined = () => undefined,
+	) {
+		// Waits race it; none has to.
+		this.#failed.promise.catch(() => {});
+		this.#storage = new GuardedStorage(storage, this);
+		// Cache bookkeeping must never change the outcome of the operation it follows: a clock or a retention setting
+		// that throws counts as now, and as the default.
+		this.#clock = () => {
+			try {
+				return now();
+			} catch {
+				return Date.now();
+			}
+		};
+		this.#documentRetentionMs = () => {
+			try {
+				return documentRetention(documentRetentionMs());
+			} catch {
+				return documentRetention(undefined);
+			}
+		};
 		this.#host = {
-			storage,
-			cached: (id) => this.#documents.get(id),
+			storage: this.#storage,
+			now,
+			cached: (id) => {
+				const cached = this.#documents.get(id);
+				if (cached !== undefined) this.#touchDocument(id);
+				return cached;
+			},
 			load: (definition, addressId, address, context) => this.#loadDocument(definition, addressId, address, context),
 			install: (document) => {
 				this.#documents.set(document.addressId, document);
+				this.#touchDocument(document.addressId);
 			},
 			evict: (id, recordId) => {
-				if (this.#documents.get(id)?.record.id === recordId) this.#documents.delete(id);
+				if (this.#documents.get(id)?.record.id === recordId) this.#dropDocument(id);
 			},
 			conversationCreated: (tx, record) => this.conversationCreated(tx, record),
 		};
 	}
 
+	/** The Storage behind the failure guard; every component reads and writes through it. */
+	protected get storage(): Storage {
+		return this.#storage;
+	}
+
 	commit<T>(change: (tx: Tx) => T | Promise<T>, context: Context): Promise<T> {
 		return this.commitWith(change, context);
+	}
+
+	/**
+	 * Internal: fail the Session with `error`, the first wins, and report it once. Admission ends, and close listeners run
+	 * now; they read the error from `failure`. The Storage guard calls this; the Harness also calls it for a throw in its
+	 * scheduler's own commits.
+	 */
+	fail(error: unknown): void {
+		if (this.#failure !== undefined) return;
+		this.#failure = { error };
+		this.#failed.reject(new SessionFailed(error));
+		// Seal first, so a report handler that calls back finds the Session failed. Closing runs the close listeners
+		// synchronously; a failing backend close is the caller's to see, and here nobody waits.
+		this.close(BACKGROUND_CONTEXT).catch(() => {});
+		this.report(error);
 	}
 
 	/**
@@ -93,7 +224,7 @@ export class SessionImpl implements Session {
 	 */
 	commitWith<T>(change: (tx: Transaction) => T | Promise<T>, context: Context, scope?: TransactionScope): Promise<T> {
 		try {
-			this.#assertUsable();
+			this.assertUsable();
 		} catch (error) {
 			return Promise.reject(error);
 		}
@@ -103,7 +234,7 @@ export class SessionImpl implements Session {
 	/** Internal: run a read-only job on the mutation line so multi-read derivations observe one committed state. */
 	readOnLine<T>(job: () => Promise<T>): Promise<T> {
 		try {
-			this.#assertUsable();
+			this.assertUsable();
 		} catch (error) {
 			return Promise.reject(error);
 		}
@@ -160,11 +291,12 @@ export class SessionImpl implements Session {
 		context: Context,
 	): Promise<Readonly<T> | undefined>;
 	async snapshot(token: AnyDocToken, ...args: readonly unknown[]): Promise<JsonObject | undefined> {
-		this.#assertUsable();
+		this.assertUsable();
 		const definition = token.definition;
 		const resolved = resolveAddress(definition, args);
 		const context = args[resolved.nextArgument] as Context;
 		const cached = this.#documents.get(resolved.id);
+		if (cached?.valueVersion === definition.version) this.#touchDocument(resolved.id);
 		const loaded =
 			cached?.valueVersion === definition.version
 				? cached
@@ -211,7 +343,7 @@ export class SessionImpl implements Session {
 	): Promise<DocumentState<T> | undefined>;
 	documentState(token: AnyDocToken, ...args: readonly unknown[]): Promise<DocumentState<JsonObject> | undefined> {
 		try {
-			this.#assertUsable();
+			this.assertUsable();
 			const definition = token.definition;
 			const resolved = resolveAddress(definition, args);
 			const context = args[resolved.nextArgument] as Context;
@@ -225,7 +357,7 @@ export class SessionImpl implements Session {
 					(value, release) => new CommittedStateSource<ObservedDocumentValue>(value, release),
 				);
 				try {
-					return replicatedState(source) as DocumentState<JsonObject>;
+					return replicatedState(source, { onError: (error) => this.report(error) }) as DocumentState<JsonObject>;
 				} catch (error) {
 					detach();
 					throw error;
@@ -265,7 +397,7 @@ export class SessionImpl implements Session {
 		context: Context,
 	): Promise<DocumentWatch<T> | undefined>;
 	async watchDoc(token: AnyDocToken, ...args: readonly unknown[]): Promise<DocumentWatch<JsonObject> | undefined> {
-		this.#assertUsable();
+		this.assertUsable();
 		const definition = token.definition;
 		const resolved = resolveAddress(definition, args);
 		const context = args[resolved.nextArgument] as Context;
@@ -285,7 +417,8 @@ export class SessionImpl implements Session {
 				return this.#attachDocument(
 					definition,
 					loaded,
-					(value, release) => new CommittedWatch<ObservedDocumentValue>(value, release),
+					(value, release) =>
+						new CommittedWatch<ObservedDocumentValue>(value, release, (error) => this.report(error)),
 				).observer;
 			});
 			if (watch === undefined) return undefined;
@@ -314,7 +447,7 @@ export class SessionImpl implements Session {
 		context: Context,
 	): Promise<Readonly<T> | undefined>;
 	async snapshotAsOf(token: AnyDocToken, ...args: readonly unknown[]): Promise<JsonObject | undefined> {
-		this.#assertUsable();
+		this.assertUsable();
 		const definition = token.definition;
 		const resolved = resolveAddress(definition, args);
 		if (resolved.address.scope.kind !== "conversation") {
@@ -356,16 +489,44 @@ export class SessionImpl implements Session {
 				.then(() =>
 					this.#enqueue(async () => {
 						this.#commitListeners.clear();
+						this.#internalListeners.clear();
 						this.#documents.clear();
-						await this.#storage.close(cleanup);
+						this.#idleDocuments.clear();
+						this.#attachedDocuments.clear();
+						try {
+							await this.#storage.close(cleanup);
+						} catch (error) {
+							// A Storage that cannot close is a failed one; an earlier failure stays the cause.
+							if (this.#failure === undefined) {
+								this.#failure = { error };
+								this.report(error);
+							}
+							throw error;
+						}
 					}),
-				);
-			const listeners = [...this.#closeListeners];
-			this.#closeListeners.clear();
-			for (const listener of listeners) listener();
+				)
+				.finally(() => {
+					const failure = this.#failure;
+					this.#closed.resolve(
+						failure === undefined ? { reason: "closed" } : { reason: "failed", error: failure.error },
+					);
+				});
+			this.#notifyClose();
 		}
 		return awaitWithContext(this.#closing, context);
 	}
+
+	/** Run the close listeners once, each on its own: one that fails is reported, and the rest still run. */
+	#notifyClose(): void {
+		if (this.#documentSweep?.timer !== undefined) clearTimeout(this.#documentSweep.timer);
+		this.#documentSweep = undefined;
+		const listeners = [...this.#closeListeners];
+		this.#closeListeners.clear();
+		for (const listener of listeners) contained(listener, (error) => this.report(error));
+	}
+
+	/** Internal: the Session's failure, and errors of listeners, which never fail what ran them. A plain Session drops them. */
+	report(_error: unknown): void {}
 
 	/**
 	 * Runs inside every transaction that creates or forks a conversation, after the conversation record is staged. A
@@ -380,16 +541,29 @@ export class SessionImpl implements Session {
 		return Promise.resolve();
 	}
 
-	/** Register a synchronous post-adoption listener. It must not throw, block, or call Session operations. */
+	/** Register a synchronous post-adoption listener. It must not block or call Session operations; a throw is reported. */
 	subscribeCommits(listener: (publication: CommitPublication, context: Context) => void): () => void {
-		this.#assertUsable();
+		this.assertUsable();
 		this.#commitListeners.add(listener);
 		return () => this.#commitListeners.delete(listener);
 	}
 
-	/** Register a listener called synchronously when close begins. It must not throw, block, or call Session operations. */
+	/**
+	 * Internal: `subscribeCommits()` for the Session's own components, whose state follows each commit. A throw leaves
+	 * that state behind storage, so it fails the Session instead of being reported. They run before host listeners.
+	 */
+	observeCommits(listener: (publication: CommitPublication, context: Context) => void): () => void {
+		this.assertUsable();
+		this.#internalListeners.add(listener);
+		return () => this.#internalListeners.delete(listener);
+	}
+
+	/**
+	 * Register a listener called synchronously when close begins, also when a failure closes the Session (`failure` is
+	 * then set). It must not block or call Session operations; a throw is reported.
+	 */
 	subscribeClose(listener: () => void): () => void {
-		this.#assertUsable();
+		this.assertUsable();
 		this.#closeListeners.add(listener);
 		return () => this.#closeListeners.delete(listener);
 	}
@@ -398,7 +572,119 @@ export class SessionImpl implements Session {
 	unloadDocuments(): Promise<void> {
 		return this.#enqueue(async () => {
 			this.#documents.clear();
+			this.#idleDocuments.clear();
 		});
+	}
+
+	/**
+	 * Internal, for tests: how many documents the cache holds, how many are idle, how many incarnations are pinned, and how
+	 * many sweep jobs were queued on the line so far.
+	 */
+	get documentCacheSizes(): {
+		readonly cached: number;
+		readonly idle: number;
+		readonly attached: number;
+		readonly sweeps: number;
+	} {
+		return {
+			cached: this.#documents.size,
+			idle: this.#idleDocuments.size,
+			attached: this.#attachedDocuments.size,
+			sweeps: this.#sweepJobs,
+		};
+	}
+
+	/** Note a use of a cached document: an unattached one becomes the newest idle one, and an eviction is scheduled. */
+	#touchDocument(addressId: string): void {
+		const cached = this.#documents.get(addressId);
+		if (cached === undefined || this.#attachedDocuments.has(cached.record.id)) return;
+		const now = this.#clock();
+		const since = this.#idleDocuments.get(addressId);
+		// A hot document moves to the back at most once per granule, a tenth of the retention up to 1 s: it may then leave
+		// up to a granule early, which costs a reload, while a commit-heavy workload skips the reordering.
+		if (since !== undefined && now - since < Math.min(1_000, this.#documentRetentionMs() / 10)) return;
+		this.#idleDocuments.delete(addressId);
+		this.#idleDocuments.set(addressId, now);
+		// A pending sweep for the oldest document comes first unless the retention was shortened since; then it moves up.
+		if (this.#documentSweep === undefined || this.#documentSweep.at > now + this.#documentRetentionMs()) {
+			this.#scheduleDocumentSweep();
+		}
+	}
+
+	#dropDocument(addressId: string): void {
+		this.#documents.delete(addressId);
+		this.#idleDocuments.delete(addressId);
+	}
+
+	/**
+	 * Schedule the eviction of the oldest idle document: on the line at once when the retention is 0, otherwise when it
+	 * expires, by a timer that never keeps the process alive. Where timers cannot be unreferenced, as in Cloudflare
+	 * Workers, none is kept: the end of each commit evicts what expired.
+	 */
+	#scheduleDocumentSweep(): void {
+		if (this.#closing !== undefined) return;
+		const oldest = this.#idleDocuments.values().next();
+		if (oldest.done === true) return;
+		const at = oldest.value + this.#documentRetentionMs();
+		if (this.#documentSweep !== undefined && this.#documentSweep.at <= at) return;
+		if (this.#documentSweep?.timer !== undefined) clearTimeout(this.#documentSweep.timer);
+		// The pending sweep stays set until its job runs, so touches while the line is busy queue no more.
+		const sweep = { at, timer: undefined as ReturnType<typeof setTimeout> | undefined };
+		const run = (): void => {
+			this.#sweepJobs++;
+			this.#enqueue(async () => {
+				if (this.#documentSweep === sweep) this.#documentSweep = undefined;
+				if (this.#closing === undefined) this.#sweepDocuments();
+			}).catch(() => {});
+		};
+		const delay = at - this.#clock();
+		this.#documentSweep = sweep;
+		if (delay <= 0) {
+			queueMicrotask(run);
+			return;
+		}
+		if (this.#documentTimersUnavailable) {
+			this.#documentSweep = undefined;
+			return;
+		}
+		const timer = setTimeout(run, Math.min(delay, MAX_TIMER_DELAY));
+		const unref = (timer as { unref?: unknown }).unref;
+		if (typeof unref !== "function") {
+			clearTimeout(timer);
+			this.#documentTimersUnavailable = true;
+			this.#documentSweep = undefined;
+			return;
+		}
+		unref.call(timer);
+		sweep.timer = timer;
+	}
+
+	/** On the line: evict the idle documents whose retention passed, oldest first, then schedule the next eviction. */
+	#sweepDocuments(): void {
+		const expired = this.#clock() - this.#documentRetentionMs();
+		for (const [addressId, since] of this.#idleDocuments) {
+			if (since > expired) break;
+			this.#dropDocument(addressId);
+		}
+		this.#scheduleDocumentSweep();
+	}
+
+	/** Pin a cached incarnation for one observer; the returned release unpins it once, idle again after the last. */
+	#pinDocument(addressId: string, recordId: DocumentId): () => void {
+		this.#attachedDocuments.set(recordId, (this.#attachedDocuments.get(recordId) ?? 0) + 1);
+		this.#idleDocuments.delete(addressId);
+		let pinned = true;
+		return () => {
+			if (!pinned) return;
+			pinned = false;
+			const count = (this.#attachedDocuments.get(recordId) ?? 1) - 1;
+			if (count > 0) {
+				this.#attachedDocuments.set(recordId, count);
+				return;
+			}
+			this.#attachedDocuments.delete(recordId);
+			if (this.#documents.get(addressId)?.record.id === recordId) this.#touchDocument(addressId);
+		};
 	}
 
 	async #runCommit<T>(
@@ -412,13 +698,24 @@ export class SessionImpl implements Session {
 		let result: T;
 		try {
 			result = await change(tx);
+			// A callback that caught a failed read must not commit, nor succeed as if it had.
+			this.#assertHealthy();
 		} catch (error) {
 			await tx.settleFailure();
+			this.#sweepDocuments();
 			throw error;
 		}
-		const writes = await tx.settleSuccess();
+		let writes: readonly StorageWrite[];
+		try {
+			writes = await tx.settleSuccess();
+		} catch (error) {
+			// Settlement aborted every change already.
+			this.#sweepDocuments();
+			throw error;
+		}
 		if (writes.length === 0) {
 			tx.discard();
+			this.#sweepDocuments();
 			return result;
 		}
 		let seq: Seq;
@@ -426,9 +723,8 @@ export class SessionImpl implements Session {
 			// Once admitted, caller cancellation does not interrupt Storage settlement.
 			seq = await this.#storage.commit(writes, withoutAbortSignal(context));
 		} catch (error) {
+			// The guard has failed the Session.
 			tx.discard();
-			// Callback errors never reach this branch; StorageRejected alone guarantees that no batch effect committed.
-			if (!(error instanceof StorageRejected)) this.#poison = { error };
 			throw error;
 		}
 		let documents: DocumentCommitChange[];
@@ -436,10 +732,12 @@ export class SessionImpl implements Session {
 			documents = tx.adopt(seq);
 		} catch (error) {
 			// Storage already committed; a failed adoption leaves memory behind durable state.
-			this.#poison = { error };
+			this.fail(error);
 			throw error;
 		}
+		for (const document of documents) this.#touchDocument(addressId(document.record));
 		this.#publish(seq, writes, documents, context);
+		this.#sweepDocuments();
 		return result;
 	}
 
@@ -449,7 +747,7 @@ export class SessionImpl implements Session {
 		documents: readonly DocumentCommitChange[],
 		context: Context,
 	): void {
-		if (this.#commitListeners.size === 0) return;
+		if (this.#commitListeners.size === 0 && this.#internalListeners.size === 0) return;
 		const changes: CommitChange[] = [];
 		for (const write of writes) {
 			switch (write.type) {
@@ -462,7 +760,19 @@ export class SessionImpl implements Session {
 		}
 		for (const document of documents) changes.push(document);
 		const publication: CommitPublication = { seq, changes };
-		for (const listener of [...this.#commitListeners]) listener(publication, context);
+		// The commit is durable: a failing listener neither fails the commit nor skips the others.
+		for (const listener of [...this.#internalListeners]) {
+			contained(
+				() => listener(publication, context),
+				(error) => this.fail(error),
+			);
+		}
+		for (const listener of [...this.#commitListeners]) {
+			contained(
+				() => listener(publication, context),
+				(error) => this.report(error),
+			);
+		}
 	}
 
 	/**
@@ -478,13 +788,22 @@ export class SessionImpl implements Session {
 		checkRecordVersion(definition, loaded.record, loaded.storedVersion);
 		let unsubscribeCommit = (): void => {};
 		let unsubscribeClose = (): void => {};
+		// Attached, the incarnation stays cached; once its last observer detaches, or it retires, it is idle again.
+		const unpin = this.#pinDocument(loaded.addressId, loaded.record.id);
 		const detach = (): void => {
 			unsubscribeCommit();
 			unsubscribeClose();
+			unpin();
 		};
-		const observer = create(loaded.tracker.value, detach);
+		let observer: O;
+		try {
+			observer = create(loaded.tracker.value, detach);
+		} catch (error) {
+			unpin();
+			throw error;
+		}
 		const observed = { version: loaded.valueVersion };
-		unsubscribeCommit = this.subscribeCommits((publication, context) => {
+		unsubscribeCommit = this.observeCommits((publication, context) => {
 			for (const change of publication.changes) {
 				if (change.type !== "document" || change.record.id !== loaded.record.id) continue;
 				// A document state's frames carry no caller cancellation; a watch observes its own cancellation.
@@ -492,10 +811,12 @@ export class SessionImpl implements Session {
 				const ops = observedOperations(observed, change);
 				// A migration-only base changes nothing for an observer of the new version.
 				if (ops.length === 0) continue;
+				// A retired incarnation never changes again: its observers keep their last value but pin nothing.
+				if (change.value === null) unpin();
 				observer.advance(change.value, ops, frameContext);
 			}
 		});
-		unsubscribeClose = this.subscribeClose(() => observer.closeSession());
+		unsubscribeClose = this.subscribeClose(() => observer.closeSession(this.#failure));
 		return { observer, detach };
 	}
 
@@ -507,8 +828,11 @@ export class SessionImpl implements Session {
 	): Promise<LoadedDocument | undefined> {
 		const cached = this.#documents.get(addressId);
 		// A tracker serves only tokens of the version its value was materialized for; others reload from Storage.
-		if (cached?.valueVersion === definition.version) return cached;
-		if (cached !== undefined) this.#documents.delete(addressId);
+		if (cached?.valueVersion === definition.version) {
+			this.#touchDocument(addressId);
+			return cached;
+		}
+		if (cached !== undefined) this.#dropDocument(addressId);
 		const record = await this.#storage.findDocument(address, "current", context);
 		if (record === undefined) return undefined;
 		const stored = await this.#storage.document(record.id, "current", context);
@@ -523,6 +847,7 @@ export class SessionImpl implements Session {
 			tracker: track(value),
 		};
 		this.#documents.set(addressId, loaded);
+		this.#touchDocument(addressId);
 		return loaded;
 	}
 
@@ -535,17 +860,28 @@ export class SessionImpl implements Session {
 		return run;
 	}
 
-	#assertUsable(): void {
-		if (this.#closing !== undefined) throw new Error("Session is closed");
+	/** Internal: throw `SessionFailed` when failed, else an error when closing. */
+	assertUsable(): void {
 		this.#assertHealthy();
+		if (this.#closing !== undefined) throw new Error("Session is closed");
 	}
 
 	#assertHealthy(): void {
-		if (this.#poison !== undefined) {
-			throw new Error("Session is poisoned by a failed commit after storage admission; reopen it", {
-				cause: this.#poison.error,
-			});
-		}
+		if (this.#failure !== undefined) throw new SessionFailed(this.#failure.error);
+	}
+}
+
+/**
+ * Run a host callback that must not fail its caller: a throw, or a promise it returns that rejects, goes to `onError`,
+ * which is not awaited.
+ */
+export function contained(callback: () => unknown, onError: (error: unknown) => void): void {
+	try {
+		const result = callback();
+		// Any thenable, also a promise from another realm; `Promise.resolve` adopts it with handlers of its own.
+		if (typeof (result as { then?: unknown } | null)?.then === "function") Promise.resolve(result).catch(onError);
+	} catch (error) {
+		onError(error);
 	}
 }
 
@@ -565,4 +901,181 @@ function observedOperations(
 
 function cancellationError(signal: AbortSignal): Error {
 	return signal.reason instanceof Error ? signal.reason : new DOMException("The operation was aborted", "AbortError");
+}
+
+/** What the guard needs of its Session: the failure so far, and how to fail it. */
+type FailureLatch = {
+	readonly failure: { readonly error: unknown } | undefined;
+	fail(error: unknown): void;
+};
+
+/**
+ * The Session's Storage behind its failure guard; every component of the Session reads and writes through it. Before a
+ * call, a failed Session gets `SessionFailed` without reaching the backend. A call that throws fails the Session and
+ * rethrows the backend's error, unless it is a `StorageRequestError` or a read whose caller's context was aborted:
+ * neither says the Storage is broken.
+ * `close()` always reaches the backend, so a failed Session still closes it.
+ */
+class GuardedStorage implements Storage {
+	readonly #storage: Storage;
+	readonly #latch: FailureLatch;
+	/** Backend calls underway, also those off the Session line, which close waits for before it closes the backend. */
+	readonly #underway = new Set<Promise<unknown>>();
+	#closing = false;
+
+	constructor(storage: Storage, latch: FailureLatch) {
+		this.#storage = storage;
+		this.#latch = latch;
+	}
+
+	/** Never exempt, whatever it throws: once admitted, whether a failed batch committed is unknown. */
+	commit(writes: readonly StorageWrite[], context: Context): Promise<Seq> {
+		return this.#call(undefined, () => this.#storage.commit(writes, context));
+	}
+
+	mintId<I extends Id<string>>(): Promise<I> {
+		return this.#call(undefined, () => this.#storage.mintId<I>());
+	}
+
+	conversation(id: ConversationId, context: Context): Promise<ConversationRecord | undefined> {
+		return this.#call(context, () => this.#storage.conversation(id, context));
+	}
+
+	scanConversations(
+		query: ConversationQuery,
+		limit: number,
+		cursor: Cursor | undefined,
+		context: Context,
+	): Promise<Page<ConversationRecord, Cursor>> {
+		return this.#call(context, () => this.#storage.scanConversations(query, limit, cursor, context));
+	}
+
+	entry(id: EntryId, context: Context): Promise<{ readonly entry: EntryRecord; readonly commitSeq: Seq } | undefined>;
+	entry(
+		conversationId: ConversationId,
+		id: EntryId,
+		context: Context,
+	): Promise<{ readonly entry: EntryRecord; readonly commitSeq: Seq } | undefined>;
+	entry(
+		first: EntryId | ConversationId,
+		second: EntryId | Context,
+		third?: Context,
+	): Promise<{ readonly entry: EntryRecord; readonly commitSeq: Seq } | undefined> {
+		if (third === undefined) {
+			const context = second as Context;
+			return this.#call(context, () => this.#storage.entry(first as EntryId, context));
+		}
+		return this.#call(third, () => this.#storage.entry(first as ConversationId, second as EntryId, third));
+	}
+
+	findLatestHeadMarker(
+		conversationId: ConversationId,
+		atOrBeforeEntryId: EntryId | undefined,
+		context: Context,
+	): Promise<(EntryRecord & { readonly head: EntryId }) | undefined> {
+		return this.#call(context, () => this.#storage.findLatestHeadMarker(conversationId, atOrBeforeEntryId, context));
+	}
+
+	scanEntries(
+		query: EntryQuery,
+		limit: number,
+		cursor: Cursor | undefined,
+		context: Context,
+	): Promise<Page<EntryRecord, Cursor>> {
+		return this.#call(context, () => this.#storage.scanEntries(query, limit, cursor, context));
+	}
+
+	task(id: TaskId, context: Context): Promise<TaskRecord<JsonValue, JsonValue, JsonValue> | undefined> {
+		return this.#call(context, () => this.#storage.task(id, context));
+	}
+
+	scanTasks(
+		query: TaskQuery,
+		limit: number,
+		cursor: Cursor | undefined,
+		context: Context,
+	): Promise<Page<TaskRecord<JsonValue, JsonValue, JsonValue>, Cursor>> {
+		return this.#call(context, () => this.#storage.scanTasks(query, limit, cursor, context));
+	}
+
+	submission(id: SubmissionId, context: Context): Promise<SubmissionRecord | undefined> {
+		return this.#call(context, () => this.#storage.submission(id, context));
+	}
+
+	scanSubmissions(
+		query: SubmissionQuery,
+		limit: number,
+		cursor: Cursor | undefined,
+		context: Context,
+	): Promise<Page<SubmissionRecord, Cursor>> {
+		return this.#call(context, () => this.#storage.scanSubmissions(query, limit, cursor, context));
+	}
+
+	submissionByRequest(
+		conversationId: ConversationId,
+		requestId: string,
+		context: Context,
+	): Promise<SubmissionRecord | undefined> {
+		return this.#call(context, () => this.#storage.submissionByRequest(conversationId, requestId, context));
+	}
+
+	findDocument(address: DocumentAddress, at: DocumentPoint, context: Context): Promise<DocumentRecord | undefined> {
+		return this.#call(context, () => this.#storage.findDocument(address, at, context));
+	}
+
+	document(id: DocumentId, at: DocumentPoint, context: Context): Promise<StoredDocument | undefined> {
+		return this.#call(context, () => this.#storage.document(id, at, context));
+	}
+
+	scanDocuments(
+		query: DocumentQuery,
+		limit: number,
+		cursor: Cursor | undefined,
+		context: Context,
+	): Promise<Page<DocumentRecord, Cursor>> {
+		return this.#call(context, () => this.#storage.scanDocuments(query, limit, cursor, context));
+	}
+
+	/**
+	 * Close the backend once every call underway has settled, so none outlives it or fails after `closed` settles. New
+	 * calls are refused from here on: a paged read must not start its next page while the backend closes.
+	 */
+	async close(context: Context): Promise<void> {
+		this.#closing = true;
+		await Promise.allSettled([...this.#underway]);
+		return this.#storage.close(context);
+	}
+
+	/**
+	 * Run one backend call under the guard. `read` is a read's context; `commit()` and `mintId()` pass none, so nothing
+	 * exempts their errors: once a batch is admitted, whether it committed is unknown. A call still underway when another
+	 * fails the Session ends with `SessionFailed` too, whatever it returns: nothing it read or wrote is used.
+	 */
+	async #call<T>(read: Context | undefined, run: () => Promise<T>): Promise<T> {
+		this.#assertHealthy();
+		if (this.#closing) throw new Error("Session is closed");
+		let result: T;
+		// An async wrapper, so a backend that throws synchronously is guarded too.
+		const call = (async () => run())();
+		this.#underway.add(call);
+		try {
+			result = await call;
+		} catch (error) {
+			this.#assertHealthy();
+			// An invalid read, or one its caller cancelled, says nothing about the Storage; it fails that call only.
+			const exempt =
+				read !== undefined && (error instanceof StorageRequestError || read.abortSignal?.aborted === true);
+			if (!exempt) this.#latch.fail(error);
+			throw error;
+		} finally {
+			this.#underway.delete(call);
+		}
+		this.#assertHealthy();
+		return result;
+	}
+
+	#assertHealthy(): void {
+		const failure = this.#latch.failure;
+		if (failure !== undefined) throw new SessionFailed(failure.error);
+	}
 }

@@ -2,6 +2,35 @@
 
 ## [Unreleased]
 
+## [1.2.0] - 2026-10-12
+
+### Breaking Changes
+
+- Changed `CallToolResult.structuredContent` from `Record<string, unknown>` to `unknown`: `callTool()` now accepts any JSON value as structured content, including arrays and `null`, as MCP 2026-07-28 allows, instead of failing with "Invalid MCP tools/call structured content" ([#10416](https://github.com/earendil-works/pi/issues/10416))
+
+### Fixed
+
+- Fixed `authorizeMcp()` exchanging an authorization code whose `iss` parameter could not be checked because no authorization server metadata was discovered. It now throws `OAuthIssuerMismatchError`, whose `expected` is `undefined` in that case (RFC 9207). Reported by [@AizenvoltPrime](https://github.com/AizenvoltPrime)
+- Fixed `StreamableHttpTransport` retrying a request after an authorization refresh even though the caller had already cancelled it or it had timed out, so the server still executed it. `McpTransport.send()` now takes an optional `signal`, which `McpClient` aborts once a request settles ([#10598](https://github.com/earendil-works/pi/issues/10598))
+
+## [1.1.0] - 2026-10-07
+
+### Added
+
+- Added a `signal` option to `authorizeMcp()`, `registerClient()`, the token request functions, and the discovery functions, which aborts their requests. An aborted refresh no longer falls back to a new authorization ([#10565](https://github.com/earendil-works/pi/issues/10565))
+
+### Fixed
+
+- Fixed `StreamableHttpTransport.close()` calling `AuthProvider.token()`, which could refresh tokens over the network before the session DELETE and delay closing; the DELETE now reuses the token of the last request ([#10565](https://github.com/earendil-works/pi/issues/10565))
+
+## [1.0.4] - 2026-10-05
+
+### Fixed
+
+- Fixed dynamic client registration failing on OpenID Connect authorization servers with `invalid_redirect_uri` for loopback redirect URIs. `registerClient()` now sends `application_type` (MCP SEP-837), derived from `redirect_uris` when `OAuthClientMetadata.application_type` is not set: `native` for loopback hosts and custom schemes, otherwise `web` ([#10493](https://github.com/earendil-works/pi/issues/10493))
+
+## [1.0.3] - 2026-10-05
+
 ## [1.0.2] - 2026-10-04
 
 ## [1.0.1] - 2026-10-03

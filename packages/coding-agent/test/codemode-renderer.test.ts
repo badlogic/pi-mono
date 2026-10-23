@@ -1,10 +1,11 @@
 import { stripVTControlCharacters } from "node:util";
 import type { AgentToolResult } from "@earendil-works/pi-agent-core";
-import type { Component } from "@earendil-works/pi-tui";
-import { beforeAll, describe, expect, it } from "vitest";
+import type { Component, TUI } from "@earendil-works/pi-tui";
+import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import type { ToolRenderContext } from "../src/core/extensions/types.ts";
 import { codemodeRenderers } from "../src/extensions/codemode/renderer.ts";
 import type { CodemodeToolDetails } from "../src/extensions/codemode/tool.ts";
+import { ToolExecutionComponent } from "../src/modes/interactive/components/tool-execution.ts";
 import { initTheme, theme } from "../src/modes/interactive/theme/theme.ts";
 
 function render(
@@ -26,6 +27,8 @@ function render(
 		expanded,
 		showImages: false,
 		isError,
+		durationMs: undefined,
+		outputPad: 1,
 	} satisfies ToolRenderContext;
 	const component = codemodeRenderers.renderResult?.(
 		result,
@@ -42,6 +45,7 @@ function render(
 
 describe("codemode renderer", () => {
 	beforeAll(() => initTheme("dark"));
+	afterEach(() => vi.useRealTimers());
 
 	it("hides the script header and shows the output", () => {
 		const text = render({
@@ -105,5 +109,22 @@ describe("codemode renderer", () => {
 		expect(lines.slice(0, 5)).toEqual(Array(5).fill("x".repeat(50)));
 		expect(lines[5]).toMatch(/^\.\.\. \(15 more lines,/);
 		expect(lines[6]).toBe("Full output: /tmp/out.txt");
+	});
+
+	// #10708
+	it("shows the elapsed time while the script runs and the total once it finished", () => {
+		vi.useFakeTimers();
+		vi.setSystemTime(0);
+		const tui = { requestRender: () => {} } as unknown as TUI;
+		const component = new ToolExecutionComponent("codemode", "call", { code: "" }, {}, codemodeRenderers, tui, "/");
+		const text = () => stripVTControlCharacters(component.render(120).join("\n"));
+		component.markExecutionStarted();
+		component.updateResult({ content: [], details: { calls: [] }, isError: false }, true);
+		vi.advanceTimersByTime(3_000);
+		expect(text()).toContain("Elapsed 3.0s");
+
+		component.updateResult({ content: [], details: { calls: [] }, isError: false, durationMs: 5_100 }, false);
+		expect(text()).toContain("Took 5.1s");
+		expect(text()).not.toContain("Elapsed");
 	});
 });

@@ -2,7 +2,7 @@ import { type AttachedReplicatedState, type Context, type JsonValue, replicatedS
 import { withoutAbortSignal } from "@earendil-works/chord/context";
 import { applyImmutable, type Op } from "@earendil-works/chord/delta";
 import { CommittedStateSource, CommittedWatch } from "../session/observation.ts";
-import type { SessionImpl } from "../session/session.ts";
+import { contained, type SessionImpl } from "../session/session.ts";
 import type {
 	CommitPublication,
 	ConversationId,
@@ -68,12 +68,17 @@ export class TaskGraphView {
 	constructor(session: SessionImpl, storage: Storage) {
 		this.#session = session;
 		this.#storage = storage;
-		session.subscribeCommits((publication, context) => {
-			if (this.#mount !== undefined) advance(this.#mount, publication, context);
+		session.observeCommits((publication, context) => {
+			if (this.#mount !== undefined) advance(this.#mount, publication, context, (error) => session.report(error));
 		});
 		session.subscribeClose(() => {
 			this.#closed = true;
-			for (const observer of [...(this.#mount?.observers ?? [])]) observer.closeSession();
+			for (const observer of [...(this.#mount?.observers ?? [])]) {
+				contained(
+					() => observer.closeSession(this.#session.failure),
+					(error) => session.report(error),
+				);
+			}
 			this.#mount = undefined;
 		});
 	}
@@ -85,7 +90,7 @@ export class TaskGraphView {
 			context,
 		);
 		try {
-			return replicatedState(observer);
+			return replicatedState(observer, { onError: (error) => this.#session.report(error) });
 		} catch (error) {
 			detach();
 			throw error;
@@ -95,7 +100,7 @@ export class TaskGraphView {
 	/** A serialized exact-frame watch of the graph; cancelling `context` stops it. */
 	async watch(context: Context): Promise<TaskGraphWatch> {
 		const { observer } = await this.#attach(
-			(value, release) => new CommittedWatch<TaskGraph>(value, release),
+			(value, release) => new CommittedWatch<TaskGraph>(value, release, (error) => this.#session.report(error)),
 			context,
 		);
 		const signal = context.abortSignal;
@@ -120,7 +125,7 @@ export class TaskGraphView {
 			};
 			const observer = create(mount.value, detach);
 			// Close or cancellation may begin while the mount builds; register nothing then.
-			if (this.#closed) throw closedError();
+			if (this.#closed) throw closedError(this.#session);
 			context.abortSignal?.throwIfAborted();
 			this.#mount = mount;
 			mount.observers.add(observer);
@@ -148,8 +153,16 @@ export class TaskGraphView {
 	}
 }
 
-/** Derive the mount's operations from one publication, apply them, and hand the revision to every observer. */
-function advance(mount: Mount, publication: CommitPublication, context: Context): void {
+/**
+ * Derive the mount's operations from one publication, apply them, and hand the revision to every observer; one that
+ * throws is reported through `report`, and the others still get it.
+ */
+function advance(
+	mount: Mount,
+	publication: CommitPublication,
+	context: Context,
+	report: (error: unknown) => void,
+): void {
 	const ops: Op[] = [];
 	// Nodes this publication set or deleted, over the mount's value.
 	const changed = new Map<string, TaskGraphNode | undefined>();
@@ -186,7 +199,8 @@ function advance(mount: Mount, publication: CommitPublication, context: Context)
 	if (ops.length === 0) return;
 	mount.value = applyImmutable(mount.value, ops);
 	const frameContext = withoutAbortSignal(context);
-	for (const observer of [...mount.observers]) observer.advance(mount.value, ops, frameContext);
+	for (const observer of [...mount.observers])
+		contained(() => observer.advance(mount.value, ops, frameContext), report);
 }
 
 function nodeOf(record: AnyTaskRecord, conversations: readonly ConversationId[]): TaskGraphNode {

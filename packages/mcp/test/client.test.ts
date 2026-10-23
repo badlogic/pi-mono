@@ -280,6 +280,16 @@ describe("McpClient", () => {
 		await client.close();
 	});
 
+	// #10416: MCP 2026-07-28 allows any JSON value as structured content.
+	it("accepts structured content that is not an object", async () => {
+		const { client, server } = await connect();
+		for (const structuredContent of [[{ id: 1 }, { id: 2 }], null, "text", 3, false]) {
+			server.setHandler("tools/call", () => ({ content: [], structuredContent }));
+			expect(await client.callTool("structured")).toEqual({ content: [], structuredContent });
+		}
+		await client.close();
+	});
+
 	it("does not send notifications/cancelled for a timed-out initialize", async () => {
 		const { clientTransport, server } = await createServer();
 		server.setHandler("initialize", () => new Promise(() => {}));

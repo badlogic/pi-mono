@@ -1,7 +1,6 @@
 import {
 	type AssistantMessage,
-	type AssistantMessageEvent,
-	EventStream,
+	createAssistantMessageEventStream,
 	getCurrentSystemMessage,
 	getModel,
 	toToolDeclaration,
@@ -17,20 +16,6 @@ import {
 	type StreamFn,
 	setDefaultStreamFn,
 } from "../src/index.ts";
-
-// Mock stream that mimics AssistantMessageEventStream
-class MockAssistantStream extends EventStream<AssistantMessageEvent, AssistantMessage> {
-	constructor() {
-		super(
-			(event) => event.type === "done" || event.type === "error",
-			(event) => {
-				if (event.type === "done") return event.message;
-				if (event.type === "error") return event.error;
-				throw new Error("Unexpected event type");
-			},
-		);
-	}
-}
 
 function createUserMessage(text: string): UserMessage {
 	return { role: "user", content: text, timestamp: Date.now() };
@@ -108,7 +93,7 @@ describe("Agent", () => {
 		let calls = 0;
 		setDefaultStreamFn(() => {
 			calls++;
-			const stream = new MockAssistantStream();
+			const stream = createAssistantMessageEventStream();
 			queueMicrotask(() => {
 				const message = createAssistantMessage("fallback");
 				stream.push({ type: "done", reason: "stop", message });
@@ -192,7 +177,7 @@ describe("Agent", () => {
 							: [],
 					),
 				);
-				const stream = new MockAssistantStream();
+				const stream = createAssistantMessageEventStream();
 				queueMicrotask(() => {
 					stream.push({ type: "done", reason: "stop", message: createAssistantMessage("done") });
 				});
@@ -235,7 +220,7 @@ describe("Agent", () => {
 			initialState: { systemPrompt: "You are helpful." },
 			streamFn: (_model, context) => {
 				expect(context.messages.filter((message) => message.role === "system")).toHaveLength(2);
-				const stream = new MockAssistantStream();
+				const stream = createAssistantMessageEventStream();
 				queueMicrotask(() => {
 					stream.push({ type: "done", reason: "stop", message: createAssistantMessage("done") });
 				});
@@ -262,7 +247,7 @@ describe("Agent", () => {
 		const agent = new Agent({
 			initialState: { systemPrompt: "You are helpful.", tools: [createTool("first")] },
 			streamFn: () => {
-				const stream = new MockAssistantStream();
+				const stream = createAssistantMessageEventStream();
 				queueMicrotask(() => {
 					stream.push({ type: "done", reason: "stop", message: createAssistantMessage("done") });
 				});
@@ -377,7 +362,7 @@ describe("Agent", () => {
 		const barrier = createDeferred();
 		const agent = new Agent({
 			streamFn: () => {
-				const stream = new MockAssistantStream();
+				const stream = createAssistantMessageEventStream();
 				queueMicrotask(() => {
 					stream.push({ type: "done", reason: "stop", message: createAssistantMessage("ok") });
 				});
@@ -415,7 +400,7 @@ describe("Agent", () => {
 		const barrier = createDeferred();
 		const agent = new Agent({
 			streamFn: () => {
-				const stream = new MockAssistantStream();
+				const stream = createAssistantMessageEventStream();
 				queueMicrotask(() => {
 					stream.push({ type: "done", reason: "stop", message: createAssistantMessage("ok") });
 				});
@@ -450,7 +435,7 @@ describe("Agent", () => {
 		let receivedSignal: AbortSignal | undefined;
 		const agent = new Agent({
 			streamFn: (_model, _context, options) => {
-				const stream = new MockAssistantStream();
+				const stream = createAssistantMessageEventStream();
 				queueMicrotask(() => {
 					stream.push({ type: "start", partial: createAssistantMessage("") });
 					const checkAbort = () => {
@@ -513,7 +498,7 @@ describe("Agent", () => {
 		const agent = new Agent({
 			initialState: { tools: [tool] },
 			streamFn: () => {
-				const stream = new MockAssistantStream();
+				const stream = createAssistantMessageEventStream();
 				queueMicrotask(() => {
 					stream.push({
 						type: "done",
@@ -588,7 +573,7 @@ describe("Agent", () => {
 		const agent = new Agent({
 			initialState: { tools: [settledTool, slowTool] },
 			streamFn: () => {
-				const stream = new MockAssistantStream();
+				const stream = createAssistantMessageEventStream();
 				queueMicrotask(() => {
 					stream.push({
 						type: "done",
@@ -692,7 +677,7 @@ describe("Agent", () => {
 		const releaseResponse = createDeferred();
 		const agent = new Agent({
 			streamFn: () => {
-				const stream = new MockAssistantStream();
+				const stream = createAssistantMessageEventStream();
 				queueMicrotask(async () => {
 					stream.push({ type: "start", partial: createAssistantMessage("") });
 					streamStarted.resolve();
@@ -727,7 +712,7 @@ describe("Agent", () => {
 			// Use a stream function that responds to abort
 			streamFn: (_model, _context, options) => {
 				abortSignal = options?.signal;
-				const stream = new MockAssistantStream();
+				const stream = createAssistantMessageEventStream();
 				queueMicrotask(() => {
 					stream.push({ type: "start", partial: createAssistantMessage("") });
 					// Check abort signal periodically
@@ -766,7 +751,7 @@ describe("Agent", () => {
 		const agent = new Agent({
 			streamFn: (_model, _context, options) => {
 				abortSignal = options?.signal;
-				const stream = new MockAssistantStream();
+				const stream = createAssistantMessageEventStream();
 				queueMicrotask(() => {
 					stream.push({ type: "start", partial: createAssistantMessage("") });
 					const checkAbort = () => {
@@ -800,7 +785,7 @@ describe("Agent", () => {
 	it("continue() should process queued follow-up messages after an assistant turn", async () => {
 		const agent = new Agent({
 			streamFn: () => {
-				const stream = new MockAssistantStream();
+				const stream = createAssistantMessageEventStream();
 				queueMicrotask(() => {
 					stream.push({ type: "done", reason: "stop", message: createAssistantMessage("Processed") });
 				});
@@ -848,7 +833,7 @@ describe("Agent", () => {
 						message.role === "user" && typeof message.content === "string" ? [message.content] : [],
 					),
 				);
-				const stream = new MockAssistantStream();
+				const stream = createAssistantMessageEventStream();
 				queueMicrotask(() => {
 					stream.push({ type: "done", reason: "stop", message: createAssistantMessage("Processed") });
 				});
@@ -890,7 +875,7 @@ describe("Agent", () => {
 			},
 			streamFn: () => {
 				requestCount++;
-				const stream = new MockAssistantStream();
+				const stream = createAssistantMessageEventStream();
 				queueMicrotask(() => {
 					if (requestCount === 1) {
 						const message = createAssistantToolUseMessage([
@@ -933,7 +918,7 @@ describe("Agent", () => {
 			},
 			streamFn: () => {
 				requestCount++;
-				const stream = new MockAssistantStream();
+				const stream = createAssistantMessageEventStream();
 				queueMicrotask(() => {
 					if (requestCount === 1) {
 						const message = createAssistantToolUseMessage([
@@ -1002,7 +987,7 @@ describe("Agent", () => {
 						message.role === "user" && typeof message.content === "string" ? [message.content] : [],
 					),
 				);
-				const stream = new MockAssistantStream();
+				const stream = createAssistantMessageEventStream();
 				queueMicrotask(() =>
 					stream.push({ type: "done", reason: "stop", message: createAssistantMessage("done") }),
 				);
@@ -1032,7 +1017,7 @@ describe("Agent", () => {
 						message.role === "user" && typeof message.content === "string" ? [message.content] : [],
 					),
 				);
-				const stream = new MockAssistantStream();
+				const stream = createAssistantMessageEventStream();
 				queueMicrotask(() =>
 					stream.push({ type: "done", reason: "stop", message: createAssistantMessage("done") }),
 				);
@@ -1064,7 +1049,7 @@ describe("Agent", () => {
 						message.role === "user" && typeof message.content === "string" ? [message.content] : [],
 					),
 				);
-				const stream = new MockAssistantStream();
+				const stream = createAssistantMessageEventStream();
 				queueMicrotask(() =>
 					stream.push({ type: "done", reason: "stop", message: createAssistantMessage("done") }),
 				);
@@ -1090,7 +1075,7 @@ describe("Agent", () => {
 			const agent = new Agent({
 				finishTurn: () => ({ action: "continue" }),
 				streamFn: () => {
-					const stream = new MockAssistantStream();
+					const stream = createAssistantMessageEventStream();
 					queueMicrotask(() => {
 						stream.push({
 							type: "error",
@@ -1126,7 +1111,7 @@ describe("Agent", () => {
 		const agent = new Agent({
 			finishTurn: () => ({ action: "end" }),
 			streamFn: () => {
-				const stream = new MockAssistantStream();
+				const stream = createAssistantMessageEventStream();
 				queueMicrotask(() =>
 					stream.push({ type: "done", reason: "stop", message: createAssistantMessage("done") }),
 				);
@@ -1151,7 +1136,7 @@ describe("Agent", () => {
 		const agent = new Agent({
 			steeringMode: "one-at-a-time",
 			followUpMode: "all",
-			streamFn: () => new MockAssistantStream(),
+			streamFn: () => createAssistantMessageEventStream(),
 		});
 		const first = createUserMessage("first steering");
 		const second = createUserMessage("second steering");
@@ -1173,7 +1158,7 @@ describe("Agent", () => {
 				providerEvents.push(data);
 			},
 			streamFn: (model, _context, options) => {
-				const stream = new MockAssistantStream();
+				const stream = createAssistantMessageEventStream();
 				queueMicrotask(async () => {
 					await options?.onProviderStreamEvent?.({ request_cost: 0.01 }, model);
 					const message = createAssistantMessage("ok");
@@ -1194,7 +1179,7 @@ describe("Agent", () => {
 			sessionId: "session-abc",
 			streamFn: (_model, _context, options) => {
 				receivedSessionId = options?.sessionId;
-				const stream = new MockAssistantStream();
+				const stream = createAssistantMessageEventStream();
 				queueMicrotask(() => {
 					const message = createAssistantMessage("ok");
 					stream.push({ type: "done", reason: "stop", message });

@@ -324,6 +324,27 @@ describe("faux provider", () => {
 		expect(second.usage.input + second.usage.cacheRead).toBeGreaterThan(second.usage.input);
 	});
 
+	it("counts cached characters up to the first difference in the joined prompt", async () => {
+		const registration = registerFauxProvider();
+		registrations.push(registration);
+		registration.setResponses([fauxAssistantMessage("a"), fauxAssistantMessage("b"), fauxAssistantMessage("c")]);
+		const options = { sessionId: "session-1", cacheRetention: "short" } as const;
+		const user = (content: string) => ({ role: "user" as const, content, timestamp: 1 });
+
+		// Prompt texts: "user:hello world" (16 characters), then 16 + 2 + "user:next" (9) = 27.
+		await complete(registration.getModel(), { messages: [user("hello world")] }, options);
+		const extended = await complete(
+			registration.getModel(),
+			{ messages: [user("hello world"), user("next")] },
+			options,
+		);
+		expect(extended.usage).toMatchObject({ input: 3, cacheRead: 4, cacheWrite: 3 });
+
+		// The first message now differs after "user:hello w" (12 characters): "user:hello wide" + 2 + 9 = 26.
+		const edited = await complete(registration.getModel(), { messages: [user("hello wide"), user("next")] }, options);
+		expect(edited.usage).toMatchObject({ input: 4, cacheRead: 3, cacheWrite: 4 });
+	});
+
 	it("does not simulate caching when cacheRetention is none", async () => {
 		const registration = registerFauxProvider();
 		registrations.push(registration);

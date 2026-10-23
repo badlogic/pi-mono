@@ -1,5 +1,5 @@
+import type { JsonValue } from "../json.ts";
 import { copyJson } from "../json.ts";
-import type { JsonValue } from "../types.ts";
 import { applyImmutableTrusted } from "./apply-immutable-trusted.ts";
 import type { Draft } from "./draft.ts";
 import { applyImmutable, type NonEmptyPath, type Op, overlap, type Path, RESERVED_SEGMENTS } from "./index.ts";
@@ -1888,7 +1888,37 @@ function buildArrayPlan(node: OverlayNode): ArrayPlan {
 	if (overlay.plan !== undefined) return overlay.plan;
 	const base = nodeBase(node) as JsonValue[];
 	const pieces = piecesOf(overlay);
-	const retained = new Uint8Array(base.length);
+	overlay.plan = orderedArrayPlan(base.length, pieces) ?? elementArrayPlan(base.length, pieces);
+	return overlay.plan;
+}
+
+/**
+ * The plan when the retained base elements keep their order, the common case of inserts and removals: computed from the
+ * pieces alone, so appending to a long array costs no walk over its elements. `undefined` when base elements moved.
+ */
+function orderedArrayPlan(baseLength: number, pieces: readonly Piece[]): ArrayPlan | undefined {
+	// Retained base ranges in piece order, `[first, last]` each; ordered means strictly ascending without overlap.
+	const ranges: number[] = [];
+	for (const piece of pieces) {
+		if (piece.kind !== "base" || piece.length === 0) continue;
+		if (piece.step !== 1 && piece.length > 1) return undefined;
+		if (ranges.length > 0 && piece.start <= ranges[ranges.length - 1]!) return undefined;
+		ranges.push(piece.start, piece.start + piece.length - 1);
+	}
+	// Unretained runs from the end backwards, as `start, length` pairs: after the last range, between ranges, before the first.
+	const removeRuns: number[] = [];
+	let end = baseLength;
+	for (let index = ranges.length - 2; index >= -2; index -= 2) {
+		const start = index >= 0 ? ranges[index + 1]! + 1 : 0;
+		if (end > start) removeRuns.push(start, end - start);
+		if (index >= 0) end = ranges[index]!;
+	}
+	return { removeRuns, permutation: undefined, insertRuns: insertRunsOf(pieces) };
+}
+
+/** The plan from a walk over every base element, for pieces that moved base elements. */
+function elementArrayPlan(baseLength: number, pieces: readonly Piece[]): ArrayPlan {
+	const retained = new Uint8Array(baseLength);
 	const targetBase: number[] = [];
 	for (const piece of pieces) {
 		if (piece.kind !== "base") continue;
@@ -1899,7 +1929,7 @@ function buildArrayPlan(node: OverlayNode): ArrayPlan {
 		}
 	}
 	const removeRuns: number[] = [];
-	for (let end = base.length; end > 0; ) {
+	for (let end = baseLength; end > 0; ) {
 		if (retained[end - 1] !== 0) {
 			end -= 1;
 			continue;
@@ -1916,6 +1946,11 @@ function buildArrayPlan(node: OverlayNode): ArrayPlan {
 		const positions = new Map(retainedBase.map((value, index) => [value, index]));
 		permutation = targetBase.map((value) => positions.get(value)!);
 	}
+	return { removeRuns, permutation, insertRuns: insertRunsOf(pieces) };
+}
+
+/** Runs of consecutive insert pieces as `logical index, first piece, end piece` triples. */
+function insertRunsOf(pieces: readonly Piece[]): number[] {
 	const insertRuns: number[] = [];
 	let logicalIndex = 0;
 	for (let pieceIndex = 0; pieceIndex < pieces.length; ) {
@@ -1932,8 +1967,7 @@ function buildArrayPlan(node: OverlayNode): ArrayPlan {
 		}
 		insertRuns.push(logicalIndex - rangeLength(pieces, startPiece, pieceIndex), startPiece, pieceIndex);
 	}
-	overlay.plan = { removeRuns, permutation, insertRuns };
-	return overlay.plan;
+	return insertRuns;
 }
 
 function rangeLength(pieces: readonly Piece[], start: number, end: number): number {

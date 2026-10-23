@@ -98,6 +98,8 @@ export type LoadedDocument = {
 /** Session services used by a transaction while it holds the mutation line. */
 export interface TransactionHost {
 	readonly storage: Storage;
+	/** Wall clock for task lifecycle times. */
+	now(): number;
 	/** Return the cached current incarnation without loading. */
 	cached(addressId: string): LoadedDocument | undefined;
 	/** Return the cached current incarnation, cold-loading and migrating it when necessary. */
@@ -414,6 +416,7 @@ export class Transaction implements Tx {
 					...(owner === undefined ? {} : { owner: owner.id }),
 					background: options.background ?? false,
 					abortRequested: false,
+					...(options.abandonOnRestart === true ? { abandonOnRestart: true } : {}),
 					state: { status: "pending", checkpoint },
 				},
 				TABLE_JSON_COPY_OPTIONS,
@@ -467,7 +470,7 @@ export class Transaction implements Tx {
 		}
 		task.write = {
 			kind: task.write?.kind === "create" ? "create" : "replace",
-			record: copyJson(value, TABLE_JSON_COPY_OPTIONS) as unknown as AnyTaskRecord,
+			record: copyJson(this.#stampTimes(value, candidate), TABLE_JSON_COPY_OPTIONS) as unknown as AnyTaskRecord,
 		};
 	}
 
@@ -941,6 +944,23 @@ export class Transaction implements Tx {
 		if ((await this.#host.storage.conversation(id, this.#context)) === undefined) {
 			throw new Error(`Conversation ${id} does not exist`);
 		}
+	}
+
+	/**
+	 * Lifecycle times: `startedAt` on the first change to `running`, `endedAt` on the change to `terminal`. Once set,
+	 * they carry over from the replaced record; records written before they existed lack them.
+	 */
+	#stampTimes(value: AnyTaskRecord, candidate: AnyTaskRecord | undefined): AnyTaskRecord {
+		const status = value.state.status;
+		const now = (stamps: boolean) => (stamps ? this.#host.now() : undefined);
+		const startedAt = candidate?.startedAt ?? value.startedAt ?? now(status === "running");
+		const endedAt = candidate?.endedAt ?? value.endedAt ?? now(status === "terminal");
+		if (startedAt === value.startedAt && endedAt === value.endedAt) return value;
+		return {
+			...value,
+			...(startedAt === undefined ? {} : { startedAt }),
+			...(endedAt === undefined ? {} : { endedAt }),
+		};
 	}
 
 	#taskEntry(id: TaskId): TransactionTask {

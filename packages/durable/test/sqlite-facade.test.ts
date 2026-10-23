@@ -1,7 +1,6 @@
 import { DatabaseSync, type StatementSync } from "node:sqlite";
 import { BACKGROUND_CONTEXT } from "@earendil-works/chord/context";
 import { describe, expect, it } from "vitest";
-import { StorageRejected } from "../src/errors.ts";
 import { idFromNumber } from "../src/ids.ts";
 import type { SqliteDatabase, SqliteExecutor, SqliteValue } from "../src/storage/sqlite/index.ts";
 import { SqliteStorage } from "../src/storage/sqlite/index.ts";
@@ -278,14 +277,14 @@ describe("portable SQLite facade settlement", () => {
 		await database.close();
 	});
 
-	it("does not preserve a guaranteed rejection when rollback itself fails", async () => {
+	it("does not preserve the callback error when rollback itself fails", async () => {
 		const database = await openNodeSqliteDatabase(":memory:");
 		await database.exec("CREATE TABLE rollback_probe (value INTEGER)");
 		await expect(
 			database.transaction(async (transaction) => {
 				await transaction.exec("INSERT INTO rollback_probe (value) VALUES (1)");
 				await transaction.exec("COMMIT");
-				throw new StorageRejected("rejected after an escaped commit");
+				throw new Error("rejected after an escaped commit");
 			}),
 		).rejects.toThrow(AggregateError);
 		expect(await database.get("SELECT value FROM rollback_probe")).toEqual({ value: 1 });

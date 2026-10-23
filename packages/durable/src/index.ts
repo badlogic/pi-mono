@@ -8,11 +8,12 @@ export {
 	ToolResultEntry,
 	UserEntry,
 } from "./entries.ts";
-export { ConversationBusy, ReadAfterWrite, StorageRejected } from "./errors.ts";
+export { ConversationBusy, ReadAfterWrite, SessionFailed, StorageRequestError } from "./errors.ts";
 export {
 	AgentDoc,
 	configure,
 	DEFAULT_COMPACTION_POLICY,
+	DEFAULT_PROGRESS_POLICY,
 	DEFAULT_RETRY_POLICY,
 } from "./harness/agent.ts";
 export {
@@ -27,6 +28,7 @@ export {
 	type AgentEventStream,
 	type MessageChange,
 	type SnapshotEvent,
+	type ToolEventCall,
 	watchEvents,
 } from "./harness/events.ts";
 export {
@@ -37,11 +39,26 @@ export {
 } from "./harness/generation.ts";
 export { Harness } from "./harness/harness.ts";
 export { InboxDoc, type InboxItem, type InboxState } from "./harness/inbox.ts";
-export { type CompactionStatus, LiveDoc, type LiveState, type ToolSlot } from "./harness/live.ts";
+export {
+	type CompactionFailure,
+	type CompactionStatus,
+	LiveDoc,
+	type LiveState,
+	type NestedToolSlot,
+	type NestedToolSummary,
+	type ToolSlot,
+} from "./harness/live.ts";
 export { ProviderDoc, type ProviderState } from "./harness/provider.ts";
 export { createRegistry } from "./harness/registry.ts";
 export type { TaskGraph, TaskGraphNode, TaskGraphState, TaskGraphWatch } from "./harness/task-graph.ts";
-export { ToolTask, type ToolTaskCheckpoint, type ToolTaskInput, type ToolTaskResult } from "./harness/tool.ts";
+export {
+	NestedCallDoc,
+	type NestedCallState,
+	ToolTask,
+	type ToolTaskCheckpoint,
+	type ToolTaskInput,
+	type ToolTaskResult,
+} from "./harness/tool.ts";
 export type {
 	Agent,
 	AgentChange,
@@ -70,8 +87,11 @@ export type {
 	HookRegistration,
 	HookResult,
 	HooksOf,
+	InputEntry,
 	InputSubmissionDraft,
 	ModelRef,
+	NestedToolExecutionResult,
+	ProgressPolicy,
 	PromptInput,
 	PromptSection,
 	QueueMode,
@@ -89,6 +109,7 @@ export type {
 	ToolExecutionApi,
 	ToolExecutionMode,
 	ToolExecutionResult,
+	ToolHookCall,
 	ToolHooks,
 	ToolRegistration,
 	UserInput,
@@ -147,10 +168,12 @@ export type {
 	RewindableConversationDocToken,
 	RewindableConversationSemantics,
 	RunningTask,
+	ScanOrder,
 	Seq,
 	Session,
 	SessionDocFamilyToken,
 	SessionDocToken,
+	SessionEnd,
 	Storage,
 	StorageWrite,
 	StoredDocument,

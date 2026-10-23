@@ -10,7 +10,9 @@ import {
 	type EntryId,
 	type EntryRecord,
 	type JsonObject,
+	type Page,
 	ROOT_CONVERSATION_ID,
+	type ScanOrder,
 	type Storage,
 	type StorageWrite,
 	type SubmissionId,
@@ -52,6 +54,8 @@ function entry(
 }
 
 type ConformanceTest = (storage: Storage) => Promise<void>;
+
+type Identified = { readonly id: number };
 
 type AssertionResult = {
 	toBe(expected: unknown): void;
@@ -430,6 +434,29 @@ export function createStorageConformance(options: StorageConformanceOptions): re
 			expect(third.items.map(({ id }) => id)).toEqual([rootFirst]);
 			expect(third.next).toBeUndefined();
 
+			// Oldest first: the root's segment, then each fork's, each capped at the next fork point.
+			const ascending = { conversationId: grandchildId, order: "ascending" } as const;
+			const firstUp = await storage.scanEntries(ascending, 2, undefined, context);
+			expect(firstUp.items.map(({ id }) => id)).toEqual([rootFirst, rootForkPoint]);
+			const secondUp = await storage.scanEntries(ascending, 2, firstUp.next, context);
+			expect(secondUp.items.map(({ id }) => id)).toEqual([childForkPoint, grandchildHead]);
+			const thirdUp = await storage.scanEntries({ conversationId: grandchildId }, 2, secondUp.next, context);
+			expect(thirdUp.items.map(({ id }) => id)).toEqual([grandchildTail]);
+			expect(thirdUp.next).toBeUndefined();
+			expect(
+				(
+					await storage.scanEntries(
+						{ ...ascending, minEntryId: rootForkPoint, maxEntryId: childForkPoint },
+						10,
+						undefined,
+						context,
+					)
+				).items.map(({ id }) => id),
+			).toEqual([rootForkPoint, childForkPoint]);
+			await expect(
+				storage.scanEntries({ conversationId: grandchildId, order: "descending" }, 2, firstUp.next, context),
+			).rejects.toThrow("cursor");
+
 			const currentMarker = await storage.findLatestHeadMarker(grandchildId, undefined, context);
 			expect(currentMarker?.id).toBe(grandchildHead);
 			expect(currentMarker?.head).toBe(grandchildHead);
@@ -497,6 +524,58 @@ export function createStorageConformance(options: StorageConformanceOptions): re
 			await expect(
 				storage.scanEntries({ conversationId: idFromNumber<ConversationId>(999_999) }, 10, undefined, context),
 			).rejects.toThrow("Unknown conversation");
+		}),
+
+		createCase(options, "scans tables in either ID order and continues a cursor in its order", async (storage) => {
+			const rootId = await createRoot(storage);
+			const conversationIds = [rootId];
+			const taskIds: TaskId<JsonValue>[] = [];
+			const submissionIds: SubmissionId[] = [];
+			for (let index = 0; index < 3; index++) {
+				const conversationId = await storage.mintId<ConversationId>();
+				const taskId = await storage.mintId<TaskId<JsonValue>>();
+				const submissionId = await storage.mintId<SubmissionId>();
+				await storage.commit(
+					[
+						{ type: "conversation", value: { id: conversationId } },
+						{ type: "task", value: pendingTask(taskId, rootId) },
+						{
+							type: "submission",
+							value: { id: submissionId, conversationId: rootId, type: "input", status: "queued" },
+						},
+					],
+					context,
+				);
+				conversationIds.push(conversationId);
+				taskIds.push(taskId);
+				submissionIds.push(submissionId);
+			}
+			type Scan = (order: ScanOrder | undefined, cursor: Cursor | undefined) => Promise<Page<Identified, Cursor>>;
+			const scans: readonly (readonly [Scan, readonly number[]])[] = [
+				[(order, cursor) => storage.scanConversations({ order }, 2, cursor, context), conversationIds],
+				[(order, cursor) => storage.scanTasks({ order }, 2, cursor, context), taskIds],
+				[(order, cursor) => storage.scanSubmissions({ order }, 2, cursor, context), submissionIds],
+			];
+			const all = async (scan: Scan, order: ScanOrder | undefined): Promise<number[]> => {
+				const found: number[] = [];
+				let page = await scan(order, undefined);
+				found.push(...page.items.map(({ id }) => id));
+				while (page.next !== undefined) {
+					// A cursor carries its order; the query may omit it.
+					page = await scan(undefined, JSON.parse(JSON.stringify(page.next)) as Cursor);
+					found.push(...page.items.map(({ id }) => id));
+				}
+				return found;
+			};
+			for (const [scan, ids] of scans) {
+				const reversed = [...ids].reverse();
+				expect(await all(scan, undefined)).toEqual(ids);
+				expect(await all(scan, "ascending")).toEqual(ids);
+				expect(await all(scan, "descending")).toEqual(reversed);
+				const descending = await scan("descending", undefined);
+				expect((await scan("descending", descending.next)).items.map(({ id }) => id)).toEqual(reversed.slice(2, 4));
+				await expect(scan("ascending", descending.next)).rejects.toThrow("cursor");
+			}
 		}),
 
 		createCase(options, "replaces complete task records and pages filtered task scans", async (storage) => {
@@ -1100,7 +1179,8 @@ export function createStorageConformance(options: StorageConformanceOptions): re
 				} catch (error) {
 					conflictError = error;
 				}
-				expect((conflictError as Error | undefined)?.name).toBe("StorageRejected");
+				// Rejected without effect: the copy and the retirement in the same batch are both absent.
+				expect(conflictError instanceof Error).toBe(true);
 				expect(await storage.document(conflictId, "current", context)).toBeUndefined();
 				expect((await storage.document(currentCopyId, "current", context))?.value).toEqual({
 					count: 2,
@@ -1123,7 +1203,7 @@ export function createStorageConformance(options: StorageConformanceOptions): re
 				} catch (error) {
 					mismatchError = error;
 				}
-				expect((mismatchError as Error | undefined)?.name).toBe("StorageRejected");
+				expect(mismatchError instanceof Error).toBe(true);
 				expect(await storage.document(mismatchId, "current", context)).toBeUndefined();
 			},
 		),

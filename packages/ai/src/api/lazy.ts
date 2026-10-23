@@ -1,7 +1,7 @@
 import type { Api, AssistantMessage, AssistantMessageEvent, Model, ProviderStreams } from "../types.ts";
 import { AssistantMessageEventStream } from "../utils/event-stream.ts";
 
-function createSetupErrorMessage(model: Model<Api>, error: unknown): AssistantMessage {
+function createSetupErrorMessage(model: Model<Api>, error: unknown, timestamp: number): AssistantMessage {
 	return {
 		role: "assistant",
 		content: [],
@@ -18,7 +18,7 @@ function createSetupErrorMessage(model: Model<Api>, error: unknown): AssistantMe
 		},
 		stopReason: "error",
 		errorMessage: error instanceof Error ? error.message : String(error),
-		timestamp: Date.now(),
+		timestamp,
 	};
 }
 
@@ -47,12 +47,13 @@ export function lazyStream(
 	model: Model<Api>,
 	setup: () => Promise<AsyncIterable<AssistantMessageEvent>>,
 ): AssistantMessageEventStream {
+	const startedAt = Date.now();
 	const outer = new AssistantMessageEventStream();
 
 	setup()
 		.then((inner) => forwardStream(outer, inner))
 		.catch((error) => {
-			const message = createSetupErrorMessage(model, error);
+			const message = createSetupErrorMessage(model, error, startedAt);
 			outer.push({ type: "error", reason: "error", error: message });
 			outer.end(message);
 		});

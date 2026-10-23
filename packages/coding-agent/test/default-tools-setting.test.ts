@@ -156,6 +156,50 @@ describe("defaultTools setting", () => {
 		toolLessSession.dispose();
 	});
 
+	it("applies +name and -name tool options to the default selection", async () => {
+		const inactiveTool: InlineExtension = (pi) => {
+			pi.registerTool({
+				name: "inactive_tool",
+				label: "Inactive Tool",
+				description: "Extension tool registered inactive",
+				parameters: Type.Object({}),
+				execute: async () => ({ content: [{ type: "text", text: "ok" }], details: {} }),
+				defaultActive: false,
+			});
+			pi.registerTool({
+				name: "active_tool",
+				label: "Active Tool",
+				description: "Extension tool registered active",
+				parameters: Type.Object({}),
+				execute: async () => ({ content: [{ type: "text", text: "ok" }], details: {} }),
+			});
+		};
+
+		const session = await createSession(["+grep"], { tools: ["+inactive_tool", "-write"] }, [inactiveTool]);
+		expect(session.getActiveToolNames().sort()).toEqual([
+			"active_tool",
+			"bash",
+			"edit",
+			"grep",
+			"inactive_tool",
+			"read",
+		]);
+		session.dispose();
+
+		const toolLess = await createSession(["read"], { noTools: "all", tools: ["+inactive_tool"] }, [inactiveTool]);
+		expect(toolLess.getActiveToolNames()).toEqual(["inactive_tool"]);
+		toolLess.dispose();
+	});
+
+	it("rejects invalid tool modifier options", async () => {
+		await expect(createSession([], { tools: ["read", "+grep"] })).rejects.toThrow(
+			"Invalid tools option: tool names cannot be mixed with +name or -name entries",
+		);
+		await expect(createSession([], { tools: ["-gr*"] })).rejects.toThrow(
+			"Invalid tools option: +name and -name entries take exact tool names, not patterns: -gr*",
+		);
+	});
+
 	describe("reload", () => {
 		const inactiveTool: InlineExtension = (pi) => {
 			pi.registerTool({
@@ -208,6 +252,17 @@ describe("defaultTools setting", () => {
 			writeSettings({ defaultTools: ["-read"] });
 			await session.reload();
 			expect(session.getActiveToolNames().sort()).toEqual(["edit", "grep", "inactive_tool", "read", "write"]);
+			session.dispose();
+		});
+
+		it("keeps tools removed by -name tool options removed on reload", async () => {
+			writeSettings({ defaultTools: ["read"] });
+			const session = await createFileSession({ tools: ["-bash", "+grep"] });
+			expect(session.getActiveToolNames()).toEqual(["read", "grep"]);
+
+			writeSettings({ defaultTools: ["read", "bash", "inactive_tool"] });
+			await session.reload();
+			expect(session.getActiveToolNames().sort()).toEqual(["grep", "inactive_tool", "read"]);
 			session.dispose();
 		});
 

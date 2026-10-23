@@ -30,7 +30,7 @@ export function createWriteTool(): ToolRegistration<typeof writeSchema> {
 					if (context.abortSignal?.aborted) throw new Error("Operation aborted");
 					getOrThrow(await env.writeFile(absolutePath, content, context));
 					if (context.abortSignal?.aborted) throw new Error("Operation aborted");
-					return { content: [{ type: "text", text: `Successfully wrote to ${path}` }] };
+					return { output: [{ type: "text", text: `Successfully wrote to ${path}` }] };
 				},
 				context,
 			);

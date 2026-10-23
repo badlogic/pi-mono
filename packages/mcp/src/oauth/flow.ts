@@ -80,6 +80,8 @@ export interface OAuthFlowOptions {
 	 */
 	authorizationServerMetadataUrl?: URL;
 	fetch?: McpFetch;
+	/** Aborts every request of the flow. Requests have no time limit of their own; combine with a timeout as needed. */
+	signal?: AbortSignal;
 	skipIssuerValidation?: boolean;
 	/**
 	 * Go straight to the authorization redirect instead of refreshing stored tokens, for example when the
@@ -97,10 +99,24 @@ export interface TokenRequestOptions {
 	resource?: string;
 	addClientAuthentication?: AddClientAuthentication;
 	fetch?: McpFetch;
+	signal?: AbortSignal;
 }
 
 function loopback(hostname: string): boolean {
 	return hostname === "localhost" || hostname === "127.0.0.1" || hostname === "[::1]" || hostname === "::1";
+}
+
+/**
+ * The OpenID Connect `application_type` for `redirect_uris` (MCP SEP-837). Without one, OpenID Connect servers
+ * assume `web`, which rejects http loopback redirect URIs. Loopback hosts and custom schemes are native (RFC 8252).
+ */
+function applicationType(redirectUris: readonly string[]): "native" | "web" {
+	const native = redirectUris.some((uri) => {
+		if (!URL.canParse(uri)) return false;
+		const url = new URL(uri);
+		return (url.protocol !== "http:" && url.protocol !== "https:") || loopback(url.hostname);
+	});
+	return native ? "native" : "web";
 }
 
 function secureEndpoint(value: string | URL): URL {
@@ -204,7 +220,12 @@ async function tokenRequest(
 			params,
 		);
 	}
-	const response = await (options.fetch ?? globalThis.fetch)(url, { method: "POST", headers, body: params });
+	const response = await (options.fetch ?? globalThis.fetch)(url, {
+		method: "POST",
+		headers,
+		body: params,
+		signal: options.signal,
+	});
 	const text = await response.text();
 	let value: unknown;
 	try {
@@ -229,6 +250,7 @@ export async function registerClient(
 		clientMetadata: OAuthClientMetadata;
 		scope?: string;
 		fetch?: McpFetch;
+		signal?: AbortSignal;
 	},
 ): Promise<OAuthClientInformationFull> {
 	const endpoint = options.metadata?.registration_endpoint;
@@ -239,7 +261,13 @@ export async function registerClient(
 		{
 			method: "POST",
 			headers: { Accept: "application/json", "content-type": "application/json" },
-			body: JSON.stringify({ ...options.clientMetadata, ...(options.scope ? { scope: options.scope } : {}) }),
+			body: JSON.stringify({
+				...options.clientMetadata,
+				application_type:
+					options.clientMetadata.application_type ?? applicationType(options.clientMetadata.redirect_uris),
+				...(options.scope ? { scope: options.scope } : {}),
+			}),
+			signal: options.signal,
 		},
 	);
 	if (!response.ok) throw new OAuthRegistrationError(response.status, await response.text());
@@ -301,6 +329,7 @@ async function runFlow(provider: OAuthClientProvider, options: OAuthFlowOptions)
 					(await discoverAuthorizationServerMetadata(cached.authorizationServerUrl, {
 						fetch: options.fetch,
 						skipIssuerValidation: options.skipIssuerValidation,
+						signal: options.signal,
 					})),
 				resourceMetadata: cached.resourceMetadata,
 			}
@@ -309,6 +338,7 @@ async function runFlow(provider: OAuthClientProvider, options: OAuthFlowOptions)
 				authorizationServerMetadataUrl: metadataUrl,
 				fetch: options.fetch,
 				skipIssuerValidation: options.skipIssuerValidation,
+				signal: options.signal,
 			});
 	if (!metadataUrl) {
 		await provider.saveDiscoveryState?.({
@@ -336,6 +366,7 @@ async function runFlow(provider: OAuthClientProvider, options: OAuthFlowOptions)
 			clientMetadata: provider.clientMetadata,
 			scope,
 			fetch: options.fetch,
+			signal: options.signal,
 		});
 		await provider.saveClientInformation(client);
 	}
@@ -347,12 +378,14 @@ async function runFlow(provider: OAuthClientProvider, options: OAuthFlowOptions)
 		resource,
 		addClientAuthentication: provider.addClientAuthentication,
 		fetch: options.fetch,
+		signal: options.signal,
 	};
 	if (options.authorizationCode) {
-		// RFC 9207: never send a code from another authorization server to this one.
+		// RFC 9207: never send a code from another authorization server to this one. Without metadata there
+		// is no issuer to compare with, so any `iss` is rejected.
 		const iss = options.iss;
-		if (metadata && (iss !== undefined || metadata.authorization_response_iss_parameter_supported)) {
-			if (iss !== metadata.issuer) throw new OAuthIssuerMismatchError(metadata.issuer, iss);
+		if (iss !== undefined || metadata?.authorization_response_iss_parameter_supported) {
+			if (iss !== metadata?.issuer) throw new OAuthIssuerMismatchError(metadata?.issuer, iss);
 		}
 		const tokens = await exchangeAuthorizationCode(discovered.authorizationServerUrl, {
 			...tokenOptions,
@@ -376,7 +409,7 @@ async function runFlow(provider: OAuthClientProvider, options: OAuthFlowOptions)
 			await provider.saveTokens(withScope(tokens, existing.scope));
 			return "AUTHORIZED";
 		} catch (error) {
-			if (error instanceof OAuthInsecureEndpointError) throw error;
+			if (options.signal?.aborted || error instanceof OAuthInsecureEndpointError) throw error;
 			if (error instanceof OAuthError && error.code !== "server_error") throw error;
 		}
 	}

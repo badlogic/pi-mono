@@ -489,14 +489,48 @@ describe("generation", () => {
 			stream: {},
 			retry: { enabled: true, maxRetries: 3, baseDelayMs: 2000, maxAgentDelayMs: 60000 },
 			compaction: { enabled: true, reserveTokens: 16384, keepRecentTokens: 20000, backgroundTokens: 32768 },
+			progress: { partialIntervalMs: 100, outputIntervalMs: 100 },
 			toolExecution: "parallel",
 			steeringMode: "one-at-a-time",
 			followUpMode: "one-at-a-time",
+			contextRetentionMs: 600_000,
+			documentRetentionMs: expect.any(Number),
 		});
 		expect(resolveSettings({ retry: { enabled: false }, compaction: { backgroundTokens: 0 } })).toMatchObject({
 			retry: { enabled: false, maxRetries: 3, baseDelayMs: 2000 },
 			compaction: { enabled: true, backgroundTokens: 0 },
 		});
+		expect(resolveSettings({ progress: { outputIntervalMs: 500 } }).progress).toEqual({
+			partialIntervalMs: 100,
+			outputIntervalMs: 500,
+		});
+	});
+
+	it("commits partials no more often than progress.partialIntervalMs", async () => {
+		const shortStream = (): ReturnType<Models["streamSimple"]> => {
+			const events = async function* () {
+				yield { type: "start", partial: fauxAssistantMessage("partial", { stopReason: "pending" }) };
+				// Longer than the default 100 ms, shorter than the configured interval.
+				await new Promise((resolve) => setTimeout(resolve, 300));
+			};
+			const final = fauxAssistantMessage("final");
+			return { [Symbol.asyncIterator]: events, result: async () => final } as unknown as ReturnType<
+				Models["streamSimple"]
+			>;
+		};
+		const publishedPartial = async (settings: ChatSetup["settings"]): Promise<boolean> => {
+			const base = chatSetup();
+			const setup: ChatSetup = { ...base, settings, models: withStream(base.models, shortStream) };
+			const { harness, root } = await openChat(new MemoryStorage(), setup);
+			const values = livePublications(harness);
+			harness.resume();
+			const submission = await root.submit({ type: "input", content: "hi" }, context);
+			expect(await submission.wait(context)).toMatchObject({ status: "done" });
+			await harness.close(context);
+			return values.some((value) => textOf(value.generation?.message as Message) === "partial");
+		};
+		expect(await publishedPartial({})).toBe(true);
+		expect(await publishedPartial({ progress: { partialIntervalMs: 5000 } })).toBe(false);
 	});
 
 	it("renders sections that read conversation documents through input.read", async () => {

@@ -120,6 +120,19 @@ describe("TypeSafe System One", () => {
 		expect(result.errorMessage).toContain("Unsupported classifier API: cloudflare-workers-ai-system-one");
 	});
 
+	it("rejects image input before sending", async () => {
+		const fetch = vi.fn(async () => Response.json({ answers: wireAnswers }));
+		const result = await classify(
+			{ ...model, input: ["text", "image"] },
+			{ ...context, images: [{ type: "image", data: "aW1hZ2U=", mimeType: "image/png" }] },
+			{ apiKey: "secret", fetch },
+		);
+
+		expect(fetch).not.toHaveBeenCalled();
+		expect(result.stopReason).toBe("error");
+		expect(result.errorMessage).toBe("System One API does not support image input");
+	});
+
 	it("merges headers case-insensitively and supports null suppression", async () => {
 		const requests: Array<Record<string, string>> = [];
 		const fetch = vi.fn(async (_input: string | URL | Request, init?: RequestInit) => {

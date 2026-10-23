@@ -35,7 +35,7 @@ const replica = applyImmutable(prepared.base, prepared.ops);
 | `tracker.value`, `prepared.base`, retained older revisions | No. |
 | `prepared.value`, `prepared.ops`, op tuples, paths, permutations, payloads | No. Payloads may be the same objects as parts of `prepared.value`. |
 | `applyImmutable()` / `applyImmutableBatches()` inputs and result | No. The result shares containers with both inputs. |
-| Values from replicated state (`value`, listener values, loopback consumers) | No. In-process consumers may share the provider's containers. |
+| Values from replicated state and cells (`value`, listener values, in-process handles) | No. In-process consumers may share the provider's containers. |
 | Mutable replica passed to `apply()` | Only through `apply()`, with batches it owns exclusively. Code that edits it between batches breaks convergence. |
 | Batch passed to `apply()` | Consumed. `apply()` adopts payload containers into the replica. Use a detached copy for exactly one replica and never touch it again. |
 
@@ -173,7 +173,8 @@ set of the nearest safe ancestor, or `r` at the root. `apply()`, `applyImmutable
 those segments with `UnsafePathError`.
 The appliers write values as own data properties, never through a prototype setter.
 Appliers check op shape and path safety but not payload strictness. Chord's
-replicated-state replicas validate each resulting revision.
+remote state applies batches decoded from JSON frames, so their payloads are strict
+JSON; validate payloads of batches from any other source.
 
 `encoder()` interns repeated paths into `WireOp` tuples; `decoder()` validates
 and restores `Op` tuples. Use one encoder/decoder pair per ordered state stream.
@@ -183,9 +184,10 @@ apply error, discard the decoder and replica and recover from a later `r`.
 ## Limits and footguns
 
 - No freezing. Mutating any immutable value corrupts state silently.
-- Loopback sharing: in-process service consumers may receive the provider's containers. A consumer mutation corrupts authority and makes remote replicas diverge.
+- In-process sharing: local handles, cell subscribers, and `replicatedState` subscribers receive the provider's containers. A consumer mutation corrupts authority and makes remote replicas diverge.
 - A change inside a large flat array copies that array's pointer storage for the new revision.
 - Placement validation costs time and memory on bulk inserts. In a benchmark unshifting 100k three-field objects, it added about 19 ms and 20 MiB of transient heap.
+- Draft reads go through proxies. In one measurement, 20,000 hot nested reads took about 9 ms through the tracker versus 0.08 ms on raw objects; compare with `node --expose-gc packages/chord/test/delta-traversal.bench.ts --quick`.
 - External proxies as placements, argument coercion callbacks that mutate the draft, non-primitive array indices, and non-numeric comparator results are out of contract. So are sort comparators that mutate, prepare, abort, or adopt. Behavior is unspecified.
 - Object identity is not replicated. Each path is an independent value placement.
 - One tracker is one revision sequence. Delivery order and persistence belong to the surrounding protocol.

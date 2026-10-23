@@ -10,10 +10,7 @@
  * errors (`isError`) are error results for the model, but scripts still resolve to the result.
  */
 
-import { createHash, randomBytes } from "node:crypto";
-import { writeFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { createHash } from "node:crypto";
 import type { AgentToolResult } from "@earendil-works/pi-agent-core";
 import type { ImageContent, JsonValue, TextContent } from "@earendil-works/pi-ai";
 import {
@@ -32,10 +29,12 @@ import type {
 	ToolNamespace,
 	ToolRenderers,
 } from "../../core/extensions/types.ts";
+import { READ_MCP_RESOURCE_TOOL } from "../../core/mcp-servers.ts";
 import { formatToolCallWithArgs, getTextOutput, replaceTabs } from "../../core/tools/render-utils.ts";
 import { formatSize, truncateMiddle } from "../../core/tools/truncate.ts";
 import { keyHint } from "../../modes/interactive/components/keybinding-hints.ts";
 import { VisualLinePreview } from "../../modes/interactive/components/visual-truncate.ts";
+import { writeOutputFile } from "../../utils/output-files.ts";
 import type { McpExposure } from "./config.ts";
 
 /**
@@ -53,7 +52,7 @@ export const MCP_OUTPUT_MAX_BYTES = 20 * 1024;
 /** Visual (wrapped) result lines shown before the output is expanded. */
 const OUTPUT_PREVIEW_LINES = 5;
 /** Tool that reads the resources named by resource links. */
-export const READ_MCP_RESOURCE_TOOL = "read_mcp_resource";
+export { READ_MCP_RESOURCE_TOOL };
 
 export interface McpToolDetails {
 	server: string;
@@ -68,11 +67,8 @@ export interface McpToolDetails {
  */
 export type McpOutputSaver = (data: string | Uint8Array, extension: string) => Promise<string>;
 
-export async function saveToTempFile(data: string | Uint8Array, extension: string): Promise<string> {
-	const path = join(tmpdir(), `pi-mcp-${randomBytes(8).toString("hex")}${extension}`);
-	// Results can carry private data, so only the user may read the file.
-	await writeFile(path, data, { mode: 0o600 });
-	return path;
+export function saveToTempFile(data: string | Uint8Array, extension: string): Promise<string> {
+	return writeOutputFile("pi-mcp", extension, data);
 }
 
 export interface McpToolCaller {
@@ -104,20 +100,76 @@ function textOf(content: readonly (TextContent | ImageContent)[]): string {
 }
 
 /**
- * Output schema of every MCP tool: the `CallToolResult` scripts receive, with the tool's own output
- * schema as `structuredContent`. Codemode detects this shape to render `CallToolResult<T>`
- * declarations.
+ * MCP content blocks as one compact type with the fields of text and image blocks, which scripts
+ * read most (`image(block)` takes an image block as is). Rendered into every MCP tool's declaration.
+ */
+const CONTENT_BLOCK_SCHEMA = {
+	type: "object",
+	properties: {
+		type: { enum: ["text", "image", "audio", "resource_link", "resource"] },
+		text: { type: "string" },
+		data: { type: "string" },
+		mimeType: { type: "string" },
+	},
+	required: ["type"],
+	additionalProperties: true,
+};
+
+/** Keywords whose values are data, so a `$ref` key in them is not a reference. */
+const SCHEMA_DATA_KEYWORDS: ReadonlySet<string> = new Set(["const", "enum", "default", "examples"]);
+/** Keywords whose values map names to schemas, so their keys are names, not keywords. */
+const SCHEMA_MAP_KEYWORDS: ReadonlySet<string> = new Set([
+	"properties",
+	"patternProperties",
+	"dependentSchemas",
+	"dependencies",
+	"$defs",
+	"definitions",
+]);
+
+/**
+ * `schema` as a subschema at the JSON pointer `pointer` (`#/properties/structuredContent`) of
+ * another schema: its local references (`#`, `#/$defs/Item`) are rewritten to point below
+ * `pointer`, so they resolve to the same subschemas as before.
+ */
+function relocateSchema(schema: unknown, pointer: string): unknown {
+	if (Array.isArray(schema)) return schema.map((item) => relocateSchema(item, pointer));
+	if (typeof schema !== "object" || schema === null) return schema;
+	const relocated: Record<string, unknown> = {};
+	for (const [key, value] of Object.entries(schema)) {
+		if (key === "$ref" && typeof value === "string" && (value === "#" || value.startsWith("#/"))) {
+			relocated[key] = `${pointer}${value.slice(1)}`;
+		} else if (SCHEMA_DATA_KEYWORDS.has(key)) {
+			relocated[key] = value;
+		} else if (SCHEMA_MAP_KEYWORDS.has(key) && typeof value === "object" && value !== null && !Array.isArray(value)) {
+			relocated[key] = Object.fromEntries(
+				Object.entries(value).map(([name, subschema]) => [name, relocateSchema(subschema, pointer)]),
+			);
+		} else {
+			relocated[key] = relocateSchema(value, pointer);
+		}
+	}
+	return relocated;
+}
+
+/**
+ * Output schema of every MCP tool: the `CallToolResult` scripts receive (without `_meta`, which
+ * {@link convertMcpResult} drops), with the tool's own output schema as `structuredContent`.
  */
 export function createMcpResultSchema(structuredContentSchema: Record<string, unknown> | undefined): TSchema {
 	return {
 		type: "object",
 		properties: {
-			content: { type: "array", items: { type: "object" } },
-			...(structuredContentSchema ? { structuredContent: structuredContentSchema } : {}),
+			content: { type: "array", items: CONTENT_BLOCK_SCHEMA },
+			// Servers may send structured content without declaring a schema for it, and it may be any JSON value.
+			structuredContent: structuredContentSchema
+				? relocateSchema(structuredContentSchema, "#/properties/structuredContent")
+				: {},
 			isError: { type: "boolean" },
-			_meta: { type: "object" },
 		},
 		required: ["content"],
+		// Fields newer protocol versions add.
+		additionalProperties: true,
 	} as unknown as TSchema;
 }
 

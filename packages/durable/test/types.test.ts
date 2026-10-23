@@ -317,8 +317,8 @@ it("types submissions, task waits, compaction, and tasks erased into extensions"
 	expectTypeOf(typedWaits).toBeFunction();
 
 	const compileTimeFailures = (conversation: Conversation) => {
-		// @ts-expect-error an input submission carries no entry
-		const inputWithEntry: SubmissionDraft = { type: "input", content: "hi", entry: { kind: "note" } };
+		// @ts-expect-error an input's entry has no model: its model message is the input's content
+		const inputWithModel: SubmissionDraft = { type: "input", content: "hi", entry: { kind: "note", model: [] } };
 		// @ts-expect-error a write submission carries no content
 		const writeWithContent: SubmissionDraft = { type: "write", entry: { kind: "note" }, content: "hi" };
 		// @ts-expect-error a write submission never generates, so it has no busy policy
@@ -340,7 +340,7 @@ it("types submissions, task waits, compaction, and tasks erased into extensions"
 			phases: { plan: async () => {} },
 			abort: async () => {},
 		});
-		void [inputWithEntry, writeWithContent, writeWhenBusy, wrongHook, unknownHook, wrongInput, missingPhase];
+		void [inputWithModel, writeWithContent, writeWhenBusy, wrongHook, unknownHook, wrongInput, missingPhase];
 	};
 	expectTypeOf(compileTimeFailures).toBeFunction();
 });

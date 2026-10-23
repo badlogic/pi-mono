@@ -257,9 +257,15 @@ console.log("Building packages for tests...");
 run("npm run build:offline");
 console.log();
 
-console.log("Running tests...");
-run("./test.sh");
-console.log();
+// PI_RELEASE_SKIP_TESTS=1 skips the test suite, e.g. when it already passed in `npm run release:local`
+// and an overloaded machine makes timing-sensitive tests fail. Checks and the install check still run.
+if (process.env.PI_RELEASE_SKIP_TESTS === "1") {
+	console.log("Skipping tests (PI_RELEASE_SKIP_TESTS=1)\n");
+} else {
+	console.log("Running tests...");
+	run("./test.sh");
+	console.log();
+}
 
 console.log("Checking the packed coding-agent consumer install...");
 run("npm run check:package-install");

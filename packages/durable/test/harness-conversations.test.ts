@@ -19,6 +19,7 @@ import {
 	MemoryStorage,
 	ProviderDoc,
 	ROOT_CONVERSATION_ID,
+	type ScanOrder,
 } from "@earendil-works/pi-durable";
 import { afterEach, describe, expect, it } from "vitest";
 import { openNodeSqliteStorage } from "../src/storage/sqlite/node.ts";
@@ -57,11 +58,11 @@ async function append(conversation: Conversation, text: string): Promise<EntryRe
 	);
 }
 
-async function allEntries(conversation: Conversation): Promise<string[]> {
+async function allEntries(conversation: Conversation, order?: ScanOrder): Promise<string[]> {
 	const texts: string[] = [];
 	let cursor: Parameters<Conversation["entries"]>[2];
 	do {
-		const page = await conversation.entries({}, 2, cursor, context);
+		const page = await conversation.entries(order === undefined ? {} : { order }, 2, cursor, context);
 		for (const entry of page.items) texts.push((entry.model?.[0] as { content: string }).content);
 		cursor = page.next;
 	} while (cursor !== undefined);
@@ -250,6 +251,8 @@ describe("Harness root and conversations", () => {
 		expect(await allEntries(root)).toEqual(["r3", "r2", "r1"]);
 		expect(await allEntries(child)).toEqual(["c2", "c1", "r2", "r1"]);
 		expect(await allEntries(grandchild)).toEqual(["g1", "c1", "r2", "r1"]);
+		// #10546
+		expect(await allEntries(grandchild, "ascending")).toEqual(["r1", "r2", "c1", "g1"]);
 		const bounded = await grandchild.entries(
 			{ minEntryId: r2!.id, maxEntryId: c1.id, conversationId: root.id } as never,
 			10,
@@ -446,11 +449,11 @@ describe("Harness lifecycle", () => {
 		expect(again).not.toBe(root);
 		expect(again.id).toBe(root.id);
 		await harness.close(context);
-		await expect(harness.root(context)).rejects.toThrow("Harness is closed");
+		await expect(harness.root(context)).rejects.toThrow("is closed");
 		await expect(harness.createConversation({ ownership: { kind: "ownerless" } }, context)).rejects.toThrow(
-			"Harness is closed",
+			"is closed",
 		);
-		await expect(harness.conversation(root.id, context)).rejects.toThrow("Harness is closed");
+		await expect(harness.conversation(root.id, context)).rejects.toThrow("is closed");
 	});
 
 	it("forwards generic Session document APIs", async () => {

@@ -1,4 +1,5 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
+import { InMemoryCredentialStore } from "../src/auth/credential-store.ts";
 import { createModels, createProvider, getModelType } from "../src/models.ts";
 import {
 	builtinModels,
@@ -160,6 +161,88 @@ describe("Models with classifier models", () => {
 		]);
 		expect(result.stopReason).toBe("stop");
 		expect(result.answers.approved).toEqual({ type: "bool", probability: 0.8 });
+	});
+
+	it("rejects images for classifier models without image input before calling the provider", async () => {
+		const classifier = classifierModel("test", "text-only");
+		const classify = vi.fn(
+			async (): Promise<ClassifierResult> => ({
+				api: classifier.api,
+				provider: classifier.provider,
+				model: classifier.id,
+				answers: {},
+				stopReason: "stop",
+				timestamp: Date.now(),
+			}),
+		);
+		const models = createModels();
+		models.setProvider(
+			createProvider({
+				id: "test",
+				auth: { apiKey: { name: "Test", resolve: async () => ({ auth: {} }) } },
+				models: [classifier],
+				classifiers: { "test-classifier": { classify } },
+			}),
+		);
+
+		const result = await models.classify(classifier, {
+			...context,
+			images: [{ type: "image", data: "aW1hZ2U=", mimeType: "image/png" }],
+		});
+		const withoutImages = await models.classify(classifier, { ...context, images: [] });
+
+		expect(result.stopReason).toBe("error");
+		expect(result.errorMessage).toBe("Model test/text-only does not accept image input");
+		expect(withoutImages.stopReason).toBe("stop");
+		expect(classify).toHaveBeenCalledOnce();
+	});
+
+	it("routes OpenAI GPT-6 Luna through the Decisions API with images", async () => {
+		const models = builtinModels();
+		const luna = models.getModelOfType("classifier", "openai", "gpt-6-luna");
+		if (!luna) throw new Error("missing OpenAI Decisions model");
+		expect(luna).toMatchObject({ api: "openai-decisions", input: ["text", "image"], contextWindow: 922000 });
+		// The chat entry with the same id stays separate.
+		expect(models.getModel("openai", "gpt-6-luna")?.api).toBe("openai-responses");
+
+		const urls: string[] = [];
+		const result = await models.classify(
+			luna,
+			{ ...context, images: [{ type: "image", data: "aW1hZ2U=", mimeType: "image/png" }] },
+			{
+				apiKey: "secret",
+				fetch: async (input) => {
+					urls.push(String(input));
+					return Response.json({ answers: [{ type: "predicate", name: "approved", probability: 0.8 }] });
+				},
+			},
+		);
+
+		expect(urls).toEqual(["https://api.openai.com/v1/decisions"]);
+		expect(result.stopReason).toBe("stop");
+		expect(result.answers.approved).toEqual({ type: "bool", probability: 0.8 });
+	});
+
+	it("lists OpenAI Decisions models only for API key credentials", async () => {
+		const apiKeyStore = new InMemoryCredentialStore();
+		await apiKeyStore.modify("openai", async () => ({ type: "api_key", key: "secret" }));
+		const oauthStore = new InMemoryCredentialStore();
+		await oauthStore.modify("openai", async () => ({
+			type: "oauth",
+			access: "access",
+			refresh: "refresh",
+			expires: Date.now() + 3_600_000,
+		}));
+
+		const withApiKey = builtinModels({ credentials: apiKeyStore });
+		const withOAuth = builtinModels({ credentials: oauthStore });
+
+		expect((await withApiKey.getAvailableOfType("classifier", "openai")).map((model) => model.id)).toEqual([
+			"gpt-6-luna",
+		]);
+		expect(await withOAuth.getAvailableOfType("classifier", "openai")).toEqual([]);
+		// Chat models stay available with ChatGPT OAuth.
+		expect((await withOAuth.getAvailable("openai")).some((model) => model.id === "gpt-6-luna")).toBe(true);
 	});
 
 	it("routes OpenRouter classifier models through the System One API", () => {

@@ -144,6 +144,35 @@ describe("task recovery", () => {
 		await third.harness.close(context);
 	});
 
+	// #10549
+	it("keeps a task's startedAt across close and reopen and stamps endedAt when it settles", async () => {
+		const path = await sqlitePath();
+		const service = new TransferService();
+		const Transfer = transferTask(service, { first: true });
+		let clock = 2_000;
+		const now = () => clock;
+
+		const first = await openTasks(await openNodeSqliteStorage(path), [Transfer], { now });
+		const root = await first.harness.root(context);
+		const id = await root.commit(
+			(tx) => tx.createTask(Transfer, { amount: 7 }, { ownership: { kind: "conversation" } }),
+			context,
+		);
+		first.harness.resume();
+		await eventually(() => service.calls === 1);
+		clock = 3_000;
+		await first.harness.close(context);
+
+		clock = 9_000;
+		const second = await openTasks(await openNodeSqliteStorage(path), [Transfer], { now });
+		const reopened = await second.harness.getTask(id, context);
+		expect([reopened?.state.status, reopened?.startedAt, reopened?.endedAt]).toEqual(["pending", 2_000, undefined]);
+		second.harness.resume();
+		const receipt = await second.harness.waitForTask(id, context);
+		expect([receipt.startedAt, receipt.endedAt]).toEqual([2_000, 9_000]);
+		await second.harness.close(context);
+	});
+
 	it("resumes abort work after close at every direct-task abort stage", async () => {
 		const path = await sqlitePath();
 		const log: string[] = [];

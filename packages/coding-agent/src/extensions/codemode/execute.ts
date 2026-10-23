@@ -3,10 +3,6 @@
  * execute.lazy.ts so the sandbox runtime only loads when a script runs.
  */
 
-import { randomBytes } from "node:crypto";
-import { writeFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
 import type { AgentTool, AgentToolCallOutcome, AgentToolResult } from "@earendil-works/pi-agent-core";
 import type {
 	AnyModel,
@@ -19,6 +15,7 @@ import type {
 	Usage,
 } from "@earendil-works/pi-ai";
 import {
+	type CodemodeOutputItem,
 	type CodemodeResult,
 	CodemodeSandbox,
 	type CodemodeTool,
@@ -30,7 +27,9 @@ import {
 import { getCodemodeWorkerSpecifier, getQuickJSWasmPath } from "../../config.ts";
 import type { ExtensionToolContext, ToolNamespace } from "../../core/extensions/types.ts";
 import type { SessionEntry } from "../../core/session-manager.ts";
+import { formatSize } from "../../core/tools/truncate.ts";
 import { combineUsage } from "../../core/usage-totals.ts";
+import { writeOutputFile } from "../../utils/output-files.ts";
 import { Bm25Ranker, createToolSearchDocument, DEFAULT_TOOL_SEARCH_LIMIT } from "../tool-search/tool.ts";
 import {
 	CODEMODE_DOCS_PATH,
@@ -100,9 +99,8 @@ function withArticle(word: string): string {
 	return `${/^[aeiou]/.test(word) ? "an" : "a"} ${word}`;
 }
 
-function isRecord(value: unknown): value is Record<string, unknown> {
-	return typeof value === "object" && value !== null && !Array.isArray(value);
-}
+/** A JSON value from a script, read field by field: values that are not objects have no fields. */
+type ScriptValue = { readonly [key: string]: unknown } | null | undefined;
 
 /** A script value in an error message: `undefined`, `a string`, `an array`, or its keys (`{ prompt }`). */
 function describeValue(value: unknown): string {
@@ -117,7 +115,7 @@ function describeValue(value: unknown): string {
 }
 
 const CLASSIFIER_CONTEXT_SHAPE =
-	'{ state: { ... }, questions: { <id>: { type: "choice", instructions, criteria: { <label>: <meaning> } } | { type: "score", instructions, criteria: [<lowest level>, ..., <highest level>] } | { type: "bool", instructions, criteria: { true: <meaning>, false: <meaning> } } } }';
+	'{ state: { ... }, images?: [{ type: "image", data: <base64>, mimeType }], questions: { <id>: { type: "choice", instructions, criteria: { <label>: <meaning> } } | { type: "score", instructions, criteria: [<lowest level>, ..., <highest level>] } | { type: "bool", instructions, criteria: { true: <meaning>, false: <meaning> } } } }';
 
 /** Check a script's classifier context, so mistakes fail with the expected shape instead of a provider error. */
 function checkClassifierContext(context: unknown): ClassifierContext {
@@ -125,32 +123,57 @@ function checkClassifierContext(context: unknown): ClassifierContext {
 		new Error(
 			`models.classify() ${problem}. Expected context: ${CLASSIFIER_CONTEXT_SHAPE}. See "Classify" in ${CODEMODE_DOCS_PATH}.`,
 		);
-	if (!isRecord(context)) throw fail(`expects a context object as its second argument, got ${describeValue(context)}`);
-	if (!isRecord(context.state)) throw fail(`context.state must be an object, got ${describeValue(context.state)}`);
-	const { questions } = context;
-	if (!isRecord(questions) || Object.keys(questions).length === 0) {
+	if (typeof context !== "object" || context === null || Array.isArray(context)) {
+		throw fail(`expects a context object as its second argument, got ${describeValue(context)}`);
+	}
+	const { state, images, questions } = context as Record<string, unknown>;
+	if (typeof state !== "object" || state === null || Array.isArray(state)) {
+		throw fail(`context.state must be an object, got ${describeValue(state)}`);
+	}
+	if (images !== undefined) {
+		if (!Array.isArray(images)) throw fail(`context.images must be an array, got ${describeValue(images)}`);
+		images.forEach((image: ScriptValue, index) => {
+			if (image?.type !== "image" || typeof image.data !== "string" || typeof image.mimeType !== "string") {
+				throw fail(`context.images[${index}] must be an image block, got ${describeValue(image)}`);
+			}
+		});
+	}
+	if (
+		typeof questions !== "object" ||
+		questions === null ||
+		Array.isArray(questions) ||
+		Object.keys(questions).length === 0
+	) {
 		throw fail(`context.questions must map question IDs to questions, got ${describeValue(questions)}`);
 	}
 	const isStrings = (values: unknown[]) => values.length > 0 && values.every((value) => typeof value === "string");
 	for (const [id, question] of Object.entries(questions)) {
 		const at = `context.questions.${id}`;
-		if (!isRecord(question)) throw fail(`${at} must be a question object, got ${describeValue(question)}`);
-		if (typeof question.instructions !== "string") throw fail(`${at}.instructions must be a string`);
-		const { criteria } = question;
-		if (question.type === "choice") {
-			if (!isRecord(criteria) || !isStrings(Object.values(criteria))) {
+		if (typeof question !== "object" || question === null || Array.isArray(question)) {
+			throw fail(`${at} must be a question object, got ${describeValue(question)}`);
+		}
+		const { type, instructions, criteria } = question as Record<string, unknown>;
+		if (typeof instructions !== "string") throw fail(`${at}.instructions must be a string`);
+		if (type === "choice") {
+			if (
+				typeof criteria !== "object" ||
+				criteria === null ||
+				Array.isArray(criteria) ||
+				!isStrings(Object.values(criteria))
+			) {
 				throw fail(`${at} is a "choice" question, so criteria must map each label to its meaning`);
 			}
-		} else if (question.type === "score") {
+		} else if (type === "score") {
 			if (!Array.isArray(criteria) || !isStrings(criteria)) {
 				throw fail(`${at} is a "score" question, so criteria must list the levels as strings, lowest first`);
 			}
-		} else if (question.type === "bool") {
-			if (!isRecord(criteria) || typeof criteria.true !== "string" || typeof criteria.false !== "string") {
+		} else if (type === "bool") {
+			const labels = criteria as ScriptValue;
+			if (typeof labels?.true !== "string" || typeof labels.false !== "string") {
 				throw fail(`${at} is a "bool" question, so criteria must be { true: string, false: string }`);
 			}
 		} else {
-			throw fail(`${at}.type must be "choice", "score", or "bool", got ${JSON.stringify(question.type)}`);
+			throw fail(`${at}.type must be "choice", "score", or "bool", got ${JSON.stringify(type)}`);
 		}
 	}
 	return context as unknown as ClassifierContext;
@@ -162,21 +185,16 @@ function checkImagesContext(context: unknown): ImagesContext {
 		new Error(
 			`models.generateImages() ${problem}. Expected context: { input: [{ type: "text", text: <prompt> }, ...optional { type: "image", data: <base64>, mimeType } references] }. See "Generate images" in ${CODEMODE_DOCS_PATH}.`,
 		);
-	if (!isRecord(context)) throw fail(`expects a context object as its second argument, got ${describeValue(context)}`);
-	const { input } = context;
+	if (typeof context !== "object" || context === null || Array.isArray(context)) {
+		throw fail(`expects a context object as its second argument, got ${describeValue(context)}`);
+	}
+	const { input } = context as Record<string, unknown>;
 	if (!Array.isArray(input) || input.length === 0) {
 		throw fail(`context.input must be a non-empty array of blocks, got ${describeValue(input)}`);
 	}
-	input.forEach((block: unknown, index) => {
-		if (isRecord(block) && block.type === "text" && typeof block.text === "string") return;
-		if (
-			isRecord(block) &&
-			block.type === "image" &&
-			typeof block.data === "string" &&
-			typeof block.mimeType === "string"
-		) {
-			return;
-		}
+	input.forEach((block: ScriptValue, index) => {
+		if (block?.type === "text" && typeof block.text === "string") return;
+		if (block?.type === "image" && typeof block.data === "string" && typeof block.mimeType === "string") return;
 		throw fail(`context.input[${index}] must be a text or image block, got ${describeValue(block)}`);
 	});
 	return context as unknown as ImagesContext;
@@ -240,6 +258,64 @@ function valueText(value: unknown): string {
 	return JSON.stringify(value) ?? String(value);
 }
 
+/**
+ * Lay out the script's output so the model can tell items apart: providers join adjacent text
+ * blocks with a newline or with nothing. With more than one text item (`text()` or the returned
+ * value), each starts with a `==> text N/M <==` line. `console.*` lines follow all other output in
+ * one `<console_output>` block.
+ */
+function formatOutput(output: readonly CodemodeOutputItem[]): (TextContent | ImageContent)[] {
+	const total = output.filter((item) => item.type === "text" && !item.console).length;
+	const items: (TextContent | ImageContent)[] = [];
+	const consoleLines: string[] = [];
+	let index = 0;
+	for (const item of output) {
+		if (item.type === "image") {
+			items.push(item);
+		} else if (item.console) {
+			consoleLines.push(item.text);
+		} else {
+			index++;
+			items.push({ type: "text", text: total > 1 ? `==> text ${index}/${total} <==\n${item.text}` : item.text });
+		}
+	}
+	if (consoleLines.length > 0) {
+		items.push({ type: "text", text: `<console_output>\n${consoleLines.join("\n")}\n</console_output>` });
+	}
+	return items;
+}
+
+/**
+ * Join adjacent text items into one, each part starting on its own line. The separator check looks
+ * at the last non-empty part, not the joined text: reading the end of a growing concatenation makes
+ * V8 copy it on every item, which is quadratic (#10678).
+ */
+function joinAdjacentText(items: (TextContent | ImageContent)[]): (TextContent | ImageContent)[] {
+	const joined: (TextContent | ImageContent)[] = [];
+	let parts: string[] = [];
+	let lastPart = "";
+	const flush = () => {
+		if (parts.length > 0) joined.push({ type: "text", text: parts.join("") });
+		parts = [];
+		lastPart = "";
+	};
+	for (const item of items) {
+		if (item.type !== "text") {
+			flush();
+			joined.push(item);
+			continue;
+		}
+		if (lastPart !== "" && !lastPart.endsWith("\n")) {
+			parts.push("\n");
+			lastPart = "\n";
+		}
+		parts.push(item.text);
+		if (item.text !== "") lastPart = item.text;
+	}
+	flush();
+	return joined;
+}
+
 function formatCallSummary(calls: readonly CodemodeNestedCall[]): string {
 	if (calls.length === 0) return "No tool calls were made.";
 	return `Tool calls made before the failure (they are not undone): ${calls.map((call) => `${call.name} (${call.status})`).join(", ")}`;
@@ -260,13 +336,54 @@ function formatError(result: Extract<CodemodeResult, { ok: false }>, calls: read
 
 /** Write the full text output to a temp file, like bash does for truncated output. */
 async function spillOutput(text: string): Promise<{ path: string } | { error: string }> {
-	const path = join(tmpdir(), `pi-codemode-${randomBytes(8).toString("hex")}.txt`);
 	try {
-		await writeFile(path, text);
-		return { path };
+		return { path: await writeOutputFile("pi-codemode", ".txt", text) };
 	} catch (error) {
 		return { error: error instanceof Error ? error.message : String(error) };
 	}
+}
+
+/** File extensions of the image types `image()` accepts. Must list every type the sandbox's `image()` detects. */
+const IMAGE_EXTENSIONS: Record<string, string> = {
+	"image/png": ".png",
+	"image/jpeg": ".jpg",
+	"image/gif": ".gif",
+	"image/webp": ".webp",
+};
+
+/**
+ * Save each image to a temp file and put a text item with its path before it. The model sees the
+ * image but has no other way to reach its bytes: scripts cannot write files, and `write` only takes
+ * text. Images shown more than once are saved once.
+ */
+async function saveImages(items: (TextContent | ImageContent)[]): Promise<(TextContent | ImageContent)[]> {
+	const labels = new Map<string, Promise<string>>();
+	const label = async ({ data, mimeType }: ImageContent): Promise<string> => {
+		const bytes = Buffer.from(data, "base64");
+		const kind = `${mimeType}, ${formatSize(bytes.length)}`;
+		const extension = IMAGE_EXTENSIONS[mimeType];
+		if (!extension) throw new Error(`No file extension for image type ${mimeType}`);
+		// A failed write (disk full, unwritable temp dir) must not discard the result of a script whose
+		// tool calls already ran, so it becomes part of the label.
+		try {
+			const path = await writeOutputFile("pi-codemode", extension, bytes);
+			return `[Image saved to ${path} (${kind})]`;
+		} catch (error) {
+			return `[Image (${kind}) could not be saved: ${error instanceof Error ? error.message : String(error)}]`;
+		}
+	};
+	const result = await Promise.all(
+		items.map(async (item): Promise<(TextContent | ImageContent)[]> => {
+			if (item.type !== "image") return [item];
+			let pending = labels.get(item.data);
+			if (!pending) {
+				pending = label(item);
+				labels.set(item.data, pending);
+			}
+			return [{ type: "text", text: await pending }, item];
+		}),
+	);
+	return result.flat();
 }
 
 /**
@@ -341,10 +458,15 @@ export async function executeCodemode(
 
 	const snapshot = (): CodemodeToolDetails => ({ calls: calls.map((call) => ({ ...call })) });
 	const publish = () => onUpdate?.({ content: [], details: snapshot() });
+	// Show the script as running before its first nested call, so the row's timer starts.
+	publish();
 
 	const callable = ctx ? getCodemodeCallableTools(ctx.tools) : [];
 	// ALL_TOOLS entries carry the declaration.
-	const samples = new Map(callable.map((tool) => [tool.name, renderToolSample(toCodemodeDeclaration(tool))]));
+	const guidelines = options.getToolGuidelines?.();
+	const samples = new Map(
+		callable.map((tool) => [tool.name, renderToolSample(toCodemodeDeclaration(tool, guidelines?.get(tool.name)))]),
+	);
 	const sandboxTools: CodemodeTool[] = callable.map((tool) => ({
 		name: tool.name,
 		description: samples.get(tool.name),
@@ -400,19 +522,17 @@ export async function executeCodemode(
 		if (call.status === "running") call.status = "cancelled";
 	}
 
-	const items: (TextContent | ImageContent)[] = result.output.map((item) =>
-		item.type === "text" ? { type: "text", text: item.text } : item,
-	);
+	const scriptOutput = [...result.output];
 	if (result.ok) {
 		const { set, delete: deleted } = result.storeWrites;
 		if (Object.keys(set).length > 0 || deleted.length > 0) {
 			options.appendEntry?.(CODEMODE_STORE_ENTRY_TYPE, { set, delete: deleted });
 		}
 		// pi extension: a returned value is appended like text().
-		if (result.value !== undefined) items.push({ type: "text", text: valueText(result.value) });
-	} else {
-		items.push({ type: "text", text: `Script error:\n${formatError(result, calls)}` });
+		if (result.value !== undefined) scriptOutput.push({ type: "text", text: valueText(result.value) });
 	}
+	const items = formatOutput(scriptOutput);
+	if (!result.ok) items.push({ type: "text", text: `Script error:\n${formatError(result, calls)}` });
 	if (generatedImages > 0 && !items.some((item) => item.type === "image")) {
 		items.push({
 			type: "text",
@@ -420,13 +540,19 @@ export async function executeCodemode(
 		});
 	}
 
-	const truncated = await truncateOutput(items, sourceOptions.maxOutputTokens ?? DEFAULT_MAX_OUTPUT_TOKENS);
+	const truncated = await truncateOutput(
+		joinAdjacentText(items),
+		sourceOptions.maxOutputTokens ?? DEFAULT_MAX_OUTPUT_TOKENS,
+	);
+	// After truncation, which joins the text items and moves images after them, so each path stays
+	// next to its image and is never cut.
+	const output = joinAdjacentText(await saveImages(truncated.items));
 	const wallTime = ((performance.now() - startedAt) / 1000).toFixed(1);
 	const header = `${result.ok ? "Script completed" : "Script failed"}\nWall time ${wallTime} seconds\nOutput:\n`;
 	const details = snapshot();
 	if (truncated.fullOutputPath) details.fullOutputPath = truncated.fullOutputPath;
 	return {
-		content: [{ type: "text", text: header }, ...truncated.items],
+		content: [{ type: "text", text: header }, ...output],
 		details,
 		...(modelUsage ? { usage: modelUsage } : {}),
 		...(result.ok ? {} : { isError: true }),
@@ -434,14 +560,14 @@ export async function executeCodemode(
 }
 
 /**
- * Whether `query` names the namespace: its name, its script identifier (`mcp__dev-radius` is
- * `mcp__dev_radius`), or the part after its last `__` in either form (`dev-radius`, `dev_radius`).
+ * Whether `query` names the namespace: its name or one of its aliases, as written or as the same
+ * script identifier (`dev-radius` and `dev_radius` are both `dev_radius`).
  */
-function isNamespaceName(namespace: string, query: string): boolean {
-	const id = toCodemodeIdentifier(namespace);
+function isNamespaceName(namespace: ToolNamespace, query: string): boolean {
 	const queryId = toCodemodeIdentifier(query);
-	const suffix = (name: string) => (name.includes("__") ? name.slice(name.lastIndexOf("__") + 2) : undefined);
-	return namespace === query || id === queryId || suffix(namespace) === query || suffix(id) === queryId;
+	return [namespace.name, ...(namespace.aliases ?? [])].some(
+		(name) => name === query || toCodemodeIdentifier(name) === queryId,
+	);
 }
 
 /**
@@ -472,7 +598,7 @@ function createDiscoveryGlobals(
 				}
 				const documents = tools.flatMap((tool) => {
 					const toolNamespace = options.getToolNamespace?.(tool.name);
-					if (namespace && (!toolNamespace || !isNamespaceName(toolNamespace.name, namespace))) return [];
+					if (namespace && (!toolNamespace || !isNamespaceName(toolNamespace, namespace))) return [];
 					return [createToolSearchDocument(tool, toolNamespace)];
 				});
 				return ranker.rank(query, documents, limit).map((match) => entry(match.name));
@@ -500,7 +626,7 @@ function createDiscoveryGlobals(
 				const names: string[] = [];
 				for (const tool of tools) {
 					const toolNamespace = options.getToolNamespace?.(tool.name);
-					if (!toolNamespace || !isNamespaceName(toolNamespace.name, name)) continue;
+					if (!toolNamespace || !isNamespaceName(toolNamespace, name)) continue;
 					namespace ??= toolNamespace;
 					names.push(toCodemodeIdentifier(tool.name));
 				}
@@ -544,7 +670,8 @@ function createModelGlobals(
 		run: (resolved: ModelTypeMap[TType], context: TContext) => Promise<TResult>,
 	): Promise<TResult> => {
 		const listHint = `List the ${type} models you can use with models.getAvailableOfType("${type}").`;
-		if (!isRecord(model) || typeof model.provider !== "string" || typeof model.id !== "string") {
+		const given = model as ScriptValue;
+		if (typeof given?.provider !== "string" || typeof given.id !== "string") {
 			// undefined arrives as null: spread arguments cross the sandbox as a JSON array.
 			const undefinedHint =
 				model === undefined || model === null
@@ -554,7 +681,8 @@ function createModelGlobals(
 				`${name}() expects ${withArticle(type)} model as its first argument, got ${describeValue(model)}.${undefinedHint} ${listHint}`,
 			);
 		}
-		const { provider, id } = model;
+		const provider = given.provider;
+		const id = given.id;
 		const ref = `${provider}/${id}`;
 		const resolved = models.getModelOfType(type, provider, id);
 		if (!resolved) {

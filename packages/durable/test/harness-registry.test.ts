@@ -26,7 +26,7 @@ function tool(name: string, extra: Partial<AppTool> = {}): AppTool {
 		name,
 		description: `${name} tool`,
 		parameters: Type.Object({}),
-		execute: async () => ({ content: [] }),
+		execute: async () => ({ output: [] }),
 		...extra,
 	};
 }
@@ -134,6 +134,15 @@ describe("registry", () => {
 		expect(registry.snapshot().task("app.custom")).toBe(custom);
 		registry.uninstall(defineExtension({ name: "custom" }));
 		expect(registry.snapshot().task("app.custom")).toBeUndefined();
+	});
+});
+
+describe("settings", () => {
+	it("keeps the default of a progress interval given as undefined", () => {
+		expect(resolveSettings({ progress: { partialIntervalMs: undefined, outputIntervalMs: 250 } }).progress).toEqual({
+			partialIntervalMs: 100,
+			outputIntervalMs: 250,
+		});
 	});
 });
 
