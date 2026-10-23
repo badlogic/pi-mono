@@ -36,7 +36,9 @@
       forAllSystems = genAttrs platforms;
 
       piOverlay = _final: prev: {
-        biome = prev.callPackage ./nix/biome.nix { };
+        biome = prev.callPackage ./nix/biome.nix {
+          inherit source;
+        };
         pi = prev.callPackage ./nix/package.nix {
           inherit source packageJson platforms;
           nodejs = prev.nodejs_22;

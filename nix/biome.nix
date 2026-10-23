@@ -3,10 +3,11 @@
   stdenv,
   fetchurl,
   autoPatchelfHook,
+  source,
 }:
 stdenv.mkDerivation (finalAttrs: {
   pname = "biome";
-  version = "2.3.5";
+  version = (lib.importJSON "${source}/package.json").devDependencies."@biomejs/biome";
 
   src =
     finalAttrs.passthru.sources.${stdenv.hostPlatform.system}
