@@ -1099,6 +1099,28 @@ describe("TuiAltScreen", () => {
 		tui.stop();
 	});
 
+	it("crops a Kitty image whose placeholder rows contain text when its first line is above the viewport", async () => {
+		// Regression test for #11271: borders or side-by-side text on placeholder rows stopped the search.
+		const terminal = new RecordingTerminal(20, 3);
+		const tui = new TuiAltScreen(terminal);
+		const imageId = 11272;
+		const imageLine = encodeKitty("AAAA", { columns: 2, rows: 3, imageId, moveCursor: false });
+		registerKittyImageMetadata({ imageId, columns: 2, rows: 3, widthPx: 100, heightPx: 100 });
+		tui.addChild({ render: () => ["before", imageLine, "   | side", "   | side"], invalidate: () => {} });
+		tui.addChild({ render: () => ["after", "end"], invalidate: () => {} });
+		tui.start();
+		await terminal.waitForRender();
+
+		assert.strictEqual(tui.viewportTop, 3);
+		assert.ok(
+			terminal.events.some(
+				(event) => event.type === "write" && event.data.includes("i=11272") && event.data.includes("y=66,h=34,r=1"),
+			),
+		);
+
+		tui.stop();
+	});
+
 	it("redraws WezTerm Kitty images after writes to covered rows", async () => {
 		// Regression test for #10319: a scrollbar update below an unchanged image anchor erased its cells.
 		const weztermPane = process.env.WEZTERM_PANE;
