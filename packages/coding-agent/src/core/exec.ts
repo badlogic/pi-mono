@@ -3,6 +3,7 @@
  */
 
 import { spawn } from "node:child_process";
+import { StringDecoder } from "node:string_decoder";
 import { waitForChildProcess } from "../utils/child-process.ts";
 
 /**
@@ -46,6 +47,12 @@ export async function execCommand(
 
 		let stdout = "";
 		let stderr = "";
+		const stdoutDecoder = new StringDecoder("utf8");
+		const stderrDecoder = new StringDecoder("utf8");
+		const flushOutput = () => {
+			stdout += stdoutDecoder.end();
+			stderr += stderrDecoder.end();
+		};
 		let killed = false;
 		let timeoutId: NodeJS.Timeout | undefined;
 
@@ -79,17 +86,18 @@ export async function execCommand(
 		}
 
 		proc.stdout?.on("data", (data) => {
-			stdout += data.toString();
+			stdout += stdoutDecoder.write(data);
 		});
 
 		proc.stderr?.on("data", (data) => {
-			stderr += data.toString();
+			stderr += stderrDecoder.write(data);
 		});
 
 		// Wait for process termination without hanging on inherited stdio handles
 		// held open by detached descendants.
 		waitForChildProcess(proc)
 			.then((code) => {
+				flushOutput();
 				if (timeoutId) clearTimeout(timeoutId);
 				if (options?.signal) {
 					options.signal.removeEventListener("abort", killProcess);
@@ -97,6 +105,7 @@ export async function execCommand(
 				resolve({ stdout, stderr, code: code ?? 0, killed });
 			})
 			.catch((error: Error) => {
+				flushOutput();
 				if (timeoutId) clearTimeout(timeoutId);
 				if (options?.signal) {
 					options.signal.removeEventListener("abort", killProcess);
