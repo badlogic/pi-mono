@@ -285,6 +285,32 @@ describe("validateToolArguments", () => {
 		expect(validateToolArguments(tool, encoded)).toEqual(expected);
 	});
 
+	it("decodes a JSON-encoded string for native TypeBox nullable array unions", () => {
+		const tool: Tool = {
+			name: "echo",
+			description: "Echo tool",
+			parameters: Type.Object({
+				tags: Type.Union([Type.Array(Type.String()), Type.Null()]),
+				reversed: Type.Union([Type.Null(), Type.Array(Type.String())]),
+				items: Type.Array(Type.Object({ tags: Type.Union([Type.Array(Type.String()), Type.Null()]) })),
+				label: Type.Union([Type.String(), Type.Array(Type.String())]),
+			}),
+		};
+		const toolCall: ToolCall = {
+			type: "toolCall",
+			id: "tool-1",
+			name: "echo",
+			arguments: { tags: '["a","b"]', reversed: '["a","b"]', items: [{ tags: '["x"]' }], label: '["a"]' },
+		};
+
+		expect(validateToolArguments(tool, toolCall)).toEqual({
+			tags: ["a", "b"],
+			reversed: ["a", "b"],
+			items: [{ tags: ["x"] }],
+			label: '["a"]',
+		});
+	});
+
 	// A union with a string arm keeps a JSON-encoded object as the string it already is.
 	it("keeps a JSON-looking string when the schema also accepts a string", () => {
 		const { tool, toolCall } = createToolCallWithPlainSchema(

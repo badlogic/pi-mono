@@ -264,12 +264,33 @@ function coerceWithJsonSchema(value: unknown, schema: JsonSchemaObject): unknown
 	return nextValue;
 }
 
+function decodeStructuredString(value: unknown, schema: JsonSchemaObject): unknown {
+	const schemaTypes = getSchemaTypes(schema);
+	const members = [...(schema.anyOf ?? []), ...(schema.oneOf ?? [])];
+	if (typeof value !== "string" || schemaTypes.length > 0 || members.length === 0) {
+		return parseStructuredString(value, schemaTypes);
+	}
+	// A union without a direct type, e.g. TypeBox Type.Union([Type.Array(...), Type.Null()]).
+	// Value.Convert would otherwise wrap the encoded string into a one-element array.
+	if (members.some((member) => getSubSchemaValidator(member)?.Check(value))) {
+		return value;
+	}
+	for (const member of members) {
+		const parsed = parseStructuredString(value, getSchemaTypes(member));
+		if (parsed !== value) {
+			normalizeOptionalNulls(parsed, member);
+			return parsed;
+		}
+	}
+	return value;
+}
+
 function normalizeOptionalNulls(value: unknown, schema: JsonSchemaObject): void {
 	if (Array.isArray(value)) {
 		for (let index = 0; index < value.length; index++) {
 			const itemSchema = Array.isArray(schema.items) ? schema.items[index] : schema.items;
 			if (!itemSchema) continue;
-			value[index] = parseStructuredString(value[index], getSchemaTypes(itemSchema));
+			value[index] = decodeStructuredString(value[index], itemSchema);
 			normalizeOptionalNulls(value[index], itemSchema);
 		}
 		return;
@@ -288,7 +309,7 @@ function normalizeOptionalNulls(value: unknown, schema: JsonSchemaObject): void 
 		) {
 			delete object[key];
 		} else {
-			object[key] = parseStructuredString(object[key], getSchemaTypes(propertySchema));
+			object[key] = decodeStructuredString(object[key], propertySchema);
 			normalizeOptionalNulls(object[key], propertySchema);
 		}
 	}
