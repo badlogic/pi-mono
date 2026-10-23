@@ -24,11 +24,33 @@ export type RemoteListing = {
 export type PutBatchResult =
 	| { readonly type: "created" }
 	/** The slot is taken; by this device, after an upload whose response was lost, or by another one. */
-	| { readonly type: "exists"; readonly to: Seq; readonly device: string };
+	| { readonly type: "exists"; readonly to: Seq; readonly device: string }
+	/**
+	 * No slot starts at `after`, and the history does not end there: a slot there would branch the chain inside a batch
+	 * or leave a gap. The uploader's history is not the remote's from `after` on.
+	 */
+	| { readonly type: "not_head"; readonly head: Seq };
+
+/** A session as the remote's listing describes it. */
+export type SessionSummary = {
+	readonly id: string;
+	/** Where its history ends; `LOG_START` for a session with a description and no history. */
+	readonly head: Seq;
+	readonly meta: JsonObject | undefined;
+};
+
+/** Sessions changed after a cursor, and the cursor to continue from. */
+export type SessionChanges = {
+	readonly sessions: readonly SessionSummary[];
+	/** Pass it to the next call; opaque. */
+	readonly cursor: string;
+	/** More changes follow right away: call again with `cursor`. */
+	readonly more: boolean;
+};
 
 /** The client's view of a remote store. Clients never delete or fold. */
 export interface SessionSyncStore {
-	/** Create the slot after `after` unless it exists. */
+	/** Create the slot after `after` unless it exists or the history does not end at `after`. */
 	putBatch(
 		sessionId: string,
 		after: Seq,
@@ -41,8 +63,11 @@ export interface SessionSyncStore {
 	getBatch(sessionId: string, after: Seq, context: Context): Promise<Uint8Array | undefined>;
 	getSnapshot(sessionId: string, to: Seq, context: Context): Promise<Uint8Array | undefined>;
 	list(sessionId: string, context: Context): Promise<RemoteListing>;
-	/** The sessions the remote holds anything for. */
-	sessions(context: Context): Promise<string[]>;
+	/**
+	 * The sessions changed after `cursor` (all of them without one). A remote may also list sessions that did not change,
+	 * so a caller compares what it gets with what it has.
+	 */
+	sessions(cursor: string | undefined, context: Context): Promise<SessionChanges>;
 	/**
 	 * The host's description of a session (title, location, which device started it), outside its history: the last
 	 * write wins, and it may be ahead of or behind the batches.

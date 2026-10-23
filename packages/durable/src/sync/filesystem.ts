@@ -2,7 +2,14 @@ import type { Context } from "@earendil-works/chord";
 import type { FileError, FileSystem, Result } from "../env/index.ts";
 import { seqFromNumber } from "../ids.ts";
 import type { JsonObject, Seq } from "../types.ts";
-import type { BatchInfo, PutBatchResult, RemoteListing, SessionSyncMaintenance } from "./remote.ts";
+import {
+	type BatchInfo,
+	type PutBatchResult,
+	type RemoteListing,
+	remoteHead,
+	type SessionChanges,
+	type SessionSyncMaintenance,
+} from "./remote.ts";
 
 const pad = (value: number): string => String(value).padStart(16, "0");
 const SLOT_NAME = /^(\d{16})\.json$/;
@@ -22,7 +29,8 @@ function unwrap<T>(result: Result<T, FileError>): T {
 
 /**
  * A remote store in a directory, laid out as the real remote is: per session, one slot per batch start, holding where
- * the batch ends and which device created it, and snapshots named by their end. Creating a slot is check-then-write,
+ * the batch ends and which device created it, and snapshots named by their end. As the real remote, it creates a slot
+ * only where the history ends. Creating a slot is check-then-write,
  * without the atomicity of the real remote across processes: for development and tests, with one process writing.
  *
  * ```text
@@ -51,6 +59,8 @@ export class FileSystemSyncRemote implements SessionSyncMaintenance {
 	): Promise<PutBatchResult> {
 		const existing = await this.#slot(sessionId, after, context);
 		if (existing !== undefined) return { type: "exists", to: existing.to, device: existing.device };
+		const head = remoteHead(await this.list(sessionId, context));
+		if (after !== head) return { type: "not_head", head };
 		await this.#write(sessionId, ["batches"], `${pad(after)}.batch`, body, context);
 		// The slot is written last: it is what makes the batch exist.
 		const slot: BatchInfo = { after, to, device };
@@ -118,13 +128,25 @@ export class FileSystemSyncRemote implements SessionSyncMaintenance {
 		return { batches, snapshots };
 	}
 
-	async sessions(context: Context): Promise<string[]> {
+	/** Every session, every time: a directory keeps no change order. */
+	async sessions(_cursor: string | undefined, context: Context): Promise<SessionChanges> {
 		const result = await this.#fs.listDir(this.#root, context);
-		if (!result.ok && result.error.code === "not_found") return [];
-		return unwrap(result)
-			.filter((info) => info.kind === "directory" && SESSION_ID.test(info.name))
-			.map((info) => info.name)
-			.sort();
+		const names =
+			!result.ok && result.error.code === "not_found"
+				? []
+				: unwrap(result)
+						.filter((info) => info.kind === "directory" && SESSION_ID.test(info.name))
+						.map((info) => info.name)
+						.sort();
+		const sessions = [];
+		for (const id of names) {
+			sessions.push({
+				id,
+				head: remoteHead(await this.list(id, context)),
+				meta: await this.getMeta(id, context),
+			});
+		}
+		return { sessions, cursor: "", more: false };
 	}
 
 	async putMeta(sessionId: string, meta: JsonObject, context: Context): Promise<void> {

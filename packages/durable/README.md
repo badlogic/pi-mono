@@ -810,8 +810,8 @@ a Harness on it: `Harness.open` commits, so a replica that keeps replaying recor
 
 `@earendil-works/pi-durable/sync` moves sessions between devices through a remote store. Every device continues a
 session as its own. Its uploads are batches, the log after the last sequence it shares with the remote, in gzip JSON
-lines. A store keeps one slot per start sequence and creates it once, so the device whose upload creates a slot
-continues the session from there. A device that finds the slot taken by another device has diverged: its commits after
+lines. A store keeps one slot per start sequence and creates it once, and only where the history ends (a slot inside a
+batch would branch the chain), so the device whose upload creates a slot continues the session from there. A device that finds the slot taken by another device has diverged: its commits after
 that point are a different history, so the host renames its copy to a new session (forked at that point) and the
 session restores fresh. The remote folds the history into snapshots, keeping folded slots taken.
 

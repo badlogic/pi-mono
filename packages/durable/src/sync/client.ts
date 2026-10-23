@@ -101,6 +101,8 @@ export async function uploadSession(options: {
 		const after = synced ?? LOG_START;
 		const to = records.at(-1)!.seq;
 		const result = await store.putBatch(sessionId, after, to, device, await encodeBatch(records), context);
+		// A history that does not end at `after` is another one too: the remote never held this copy's past `after`.
+		if (result.type === "not_head") return { type: "diverged", at: after };
 		if (result.type === "exists" && result.device !== device) return { type: "diverged", at: after };
 		synced = result.type === "created" ? to : result.to;
 		await state.set(sessionId, { syncedHead: synced }, context);

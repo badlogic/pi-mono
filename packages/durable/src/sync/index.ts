@@ -24,6 +24,8 @@ export {
 	type RemoteListing,
 	remoteHead,
 	remoteHistory,
+	type SessionChanges,
+	type SessionSummary,
 	type SessionSyncMaintenance,
 	type SessionSyncStore,
 } from "./remote.ts";

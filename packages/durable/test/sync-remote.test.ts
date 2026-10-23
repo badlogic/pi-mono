@@ -6,6 +6,7 @@ import { BACKGROUND_CONTEXT } from "@earendil-works/chord/context";
 import { afterEach, describe, expect, it } from "vitest";
 import { NodeExecutionEnv } from "../src/env/node.ts";
 import { seqFromNumber } from "../src/ids.ts";
+import { LOG_START } from "../src/storage/log.ts";
 import { MemoryStorage } from "../src/storage/memory.ts";
 import {
 	type BatchInfo,
@@ -239,6 +240,31 @@ describe("syncing a session between devices", () => {
 		expect(await upload()).toEqual({ type: "uploaded", head: 10 });
 	});
 
+	it("creates slots only where the history ends", async () => {
+		const store = await remote();
+		const batches = seedBatches();
+		const laptop = device("laptop", store);
+		await commitAll(laptop.storage, batches.slice(0, 5));
+		await laptop.upload();
+		// A copy that believes it shares 3 with the remote: no slot starts there, and the history ends at 5.
+		const desktop = device("desktop", store);
+		await commitAll(desktop.storage, batches.slice(0, 4));
+		await desktop.state.set(SESSION, { syncedHead: seqFromNumber(3) }, context);
+		const records = await collect(desktop.storage.log(seqFromNumber(3), context));
+		expect(
+			await store.putBatch(
+				SESSION,
+				seqFromNumber(3),
+				seqFromNumber(4),
+				"desktop",
+				await encodeBatch(records),
+				context,
+			),
+		).toEqual({ type: "not_head", head: 5 });
+		expect(await desktop.upload()).toEqual({ type: "diverged", at: 3 });
+		expect((await store.list(SESSION, context)).batches).toEqual([slot(0, 5, "laptop")]);
+	});
+
 	it("resumes a pull that stopped inside a batch", async () => {
 		const store = await remote();
 		const laptop = device("laptop", store);
@@ -324,13 +350,16 @@ describe("syncing a session between devices", () => {
 describe("host pieces", () => {
 	it("lists sessions and keeps the last metadata written", async () => {
 		const store = await remote();
-		expect(await store.sessions(context)).toEqual([]);
+		expect(await store.sessions(undefined, context)).toEqual({ sessions: [], cursor: "", more: false });
 		const laptop = device("laptop", store);
 		await laptop.storage.commit([entry(1)], () => {}, context);
 		await laptop.upload("s2");
 		await store.putMeta("s1", { title: "first" }, context);
 		await store.putMeta("s1", { title: "renamed", origin: "laptop" }, context);
-		expect(await store.sessions(context)).toEqual(["s1", "s2"]);
+		expect((await store.sessions(undefined, context)).sessions).toEqual([
+			{ id: "s1", head: LOG_START, meta: { title: "renamed", origin: "laptop" } },
+			{ id: "s2", head: 1, meta: undefined },
+		]);
 		expect(await store.getMeta("s1", context)).toEqual({ title: "renamed", origin: "laptop" });
 		expect(await store.getMeta("s2", context)).toBeUndefined();
 	});
