@@ -589,14 +589,17 @@ describe("transcript system messages", () => {
 	});
 
 	// #10720: Kimi Coding uses Chat Completions so K3-style models keep added tools out of the top-level list.
-	test.each(["k3", "k3-256k", "kimi-for-coding"] as const)("anchors additions for Kimi Coding %s", async (modelId) => {
-		const payload = await capturePayload<KimiPayload>(getModel("kimi-coding", modelId), additionContext);
+	test.each(["k3", "k3-256k", "k3.1-pro", "k3.1-pro-highspeed", "kimi-for-coding"] as const)(
+		"anchors additions for Kimi Coding %s",
+		async (modelId) => {
+			const payload = await capturePayload<KimiPayload>(getModel("kimi-coding", modelId), additionContext);
 
-		expect(payload.tools?.map((value) => value.function?.name)).toEqual(["base_tool"]);
-		expect(payload.messages.find((message) => message.tools)?.tools?.map((value) => value.function?.name)).toEqual([
-			"late_tool",
-		]);
-	});
+			expect(payload.tools?.map((value) => value.function?.name)).toEqual(["base_tool"]);
+			expect(payload.messages.find((message) => message.tools)?.tools?.map((value) => value.function?.name)).toEqual(
+				["late_tool"],
+			);
+		},
+	);
 
 	// #10720: Kimi Code Highspeed rejects tool-bearing system messages.
 	test("keeps Kimi Coding Highspeed additions in top-level tools", async () => {

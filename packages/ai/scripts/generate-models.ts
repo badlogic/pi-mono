@@ -1761,15 +1761,14 @@ function processFireworksModels(provider: ModelsDevProvider | undefined): Model<
 
 // Kimi Coding is subscription-backed, so models.dev reports zero cost. Use the
 // equivalent Moonshot API rates to estimate the value of subscription usage.
+// K3.1 cache writes use the default 5m rate: https://platform.kimi.ai/docs/pricing/chat
 const KIMI_CODING_IMPLIED_COSTS: Record<string, Model<Api>["cost"]> = {
 	k3: KIMI_K3_COST,
+	"k3.1-pro": { input: 2, output: 10, cacheRead: 0.2, cacheWrite: 2 },
+	"k3.1-pro-highspeed": { input: 4, output: 20, cacheRead: 0.2, cacheWrite: 4 },
 	"kimi-for-coding": { input: 0.95, output: 4, cacheRead: 0.19, cacheWrite: 0 },
 	"kimi-for-coding-highspeed": { input: 1.9, output: 8, cacheRead: 0.38, cacheWrite: 0 },
 };
-// Models whose https://api.kimi.com/coding/v1/models entry reports effort levels and
-// dynamic tool loading (tools declared in later system messages). Highspeed reports
-// neither and rejects tool-bearing system messages with a 400.
-const KIMI_CODING_K3_STYLE_MODEL_IDS = new Set(["k3", "k3-256k", "kimi-for-coding"]);
 
 // Kimi Coding uses Chat Completions, the same protocol as the official Kimi Code client.
 function createKimiCodingModels(kimiModels: Record<string, ModelsDevModel>): Model<"openai-completions">[] {
@@ -1777,10 +1776,12 @@ function createKimiCodingModels(kimiModels: Record<string, ModelsDevModel>): Mod
 	for (const [modelId, m] of Object.entries(kimiModels)) {
 		if (m.tool_call !== true) continue;
 
-		const isK3Style = KIMI_CODING_K3_STYLE_MODEL_IDS.has(modelId);
+		// Current Kimi Coding models pair effort levels with the rest of the K3 wire preset:
+		// preserved reasoning and tools declared in later system messages. Parse the levels rather
+		// than treating toggle or token-budget options as reasoning_effort support.
+		const effortLevels = getEffortThinkingLevelMap(m.reasoning_options ?? []);
+		const isK3Style = effortLevels !== undefined;
 		const impliedCost = KIMI_CODING_IMPLIED_COSTS[modelId];
-		// K3-style models send reasoning_effort, so expose the effort values models.dev lists.
-		const effortLevels = isK3Style && m.reasoning_options ? getEffortThinkingLevelMap(m.reasoning_options) : undefined;
 
 		models.push({
 			id: modelId,

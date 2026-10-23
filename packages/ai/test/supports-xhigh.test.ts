@@ -202,11 +202,14 @@ describe("getSupportedThinkingLevels", () => {
 		expect(getSupportedThinkingLevels(model!)).toEqual(["low", "high", "max"]);
 	});
 
-	it("includes only low, high, max for Kimi Coding K3", () => {
-		const model = getModel("kimi-coding", "k3");
-		expect(model).toBeDefined();
-		expect(getSupportedThinkingLevels(model!)).toEqual(["low", "high", "max"]);
-	});
+	it.each(["k3", "k3.1-pro", "k3.1-pro-highspeed"] as const)(
+		"includes only low, high, max for Kimi Coding %s",
+		(modelId) => {
+			const model = getModel("kimi-coding", modelId);
+			expect(model).toBeDefined();
+			expect(getSupportedThinkingLevels(model!)).toEqual(["low", "high", "max"]);
+		},
+	);
 
 	it("excludes off for always-thinking Kimi Coding Highspeed", () => {
 		const model = getModel("kimi-coding", "kimi-for-coding-highspeed");
