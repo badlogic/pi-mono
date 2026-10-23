@@ -2406,6 +2406,46 @@ export default function(api) { api.registerTool({ name: "test", description: "te
 		});
 	});
 
+	describe("package install failures", () => {
+		// #11088
+		it("should skip a package source that fails to install and report it", async () => {
+			settingsManager.setProjectPackages(["npm:broken-package"]);
+			const installParsedSource = vi
+				.spyOn(packageManager as any, "installParsedSource")
+				.mockRejectedValue(new Error("npm install broken-package failed with code 1"));
+
+			const result = await packageManager.resolve();
+
+			expect(installParsedSource).toHaveBeenCalledTimes(1);
+			expect(result.installFailures).toEqual([
+				{
+					source: "npm:broken-package",
+					scope: "project",
+					message: "npm install broken-package failed with code 1",
+				},
+			]);
+			expect(result.extensions).toEqual([]);
+		});
+
+		it("should not report install failures for sources that are skipped", async () => {
+			settingsManager.setProjectPackages(["npm:missing-package"]);
+			const installParsedSource = vi.spyOn(packageManager as any, "installParsedSource");
+
+			const result = await packageManager.resolve(async () => "skip");
+
+			expect(installParsedSource).not.toHaveBeenCalled();
+			expect(result.installFailures).toEqual([]);
+		});
+
+		it("should keep a missing source an error when the caller asks for one", async () => {
+			settingsManager.setProjectPackages(["npm:missing-package"]);
+
+			await expect(packageManager.resolve(async () => "error")).rejects.toThrow(
+				"Missing source: npm:missing-package",
+			);
+		});
+	});
+
 	describe("offline mode and network timeouts", () => {
 		it("should update npm range packages using the configured spec", async () => {
 			const installedPath = join(tempDir, ".pi", "npm", "node_modules", "example");
