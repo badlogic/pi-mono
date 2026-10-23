@@ -24,6 +24,7 @@ import {
 	type AgentMessage,
 	type AgentState,
 	type AgentTool,
+	type AgentToolCall,
 	type AgentToolCallOutcome,
 	type BeforeToolCallContext,
 	type BeforeToolCallResult,
@@ -1506,6 +1507,104 @@ export class AgentSession {
 	/** Get the names of the tools that tools can call through `ctx.executeTool()`. */
 	getCallableToolNames(): string[] {
 		return this._getCallableTools().map((t) => t.name);
+	}
+
+	/**
+	 * The tool calls the last assistant message asked for that have no result yet, in the order the
+	 * model asked for them. A driver that runs a turn one step at a time reads this after the model
+	 * call to learn which calls are pending.
+	 */
+	getPendingToolCalls(): AgentToolCall[] {
+		const assistantMessage = this._findLastAssistantMessage();
+		if (!assistantMessage) return [];
+		const answered = this._answeredToolCallIds(assistantMessage);
+		return assistantMessage.content.flatMap((block) =>
+			block.type === "toolCall" && !answered.has(block.id) ? [block] : [],
+		);
+	}
+
+	/**
+	 * Run one pending tool call by the id the model gave it, through the same pipeline a
+	 * model-issued call uses: argument preparation, schema validation, `beforeToolCall`, execution,
+	 * and `afterToolCall`. Emits the same `tool_execution_start`/`end` events and appends the tool
+	 * result message, so a turn driven one call at a time records the same transcript as `prompt()`.
+	 *
+	 * Returns `undefined` when no pending call has that id, which makes a repeated call a no-op
+	 * instead of a duplicate result.
+	 */
+	async runToolCallById(
+		toolCallId: string,
+		options?: { signal?: AbortSignal },
+	): Promise<ToolResultMessage | undefined> {
+		const assistantMessage = this._findLastAssistantMessage();
+		if (!assistantMessage) return undefined;
+		const toolCall = this.getPendingToolCalls().find((call) => call.id === toolCallId);
+		if (!toolCall) return undefined;
+
+		const emit = async (event: AgentEvent) => {
+			await this._handleAgentEvent(event);
+		};
+		await emit({
+			type: "tool_execution_start",
+			toolCallId: toolCall.id,
+			toolName: toolCall.name,
+			args: toolCall.arguments,
+		});
+
+		const outcome = await runToolCall(toolCall, {
+			tools: this._getCallableTools(),
+			assistantMessage,
+			context: { messages: this.agent.state.messages, tools: this.agent.state.tools },
+			beforeToolCall: (context) => this._beforeToolCall(context),
+			afterToolCall: (context) => this._afterToolCall(context),
+			signal: options?.signal,
+			onUpdate: (partialResult) => {
+				void emit({
+					type: "tool_execution_update",
+					toolCallId: toolCall.id,
+					toolName: toolCall.name,
+					args: toolCall.arguments,
+					partialResult,
+				});
+			},
+		});
+
+		await emit({
+			type: "tool_execution_end",
+			toolCallId: outcome.toolCall.id,
+			toolName: outcome.toolCall.name,
+			result: outcome.result,
+			isError: outcome.isError,
+			...(outcome.durationMs === undefined ? {} : { durationMs: outcome.durationMs }),
+		});
+
+		const message: ToolResultMessage = {
+			role: "toolResult",
+			toolCallId: outcome.toolCall.id,
+			toolName: outcome.toolCall.name,
+			content: outcome.result.content ?? [],
+			details: outcome.result.details,
+			usage: outcome.result.usage,
+			isError: outcome.isError,
+			...(outcome.durationMs === undefined ? {} : { durationMs: outcome.durationMs }),
+			timestamp: Date.now(),
+		};
+		this.agent.state.messages.push(message);
+		await emit({ type: "message_start", message });
+		await emit({ type: "message_end", message });
+		return message;
+	}
+
+	/** The call ids of `assistantMessage` that already have a result in the transcript. */
+	private _answeredToolCallIds(assistantMessage: AssistantMessage): Set<string> {
+		const messages = this.agent.state.messages;
+		const index = messages.indexOf(assistantMessage);
+		const answered = new Set<string>();
+		for (const message of index < 0 ? [] : messages.slice(index + 1)) {
+			if (message.role === "assistant") break;
+			if (message.role === "toolResult") answered.add(message.toolCallId);
+		}
+		return answered;
 	}
 
 	/**
