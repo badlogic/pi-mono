@@ -351,15 +351,6 @@ const KIMI_K3_OPENAI_COMPAT: OpenAICompletionsCompat = {
 };
 const OPENROUTER_KIMI_K3_MODEL_IDS = new Set(["moonshotai/kimi-k3", "~moonshotai/kimi-latest"]);
 
-const ANT_LING_RING_THINKING_LEVEL_MAP = {
-	off: null,
-	minimal: null,
-	low: null,
-	medium: null,
-	high: "high",
-	xhigh: "xhigh",
-} as const;
-
 const BEDROCK_INFERENCE_PROFILE_ONLY_MODEL_IDS = new Set(["anthropic.claude-opus-5"]);
 const MODELS_DEV_OPENAI_UNSUPPORTED_MODEL_IDS = new Set(["gpt-5.6"]);
 const OPENAI_TOOL_SEARCH_MODEL_IDS = new Set([
@@ -760,7 +751,7 @@ function detectOpenAICompletionsCompat(model: Model<"openai-completions">): Open
 		supportsStore: !isNonStandard,
 		supportsDeveloperRole: isOpenRouterDeveloperRoleModel || (!isNonStandard && !isOpenRouter),
 		supportsReasoningEffort:
-			!isGrok && !isZai && !isMoonshot && !isTogether && !isCloudflareAiGateway && !isNvidia && !isAntLing,
+			!isGrok && !isZai && !isMoonshot && !isTogether && !isCloudflareAiGateway && !isNvidia,
 		supportsUsageInStreaming: true,
 		supportsFinishReason: true,
 		maxTokensField: useMaxTokens ? "max_tokens" : "max_completion_tokens",
@@ -768,14 +759,12 @@ function detectOpenAICompletionsCompat(model: Model<"openai-completions">): Open
 		requiresAssistantAfterToolResult: false,
 		requiresThinkingAsText: false,
 		requiresReasoningContentOnAssistantMessages: isDeepSeek,
-		thinkingFormat: isDeepSeek
+		thinkingFormat: isDeepSeek || isAntLing
 			? "deepseek"
 			: isZai
 				? "zai"
 				: isTogether
 					? "together"
-					: isAntLing
-						? "ant-ling"
 						: isOpenRouter
 							? "openrouter"
 							: "openai",
@@ -1227,10 +1216,6 @@ function applyThinkingLevelMetadata(model: Model<any>): void {
 	if (model.provider === "opencode" && model.id === "grok-build-0.1") {
 		// OpenCode Zen Grok Build reasons by default but rejects explicit reasoningEffort.
 		mergeThinkingLevelMap(model, { off: null, minimal: null, low: null, medium: null });
-	}
-	if (model.provider === "ant-ling" && model.reasoning) {
-		// Ring reasons by default. Only high/xhigh have documented explicit effort controls.
-		mergeThinkingLevelMap(model, ANT_LING_RING_THINKING_LEVEL_MAP);
 	}
 	if (model.provider === "github-copilot") {
 		const override = GITHUB_COPILOT_THINKING_LEVEL_OVERRIDES[model.id];
@@ -3089,52 +3074,60 @@ async function generateModels() {
 	];
 	allModels.push(...deepseekModels);
 
+	// Ant Ling uses DeepSeek-style thinking: { type } plus reasoning_effort.
 	const antLingCompat: OpenAICompletionsCompat = {
 		supportsStore: false,
 		supportsDeveloperRole: false,
-		supportsReasoningEffort: false,
+		supportsReasoningEffort: true,
 		maxTokensField: "max_tokens",
+		thinkingFormat: "deepseek",
 		supportsLongCacheRetention: false,
 	};
+	// Thinking is either off or high. Hiding the lower levels makes Pi clamp them to high;
+	// off is unmapped so the request sends thinking: { type: "disabled" }.
+	const ANT_LING_THINKING_LEVEL_MAP = { minimal: null, low: null, medium: null } as const;
 	const antLingModels: Model<"openai-completions">[] = [
 		{
-			id: "Ling-2.6-flash",
-			name: "Ling 2.6 Flash",
-			api: "openai-completions",
-			baseUrl: "https://api.ant-ling.com/v1",
-			provider: "ant-ling",
-			reasoning: false,
-			input: ["text"],
-			cost: { input: 0.01, output: 0.02, cacheRead: 0, cacheWrite: 0 },
-			contextWindow: 262144,
-			maxTokens: 65536,
-			compat: antLingCompat,
-		},
-		{
-			id: "Ling-2.6-1T",
-			name: "Ling 2.6 1T",
-			api: "openai-completions",
-			baseUrl: "https://api.ant-ling.com/v1",
-			provider: "ant-ling",
-			reasoning: false,
-			input: ["text"],
-			cost: { input: 0.06, output: 0.25, cacheRead: 0, cacheWrite: 0 },
-			contextWindow: 262144,
-			maxTokens: 65536,
-			compat: antLingCompat,
-		},
-		{
-			id: "Ring-2.6-1T",
-			name: "Ring 2.6 1T",
+			id: "Ling-3.1-flash",
+			name: "Ling 3.1 Flash",
 			api: "openai-completions",
 			baseUrl: "https://api.ant-ling.com/v1",
 			provider: "ant-ling",
 			reasoning: true,
+			thinkingLevelMap: ANT_LING_THINKING_LEVEL_MAP,
 			input: ["text"],
-			cost: { input: 0.06, output: 0.25, cacheRead: 0, cacheWrite: 0 },
+			cost: { input: 0.075, output: 0.225, cacheRead: 0.015, cacheWrite: 0 },
 			contextWindow: 262144,
-			maxTokens: 65536,
-			compat: { ...antLingCompat, thinkingFormat: "ant-ling" },
+			maxTokens: 262144,
+			compat: antLingCompat,
+		},
+		{
+			id: "Ling-3.0-flash-VL",
+			name: "Ling 3.0 Flash VL",
+			api: "openai-completions",
+			baseUrl: "https://api.ant-ling.com/v1",
+			provider: "ant-ling",
+			reasoning: true,
+			thinkingLevelMap: ANT_LING_THINKING_LEVEL_MAP,
+			input: ["text", "image"],
+			cost: { input: 0.021, output: 0.062, cacheRead: 0.0042, cacheWrite: 0 },
+			contextWindow: 262144,
+			maxTokens: 262144,
+			compat: antLingCompat,
+		},
+		{
+			id: "Ling-3.0-flash",
+			name: "Ling 3.0 Flash",
+			api: "openai-completions",
+			baseUrl: "https://api.ant-ling.com/v1",
+			provider: "ant-ling",
+			reasoning: true,
+			thinkingLevelMap: ANT_LING_THINKING_LEVEL_MAP,
+			input: ["text"],
+			cost: { input: 0.0168, output: 0.0504, cacheRead: 0.0034, cacheWrite: 0 },
+			contextWindow: 262144,
+			maxTokens: 262144,
+			compat: antLingCompat,
 		},
 	];
 	allModels.push(...antLingModels);

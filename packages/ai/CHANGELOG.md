@@ -28,6 +28,7 @@
 ### Breaking Changes
 
 - Renamed provider request option `telemetryContext` to `telemetry?: TelemetrySpan`, without a compatibility alias. Pass a parent span, not an adapter.
+- Removed the `thinkingFormat: "ant-ling"` compat value. Use `thinkingFormat: "deepseek"` for Ant Ling models ([#10943](https://github.com/earendil-works/pi/pull/10943) by [@lvisei](https://github.com/lvisei))
 - The default `User-Agent` is now `pi/<version> (<platform>; <runtime>; <arch>)` instead of `pi (<platform> <release>; <arch>)`, and `@earendil-works/pi-ai/utils/pi-user-agent` (`getPiUserAgent()`) is removed; use `formatUserAgent()`.
 - `resolveTranscriptTools()` now takes a `TranscriptToolSupport` (`"none"`, `"additions"`, or `"changes"`) instead of a boolean, and `TranscriptTools.anchorsAdditions` is replaced by `foldedSystemMessages`, the number of leading system messages folded into `requestTools` ([#10940](https://github.com/earendil-works/pi/issues/10940))
 
@@ -47,6 +48,10 @@
 ### Changed
 
 - Grok 4.3 and Grok 4.5 on the `xai` provider now offer the `xhigh` thinking level, matching the reasoning efforts xAI supports for these models.
+
+### Changed
+
+- Replaced the Ant Ling Ling 2.6 and Ring 2.6 models with Ling 3.1 Flash, Ling 3.0 Flash, and Ling 3.0 Flash VL. Ant Ling reasoning requests now use the DeepSeek-compatible `thinking` and `reasoning_effort` fields instead of nested `reasoning`, with thinking either off or high ([#10943](https://github.com/earendil-works/pi/pull/10943) by [@lvisei](https://github.com/lvisei))
 
 ### Fixed
 
