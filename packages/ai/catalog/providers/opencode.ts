@@ -9,6 +9,7 @@ import {
 } from "../define.ts";
 import { supportsClaudeMidConvoSystemMessages } from "../families/anthropic.ts";
 import { googleThinkingLevels } from "../families/google.ts";
+import { isKimiK3FamilyId } from "../families/kimi.ts";
 import { enableOpenAiGrammarTools, enableOpenAiMidConvoSystemMessages } from "../families/openai.ts";
 import { getEffortThinkingLevelMap } from "../reasoning.ts";
 import type { ModelsDevModel } from "../sources/models-dev.ts";
@@ -137,8 +138,8 @@ export function finalizeOpencodeModel(model: ChatModel): void {
 		// OpenCode Qwen 3.8 Flash emits and accepts thinking blocks with empty signatures.
 		if (model.id === "qwen3.8-flash") mergeCompat(messagesModel, { allowEmptySignature: true });
 	}
-	// Kimi K3 accepts tool-bearing system messages; OpenCode passes them through.
-	if (model.api === "openai-completions" && model.id === "kimi-k3") {
+	// The Kimi K3 family accepts tool-bearing system messages; OpenCode passes them through.
+	if (model.api === "openai-completions" && isKimiK3FamilyId(model.id)) {
 		mergeCompat(model as Model<"openai-completions">, {
 			supportsMidConvoSystemMessages: true,
 			supportsMidConvoToolAdditions: true,
