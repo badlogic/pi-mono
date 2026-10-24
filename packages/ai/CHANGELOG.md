@@ -23,6 +23,7 @@
 - Fixed streamed tool-call arguments being re-parsed in full on every delta, which made CPU time and memory grow quadratically with the size of a tool call (a 90 KB `write` on Anthropic peaked at about 140 MB of heap; a 500 KB one took minutes). Every provider and the pi-messages client now read each delta once, and keep the raw argument text and their other stream state (`partialJson`, `partialArgs`, `index`, `customInput`, `streamIndex`, Bedrock's encrypted reasoning bytes) off the content blocks, so it no longer reaches partial messages or transcripts of failed streams ([#9265](https://github.com/earendil-works/pi/issues/9265))
 - Fixed grammar (custom) tool input streaming copying the whole input so far on every delta ([#9265](https://github.com/earendil-works/pi/issues/9265))
 - Fixed bounded error texts (telemetry span messages, truncated provider error bodies, pi-messages diagnostics, Radius gateway errors) keeping the whole text they were cut from alive ([#9265](https://github.com/earendil-works/pi/issues/9265))
+- Fixed Kimi K3.1 Pro and K3.1 Pro Highspeed on Kimi Coding, Moonshot, and OpenCode Go using Kimi K2 request settings. They now send `reasoning_effort` (low/high/max), return earlier reasoning, accept tools added mid-conversation, and report Moonshot rates on Kimi Coding. Kimi Coding `k3-256k` now reports Kimi K3 rates.
 
 ## [1.4.0] - 2026-10-21
 

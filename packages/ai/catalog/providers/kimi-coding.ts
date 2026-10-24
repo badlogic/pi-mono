@@ -7,13 +7,12 @@ import { getEffortThinkingLevelMap } from "../reasoning.ts";
 // equivalent Moonshot API rates to estimate the value of subscription usage.
 const IMPLIED_COSTS: Record<string, ModelCost> = {
 	k3: KIMI_K3_COST,
+	"k3-256k": KIMI_K3_COST,
+	"k3.1-pro": { input: 2, output: 10, cacheRead: 0.2, cacheWrite: 0 },
+	"k3.1-pro-highspeed": { input: 4, output: 20, cacheRead: 0.2, cacheWrite: 0 },
 	"kimi-for-coding": { input: 0.95, output: 4, cacheRead: 0.19, cacheWrite: 0 },
 	"kimi-for-coding-highspeed": { input: 1.9, output: 8, cacheRead: 0.38, cacheWrite: 0 },
 };
-// Models whose https://api.kimi.com/coding/v1/models entry reports effort levels and
-// dynamic tool loading (tools declared in later system messages). Highspeed reports
-// neither and rejects tool-bearing system messages with a 400.
-const K3_STYLE_MODEL_IDS = new Set(["k3", "k3-256k", "kimi-for-coding"]);
 
 // Kimi Coding uses Chat Completions, the same protocol as the official Kimi Code client.
 export default defineProvider({
@@ -24,7 +23,11 @@ export default defineProvider({
 			baseUrl: "https://api.kimi.com/coding/v1",
 			recordReasoning: false,
 			map: (model, source): Model<"openai-completions"> => {
-				const isK3Style = K3_STYLE_MODEL_IDS.has(model.id);
+				// K3-style models report effort levels and dynamic tool loading (tools declared in
+				// later system messages) in https://api.kimi.com/coding/v1/models; models.dev mirrors
+				// the effort levels. kimi-for-coding-highspeed reports neither and rejects
+				// tool-bearing system messages with a 400.
+				const isK3Style = source.reasoningOptions?.some((option) => option.type === "effort") === true;
 				const impliedCost = IMPLIED_COSTS[model.id];
 				// K3-style models send reasoning_effort, so expose the effort values models.dev lists.
 				const effortLevels =
