@@ -1,11 +1,10 @@
 import type { Model, OpenAICompletionsCompat } from "../../src/types.ts";
 import { addMissing, type ChatModel, defineProvider, mergeCompat, mergeThinking } from "../define.ts";
 import { enableClaudeMidConvoEffort, supportsClaudeMidConvoEffort } from "../families/anthropic.ts";
-import { KIMI_K3_MAX_TOKENS } from "../families/kimi.ts";
+import { isKimiK3FamilyId, KIMI_K3_MAX_TOKENS } from "../families/kimi.ts";
 import { OPENAI_MID_CONVO_MODEL_IDS } from "../families/openai.ts";
 
 const BASE_URL = "https://openrouter.ai/api/v1";
-const KIMI_K3_MODEL_IDS = new Set(["moonshotai/kimi-k3", "~moonshotai/kimi-latest"]);
 // OpenRouter rejects `configuration_update` system messages on Opus 5 ("Mid-conversation
 // reasoning effort (configuration_update) is not supported on anthropic/claude-opus-5-20260723")
 // while accepting them on Fable 5.1.
@@ -14,7 +13,12 @@ const MID_CONVO_EFFORT_UNSUPPORTED_MODEL_IDS = new Set(["anthropic/claude-opus-5
 /** Keep selected model metadata stable until upstream settles. */
 function correctUpstream(model: ChatModel): ChatModel {
 	// Keep Kimi K3's canonical output limit when gateway metadata is missing or incorrect.
-	if (KIMI_K3_MODEL_IDS.has(model.id)) model.maxTokens = KIMI_K3_MAX_TOKENS;
+	if (
+		model.id === "~moonshotai/kimi-latest" ||
+		(model.id.startsWith("moonshotai/") && isKimiK3FamilyId(model.id.slice("moonshotai/".length)))
+	) {
+		model.maxTokens = KIMI_K3_MAX_TOKENS;
+	}
 	if (model.id === "moonshotai/kimi-k2.5") {
 		model.cost = { ...model.cost, input: 0.41, output: 2.06, cacheRead: 0.07 };
 		model.maxTokens = 4096;
