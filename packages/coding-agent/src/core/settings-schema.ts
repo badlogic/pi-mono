@@ -434,6 +434,13 @@ export const SettingsSchema = Type.Object(
 				default: SETTINGS_DEFAULTS.fullscreenCopyOnSelect,
 			}),
 		),
+		fullscreenCopyTarget: Type.Optional(
+			Type.Union([Type.Literal("clipboard"), Type.Literal("primary")], {
+				description:
+					"Wayland/X11 clipboard target for fullscreen copy-on-select. `primary` uses the selection buffer (middle-click paste). No effect in regular TUI mode.",
+				default: SETTINGS_DEFAULTS.fullscreenCopyTarget,
+			}),
+		),
 		fullscreenWheelScrollLines: Type.Optional(
 			Type.Union([Type.Number(), Type.Literal("auto")], {
 				description: "Lines scrolled per wheel event in fullscreen mode; numeric values are clamped from 1 to 100.",

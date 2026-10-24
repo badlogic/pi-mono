@@ -194,6 +194,41 @@ describe("copyToClipboard", () => {
 		expect(mocks.command.mock.calls.map(([name]) => name)).toEqual(["wl-copy", "xclip", "xsel"]);
 		expect(osc52Writes).toHaveLength(0);
 	});
+	test("Wayland primary target uses wl-copy -p", async () => {
+		mocks.platform.mockReturnValue("linux");
+		vi.stubEnv("WAYLAND_DISPLAY", "wayland-0");
+		await copyToClipboard("hello", "primary");
+		expect(mocks.command).toHaveBeenCalledWith("wl-copy", ["-p"], { input: "hello", timeoutMs: 5000 });
+		expect(osc52Writes).toHaveLength(0);
+	});
+	test("Wayland clipboard target uses wl-copy without -p", async () => {
+		mocks.platform.mockReturnValue("linux");
+		vi.stubEnv("WAYLAND_DISPLAY", "wayland-0");
+		await copyToClipboard("hello", "clipboard");
+		expect(mocks.command).toHaveBeenCalledWith("wl-copy", [], { input: "hello", timeoutMs: 5000 });
+		expect(osc52Writes).toHaveLength(0);
+	});
+	test("X11 primary target uses xclip -selection primary and xsel --primary", async () => {
+		mocks.platform.mockReturnValue("linux");
+		vi.stubEnv("DISPLAY", ":0");
+		mocks.command.mockImplementation(async (name) => (name === "xsel" ? Buffer.alloc(0) : undefined));
+		await copyToClipboard("hello", "primary");
+		expect(mocks.command.mock.calls.map(([name, args]) => [name, args])).toEqual([
+			["xclip", ["-selection", "primary"]],
+			["xsel", ["--primary", "--input"]],
+		]);
+		expect(osc52Writes).toHaveLength(0);
+	});
+	test("X11 clipboard target uses xclip -selection clipboard (default)", async () => {
+		mocks.platform.mockReturnValue("linux");
+		vi.stubEnv("DISPLAY", ":0");
+		await copyToClipboard("hello");
+		expect(mocks.command).toHaveBeenCalledWith("xclip", ["-selection", "clipboard"], {
+			input: "hello",
+			timeoutMs: 5000,
+		});
+		expect(osc52Writes).toHaveLength(0);
+	});
 	test("local Linux failure does not report an unverified OSC 52 write as success", async () => {
 		// Regression test for #9618.
 		mocks.platform.mockReturnValue("linux");

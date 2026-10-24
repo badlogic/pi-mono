@@ -628,6 +628,7 @@ export class InteractiveMode {
 			terminal: options.terminal,
 			onRightClickPaste: this.onRightClickPaste,
 			fullscreenCopyOnSelect: this.settingsManager.getFullscreenCopyOnSelect(),
+			fullscreenCopyTarget: this.settingsManager.getFullscreenCopyTarget(),
 			fullscreenWheelScrollLines: this.settingsManager.getFullscreenWheelScrollLines(),
 		});
 		this.ui = createInteractiveTuiReference(() => this.renderer);
@@ -916,6 +917,7 @@ export class InteractiveMode {
 			terminal,
 			onRightClickPaste: this.onRightClickPaste,
 			fullscreenCopyOnSelect: this.settingsManager.getFullscreenCopyOnSelect(),
+			fullscreenCopyTarget: this.settingsManager.getFullscreenCopyTarget(),
 			fullscreenWheelScrollLines: this.settingsManager.getFullscreenWheelScrollLines(),
 		});
 		nextUi.setClearOnShrink(clearOnShrink);
@@ -4946,6 +4948,7 @@ export class InteractiveMode {
 					fullscreenExitOutput: this.settingsManager.getFullscreenExitOutput(),
 					fullscreenScrollbar: this.settingsManager.getFullscreenScrollbar(),
 					fullscreenCopyOnSelect: this.settingsManager.getFullscreenCopyOnSelect(),
+					fullscreenCopyTarget: this.settingsManager.getFullscreenCopyTarget(),
 					fullscreenWheelScrollLines: this.settingsManager.getFullscreenWheelScrollLines(),
 					warnings: this.settingsManager.getWarnings(),
 				},
@@ -5120,6 +5123,9 @@ export class InteractiveMode {
 					onFullscreenCopyOnSelectChange: (enabled) => {
 						this.settingsManager.setFullscreenCopyOnSelect(enabled);
 						if (this.renderer instanceof TuiAltScreen) this.renderer.setCopyOnSelect(enabled);
+					},
+					onFullscreenCopyTargetChange: (target) => {
+						this.settingsManager.setFullscreenCopyTarget(target);
 					},
 					onFullscreenWheelScrollLinesChange: (lines) => {
 						this.settingsManager.setFullscreenWheelScrollLines(lines);

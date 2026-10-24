@@ -99,6 +99,7 @@ export interface SettingsConfig {
 	fullscreenExitOutput: FullscreenExitOutput;
 	fullscreenScrollbar: ScrollViewScrollbar;
 	fullscreenCopyOnSelect: boolean;
+	fullscreenCopyTarget: "clipboard" | "primary";
 	fullscreenWheelScrollLines: WheelScrollLines;
 	warnings: WarningSettings;
 }
@@ -139,6 +140,7 @@ export interface SettingsCallbacks {
 	onFullscreenExitOutputChange: (output: FullscreenExitOutput) => void;
 	onFullscreenScrollbarChange: (mode: ScrollViewScrollbar) => void;
 	onFullscreenCopyOnSelectChange: (enabled: boolean) => void;
+	onFullscreenCopyTargetChange: (target: "clipboard" | "primary") => void;
 	onFullscreenWheelScrollLinesChange: (lines: WheelScrollLines) => void;
 	onWarningsChange: (warnings: WarningSettings) => void;
 	onCancel: () => void;
@@ -744,6 +746,14 @@ export class SettingsSelectorComponent extends Container {
 				values: ["true", "false"],
 			},
 			{
+				id: "fullscreen-copy-target",
+				label: "Fullscreen copy target",
+				description:
+					"Clipboard target for copy-on-select; `primary` uses the selection buffer (middle-click paste)",
+				currentValue: config.fullscreenCopyTarget,
+				values: ["clipboard", "primary"],
+			},
+			{
 				id: "fullscreen-wheel-scroll-lines",
 				label: "Fullscreen wheel scrolling",
 				description:
@@ -986,6 +996,9 @@ export class SettingsSelectorComponent extends Container {
 						break;
 					case "fullscreen-copy-on-select":
 						callbacks.onFullscreenCopyOnSelectChange(newValue === "true");
+						break;
+					case "fullscreen-copy-target":
+						callbacks.onFullscreenCopyTargetChange(newValue as "clipboard" | "primary");
 						break;
 					case "fullscreen-wheel-scroll-lines":
 						callbacks.onFullscreenWheelScrollLinesChange(newValue === "auto" ? "auto" : parseInt(newValue, 10));

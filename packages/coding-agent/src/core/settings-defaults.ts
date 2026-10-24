@@ -63,5 +63,6 @@ export const SETTINGS_DEFAULTS = {
 	fullscreenExitOutput: "transcript",
 	fullscreenScrollbar: "auto",
 	fullscreenCopyOnSelect: true,
+	fullscreenCopyTarget: "clipboard",
 	fullscreenWheelScrollLines: "auto",
 } as const;

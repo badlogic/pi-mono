@@ -12,6 +12,7 @@ export interface InteractiveTuiOptions {
 	readonly terminal?: Terminal;
 	readonly onRightClickPaste?: () => void;
 	readonly fullscreenCopyOnSelect?: boolean;
+	readonly fullscreenCopyTarget?: "clipboard" | "primary";
 	readonly fullscreenWheelScrollLines?: WheelScrollLines;
 }
 
@@ -38,7 +39,7 @@ export function createInteractiveTui(options: InteractiveTuiOptions): TuiMainScr
 			wheelScrollLines: options.fullscreenWheelScrollLines ?? "auto",
 			copySelection: async (text) => {
 				try {
-					await copyToClipboard(text);
+					await copyToClipboard(text, options.fullscreenCopyTarget);
 					return true;
 				} catch (error) {
 					return error instanceof Error ? error.message : String(error);

@@ -1296,6 +1296,16 @@ export class SettingsManager {
 		this.save();
 	}
 
+	getFullscreenCopyTarget(): "clipboard" | "primary" {
+		return this.settings.fullscreenCopyTarget ?? SETTINGS_DEFAULTS.fullscreenCopyTarget;
+	}
+
+	setFullscreenCopyTarget(target: "clipboard" | "primary"): void {
+		this.globalSettings.fullscreenCopyTarget = target;
+		this.markModified("fullscreenCopyTarget");
+		this.save();
+	}
+
 	getFullscreenWheelScrollLines(): WheelScrollLines {
 		const lines = this.settings.fullscreenWheelScrollLines;
 		return typeof lines === "number" && Number.isFinite(lines)

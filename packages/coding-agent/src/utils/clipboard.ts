@@ -83,7 +83,7 @@ export async function readClipboardFilePaths(): Promise<string[] | null> {
 	return paths?.length ? paths : null;
 }
 
-export async function copyToClipboard(text: string): Promise<void> {
+export async function copyToClipboard(text: string, target?: "clipboard" | "primary"): Promise<void> {
 	const p = platform();
 	const env = process.env;
 	let copied = false;
@@ -106,9 +106,10 @@ export async function copyToClipboard(text: string): Promise<void> {
 		else if (p === "win32") commands.push(["clip", []]);
 		else {
 			if (env.TERMUX_VERSION) commands.push(["termux-clipboard-set", []]);
-			if (env.WAYLAND_DISPLAY) commands.push(["wl-copy", []]);
+			if (env.WAYLAND_DISPLAY) commands.push(["wl-copy", target === "primary" ? ["-p"] : []]);
 			if (env.DISPLAY) {
-				commands.push(["xclip", ["-selection", "clipboard"]], ["xsel", ["--clipboard", "--input"]]);
+				const sel = target === "primary" ? "primary" : "clipboard";
+				commands.push(["xclip", ["-selection", sel]], ["xsel", [`--${sel}`, "--input"]]);
 			}
 		}
 		for (const [command, args] of commands) {
