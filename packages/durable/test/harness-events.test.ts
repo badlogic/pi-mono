@@ -1,3 +1,5 @@
+import { getHeapStatistics, setFlagsFromString } from "node:v8";
+import { runInNewContext } from "node:vm";
 import type { Draft } from "@earendil-works/chord";
 import {
 	type AssistantMessage,
@@ -619,4 +621,91 @@ describe("agent events", () => {
 		await stream.stop();
 		await harness.close(context);
 	});
+});
+
+const gc = (() => {
+	setFlagsFromString("--expose-gc");
+	return runInNewContext("gc") as () => void;
+})();
+
+/** Heap bytes in use after a full collection. */
+async function heapInUse(): Promise<number> {
+	for (let round = 0; round < 3; round++) {
+		await drained();
+		gc();
+	}
+	return getHeapStatistics().used_heap_size;
+}
+
+// #9265
+describe("streamed partials", () => {
+	it("streams a tool-call partial as toolcall_delta appends at its argument paths", async () => {
+		const setup = chatSetup({ tokensPerSecond: 500, tokenSize: { min: 1, max: 1 } });
+		setup.settings.progress = { partialIntervalMs: 20, outputIntervalMs: 100 };
+		const args = { path: "src/file.ts", content: "const a = 1;\n".repeat(150) };
+		setup.faux.setResponses([
+			fauxAssistantMessage([fauxToolCall("missing", args, { id: "c1" })], { stopReason: "toolUse" }),
+			fauxAssistantMessage([fauxText("done")]),
+		]);
+		const { harness, root } = await openChat(new MemoryStorage(), setup);
+		const partials = partialsOf(harness);
+		const { stream, events } = await listen(harness, root);
+		await (await root.submit({ type: "input", content: "go" }, context)).wait(context);
+		await drained();
+		const changes = events().flatMap((event) => (event.type === "message_update" ? event.changes : []));
+		const deltas = changes.filter((change) => change.type === "toolcall_delta");
+		expect(deltas.length).toBeGreaterThan(10);
+		expect(deltas.every((change) => ["path", "content"].includes(String(change.path)))).toBe(true);
+		// The call is resent whole only when a member appears (at most once per argument); growing strings are appends.
+		// With the raw argument text on the block, every commit resent the whole call.
+		expect(changes.filter((change) => change.type === "message")).toEqual([]);
+		expect(changes.filter((change) => change.type === "block").length).toBeLessThanOrEqual(2);
+		// The committed partials carry only the parsed arguments, never the raw argument text.
+		for (const partial of partials) {
+			for (const block of partial.content) {
+				expect(Object.keys(block).sort()).toEqual(["arguments", "id", "name", "type"]);
+			}
+		}
+		await stream.stop();
+		await harness.close(context);
+	});
+
+	it("keeps a watcher's memory proportional to a long streamed text and tool call, not to their commits", async () => {
+		const setup = chatSetup({ tokensPerSecond: 16_000, tokenSize: { min: 16, max: 16 } });
+		setup.settings.progress = { partialIntervalMs: 1, outputIntervalMs: 100 };
+		const line = (index: number) => `line ${index}: some streamed source text with "quotes" and \\ escapes\n`;
+		const text = Array.from({ length: 2_000 }, (_, index) => line(index)).join("");
+		const content = Array.from({ length: 2_000 }, (_, index) => line(index)).join("");
+		setup.faux.setResponses([
+			fauxAssistantMessage([fauxText(text), fauxToolCall("missing", { path: "a.ts", content }, { id: "c1" })], {
+				stopReason: "toolUse",
+			}),
+			fauxAssistantMessage([fauxText("done")]),
+		]);
+		const { harness, root } = await openChat(new MemoryStorage(), setup);
+		const { stream, batches } = await listen(harness, root);
+		const before = await heapInUse();
+		const submission = await root.submit({ type: "input", content: "go" }, context);
+		const partialContent = async () =>
+			(await harness.snapshot(LiveDoc, root.id, context))?.generation?.message?.content;
+		const shown = async (index: number): Promise<number> => {
+			const block = (await partialContent())?.[index];
+			if (block?.type === "text") return block.text.length;
+			return block?.type === "toolCall" ? String(block.arguments.content ?? "").length : 0;
+		};
+		const retained: number[] = [];
+		// Measure while the text, then the tool call, is almost complete: the watcher's view holds the most then.
+		await waitFor(async () => (await shown(0)) > text.length * 0.95, 30_000);
+		retained.push((await heapInUse()) - before);
+		await waitFor(async () => (await shown(1)) > content.length * 0.95, 30_000);
+		retained.push((await heapInUse()) - before);
+		await submission.wait(context);
+		const commits = batches.length;
+		expect(commits).toBeGreaterThan(500);
+		// The two 140 KB strings, the watcher's recorded batches and the rest of the stream: about 3 MB. Sliced append ops
+		// made the watcher's view hold a copy of the text per commit: well over 100 MB.
+		for (const bytes of retained) expect(bytes).toBeLessThan(20_000_000);
+		await stream.stop();
+		await harness.close(context);
+	}, 60_000);
 });

@@ -2,7 +2,15 @@ import type { JsonValue } from "../json.ts";
 import { copyJson } from "../json.ts";
 import { applyImmutableTrusted } from "./apply-immutable-trusted.ts";
 import type { Draft } from "./draft.ts";
-import { applyImmutable, type NonEmptyPath, type Op, overlap, type Path, RESERVED_SEGMENTS } from "./index.ts";
+import {
+	applyImmutable,
+	type NonEmptyPath,
+	type Op,
+	overlap,
+	ownedSlice,
+	type Path,
+	RESERVED_SEGMENTS,
+} from "./index.ts";
 
 export type { Draft, JsonValue, Op };
 
@@ -2045,16 +2053,17 @@ function emitChangedValue(
 	if (!isContainer(after) && before === after) return false;
 	if (isContainer(before) && isContainer(after) && equalTrustedJson(before, after)) return false;
 	if (typeof before === "string" && typeof after === "string") {
-		// Slice/equality stays on V8's rope fast path; startsWith scans the entire
-		// accumulated prefix on every append.
+		// O(length): any slice of a rope makes V8 flatten all of it, so this prefix check copies the whole string once per
+		// change, even when the writer only appended. The op text gets a copy of its own, so it does not keep the whole
+		// of `after` alive.
 		if (after.length > before.length && after.slice(0, before.length) === before) {
-			operations.push(["a", path, after.slice(before.length)]);
+			operations.push(["a", path, ownedSlice(after, before.length)]);
 			return true;
 		}
 		const shared = overlap(before, after, 65_536);
 		if (shared > 0) {
 			operations.push(["t", path, before.length - shared]);
-			if (after.length > shared) operations.push(["a", path, after.slice(shared)]);
+			if (after.length > shared) operations.push(["a", path, ownedSlice(after, shared)]);
 			return true;
 		}
 	}

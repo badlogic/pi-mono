@@ -109,6 +109,16 @@ export function overlap(a: string, b: string, scan: number, probe = 64, maxCandi
 	return 0;
 }
 
+/**
+ * `text.slice(start, end)` as a string of its own. V8 represents a slice of 13 or more characters as a view that keeps
+ * all of `text` alive, so an append op cut from a long, growing string would retain that whole string for as long as
+ * the op lives: in a delta chain, a watch backlog, or a value built by applying the op. Appending a character and
+ * slicing it off again makes V8 copy just the slice.
+ */
+export function ownedSlice(text: string, start: number, end = text.length): string {
+	return `${text.slice(start, end)} `.slice(0, -1);
+}
+
 // ─── Immutable revision tracking ─────────────────────────────────────────────
 
 export { diffRevisions } from "./diff.ts";
