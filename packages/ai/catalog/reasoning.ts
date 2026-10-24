@@ -1,12 +1,5 @@
 import type { ThinkingLevel, ThinkingLevelMap } from "../src/types.ts";
-
-export type ModelsDevReasoningOption =
-	| { type: "toggle" }
-	| {
-			type: "effort";
-			values: Array<"none" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max" | "default" | null>;
-	  }
-	| { type: "budget_tokens"; min?: number; max?: number };
+import type { ModelsDevReasoningOption } from "./sources/models-dev.ts";
 
 const THINKING_LEVELS: readonly ThinkingLevel[] = ["minimal", "low", "medium", "high", "xhigh", "max"];
 
