@@ -1,4 +1,4 @@
-import { getHeapStatistics, setFlagsFromString } from "node:v8";
+import { GCProfiler, getHeapStatistics, setFlagsFromString } from "node:v8";
 import { runInNewContext } from "node:vm";
 import type { Draft } from "@earendil-works/chord";
 import {
@@ -628,6 +628,21 @@ const gc = (() => {
 	return runInNewContext("gc") as () => void;
 })();
 
+/** Bytes `run` allocates, counting what collections during it freed. */
+async function allocatedBytes(run: () => Promise<void>): Promise<number> {
+	gc();
+	const profiler = new GCProfiler();
+	profiler.start();
+	const before = getHeapStatistics().used_heap_size;
+	await run();
+	const after = getHeapStatistics().used_heap_size;
+	let freed = 0;
+	for (const collection of profiler.stop().statistics) {
+		freed += collection.beforeGC.heapStatistics.usedHeapSize - collection.afterGC.heapStatistics.usedHeapSize;
+	}
+	return after - before + freed;
+}
+
 /** Heap bytes in use after a full collection. */
 async function heapInUse(): Promise<number> {
 	for (let round = 0; round < 3; round++) {
@@ -669,6 +684,37 @@ describe("streamed partials", () => {
 		await stream.stop();
 		await harness.close(context);
 	});
+
+	it("commits a growing text and tool call at a cost that follows the new text, not the string lengths", async () => {
+		/** Bytes allocated while streaming one answer of `size` characters of text and as much tool-call content. */
+		const stream = async (size: number) => {
+			const setup = chatSetup({ tokensPerSecond: 64_000, tokenSize: { min: 64, max: 64 } });
+			setup.settings.progress = { partialIntervalMs: 1, outputIntervalMs: 100 };
+			const text = 'streamed text with "quotes" and \\ escapes\n'.repeat(size / 40);
+			setup.faux.setResponses([
+				fauxAssistantMessage(
+					[fauxText(text), fauxToolCall("missing", { path: "a.ts", content: text }, { id: "c1" })],
+					{
+						stopReason: "toolUse",
+					},
+				),
+				fauxAssistantMessage([fauxText("done")]),
+			]);
+			const { harness, root } = await openChat(new MemoryStorage(), setup);
+			let commits = 0;
+			harness.subscribeCommits(() => commits++);
+			const bytes = await allocatedBytes(async () => {
+				await (await root.submit({ type: "input", content: "go" }, context)).wait(context);
+			});
+			await harness.close(context);
+			return { bytes, commits };
+		};
+		const small = await stream(40_000);
+		const large = await stream(400_000);
+		expect(large.commits).toBeGreaterThan(small.commits * 5);
+		// Per commit, the cost stays flat: comparing the whole strings on every commit made it grow with their length.
+		expect(large.bytes / large.commits / (small.bytes / small.commits)).toBeLessThan(2);
+	}, 60_000);
 
 	it("keeps a watcher's memory proportional to a long streamed text and tool call, not to their commits", async () => {
 		const setup = chatSetup({ tokensPerSecond: 16_000, tokenSize: { min: 16, max: 16 } });

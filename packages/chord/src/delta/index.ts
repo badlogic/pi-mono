@@ -123,7 +123,7 @@ export function ownedSlice(text: string, start: number, end = text.length): stri
 
 export { diffRevisions } from "./diff.ts";
 export type { Draft } from "./draft.ts";
-export { type Change, type Prepared, type Tracker, track } from "./tracker.ts";
+export { appendText, type Change, type Prepared, type StringKeys, type Tracker, track } from "./tracker.ts";
 
 // ─── Path safety ─────────────────────────────────────────────────────────────
 

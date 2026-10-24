@@ -22,6 +22,7 @@
 - Fixed a conversation watcher (`watchEvents()`, conversation views) holding a copy of a streamed text or tool call per partial commit, through Chord append ops that kept the whole string alive; a 140 KB answer followed by a 140 KB tool call held well over 100 MB ([#9265](https://github.com/earendil-works/pi/issues/9265))
 - Fixed a nested call's error summary keeping the call's whole output alive through a slice of it ([#9265](https://github.com/earendil-works/pi/issues/9265))
 - Fixed task span error messages and codemode call previews keeping the whole text they were cut from alive ([#9265](https://github.com/earendil-works/pi/issues/9265))
+- Fixed partial commits of a streamed answer copying every growing text, thinking and tool-call argument string in full on each commit (about 20 s of CPU and a 100 MB heap peak for a 500 KB tool call): they now append new text with Chord's `appendText()`, and apply the argument changes of their own parse of the streamed argument text ([#9265](https://github.com/earendil-works/pi/issues/9265))
 
 ## [1.4.0] - 2026-10-21
 

@@ -14,6 +14,7 @@
 - `Watchable<T>`: a value that changes and can be watched (`value`, `watch(context)` returning a `WatchHandle<T>`), the common interface of documents, derives and other observable values.
 - `NativeWatchHandle<T>` and its implementation `NativeWatch<T>`: the same lifecycle for in-process values, with listener `(value, context)` and no ops; an overflow collapses to the newest value.
 - `ownedSlice(text, start, end?)` in `@earendil-works/chord/delta`: a slice of a string that does not keep the whole string alive ([#9265](https://github.com/earendil-works/pi/issues/9265))
+- `appendText(draft, key, text)` in `@earendil-works/chord/delta`: append to a string in a draft at O(text) cost, recorded as an append op without comparing the old and new strings (a plain `draft[key] += text` makes `prepare()` read the whole string, O(length) per change); `StringKeys<T>` names the keys it accepts ([#9265](https://github.com/earendil-works/pi/issues/9265))
 
 ### Fixed
 

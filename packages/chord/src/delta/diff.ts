@@ -60,7 +60,8 @@ const permutation = (before: readonly JsonValue[], after: readonly JsonValue[]):
 	return result;
 };
 
-// O(length): comparing two revisions reads both strings, and slicing a rope makes V8 flatten all of it.
+// O(length): comparing two revisions reads both strings, and slicing a rope makes V8 flatten all of it. A writer that
+// knows what it appended records it with appendText() instead of diffing.
 const emitString = (before: string, after: string, path: NonEmptyPath, operations: Op[]): void => {
 	if (before === after) return;
 	if (after.length > before.length && after.slice(0, before.length) === before) {
