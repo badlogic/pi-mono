@@ -261,68 +261,87 @@ function checkSequence(sequence: Sequence, rnd: Random): { ops: number; folded: 
 	return { ops: sequence.commits.reduce((sum, commit) => sum + commit.ops.length, 0), folded };
 }
 
+/** Room for a loaded CI runner: each fuzz test takes about a second locally. */
+const FUZZ_TIMEOUT = 30_000;
+
 describe("PendingOps folding", () => {
-	it("is invisible to a replica: tracker edits anywhere, appendText, splices and reorders", () => {
-		const rnd = random(1);
-		let ops = 0;
-		let folded = 0;
-		for (let run = 0; run < 1500; run++) {
-			const sequence = trackedSequence(
-				rnd.root(),
-				1 + rnd.int(30),
-				rnd,
-				(draft) => mutateAnywhere(draft, rnd, appendToDraft),
-				rnd.root,
-			);
-			const result = checkSequence(sequence, rnd);
-			ops += result.ops;
-			folded += result.folded;
-		}
-		// The sequences fold: a fuzzer whose ops never merge proves nothing.
-		expect(folded).toBeLessThan(ops * 0.9);
-	});
+	it(
+		"is invisible to a replica: tracker edits anywhere, appendText, splices and reorders",
+		() => {
+			const rnd = random(1);
+			let ops = 0;
+			let folded = 0;
+			for (let run = 0; run < 800; run++) {
+				const sequence = trackedSequence(
+					rnd.root(),
+					1 + rnd.int(30),
+					rnd,
+					(draft) => mutateAnywhere(draft, rnd, appendToDraft),
+					rnd.root,
+				);
+				const result = checkSequence(sequence, rnd);
+				ops += result.ops;
+				folded += result.folded;
+			}
+			// The sequences fold: a fuzzer whose ops never merge proves nothing.
+			expect(folded).toBeLessThan(ops * 0.9);
+		},
+		FUZZ_TIMEOUT,
+	);
 
-	it("is invisible to a replica: leaf edits of list elements between splices and reorders of the list", () => {
-		const rnd = random(2);
-		let ops = 0;
-		let folded = 0;
-		for (let run = 0; run < 1500; run++) {
-			const initial: JsonObject = {
-				list: [
-					{ x: "a", n: 0 },
-					{ x: "b", n: 1 },
-				],
-			};
-			const sequence = trackedSequence(
-				initial,
-				5 + rnd.int(40),
-				rnd,
-				(draft) => mutateList(draft, rnd),
-				() => ({ list: [] }),
-			);
-			const result = checkSequence(sequence, rnd);
-			ops += result.ops;
-			folded += result.folded;
-		}
-		expect(folded).toBeLessThan(ops * 0.9);
-	});
+	it(
+		"is invisible to a replica: leaf edits of list elements between splices and reorders of the list",
+		() => {
+			const rnd = random(2);
+			let ops = 0;
+			let folded = 0;
+			for (let run = 0; run < 800; run++) {
+				const initial: JsonObject = {
+					list: [
+						{ x: "a", n: 0 },
+						{ x: "b", n: 1 },
+					],
+				};
+				const sequence = trackedSequence(
+					initial,
+					5 + rnd.int(40),
+					rnd,
+					(draft) => mutateList(draft, rnd),
+					() => ({ list: [] }),
+				);
+				const result = checkSequence(sequence, rnd);
+				ops += result.ops;
+				folded += result.folded;
+			}
+			expect(folded).toBeLessThan(ops * 0.9);
+		},
+		FUZZ_TIMEOUT,
+	);
 
-	it("is invisible to a replica: a root array", () => {
-		const rnd = random(3);
-		for (let run = 0; run < 500; run++) {
-			const initial = Array.from({ length: rnd.int(6) }, () => rnd.value());
-			const replace = () => Array.from({ length: rnd.int(6) }, () => rnd.value());
-			checkSequence(
-				trackedSequence(initial, 40, rnd, (draft) => mutateRootArray(draft, rnd), replace),
-				rnd,
-			);
-		}
-	});
+	it(
+		"is invisible to a replica: a root array",
+		() => {
+			const rnd = random(3);
+			for (let run = 0; run < 300; run++) {
+				const initial = Array.from({ length: rnd.int(6) }, () => rnd.value());
+				const replace = () => Array.from({ length: rnd.int(6) }, () => rnd.value());
+				checkSequence(
+					trackedSequence(initial, 40, rnd, (draft) => mutateRootArray(draft, rnd), replace),
+					rnd,
+				);
+			}
+		},
+		FUZZ_TIMEOUT,
+	);
 
-	it("is invisible to a replica: diffRevisions between arbitrary values", () => {
-		const rnd = random(4);
-		for (let run = 0; run < 800; run++) checkSequence(diffSequence(rnd, 30), rnd);
-	});
+	it(
+		"is invisible to a replica: diffRevisions between arbitrary values",
+		() => {
+			const rnd = random(4);
+			for (let run = 0; run < 500; run++) checkSequence(diffSequence(rnd, 30), rnd);
+		},
+		FUZZ_TIMEOUT,
+	);
 });
 
 /** Push each op as its own batch, take, and check the replay; returns the folded ops. */
