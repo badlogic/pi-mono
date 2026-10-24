@@ -349,7 +349,11 @@ const KIMI_K3_OPENAI_COMPAT: OpenAICompletionsCompat = {
 	thinkingFormat: "openai",
 	supportsReasoningEffort: true,
 };
-const OPENROUTER_KIMI_K3_MODEL_IDS = new Set(["moonshotai/kimi-k3", "~moonshotai/kimi-latest"]);
+// Kimi K3 and its point releases (kimi-k3.1-pro, kimi-k3.1-pro-highspeed) share K3's request
+// format. https://api.moonshot.ai/v1/models reports effort levels and dynamic tool loading for all.
+function isKimiK3FamilyId(modelId: string): boolean {
+	return /^kimi-k3(?:\.\d+)?(?:-|$)/.test(modelId);
+}
 
 const ANT_LING_RING_THINKING_LEVEL_MAP = {
 	off: null,
@@ -928,9 +932,9 @@ function applyOpenAIToolSearchMetadata(model: Model<Api>): void {
 function applyOpenAICompletionsTranscriptMetadata(model: Model<Api>): void {
 	if (model.api !== "openai-completions") return;
 	const isKimiK3 =
-		(model.provider.startsWith("moonshot") && model.id === "kimi-k3") ||
+		(model.provider.startsWith("moonshot") && isKimiK3FamilyId(model.id)) ||
 		(model.provider === "fireworks" && model.id.includes("kimi-k3")) ||
-		((model.provider === "opencode" || model.provider === "opencode-go") && model.id === "kimi-k3");
+		((model.provider === "opencode" || model.provider === "opencode-go") && isKimiK3FamilyId(model.id));
 	const isMoonshotKimiK2 =
 		model.provider.startsWith("moonshot") &&
 		(model.id === "kimi-k2.6" || model.id === "kimi-k2.7-code" || model.id === "kimi-k2.7-code-highspeed");
@@ -1763,13 +1767,12 @@ function processFireworksModels(provider: ModelsDevProvider | undefined): Model<
 // equivalent Moonshot API rates to estimate the value of subscription usage.
 const KIMI_CODING_IMPLIED_COSTS: Record<string, Model<Api>["cost"]> = {
 	k3: KIMI_K3_COST,
+	"k3-256k": KIMI_K3_COST,
+	"k3.1-pro": { input: 2, output: 10, cacheRead: 0.2, cacheWrite: 0 },
+	"k3.1-pro-highspeed": { input: 4, output: 20, cacheRead: 0.2, cacheWrite: 0 },
 	"kimi-for-coding": { input: 0.95, output: 4, cacheRead: 0.19, cacheWrite: 0 },
 	"kimi-for-coding-highspeed": { input: 1.9, output: 8, cacheRead: 0.38, cacheWrite: 0 },
 };
-// Models whose https://api.kimi.com/coding/v1/models entry reports effort levels and
-// dynamic tool loading (tools declared in later system messages). Highspeed reports
-// neither and rejects tool-bearing system messages with a 400.
-const KIMI_CODING_K3_STYLE_MODEL_IDS = new Set(["k3", "k3-256k", "kimi-for-coding"]);
 
 // Kimi Coding uses Chat Completions, the same protocol as the official Kimi Code client.
 function createKimiCodingModels(kimiModels: Record<string, ModelsDevModel>): Model<"openai-completions">[] {
@@ -1777,7 +1780,11 @@ function createKimiCodingModels(kimiModels: Record<string, ModelsDevModel>): Mod
 	for (const [modelId, m] of Object.entries(kimiModels)) {
 		if (m.tool_call !== true) continue;
 
-		const isK3Style = KIMI_CODING_K3_STYLE_MODEL_IDS.has(modelId);
+		// K3-style models report effort levels and dynamic tool loading (tools declared in
+		// later system messages) in https://api.kimi.com/coding/v1/models; models.dev mirrors
+		// the effort levels. kimi-for-coding-highspeed reports neither and rejects
+		// tool-bearing system messages with a 400.
+		const isK3Style = m.reasoning_options?.some((option) => option.type === "effort") === true;
 		const impliedCost = KIMI_CODING_IMPLIED_COSTS[modelId];
 		// K3-style models send reasoning_effort, so expose the effort values models.dev lists.
 		const effortLevels = isK3Style && m.reasoning_options ? getEffortThinkingLevelMap(m.reasoning_options) : undefined;
@@ -2440,7 +2447,7 @@ async function loadModelsDevData(): Promise<Model<any>[]> {
 			for (const [modelId, m] of Object.entries(moonshotModels[key])) {
 				if (m.tool_call !== true) continue;
 
-				const isKimiK3 = modelId === "kimi-k3";
+				const isKimiK3 = isKimiK3FamilyId(modelId);
 				const compat = { ...(isKimiK3 ? KIMI_K3_OPENAI_COMPAT : KIMI_OPENAI_COMPAT) };
 				models.push({
 					id: modelId,
@@ -2451,14 +2458,15 @@ async function loadModelsDevData(): Promise<Model<any>[]> {
 					reasoning: isKimiK3 || m.reasoning === true,
 					input: m.modalities?.input?.includes("image") ? ["text", "image"] : ["text"],
 					// Moonshot does not bill cache writes; models.dev lists the input rate as cache_write for Kimi K3.
-					cost: isKimiK3
-						? { ...KIMI_K3_COST }
-						: {
-								input: m.cost?.input || 0,
-								output: m.cost?.output || 0,
-								cacheRead: m.cost?.cache_read || 0,
-								cacheWrite: m.cost?.cache_write || 0,
-							},
+					cost:
+						modelId === "kimi-k3"
+							? { ...KIMI_K3_COST }
+							: {
+									input: m.cost?.input || 0,
+									output: m.cost?.output || 0,
+									cacheRead: m.cost?.cache_read || 0,
+									cacheWrite: isKimiK3 ? 0 : m.cost?.cache_write || 0,
+								},
 					contextWindow: m.limit?.context || 4096,
 					maxTokens: m.limit?.output || 4096,
 					compat,
@@ -2906,8 +2914,10 @@ async function generateModels() {
 		}
 		// Keep Kimi K3's canonical output limit when gateway metadata is missing or incorrect.
 		if (
-			(candidate.provider === "openrouter" && OPENROUTER_KIMI_K3_MODEL_IDS.has(candidate.id)) ||
-			(candidate.provider === "vercel-ai-gateway" && candidate.id === "moonshotai/kimi-k3")
+			(candidate.provider === "openrouter" && candidate.id === "~moonshotai/kimi-latest") ||
+			((candidate.provider === "openrouter" || candidate.provider === "vercel-ai-gateway") &&
+				candidate.id.startsWith("moonshotai/") &&
+				isKimiK3FamilyId(candidate.id.slice("moonshotai/".length)))
 		) {
 			candidate.maxTokens = KIMI_K3_MAX_TOKENS;
 		}
