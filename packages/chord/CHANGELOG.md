@@ -17,6 +17,10 @@
 - `ownedSlice(text, start, end?)` in `@earendil-works/chord/delta`: a slice of a string that does not keep the whole string alive ([#9265](https://github.com/earendil-works/pi/issues/9265))
 - `appendText(draft, key, text)` in `@earendil-works/chord/delta`: append to a string in a draft at O(text) cost, recorded as an append op without comparing the old and new strings (a plain `draft[key] += text` makes `prepare()` read the whole string, O(length) per change); `StringKeys<T>` names the keys it accepts ([#9265](https://github.com/earendil-works/pi/issues/9265))
 
+### Changed
+
+- `applyImmutable()`, `applyImmutableBatches()` and tracker revisions copy each container on a changed path with spread (or `Object.assign()` onto a null-prototype object) instead of one `Object.defineProperty()` per key, about 25 times faster per container ([#9265](https://github.com/earendil-works/pi/issues/9265))
+
 ### Fixed
 
 - Fixed append ops from the delta tracker and `diffRevisions()` keeping the whole string they were cut from alive (V8 represents a slice as a view of its source), so a delta chain, a watch backlog or a replica built from appends to a growing text held one copy of the text per commit ([#9265](https://github.com/earendil-works/pi/issues/9265))
