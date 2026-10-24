@@ -98,6 +98,10 @@ jobs:
             system: aarch64-linux
           - runner: macos-latest
             system: aarch64-darwin
+          # GitHub offers no smaller Intel macOS runners; larger runners are
+          # free for public repositories.
+          - runner: macos-15-large
+            system: x86_64-darwin
     runs-on: ${{ matrix.runner }}
     permissions:
       contents: read
@@ -124,6 +128,13 @@ jobs:
 
       - name: Build
         run: nix build -L .
+
+      - name: Checks
+        run: |
+          nix build -L \
+            .#checks.${{ matrix.system }}.smoke \
+            .#checks.${{ matrix.system }}.formatting \
+            .#checks.${{ matrix.system }}.repo-hygiene
 
       - name: Smoke-test
         run: |

@@ -1,5 +1,5 @@
 {
-  description = "Pi coding agent";
+  description = "A lightweight coding agent with minimal configuration, multi-provider LLM support, and an extensible architecture.";
 
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
@@ -7,7 +7,6 @@
     # nixpkgs unstable no longer supports Intel macOS. Keep using the final
     # Darwin branch that does so for pi's x86_64-darwin package.
     nixpkgs-darwin-x64.url = "github:NixOS/nixpkgs/nixpkgs-26.05-darwin";
-
   };
 
   outputs =
@@ -17,38 +16,89 @@
       nixpkgs-darwin-x64,
     }:
     let
-      systems = [
+      inherit (nixpkgs) lib;
+      inherit (lib) importJSON genAttrs getExe;
+
+      source = self;
+      packageJson = importJSON "${source}/packages/coding-agent/package.json";
+
+      platforms = [
         "aarch64-darwin"
         "aarch64-linux"
         "x86_64-darwin"
         "x86_64-linux"
       ];
-      forAllSystems = nixpkgs.lib.genAttrs systems;
-      nixpkgsFor = system: if system == "x86_64-darwin" then nixpkgs-darwin-x64 else nixpkgs;
-      packageFor =
+
+      nixpkgsFor =
+        system:
+        (if system == "x86_64-darwin" then nixpkgs-darwin-x64 else nixpkgs).legacyPackages.${system};
+
+      forAllSystems = genAttrs platforms;
+
+      piOverlay = _final: prev: {
+        biome = prev.callPackage ./nix/biome.nix {
+          inherit source;
+        };
+        pi = prev.callPackage ./nix/package.nix {
+          inherit source packageJson platforms;
+          nodejs = prev.nodejs_22;
+        };
+      };
+
+      perSystem = forAllSystems (
         system:
         let
-          pkgs = import (nixpkgsFor system) { inherit system; };
+          pkgs = (nixpkgsFor system).extend piOverlay;
+          inherit (pkgs) pi;
+          nodejs = pkgs.nodejs_22;
+          treefmtWrapper = import ./nix/treefmt.nix { inherit pkgs; };
+          devShell = import ./nix/devshell.nix { inherit pkgs nodejs treefmtWrapper; };
         in
-        pkgs.callPackage ./nix/package.nix { source = self; };
+        {
+          inherit
+            pkgs
+            pi
+            nodejs
+            devShell
+            treefmtWrapper
+            ;
+        }
+      );
     in
     {
+      checks = forAllSystems (
+        system:
+        import ./nix/checks.nix {
+          inherit (perSystem.${system})
+            pkgs
+            pi
+            nodejs
+            treefmtWrapper
+            ;
+          inherit source;
+        }
+      );
+
       packages = forAllSystems (system: {
-        default = packageFor system;
-        pi = packageFor system;
+        default = perSystem.${system}.pi;
+        pi = perSystem.${system}.pi;
       });
 
-      apps = forAllSystems (system: {
-        default = {
+      devShells = forAllSystems (system: {
+        default = perSystem.${system}.devShell;
+      });
+
+      formatter = forAllSystems (system: perSystem.${system}.treefmtWrapper);
+
+      apps = forAllSystems (system: rec {
+        default = pi;
+        pi = {
           type = "app";
-          program = "${self.packages.${system}.default}/bin/pi";
-          meta.description = "Pi coding agent";
+          program = getExe perSystem.${system}.pi;
+          meta.description = perSystem.${system}.pi.meta.description;
         };
-        pi = self.apps.${system}.default;
       });
 
-      overlays.default = final: _previous: {
-        pi = final.callPackage ./nix/package.nix { source = self; };
-      };
+      overlays.default = piOverlay;
     };
 }
