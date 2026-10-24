@@ -104,7 +104,7 @@ export class TaskGraphView {
 		});
 	}
 
-	/** A serialized exact-frame watch of the graph; cancelling `context` stops it. */
+	/** A serialized watch of the graph; cancelling `context` stops it. */
 	async watch(context: Context): Promise<TaskGraphWatch> {
 		const { observer } = await this.#attach(
 			(value, release) => new Watch<TaskGraph>(value, release, (error) => this.#session.report(error)),

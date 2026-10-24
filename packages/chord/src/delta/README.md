@@ -82,6 +82,35 @@ Parsing a separately serialized message per replica is also a valid detachment.
 `decode()` does not copy payloads, so decoding one in-memory `WireOp[]` for two
 mutable replicas makes them alias each other.
 
+## Slow consumers
+
+`PendingOps` holds the batches one consumer has not taken yet (a watch listener
+that is still running, a link whose window is full) and folds them while they
+wait, so what it hands over replays to the same value with fewer ops:
+
+```ts
+import { PendingOps } from "@earendil-works/chord/delta";
+
+const pending = new PendingOps();
+pending.push(prepared.ops); // for each adopted batch, while the consumer is busy
+// When the consumer is ready again:
+const batch = pending.take();
+const ops = batch.kind === "ops" ? batch.ops : [["r", tracker.value]];
+```
+
+- A leaf op (an append, or a set of a primitive) folds into the last pending leaf
+  op on its path: `a` + `a` join, `s` replaces `s` or `a`, an `a` after a string `s`
+  appends into it. `["a", ["text"], "he"]`, `["s", ["n"], 1]`, `["a", ["text"], "y"]`
+  becomes `["a", ["text"], "hey"]`, `["s", ["n"], 1]`.
+- Any other op (`p`, `m`, `d`, `t`, `s` of an object or array) ends folding into
+  the ops before it, as it may change what a path names; `r` drops them.
+- Past 10,000 pending ops after folding, only `replace` stays: the owner sends the
+  current value as `[["r", value]]`.
+- One batch is handed over as received; received batches and op tuples are never
+  mutated, so the same batch can feed other consumers.
+- It folds ops of the tracker, `diffRevisions()` and `appendText()`; it does not
+  validate or normalize hand-written ops.
+
 ## Do and don't
 
 - Do build a fresh root and then transfer it; validate untrusted roots at your ingestion boundary.

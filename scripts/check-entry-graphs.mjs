@@ -66,8 +66,9 @@ const BUDGETS = {
 			// (index, noop, metrics, memory) for its NOOP telemetry default; harness/telemetry.ts is Durable's schema.
 			// The Harness's request identity reaches pi-ai's utils/identity.ts and its version constant. Partial commits
 			// parse streamed tool-call arguments with pi-ai's utils/streaming-json.ts (and its json-parse.ts) to append what
-			// argument strings grew by (harness/partial-changes.ts).
-			maxFiles: 76,
+			// argument strings grew by (harness/partial-changes.ts). Chord's watches fold pending ops with Delta's
+			// pending queue (delta/pending.ts).
+			maxFiles: 77,
 			forbid: [
 				"packages/ai/src/index.ts",
 				"packages/ai/src/utils/typebox-helpers.ts",

@@ -1,7 +1,7 @@
 // Tests for Chord's watch handles: the shared lifecycle through `Watch`, and what `NativeWatch` does differently.
 import { setFlagsFromString } from "node:v8";
 import { runInNewContext } from "node:vm";
-import { describe, expect, expectTypeOf, it } from "vitest";
+import { afterEach, describe, expect, expectTypeOf, it, vi } from "vitest";
 import {
 	BACKGROUND_CONTEXT,
 	type Context,
@@ -9,7 +9,8 @@ import {
 	withAbortSignal,
 	withContextValue,
 } from "../src/context/index.ts";
-import type { Op } from "../src/delta/index.ts";
+import { applyImmutable, type Op, track } from "../src/delta/index.ts";
+import { MAX_PENDING_OPS } from "../src/delta/pending.ts";
 import type { JsonValue } from "../src/json.ts";
 import { NativeWatch, Watch, type WatchEnd } from "../src/watch.ts";
 
@@ -25,20 +26,19 @@ function deferred(): { readonly promise: Promise<void>; readonly resolve: () => 
 }
 
 /** A watch whose detach and reports are recorded. */
-function recordedWatch<T>(value: T, replace?: () => T) {
+function recordedWatch<T>(value: T) {
 	const recorded = { detached: 0, reported: [] as unknown[] };
 	const watch = new Watch<T>(
 		value,
 		() => recorded.detached++,
 		(error) => recorded.reported.push(error),
-		replace,
 	);
 	return { watch, recorded };
 }
 
-/** A started watch collecting its frames. */
-function collectingWatch<T>(value: T, replace?: () => T) {
-	const { watch, recorded } = recordedWatch(value, replace);
+/** A started watch collecting its calls. */
+function collectingWatch<T>(value: T) {
+	const { watch, recorded } = recordedWatch(value);
 	const frames: Array<{ value: T; ops: readonly Op[] }> = [];
 	watch.start(async (delivered, ops) => {
 		frames.push({ value: delivered, ops });
@@ -67,12 +67,20 @@ const collect = (() => {
 })();
 
 describe("Watch delivery", () => {
-	it("keeps the acquisition value until start and delivers exact frames in order", async () => {
-		const { watch } = recordedWatch<JsonValue>({ n: 0 });
-		watch.advance({ n: 1 }, [["s", ["n"], 1]], context);
-		watch.advance({ n: 2 }, [["s", ["n"], 2]], context);
+	it("keeps the acquisition value until start, then delivers the frames since in one call", async () => {
+		const { watch } = recordedWatch<JsonValue>({ n: 0, text: "" });
+		watch.advance({ n: 1, text: "" }, [["s", ["n"], 1]], context);
+		watch.advance(
+			{ n: 2, text: "a" },
+			[
+				["s", ["n"], 2],
+				["a", ["text"], "a"],
+			],
+			context,
+		);
+		watch.advance({ n: 2, text: "ab" }, [["a", ["text"], "b"]], context);
 		await flush();
-		expect(watch.value).toEqual({ n: 0 });
+		expect(watch.value).toEqual({ n: 0, text: "" });
 
 		const frames: Array<{ value: JsonValue; ops: readonly Op[] }> = [];
 		watch.start(async (value, ops) => {
@@ -81,10 +89,32 @@ describe("Watch delivery", () => {
 		expect(frames).toEqual([]);
 		await flush();
 		expect(frames).toEqual([
-			{ value: { n: 1 }, ops: [["s", ["n"], 1]] },
-			{ value: { n: 2 }, ops: [["s", ["n"], 2]] },
+			{
+				value: { n: 2, text: "ab" },
+				ops: [
+					["s", ["n"], 2],
+					["a", ["text"], "ab"],
+				],
+			},
 		]);
-		expect(watch.value).toEqual({ n: 2 });
+		expect(watch.value).toEqual({ n: 2, text: "ab" });
+	});
+
+	it("passes a frame's ops on by identity to a listener that keeps up", async () => {
+		const { watch } = recordedWatch<JsonValue>(0);
+		const delivered: Array<readonly Op[]> = [];
+		watch.start(async (_value, ops) => {
+			delivered.push(ops);
+		});
+		const first: readonly Op[] = [["r", 1]];
+		const second: readonly Op[] = [["r", 2]];
+		watch.advance(1, first, context);
+		await flush();
+		watch.advance(2, second, context);
+		await flush();
+		expect(delivered).toHaveLength(2);
+		expect(delivered[0]).toBe(first);
+		expect(delivered[1]).toBe(second);
 	});
 
 	it("never invokes the listener inline", async () => {
@@ -95,98 +125,159 @@ describe("Watch delivery", () => {
 		expect(frames).toEqual([{ value: 1, ops: [["r", 1]] }]);
 	});
 
-	it("awaits each callback and buffers frames advanced while one is in flight", async () => {
-		const { watch } = recordedWatch<JsonValue>(0);
+	it("awaits each callback and folds frames advanced while one is in flight into the next call", async () => {
+		const { watch } = recordedWatch<JsonValue>({ text: "" });
 		const gate = deferred();
 		const calls: string[] = [];
-		watch.start(async (value) => {
-			calls.push(`start ${value}`);
-			if (value === 1) await gate.promise;
-			calls.push(`end ${value}`);
+		const frames: Array<{ value: JsonValue; ops: readonly Op[] }> = [];
+		watch.start(async (value, ops) => {
+			calls.push(`start ${JSON.stringify(value)}`);
+			frames.push({ value, ops });
+			if (frames.length === 1) await gate.promise;
+			calls.push(`end ${JSON.stringify(value)}`);
 		});
-		watch.advance(1, [["r", 1]], context);
+		watch.advance({ text: "a" }, [["a", ["text"], "a"]], context);
 		await flush();
-		watch.advance(2, [["r", 2]], context);
-		watch.advance(3, [["r", 3]], context);
+		watch.advance({ text: "ab" }, [["a", ["text"], "b"]], context);
+		watch.advance({ text: "abc" }, [["a", ["text"], "c"]], context);
 		await flush();
-		expect(calls).toEqual(["start 1"]);
+		expect(calls).toEqual(['start {"text":"a"}']);
 		gate.resolve();
 		await flush();
-		expect(calls).toEqual(["start 1", "end 1", "start 2", "end 2", "start 3", "end 3"]);
+		expect(calls).toEqual(['start {"text":"a"}', 'end {"text":"a"}', 'start {"text":"abc"}', 'end {"text":"abc"}']);
+		expect(frames[1]).toEqual({ value: { text: "abc" }, ops: [["a", ["text"], "bc"]] });
 	});
 
-	it("delivers a context with the frame's values and without its abort signal", async () => {
+	it("delivers the newest frame's context, without its abort signal", async () => {
 		const { watch } = recordedWatch<JsonValue>(0);
 		const key = createContextKey<string>("frame");
 		const controller = new AbortController();
-		const frameContext = withContextValue(key, "first", withAbortSignal(controller.signal, context));
-		let delivered: Context | undefined;
+		const delivered: Context[] = [];
 		watch.start(async (_value, _ops, deliveryContext) => {
-			delivered = deliveryContext;
+			delivered.push(deliveryContext);
 		});
-		watch.advance(1, [["r", 1]], frameContext);
+		watch.advance(1, [["r", 1]], withContextValue(key, "first", context));
+		watch.advance(2, [["r", 2]], withContextValue(key, "second", withAbortSignal(controller.signal, context)));
 		await flush();
-		expect(delivered?.value(key)).toBe("first");
-		expect(delivered?.abortSignal).toBeUndefined();
+		expect(delivered).toHaveLength(1);
+		expect(delivered[0]?.value(key)).toBe("second");
+		expect(delivered[0]?.abortSignal).toBeUndefined();
 	});
 });
 
+describe("Watch with a slow listener", () => {
+	afterEach(() => {
+		vi.useRealTimers();
+	});
+
+	it("gets one call per batch whose ops turn the previous delivered value into the newest", async () => {
+		vi.useFakeTimers();
+		type Doc = { entries: Array<{ text: string; status: string }>; tokens: number };
+		const tracker = track<Doc>({ entries: [], tokens: 0 });
+		const { watch } = recordedWatch<Doc>(tracker.value);
+		const commit = (edit: (draft: Doc) => void): void => {
+			const change = tracker.beginChange();
+			edit(change.state as Doc);
+			const prepared = change.prepare();
+			tracker.adopt(prepared);
+			watch.advance(tracker.value, prepared.ops, context);
+		};
+		let replica: Doc = tracker.value;
+		const calls: Array<{ commits: number; ops: number }> = [];
+		let commits = 0;
+		watch.start(async (value, ops) => {
+			replica = applyImmutable(replica, ops);
+			expect(replica).toEqual(value);
+			calls.push({ commits, ops: ops.length });
+			// A listener taking a second per call, as a slow client would.
+			await new Promise((resolve) => setTimeout(resolve, 1000));
+		});
+		// Ten seconds of a streamed reply at 60 tokens per second, a new entry every second.
+		for (let tick = 0; tick < 600; tick++) {
+			if (tick % 60 === 0) commit((draft) => void draft.entries.push({ text: "", status: "streaming" }));
+			commit((draft) => {
+				draft.entries.at(-1)!.text += "tok ";
+				draft.tokens++;
+			});
+			commits++;
+			await vi.advanceTimersByTimeAsync(1000 / 60);
+		}
+		await vi.advanceTimersByTimeAsync(2000);
+		expect(replica).toEqual(tracker.value);
+		// One call per second, each carrying at most one op per path written since the previous one.
+		expect(calls.length).toBeGreaterThanOrEqual(10);
+		expect(calls.length).toBeLessThanOrEqual(12);
+		for (const call of calls) expect(call.ops).toBeLessThanOrEqual(5);
+		await watch.stop();
+	});
+});
+
+/** Advance `watch` by one frame per element of `{ k: [0, ..., count - 1] }`, each setting its own path. */
+function advanceDistinct(watch: Watch<JsonValue>, count: number): JsonValue {
+	const values: number[] = [];
+	for (let index = 0; index < count; index++) {
+		values.push(index);
+		watch.advance({ k: [...values] }, [["s", ["k", index], index]], context);
+	}
+	return { k: values };
+}
+
 describe("Watch overflow", () => {
-	it("collapses 101 pending frames to one root replacement of the newest value", async () => {
-		const { watch } = recordedWatch<JsonValue>(0);
-		for (let n = 1; n <= 101; n++) watch.advance(n, [["r", n]], context);
-		const frames: Array<{ value: JsonValue; ops: readonly Op[] }> = [];
-		watch.start(async (value, ops) => {
-			frames.push({ value, ops });
-		});
+	it(`keeps ${MAX_PENDING_OPS} pending ops after folding and replaces the root past them`, async () => {
+		const exact = collectingWatch<JsonValue>({ k: [] });
+		advanceDistinct(exact.watch, MAX_PENDING_OPS);
 		await flush();
-		expect(frames).toEqual([{ value: 101, ops: [["r", 101]] }]);
+		expect(exact.frames).toHaveLength(1);
+		expect(exact.frames[0]?.ops).toHaveLength(MAX_PENDING_OPS);
+
+		const over = collectingWatch<JsonValue>({ k: [] });
+		const newest = advanceDistinct(over.watch, MAX_PENDING_OPS + 1);
+		await flush();
+		expect(over.frames).toEqual([{ value: newest, ops: [["r", newest]] }]);
 	});
 
-	it("keeps 100 pending frames exact", async () => {
-		const { watch } = recordedWatch<JsonValue>(0);
-		for (let n = 1; n <= 100; n++) watch.advance(n, [["r", n]], context);
-		const values: JsonValue[] = [];
-		watch.start(async (value) => {
-			values.push(value);
-		});
-		await flush();
-		expect(values).toEqual(Array.from({ length: 100 }, (_, index) => index + 1));
-	});
-
-	it("delivers the value of `replace` on overflow", async () => {
-		const { watch } = recordedWatch<JsonValue>(0, () => "replacement");
-		for (let n = 1; n <= 101; n++) watch.advance(n, [], context);
-		const frames: Array<{ value: JsonValue; ops: readonly Op[] }> = [];
-		watch.start(async (value, ops) => {
-			frames.push({ value, ops });
-		});
-		await flush();
-		expect(frames).toEqual([{ value: "replacement", ops: [["r", "replacement"]] }]);
-	});
-
-	it("never folds the in-flight frame into an overflow", async () => {
-		const { watch } = recordedWatch<JsonValue>(0);
+	it("never folds the in-flight call into an overflow", async () => {
+		const { watch } = recordedWatch<JsonValue>({ k: [] });
 		const gate = deferred();
-		const values: JsonValue[] = [];
-		watch.start(async (value) => {
-			values.push(value);
-			if (value === 1) await gate.promise;
+		const frames: Array<{ value: JsonValue; ops: readonly Op[] }> = [];
+		watch.start(async (value, ops) => {
+			frames.push({ value, ops });
+			if (frames.length === 1) await gate.promise;
 		});
-		watch.advance(1, [["r", 1]], context);
+		watch.advance({ k: [], first: true }, [["s", ["first"], true]], context);
 		await flush();
-		for (let n = 2; n <= 102; n++) watch.advance(n, [["r", n]], context);
+		const newest = advanceDistinct(watch, MAX_PENDING_OPS + 1);
 		gate.resolve();
 		await flush();
-		expect(values).toEqual([1, 102]);
+		expect(frames).toEqual([
+			{ value: { k: [], first: true }, ops: [["s", ["first"], true]] },
+			{ value: newest, ops: [["r", newest]] },
+		]);
+	});
+
+	it("starts folding again after an overflow was delivered", async () => {
+		const { watch, frames } = collectingWatch<JsonValue>({ k: [] });
+		advanceDistinct(watch, MAX_PENDING_OPS + 1);
+		await flush();
+		watch.advance({ n: 1 }, [["r", { n: 1 }]], context);
+		watch.advance({ n: 2 }, [["s", ["n"], 2]], context);
+		await flush();
+		expect(frames.at(-1)).toEqual({
+			value: { n: 2 },
+			ops: [
+				["r", { n: 1 }],
+				["s", ["n"], 2],
+			],
+		});
 	});
 });
 
 describe("Watch retirement", () => {
-	it('delivers `[["r", null]]` as the last frame and then ends retired', async () => {
+	it('delivers `[["r", null]]` as the last call and then ends retired', async () => {
 		const { watch, frames, recorded } = collectingWatch<JsonValue>(1);
 		const settled = endOf(watch);
 		watch.advance(2, [["r", 2]], context);
+		await flush();
 		watch.retire(context);
 		watch.advance(3, [["r", 3]], context);
 		await flush();
@@ -199,22 +290,25 @@ describe("Watch retirement", () => {
 		expect(recorded.detached).toBe(1);
 	});
 
-	it("drops an overflowing backlog for the retirement frame", async () => {
-		const { watch } = recordedWatch<JsonValue>(0);
-		for (let n = 1; n <= 100; n++) watch.advance(n, [["r", n]], context);
-		watch.retire(context);
-		const frames: Array<{ value: JsonValue; ops: readonly Op[] }> = [];
-		watch.start(async (value, ops) => {
-			frames.push({ value, ops });
-		});
-		expect(await watch.closed).toEqual({ reason: "retired" });
-		expect(frames).toEqual([{ value: null, ops: [["r", null]] }]);
+	it("drops pending frames, also an overflow, for the retirement", async () => {
+		for (const pending of [3, MAX_PENDING_OPS + 1]) {
+			const { watch } = recordedWatch<JsonValue>({ k: [] });
+			advanceDistinct(watch, pending);
+			watch.retire(context);
+			const frames: Array<{ value: JsonValue; ops: readonly Op[] }> = [];
+			watch.start(async (value, ops) => {
+				frames.push({ value, ops });
+			});
+			expect(await watch.closed).toEqual({ reason: "retired" });
+			expect(frames).toEqual([{ value: null, ops: [["r", null]] }]);
+		}
 	});
 
 	it("ends retired only on its source's retirement, never on a null value", async () => {
 		const { watch, frames } = collectingWatch<JsonValue>(1);
 		const settled = endOf(watch);
 		watch.advance(null, [["r", null]], context);
+		await flush();
 		watch.advance(2, [["r", 2]], context);
 		await flush();
 		expect(frames).toEqual([
@@ -311,13 +405,17 @@ describe("Watch ends", () => {
 	it("ends `listener_error` on a throw, reports it, and delivers nothing more", async () => {
 		const { watch, recorded } = recordedWatch<JsonValue>(0);
 		const failure = new Error("listener failed");
+		const gate = deferred();
 		const values: JsonValue[] = [];
 		watch.start(async (value) => {
 			values.push(value);
+			await gate.promise;
 			throw failure;
 		});
 		watch.advance(1, [["r", 1]], context);
+		await flush();
 		watch.advance(2, [["r", 2]], context);
+		gate.resolve();
 		expect(await watch.closed).toEqual({ reason: "listener_error", error: failure });
 		expect(values).toEqual([1]);
 		expect(recorded.reported).toEqual([failure]);
@@ -344,7 +442,6 @@ describe("Watch references", () => {
 				0,
 				() => void source,
 				() => void source,
-				() => source.value,
 			);
 			const listener = async (): Promise<void> => {};
 			watch.observeCancellation(controller.signal);
@@ -381,6 +478,43 @@ describe("Watch references", () => {
 			expect(ended.listener.deref()).toBeUndefined();
 			expect(ended.signal.deref()).toBeUndefined();
 		}
+	});
+
+	it("releases its pending queue and leaf index once delivered or ended", async () => {
+		/** Two pending frames, folded, whose ops alone reference `payload`; `settle` delivers or ends them. */
+		const pending = async (settle: (watch: Watch<JsonValue>, gate: () => void) => Promise<void>) => {
+			const payload = { big: "x".repeat(1000) };
+			const watch = new Watch<JsonValue>(
+				0,
+				() => {},
+				() => {},
+			);
+			const gate = deferred();
+			let calls = 0;
+			watch.start(async () => {
+				if (++calls === 1) await gate.promise;
+			});
+			watch.advance(1, [["s", ["n"], 1]], context);
+			await flush();
+			watch.advance(2, [["s", ["o"], payload]], context);
+			watch.advance(3, [["s", ["n"], 3]], context);
+			await settle(watch, gate.resolve);
+			return { watch, payload: new WeakRef(payload) };
+		};
+
+		const delivered = await pending(async (_watch, gate) => {
+			gate();
+			await flush();
+		});
+		await collect();
+		expect(delivered.payload.deref()).toBeUndefined();
+		expect(delivered.watch.value).toBe(3);
+
+		const stopped = await pending(async (watch) => {
+			await watch.stop();
+		});
+		await collect();
+		expect(stopped.payload.deref()).toBeUndefined();
 	});
 });
 
@@ -422,6 +556,22 @@ describe("NativeWatch", () => {
 		});
 		await flush();
 		expect(values).toEqual([101]);
+	});
+
+	it("collapses 101 pending values to the value of `replace`", async () => {
+		const watch = new NativeWatch<string>(
+			"",
+			() => {},
+			() => {},
+			() => "replacement",
+		);
+		for (let n = 1; n <= 101; n++) watch.advance(`value ${n}`, context);
+		const values: string[] = [];
+		watch.start(async (value) => {
+			values.push(value);
+		});
+		await flush();
+		expect(values).toEqual(["replacement"]);
 	});
 
 	it("ends with every reason of its lifecycle", async () => {

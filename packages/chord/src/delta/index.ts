@@ -125,6 +125,10 @@ export { diffRevisions } from "./diff.ts";
 export type { Draft } from "./draft.ts";
 export { appendText, type Change, type Prepared, type StringKeys, type Tracker, track } from "./tracker.ts";
 
+// ─── Pending ops of a slow consumer ──────────────────────────────────────────
+
+export { PendingOps, type PendingTake } from "./pending.ts";
+
 // ─── Path safety ─────────────────────────────────────────────────────────────
 
 /**

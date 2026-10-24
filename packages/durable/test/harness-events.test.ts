@@ -252,6 +252,25 @@ describe("agent events", () => {
 		await harness.close(context);
 	});
 
+	it("delivers each of 100 pending batches in its own call, in order, unlike state watches", async () => {
+		const { harness, root } = await openChat(new MemoryStorage(), chatSetup());
+		const stream = await watchEvents(harness, root.id, context);
+		for (let index = 0; index < 100; index++) {
+			await root.commit((tx) => tx.appendEntry(root.id, { kind: "note", data: { index } }), context);
+		}
+		const batches: AgentEvent[][] = [];
+		stream.start(async (events) => {
+			batches.push([...events]);
+		});
+		await drained();
+		expect(batches).toHaveLength(100);
+		expect(
+			batches.map((events) => events.map((event) => (event.type === "entry_appended" ? event.entry.data : event))),
+		).toEqual(Array.from({ length: 100 }, (_, index) => [{ index }]));
+		await stream.stop();
+		await harness.close(context);
+	});
+
 	it("replaces undelivered batches with one snapshot after 100 pending batches", async () => {
 		const { harness, root } = await openChat(new MemoryStorage(), chatSetup());
 		const stream = await watchEvents(harness, root.id, context);

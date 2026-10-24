@@ -4674,7 +4674,7 @@ of the loaded tracker cache. Reopen creates a new watch lifetime.
 
 Acquisition captures the value and registers for later commits atomically, on
 the Session line: the acquisition value includes every commit before
-acquisition, and every later exact frame is buffered until `start()`. This
+acquisition, and every later commit is buffered until `start()`. This
 prevents a value from being paired with operations based on a newer unseen
 revision.
 
@@ -4686,7 +4686,7 @@ Session code.
 
 On the Session line, `watchDoc()` resolves one existing concrete incarnation,
 captures its current immutable tracker revision in O(1), and registers for every
-later exact committed revision and operation batch. It returns `undefined` when
+later committed revision and its operation batch. It returns `undefined` when
 absent. Before `start()`, `watch.value` remains the acquisition revision while
 later frames buffer.
 
@@ -4705,29 +4705,34 @@ try {
 ```
 
 `start()` installs the sole listener and schedules delivery; it never invokes
-user code inline. Each callback receives the exact immutable committed value and
-the exact operation batch that produced it. Immediately before invocation,
+user code inline. Each callback receives the newest immutable committed value and
+operations that turn the previously delivered value into it: the exact operation
+batch of its commit when the listener kept up, or the folded batches of every
+commit since the previous callback. Immediately before invocation,
 `watch.value` advances to that value. The watch awaits the listener before
 starting its next callback, but Session commits never wait for callback
 settlement.
 
-A watch retains at most 100 pending committed frames, excluding the frame already
-being delivered. Adding frame 101 replaces the complete undelivered suffix with
-one self-contained root replacement `[["r", newestValue]]`, using the newest
-exact immutable revision and that commit's Context. Later exact frames follow
-that replacement normally. Another overflow replaces the pending suffix again.
-No serialized-byte measurement, value copy, operation replay, or re-diff occurs.
-This is convergent observation, not an audit stream; consumers requiring every
-transition must persist those facts separately.
+Commits that land while a callback runs, or before `start()`, wait in Chord's
+pending queue (`PendingOps`) as raw operations and are delivered together in one
+callback with the newest value and the newest commit's Context. While waiting,
+an operation on a leaf (an append, or a set of a primitive) folds into the last
+pending one on the same path: appends join, and a set replaces an earlier set or
+append. Any other operation keeps the order of everything before it, and a root
+replacement drops everything before it. Past 10,000 pending operations after
+folding, the callback gets one self-contained root replacement
+`[["r", newestValue]]` instead. No serialized-byte measurement, value copy,
+operation replay, or re-diff occurs. This is convergent observation, not an audit
+stream; consumers requiring every transition must persist those facts separately.
 
 `watch.value` and every previously returned revision remain stable forever under
 the trusted immutability contract. Consumers must not mutate them or retained
 descendants. The selected commit Context's values are preserved without inheriting the
 producer's cancellation. A callback owns its own asynchronous work.
 
-A watch remains bound to its original incarnation. Retirement queues the exact
-terminal `[["r", null]]` frame, or folds it into an overflow replacement with
-value `null`. After that callback settles, the watch closes as `retired` and never
+A watch remains bound to its original incarnation. Retirement drops what is
+pending and queues the terminal `[["r", null]]` with value `null`. After that
+callback settles, the watch closes as `retired` and never
 follows a replacement incarnation.
 
 `stop()` is idempotent. It synchronously unregisters, discards pending frames,
@@ -4785,9 +4790,8 @@ redundant nonempty batch remains a real publication. Mounted document revisions
 are structurally shared under the trusted immutability contract. The mount
 performs no semantic projection and owns no persistence.
 
-`Conversation.watch()` exposes the mount through the serialized exact-frame
-watch of section 9.2, with bounded pending frames and full-value
-overflow replacements.
+`Conversation.watch()` exposes the mount through the serialized watch of
+section 9.2, with folded pending commits and a full-value overflow replacement.
 
 ### 9.4 Agent events (experimental)
 
@@ -5034,8 +5038,8 @@ that sets or deletes `tasks[id]`, or sets a node's `conversations`. A
 publication that changes no node creates no revision. Task and conversation
 records are immutable values; a node shares nothing with them.
 
-`watchTaskGraph()` returns the mount through the serialized exact-frame watch
-of section 9.2. It reads only: it never enables scheduling. Close ends it at its
+`watchTaskGraph()` returns the mount through the serialized watch of section
+9.2. It reads only: it never enables scheduling. Close ends it at its
 seal like every other watch (section 2.2).
 
 ```ts
@@ -5524,9 +5528,10 @@ These are contracts, not invitations to add defensive machinery:
   acquisition revision. Initialize the consumer from it first. After start, the
   property advances to each delivered immutable revision before its callback;
   every earlier reference remains stable.
-- **Buffered watches:** slow or unstarted watches retain up to 100 exact committed
-  frames. Overflow replaces the undelivered suffix with one full-value root
-  replacement, so intermediate committed states may be omitted. A consumer that
+- **Buffered watches:** slow or unstarted watches deliver the commits made
+  meanwhile in one callback with folded operations, and past 10,000 pending
+  operations one full-value root replacement, so intermediate committed states
+  are omitted. A consumer that
   must audit every transition must persist each fact in an immutable entry or
   journal and scan that history explicitly.
 - **Watch stop:** a listener may call and await `stop()`; it prevents future

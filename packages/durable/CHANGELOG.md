@@ -7,6 +7,7 @@
 - `Storage.commit(writes, adopt, context)` takes an `adopt(seq)` callback, the Session's in-memory adoption of the batch: a storage calls it exactly once, synchronously, once the batch is durable and before its next commit starts, then resolves with `seq`, and never for a commit that fails before the batch is durable. Memory, SQLite, JSONL, and IndexedDB storages do; custom storages and wrappers must call or forward it, and the storage conformance suite checks it. A commit that rejects after its adoption fails the Session without rolling the adopted changes back.
 - `Storage.mintId()`'s contract is narrowed to IDs greater than every ID minted since the storage was opened and every ID stored, also across reopen. The bundled storages already behave so.
 - Watches use Chord's `WatchHandle` and `WatchEnd` (Durable re-exports both). End reasons are `stopped`, `cancelled`, `retired`, `ended` (was `session_closed`), `listener_error`, and `failed` (was `session_failed`). Retirement is an explicit event of the watched document incarnation (last frame `[["r", null]]`, then `retired`), never inferred from a `null` value. An ended watch drops its listener and every reference into its Session, so a stopped watch that is still referenced keeps only its last value.
+- Document, conversation view, and task graph watches deliver the commits made while their listener runs (or before `start()`) in one callback: the newest value, the commits' operations folded (appends to one string join, sets of one field keep the last) and the newest commit's Context. Past 10,000 pending operations the callback gets one root replacement `[["r", newest]]`. Before, each commit was its own callback and more than 100 pending commits became a root replacement. `watchEvents()` still delivers every event batch in order, with one `snapshot` past 100 pending batches.
 - Removed the Chord state getters `Session.documentState()`, `Conversation.viewState()`, and `Harness.taskGraph()`, and the `DocumentState` type; use `watchDoc()`, `Conversation.watch()`, and `Harness.watchTaskGraph()`. Durable no longer uses Chord's `replicatedState()`.
 
 ### Added
@@ -15,7 +16,7 @@
 
 ### Changed
 
-- Document, conversation view, task graph, and event watches use Chord's `Watch` implementation; behaviour is unchanged.
+- Document, conversation view, task graph, and event watches use Chord's watch handles (`Watch`, and `NativeWatch` for event batches).
 
 ### Fixed
 
