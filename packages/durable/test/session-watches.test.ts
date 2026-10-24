@@ -24,6 +24,16 @@ const StateDoc = defineDoc<State>({
 	initial: () => ({ value: 0, items: ["a", "b"], retained: { label: "stable" } }),
 });
 
+type Keys = { keys: Record<string, number> };
+
+const KeysDoc = defineDoc<Keys>({
+	checkpointWhen: () => false,
+	kind: "watch.keys",
+	version: 1,
+	scope: "session",
+	initial: () => ({ keys: {} }),
+});
+
 type Deferred = { readonly promise: Promise<void>; readonly resolve: () => void };
 
 function deferred(): Deferred {
@@ -49,7 +59,7 @@ describe("Session document watches", () => {
 		expect(storage.mintCount).toBe(0);
 	});
 
-	it("keeps the acquisition revision until start and delivers exact committed frames", async () => {
+	it("keeps the acquisition revision until start, then delivers the commits since in one call", async () => {
 		const { session, publications } = await createState();
 		const watch = (await session.watchDoc(StateDoc, context))!;
 		const initial = watch.value;
@@ -75,27 +85,38 @@ describe("Session document watches", () => {
 		inline = false;
 		expect(deliveries).toHaveLength(0);
 		await flush();
-		expect(deliveries.map(({ value }) => value?.value)).toEqual([1, 2]);
-		expect(deliveries[0]!.value).toBe(firstPublished.value);
-		expect(deliveries[0]!.ops).toBe(firstPublished.ops);
-		expect(deliveries[1]!.value).toBe(secondPublished.value);
-		expect(deliveries[1]!.ops).toBe(secondPublished.ops);
+		// Both commits set `value`: folded, the second set replaces the first.
+		expect(firstPublished.ops).toEqual([["s", ["value"], 1]]);
+		expect(deliveries).toEqual([{ value: secondPublished.value, ops: secondPublished.ops }]);
+		expect(deliveries[0]!.value).toBe(secondPublished.value);
 		expect(initial?.value).toBe(0);
+
+		// A listener that keeps up gets each commit's ops as published.
+		await session.commit(async (tx) => {
+			(await tx.doc(StateDoc)).value = 3;
+		}, context);
+		await flush();
+		const thirdPublished = documentChanges(publications.at(-1)!)[0]!;
+		expect(deliveries).toHaveLength(2);
+		expect(deliveries[1]!.value).toBe(thirdPublished.value);
+		expect(deliveries[1]!.ops).toBe(thirdPublished.ops);
 		await watch.stop();
 	});
 
-	it("serializes callbacks and buffers exact frames committed while one is in flight", async () => {
+	it("serializes callbacks and folds the commits made while one is in flight into the next", async () => {
 		const { session } = await createState();
 		const watch = (await session.watchDoc(StateDoc, context))!;
 		const entered = deferred();
 		const release = deferred();
 		const values: number[] = [];
+		const batches: unknown[] = [];
 		let active = 0;
 		let maxActive = 0;
-		watch.start(async (value) => {
+		watch.start(async (value, ops) => {
 			active++;
 			maxActive = Math.max(maxActive, active);
 			values.push(value?.value ?? -1);
+			batches.push(ops);
 			if (values.length === 1) {
 				entered.resolve();
 				await release.promise;
@@ -115,7 +136,8 @@ describe("Session document watches", () => {
 		release.resolve();
 		await flush();
 		expect(maxActive).toBe(1);
-		expect(values).toEqual(Array.from({ length: 20 }, (_, index) => index + 1));
+		expect(values).toEqual([1, 20]);
+		expect(batches[1]).toEqual([["s", ["value"], 20]]);
 		await watch.stop();
 	});
 
@@ -143,7 +165,7 @@ describe("Session document watches", () => {
 		await watch.stop();
 	});
 
-	it("collapses 101 pending commits to one root replacement", async () => {
+	it("folds 101 pending commits of one field into one set", async () => {
 		const { session } = await createState();
 		const watch = (await session.watchDoc(StateDoc, context))!;
 		for (let value = 1; value <= 101; value++) {
@@ -156,11 +178,36 @@ describe("Session document watches", () => {
 			deliveries.push({ value: value?.value ?? -1, ops });
 		});
 		await flush();
-		expect(deliveries).toEqual([{ value: 101, ops: [["r", watch.value]] }]);
+		expect(deliveries).toEqual([{ value: 101, ops: [["s", ["value"], 101]] }]);
 		await watch.stop();
 	});
 
-	it("never folds the in-flight frame into an overflow reset", async () => {
+	it("replaces the root once more than 10,000 ops are pending after folding", async () => {
+		const { session } = openTestSession();
+		await session.commit((tx) => tx.doc(KeysDoc).then(() => undefined), context);
+		const watch = (await session.watchDoc(KeysDoc, context))!;
+		// Sets of distinct keys, in commits small enough to stay ops: 4,000 + 4,000 + 2,001 pending ops.
+		for (const [from, to] of [
+			[0, 4_000],
+			[4_000, 8_000],
+			[8_000, 10_001],
+		] as const) {
+			await session.commit(async (tx) => {
+				const state = await tx.doc(KeysDoc);
+				for (let index = from; index < to; index++) state.keys[`k${index}`] = index;
+			}, context);
+		}
+		const deliveries: Array<{ value: Readonly<Keys> | null; ops: unknown }> = [];
+		watch.start(async (value, ops) => {
+			deliveries.push({ value, ops });
+		});
+		await flush();
+		expect(deliveries).toEqual([{ value: watch.value, ops: [["r", watch.value]] }]);
+		expect(Object.keys(watch.value?.keys ?? {})).toHaveLength(10_001);
+		await watch.stop();
+	});
+
+	it("never folds the in-flight frame into the next call", async () => {
 		const { session } = await createState();
 		const watch = (await session.watchDoc(StateDoc, context))!;
 		const entered = deferred();
@@ -185,12 +232,12 @@ describe("Session document watches", () => {
 		release.resolve();
 		await flush();
 		expect(deliveries[0]!.value).toBe(1);
-		expect(deliveries[1]).toEqual({ value: 102, ops: [["r", watch.value]] });
+		expect(deliveries[1]).toEqual({ value: 102, ops: [["s", ["value"], 102]] });
 		expect(deliveries).toHaveLength(2);
 		await watch.stop();
 	});
 
-	it("folds retirement into an overflow reset and then closes", async () => {
+	it("folds retirement over pending commits and then closes", async () => {
 		const { session } = await createState();
 		const watch = (await session.watchDoc(StateDoc, context))!;
 		for (let value = 1; value <= 100; value++) {

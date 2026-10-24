@@ -28,8 +28,9 @@ import { appendAssistantMessageDiagnostic, createAssistantMessageDiagnostic } fr
 import { AssistantMessageEventStream } from "../utils/event-stream.ts";
 import { headersToRecord, providerHeadersToRecord } from "../utils/headers.ts";
 import { getIdentityHeaders } from "../utils/identity.ts";
-import { parseStreamingJson } from "../utils/json-parse.ts";
 import { getProviderEnvValue } from "../utils/provider-env.ts";
+import { ToolCallArgumentsStream } from "../utils/streaming-json.ts";
+import { ownedSlice } from "../utils/text.ts";
 
 export interface PiMessagesOptions extends StreamOptions {
 	reasoning?: ThinkingLevel;
@@ -74,6 +75,7 @@ export type PiMessagesEvent =
 			reason: Extract<PiMessagesStopReason, "stop" | "length" | "toolUse">;
 			usage: PiMessagesUsage;
 			responseId?: string;
+			responseModel?: string;
 			providerThinkingLevel?: string;
 			rewrite?: PiMessagesRewriteImpact;
 	  }
@@ -83,6 +85,7 @@ export type PiMessagesEvent =
 			usage: PiMessagesUsage;
 			errorMessage?: string;
 			responseId?: string;
+			responseModel?: string;
 			providerThinkingLevel?: string;
 			rewrite?: PiMessagesRewriteImpact;
 	  };
@@ -120,7 +123,7 @@ function parsePiMessagesErrorBody(body: string): PiMessagesErrorBody | undefined
 
 function truncateDiagnosticString(value: string): string {
 	const maxLength = 8192;
-	return value.length > maxLength ? `${value.slice(0, maxLength)}…` : value;
+	return value.length > maxLength ? `${ownedSlice(value, 0, maxLength)}…` : value;
 }
 
 function formatPiMessagesResponseError(
@@ -189,7 +192,7 @@ function createEventConverter(model: Model<"pi-messages">) {
 		stopReason: "pending",
 		timestamp: Date.now(),
 	};
-	const toolJson = new Map<number, string>();
+	const toolArguments = new Map<number, ToolCallArgumentsStream>();
 
 	return (event: PiMessagesEvent): AssistantMessageEvent => {
 		switch (event.type) {
@@ -199,6 +202,9 @@ function createEventConverter(model: Model<"pi-messages">) {
 					usage: event.usage,
 					responseId: event.responseId,
 				});
+				if (event.responseModel !== undefined) {
+					partial.responseModel = event.responseModel;
+				}
 				if (event.providerThinkingLevel !== undefined) {
 					partial.providerThinkingLevel = event.providerThinkingLevel;
 				}
@@ -211,6 +217,9 @@ function createEventConverter(model: Model<"pi-messages">) {
 					errorMessage: event.errorMessage,
 					responseId: event.responseId,
 				});
+				if (event.responseModel !== undefined) {
+					partial.responseModel = event.responseModel;
+				}
 				if (event.providerThinkingLevel !== undefined) {
 					partial.providerThinkingLevel = event.providerThinkingLevel;
 				}
@@ -250,18 +259,17 @@ function createEventConverter(model: Model<"pi-messages">) {
 					name: event.toolName,
 					arguments: {},
 				};
-				toolJson.set(event.contentIndex, "");
+				toolArguments.set(event.contentIndex, new ToolCallArgumentsStream());
 				break;
 			case "toolcall_delta": {
-				const json = `${toolJson.get(event.contentIndex) ?? ""}${event.delta}`;
-				toolJson.set(event.contentIndex, json);
-				(partial.content[event.contentIndex] as ToolCall).arguments =
-					parseStreamingJson<ToolCall["arguments"]>(json);
+				const args = toolArguments.get(event.contentIndex);
+				if (args !== undefined)
+					(partial.content[event.contentIndex] as ToolCall).arguments = args.append(event.delta);
 				break;
 			}
 			case "toolcall_end":
 				Object.assign(partial.content[event.contentIndex]!, event.toolCall);
-				toolJson.delete(event.contentIndex);
+				toolArguments.delete(event.contentIndex);
 				return {
 					type: "toolcall_end",
 					contentIndex: event.contentIndex,

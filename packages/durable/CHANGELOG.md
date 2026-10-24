@@ -7,6 +7,7 @@
 - `Storage.commit(writes, adopt, context)` takes an `adopt(seq)` callback, the Session's in-memory adoption of the batch: a storage calls it exactly once, synchronously, once the batch is durable and before its next commit starts, then resolves with `seq`, and never for a commit that fails before the batch is durable. Memory, SQLite, JSONL, and IndexedDB storages do; custom storages and wrappers must call or forward it, and the storage conformance suite checks it. A commit that rejects after its adoption fails the Session without rolling the adopted changes back.
 - `Storage.mintId()`'s contract is narrowed to IDs greater than every ID minted since the storage was opened and every ID stored, also across reopen. The bundled storages already behave so.
 - Watches use Chord's `WatchHandle` and `WatchEnd` (Durable re-exports both). End reasons are `stopped`, `cancelled`, `retired`, `ended` (was `session_closed`), `listener_error`, and `failed` (was `session_failed`). Retirement is an explicit event of the watched document incarnation (last frame `[["r", null]]`, then `retired`), never inferred from a `null` value. An ended watch drops its listener and every reference into its Session, so a stopped watch that is still referenced keeps only its last value.
+- Document, conversation view, and task graph watches deliver the commits made while their listener runs (or before `start()`) in one callback: the newest value, the commits' operations folded (appends to one string join, sets of one field keep the last) and the newest commit's Context. Past 10,000 pending operations the callback gets one root replacement `[["r", newest]]`. Before, each commit was its own callback and more than 100 pending commits became a root replacement. `watchEvents()` still delivers every event batch in order, with one `snapshot` past 100 pending batches.
 - Removed the Chord state getters `Session.documentState()`, `Conversation.viewState()`, and `Harness.taskGraph()`, and the `DocumentState` type; use `watchDoc()`, `Conversation.watch()`, and `Harness.watchTaskGraph()`. Durable no longer uses Chord's `replicatedState()`.
 - Opening a SQLite storage migrates it to schema version 3 automatically, stamping conversations, tasks, and submissions with a commit sequence and indexing every stamp so a commit log can be read in ranges. A migrated database cannot be opened by 1.4.0 or earlier.
 
@@ -18,7 +19,14 @@
 
 ### Changed
 
-- Document, conversation view, task graph, and event watches use Chord's `Watch` implementation; behaviour is unchanged.
+- Document, conversation view, task graph, and event watches use Chord's watch handles (`Watch`, and `NativeWatch` for event batches).
+
+### Fixed
+
+- Fixed a conversation watcher (`watchEvents()`, conversation views) holding a copy of a streamed text or tool call per partial commit, through Chord append ops that kept the whole string alive; a 140 KB answer followed by a 140 KB tool call held well over 100 MB ([#9265](https://github.com/earendil-works/pi/issues/9265))
+- Fixed a nested call's error summary keeping the call's whole output alive through a slice of it ([#9265](https://github.com/earendil-works/pi/issues/9265))
+- Fixed task span error messages and codemode call previews keeping the whole text they were cut from alive ([#9265](https://github.com/earendil-works/pi/issues/9265))
+- Fixed partial commits of a streamed answer copying every growing text, thinking and tool-call argument string in full on each commit (about 20 s of CPU and a 100 MB heap peak for a 500 KB tool call): they now append new text with Chord's `appendText()`, and apply the argument changes of their own parse of the streamed argument text ([#9265](https://github.com/earendil-works/pi/issues/9265))
 
 ## [1.4.0] - 2026-10-21
 

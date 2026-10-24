@@ -64,9 +64,11 @@ const BUDGETS = {
 			// memory and SQLite storages share scan order and cursor handling. Values from Chord's root (copyJson,
 			// replicatedState) reach its host runtime through the root barrel. Chord's context reaches pi-telemetry's root
 			// (index, noop, metrics, memory) for its NOOP telemetry default; harness/telemetry.ts is Durable's schema.
-			// The Harness's request identity reaches pi-ai's utils/identity.ts and its version constant. The storages
-			// share the log (storage/log.ts).
-			maxFiles: 74,
+			// The Harness's request identity reaches pi-ai's utils/identity.ts and its version constant. Partial commits
+			// parse streamed tool-call arguments with pi-ai's utils/streaming-json.ts (and its json-parse.ts) to append what
+			// argument strings grew by (harness/partial-changes.ts). Chord's watches fold pending ops with Delta's
+			// pending queue (delta/pending.ts). The storages share the log (storage/log.ts).
+			maxFiles: 78,
 			forbid: [
 				"packages/ai/src/index.ts",
 				"packages/ai/src/utils/typebox-helpers.ts",

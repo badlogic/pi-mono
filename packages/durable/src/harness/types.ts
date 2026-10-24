@@ -778,7 +778,7 @@ export interface Conversation {
 	 * owned, transitively, by its non-background tasks.
 	 */
 	waitForIdle(context: Context): Promise<void>;
-	/** The structural view (spec §9.3) as a serialized exact-frame watch with bounded pending frames. */
+	/** The structural view (spec §9.3) as a serialized watch; commits made while its listener runs arrive folded. */
 	watch(context: Context): Promise<ConversationWatch>;
 }
 
@@ -837,8 +837,8 @@ export interface Harness extends Session {
 	/** Session total: every conversation's `pi.usage` summed. */
 	usage(context: Context): Promise<UsageState>;
 	/**
-	 * Every live task with its owner edge, status, and owned conversations (spec §9.5), as a serialized exact-frame
-	 * watch with bounded pending frames.
+	 * Every live task with its owner edge, status, and owned conversations (spec §9.5), as a serialized watch; commits
+	 * made while its listener runs arrive folded.
 	 */
 	watchTaskGraph(context: Context): Promise<TaskGraphWatch>;
 }

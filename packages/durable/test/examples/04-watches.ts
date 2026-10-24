@@ -22,21 +22,33 @@ const chat = await session.commit(async (tx) => {
 	return conversation;
 }, context);
 
-// A watch starts from one stable acquisition revision. Slow callbacks never
-// overlap; exact committed frames buffer, with a full-value reset after 100.
+// A watch starts from one stable acquisition revision. Callbacks never overlap:
+// commits made while one runs arrive folded into the next call, which gets the
+// newest value and ops that turn the previously delivered value into it (one
+// full-value replacement `[["r", value]]` once more than 10,000 ops pile up).
 const notesWatch = await session.watchDoc(Notes, chat.id, context);
 if (notesWatch === undefined) throw new Error("notes are absent");
 console.log("watch baseline:", notesWatch.value);
-const delivered = new Promise<void>((resolve) => {
-	notesWatch.start(async (value, _ops, _deliveryContext) => {
-		console.log("watch update:", value);
-		resolve();
-	});
+const busy = Promise.withResolvers<void>();
+const done = Promise.withResolvers<void>();
+let calls = 0;
+notesWatch.start(async (value, ops, _deliveryContext) => {
+	console.log("watch update:", value, JSON.stringify(ops));
+	// The first call stays busy, as a slow consumer would, while three more commits land.
+	if (++calls === 1) await busy.promise;
+	else done.resolve();
 });
 await session.commit(async (tx) => {
-	(await tx.doc(Notes, chat.id)).text = "observed asynchronously";
+	(await tx.doc(Notes, chat.id)).text = "observed";
 }, context);
-await delivered;
+for (const more of [" asynchronously", ", folded", "!"]) {
+	await session.commit(async (tx) => {
+		(await tx.doc(Notes, chat.id)).text += more;
+	}, context);
+}
+busy.resolve();
+await done.promise;
+console.log("listener calls:", calls);
 await notesWatch.stop();
 
 await session.close(context);

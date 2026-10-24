@@ -1,5 +1,6 @@
 import { type Context, copyJson, type JsonValue } from "@earendil-works/chord";
 import { awaitWithContext, withAbortSignal, withoutAbortSignal, withTelemetry } from "@earendil-works/chord/context";
+import { ownedSlice } from "@earendil-works/chord/delta";
 import type { Models } from "@earendil-works/pi-ai";
 import {
 	createTypedMetrics,
@@ -1801,7 +1802,7 @@ export class TaskScheduler {
 						const message = terminal.status === "orphaned" ? terminal.reason : terminal.error.message;
 						span.setStatus({
 							status: "error",
-							error: { name: `task_${terminal.status}`, message: message.slice(0, 500) },
+							error: { name: `task_${terminal.status}`, message: ownedSlice(message, 0, 500) },
 						});
 					} else if (outcome === "aborted") {
 						span.setStatus({ status: "ok" });

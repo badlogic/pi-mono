@@ -8,9 +8,18 @@
 
 ### Added
 
-- `WatchHandle<T>` and `WatchEnd`, the one watch API, moved from Durable: a serialized exact-frame observation with `value`, `start(listener)`, `stop()`, and `closed`. `WatchEnd` reasons are `stopped`, `cancelled`, `retired`, `ended`, `listener_error`, and `failed`.
-- `Watch<T>`, the one watch handle implementation, moved from Durable: a source creates one per watch and feeds it with `advance(value, ops, context)`, `retire(context)` (last frame `[["r", null]]`, then `retired`), `end()` or `end({ error })`, and `observeCancellation(signal)`. More than 100 undelivered frames collapse to one root replacement `[["r", newest]]`; termination drops the listener and every reference into the source.
-- `NativeWatchHandle<T>` and its implementation `NativeWatch<T>`: the same lifecycle for in-process values, with listener `(value, context)` and no ops; an overflow collapses to the newest value.
+- `NativeWatchable<T>`: an in-process value that changes and can be watched (`value`, `watch(context)` returning a `NativeWatchHandle<T>`), the in-process counterpart of `Watchable<T>`.
+- `WatchHandle<T>` and `WatchEnd`, the one watch API, moved from Durable: a serialized observation with `value`, `start(listener)`, `stop()`, and `closed`. `WatchEnd` reasons are `stopped`, `cancelled`, `retired`, `ended`, `listener_error`, and `failed`.
+- `Watch<T>`, the one watch handle implementation, moved from Durable: a source creates one per watch and feeds it with `advance(value, ops, context)`, `retire(context)` (last frame `[["r", null]]`, then `retired`), `end()` or `end({ error })`, and `observeCancellation(signal)`. Frames that arrive while the listener runs (or before `start`) are delivered in one call with the newest value, their ops folded by `PendingOps` and the newest frame's context; past 10,000 pending ops after folding, the call gets one root replacement `[["r", newest]]` instead (replaces the collapse after 100 undelivered frames); termination drops the listener and every reference into the source.
+- `Watchable<T>`: a value that changes and can be watched (`value`, `watch(context)` returning a `WatchHandle<T>`), the common interface of documents, derives and other observable values.
+- `NativeWatchHandle<T>` and its implementation `NativeWatch<T>`: the same lifecycle for in-process values, with listener `(value, context)` and no ops: one call per value in order, and past 100 pending values one call with the value of the optional `replace()` or the newest value.
+- `PendingOps` and `PendingTake` in `@earendil-works/chord/delta`: the pending ops of one slow consumer, kept raw and folded while they wait (appends to one path join, a primitive set replaces earlier leaf ops on its path, `r` drops everything before it); `size` counts the pending ops after folding; `take()` empties the queue and hands over the folded ops, or `replace` past 10,000 pending ops. Received batches and op tuples are never mutated.
+- `ownedSlice(text, start, end?)` in `@earendil-works/chord/delta`: a slice of a string that does not keep the whole string alive ([#9265](https://github.com/earendil-works/pi/issues/9265))
+- `appendText(draft, key, text)` in `@earendil-works/chord/delta`: append to a string in a draft at O(text) cost, recorded as an append op without comparing the old and new strings (a plain `draft[key] += text` makes `prepare()` read the whole string, O(length) per change); `StringKeys<T>` names the keys it accepts ([#9265](https://github.com/earendil-works/pi/issues/9265))
+
+### Fixed
+
+- Fixed append ops from the delta tracker and `diffRevisions()` keeping the whole string they were cut from alive (V8 represents a slice as a view of its source), so a delta chain, a watch backlog or a replica built from appends to a growing text held one copy of the text per commit ([#9265](https://github.com/earendil-works/pi/issues/9265))
 
 ## [1.4.0] - 2026-10-21
 

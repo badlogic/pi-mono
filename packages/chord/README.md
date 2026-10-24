@@ -210,10 +210,12 @@ model; see [State](docs/guide.md#state) in the usage guide.
 Durable's documents, conversation views, and task graph. `watch.value` is the value
 at acquisition until `start(listener)` installs the sole asynchronous listener; each
 later change arrives as `(value, ops, context)`, one call at a time, and `value`
-advances to it. A source keeps at most 100 undelivered frames and then replaces them
-with one root replacement `[["r", newest]]`. `stop()` is idempotent, drops pending
-frames, and neither aborts nor awaits a running call; it and `closed` give the
-`WatchEnd`:
+advances to it. Changes made while the listener runs (or before `start`) arrive in
+one call: the newest value, the ops of all of them folded by Delta's `PendingOps`,
+and the newest change's context. Past 10,000 pending ops after folding the call
+gets one root replacement `[["r", newest]]` instead. `stop()` is idempotent, drops
+pending frames, and neither aborts nor awaits a running call; it and `closed` give
+the `WatchEnd`:
 
 - `stopped`: `stop()` was called;
 - `cancelled`: the context the watch was acquired with was cancelled;
@@ -228,5 +230,6 @@ still referenced keeps only its last value alive.
 Sources implement handles with `Watch<T>`, fed through `advance(value, ops, context)`,
 `retire(context)`, `end()` or `end({ error })`, and `observeCancellation(signal)`.
 `NativeWatch<T>` implements `NativeWatchHandle<T>`, the same lifecycle for
-in-process values: the listener gets `(value, context)` without ops, and an
-overflow collapses to the newest value.
+in-process values: the listener gets `(value, context)` without ops, one call per
+value in order; past 100 pending values they collapse to one, the value of the
+optional `replace()` or the newest.

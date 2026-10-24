@@ -1853,13 +1853,18 @@ export class SessionManager {
 			cwd: resolvedTargetCwd,
 			parentSession: resolvedSourcePath,
 		};
-		writeFileSync(newSessionFile, `${JSON.stringify(newHeader)}\n`, { flag: "wx" });
-
-		// Copy all non-header entries from source
-		for (const entry of sourceEntries) {
-			if (entry.type !== "session") {
-				appendFileSync(newSessionFile, `${JSON.stringify(entry)}\n`);
+		// Write the header and all non-header entries through one fd. Reopening the file per entry
+		// is slow where open/close is expensive (e.g. filesystem security monitors).
+		const fd = openSync(newSessionFile, "wx");
+		try {
+			writeFileSync(fd, `${JSON.stringify(newHeader)}\n`);
+			for (const entry of sourceEntries) {
+				if (entry.type !== "session") {
+					writeFileSync(fd, `${JSON.stringify(entry)}\n`);
+				}
 			}
+		} finally {
+			closeSync(fd);
 		}
 
 		return new SessionManager(resolvedTargetCwd, dir, newSessionFile, true);

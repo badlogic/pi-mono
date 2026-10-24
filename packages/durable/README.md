@@ -473,7 +473,7 @@ Work that already started keeps the code it took: a running tool call finishes u
 
 ## Watching a Conversation
 
-Everything a UI needs is committed state. `watch()` returns a watch of the conversation's structural view: its value at attachment, then each commit that touches it, with the exact Chord operations of that commit, one callback at a time:
+Everything a UI needs is committed state. `watch()` returns a watch of the conversation's structural view: its value at attachment, then each commit that touches it, with the Chord operations of that commit, one callback at a time:
 
 ```typescript
 const watch = await root.watch(context);
@@ -490,7 +490,7 @@ watch.start(async (value, ops) => {
 
 Watches are Chord's `WatchHandle` (exported by `@earendil-works/chord`; Durable re-exports it). A watch ends once, and `closed` (or `stop()`) gives the reason: `stopped`, `cancelled` (its acquisition context was cancelled), `retired` (a document watch whose incarnation retired, after it delivered `[["r", null]]`), `ended` (the Harness closed), `listener_error`, or `failed` (the Harness failed). An ended watch keeps its last value and no longer references the Harness.
 
-A slow watch keeps at most 100 undelivered frames. After that, the pending frames are replaced by one frame holding the whole newest view. A client that joins late or reconnects starts from the current view; nothing is replayed.
+Commits that land while a callback runs are delivered together in the next callback: the newest view and the operations of all of them, folded (appends to one string join, sets of one field keep the last). Past 10,000 pending operations the callback gets one root replacement `[["r", view]]` holding the whole newest view instead. A client that joins late or reconnects starts from the current view; nothing is replayed.
 
 Partial answers and tool output are committed at most every 100 ms by default, so a crash loses at most that window. `settings.progress` changes the intervals; a host whose storage is remote can commit less often, for example `{ partialIntervalMs: 500, outputIntervalMs: 500 }`.
 

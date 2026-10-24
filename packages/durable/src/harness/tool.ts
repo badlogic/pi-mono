@@ -1,6 +1,6 @@
 import { type Context, copyJson, type Draft, type JsonRepresentation, type JsonValue } from "@earendil-works/chord";
 import { awaitWithContext } from "@earendil-works/chord/context";
-import { overlap } from "@earendil-works/chord/delta";
+import { overlap, ownedSlice } from "@earendil-works/chord/delta";
 import {
 	boundOutput,
 	OutputBuffer,
@@ -864,9 +864,12 @@ function truncated(
 /** Error text a nested call's summary keeps. */
 const MAX_SUMMARY_ERROR_CHARS = 500;
 
-/** How a nested call ended, for its slot: error text, from its diagnostics or else its `output`, bounded. */
+/**
+ * How a nested call ended, for its slot: error text, from its diagnostics or else its `output`, bounded. The bound is a
+ * copy, so the slot never keeps a large output alive through a slice of it.
+ */
 function summaryOf(result: NestedToolExecutionResult, output: Content): NestedToolSummary {
-	const error = result.isError ? errorTextOf(result, output).slice(0, MAX_SUMMARY_ERROR_CHARS) : "";
+	const error = result.isError ? ownedSlice(errorTextOf(result, output), 0, MAX_SUMMARY_ERROR_CHARS) : "";
 	return {
 		isError: result.isError,
 		...(result.durationMs === undefined ? {} : { durationMs: result.durationMs }),

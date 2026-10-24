@@ -106,7 +106,7 @@ export class ConversationViews {
 		this.#session.report(error);
 	}
 
-	/** A serialized exact-frame watch of the view; cancelling `context` stops it. */
+	/** A serialized watch of the view; cancelling `context` stops it. */
 	async watch(id: ConversationId, context: Context): Promise<WatchHandle<ConversationView>> {
 		const { observer } = await this.attach(
 			id,

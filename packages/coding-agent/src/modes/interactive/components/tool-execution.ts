@@ -54,6 +54,8 @@ export class ToolExecutionComponent extends Container {
 	private cwd: string;
 	private executionStarted = false;
 	private argsComplete = false;
+	/** `updateArgs()` ran since the last display update; the next render applies it. */
+	private argsPending = false;
 	private result?: {
 		content: Array<{ type: string; text?: string; data?: string; mimeType?: string }>;
 		isError: boolean;
@@ -167,9 +169,14 @@ export class ToolExecutionComponent extends Container {
 		});
 	}
 
+	/**
+	 * Show new partial arguments. Applied at the next render, so a call streaming many argument deltas between two
+	 * frames runs its renderer once per frame, not once per delta (#9265).
+	 */
 	updateArgs(args: any): void {
 		this.args = args;
-		this.updateDisplay();
+		this.argsPending = true;
+		this.ui.requestRender();
 	}
 
 	markExecutionStarted(): void {
@@ -225,6 +232,7 @@ export class ToolExecutionComponent extends Container {
 	}
 
 	override render(width: number): string[] {
+		if (this.argsPending) this.updateDisplay();
 		if (this.hideComponent) {
 			return [];
 		}
@@ -268,6 +276,7 @@ export class ToolExecutionComponent extends Container {
 	}
 
 	private updateDisplay(): void {
+		this.argsPending = false;
 		const bgFn = this.isPartial
 			? (text: string) => theme.bg("toolPendingBg", text)
 			: this.result?.isError
