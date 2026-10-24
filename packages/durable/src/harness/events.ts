@@ -1,9 +1,9 @@
 import { type Context, type JsonValue, NativeWatch, type WatchEnd } from "@earendil-works/chord";
 import type { Op, Path } from "@earendil-works/chord/delta";
 import type { AssistantMessage, Message, Usage } from "@earendil-works/pi-ai";
+import type { ObservedCommit } from "../session/session.ts";
 import type {
 	CommitChange,
-	CommitPublication,
 	ConversationId,
 	EntryRecord,
 	JsonObject,
@@ -228,7 +228,7 @@ function translate(
 	before: ConversationView,
 	after: ConversationView,
 	viewOps: readonly Op[],
-	publication: CommitPublication,
+	publication: ObservedCommit,
 	held: Set<TaskId>,
 ): AgentEvent[] {
 	const entries: EntryRecord[] = [];

@@ -28,7 +28,7 @@ import {
 import { describe, expect, it } from "vitest";
 import { type ChatSetup, chatSetup, openChat, textOf, waitFor } from "./chat-support.ts";
 import { addTool } from "./harness-support.ts";
-import { context, documentChanges } from "./session-support.ts";
+import { context, documentChanges, observeCommits } from "./session-support.ts";
 import { aborted, deferred } from "./task-support.ts";
 
 /** Attach and start an event stream that records every delivered batch. */
@@ -95,7 +95,7 @@ function applyChanges(message: AssistantMessage, changes: readonly MessageChange
 /** Committed partials of `conversation`'s generation, one per commit that has one. */
 function partialsOf(harness: Harness): AssistantMessage[] {
 	const partials: AssistantMessage[] = [];
-	harness.subscribeCommits((publication) => {
+	observeCommits(harness, (publication) => {
 		for (const change of documentChanges(publication)) {
 			const message = (change.value as LiveState | null)?.generation?.message as AssistantMessage | undefined;
 			if (change.record.kind === "pi.live" && message !== undefined) partials.push(message);
@@ -113,7 +113,7 @@ describe("agent events", () => {
 		const { stream, events } = await listen(harness, root);
 		expect(stream.snapshot).toMatchObject({ type: "snapshot", entries: [], tools: [], inbox: [] });
 		const partials: string[] = [];
-		harness.subscribeCommits((publication) => {
+		observeCommits(harness, (publication) => {
 			for (const change of documentChanges(publication)) {
 				const message = (change.value as LiveState | null)?.generation?.message as AssistantMessage | undefined;
 				if (change.record.kind === "pi.live" && message !== undefined) partials.push(textOf(message) ?? "");
@@ -354,7 +354,7 @@ describe("agent events", () => {
 		]);
 		const { harness, root } = await openChat(new MemoryStorage(), setup);
 		const outputs: string[] = [];
-		harness.subscribeCommits((publication) => {
+		observeCommits(harness, (publication) => {
 			for (const change of documentChanges(publication)) {
 				const output = (change.value as LiveState | null)?.tools?.[0]?.output;
 				if (change.record.kind === "pi.live" && output !== undefined && output !== outputs.at(-1)) {
@@ -724,7 +724,7 @@ describe("streamed partials", () => {
 			]);
 			const { harness, root } = await openChat(new MemoryStorage(), setup);
 			let commits = 0;
-			harness.subscribeCommits(() => commits++);
+			observeCommits(harness, () => commits++);
 			const bytes = await allocatedBytes(async () => {
 				await (await root.submit({ type: "input", content: "go" }, context)).wait(context);
 			});

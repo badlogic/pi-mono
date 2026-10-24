@@ -18,6 +18,7 @@ import type {
 import type { TelemetryContext } from "@earendil-works/pi-telemetry";
 import type { ExecutionEnv, ShellOutputSkip, ShellOutputWindow } from "../env/index.ts";
 import type {
+	CommitOptions,
 	ConversationId,
 	ConversationOwnership,
 	ConversationRecord,
@@ -240,7 +241,8 @@ export interface ToolExecutionApi<TDetails extends JsonValue = JsonValue> extend
 	diagnostic(diagnostic: ToolDiagnostic): void;
 	/** Replace running details; the last value becomes the result details when the result omits `details`. */
 	details(value: TDetails, context: Context): Promise<void>;
-	commit<T>(change: (tx: Tx) => T | Promise<T>, context: Context): Promise<T>;
+	/** A commit of this call's task; `options` may defer storing it (`CommitPersistence`). */
+	commit<T>(change: (tx: Tx) => T | Promise<T>, context: Context, options?: CommitOptions): Promise<T>;
 	memo<T extends JsonValue>(name: string, context: Context): Promise<T | undefined>;
 	memo<T extends JsonValue>(name: string, candidate: T, context: Context): Promise<T>;
 	/**
@@ -521,14 +523,21 @@ export type CompactionSettings = Partial<CompactionPolicy> & {
 };
 
 /**
- * How often running progress is committed. Each progress commit is a storage write; a host whose storage is remote can
- * commit less often, so live answers and tool output appear in larger steps.
+ * How often running progress is committed, and how long it may wait in memory before it is stored. Progress commits are
+ * deferred (`CommitPersistence`): watches see each at once, and Storage gets them together, at the run's next phase
+ * boundary or after `persistWithinMs`. A host can commit less often, so live answers and tool output appear in larger steps.
  */
 export type ProgressPolicy = {
 	/** Minimum pause between commits of the answer being generated. */
 	partialIntervalMs: number;
 	/** Minimum pause between commits of running tool output; large commits also pause in proportion to their size. */
 	outputIntervalMs: number;
+	/**
+	 * How long these commits, and other deferred commits without their own `withinMs`, may stay in memory before they are
+	 * stored (`CommitPersistence`); a crash loses at most about this much of an answer or of tool output. Default 1,000;
+	 * `Infinity` stores them only at the next commit that reads or writes their document and at close.
+	 */
+	persistWithinMs: number;
 };
 
 /** Why a compaction runs: `compact()`, a threshold in generation preparation, or a context overflow. */
@@ -753,8 +762,8 @@ export interface Conversation {
 	 */
 	compact(instructions: string | undefined, context: Context): Promise<TaskId<CompactionResult>>;
 
-	/** Session commit whose `tx.createTask()` defaults to this conversation. */
-	commit<T>(change: (tx: Tx) => T | Promise<T>, context: Context): Promise<T>;
+	/** Session commit whose `tx.createTask()` defaults to this conversation; `options` as for `Session.commit()`. */
+	commit<T>(change: (tx: Tx) => T | Promise<T>, context: Context, options?: CommitOptions): Promise<T>;
 	/**
 	 * Committed raw active transcript and model context. With `at`, the context as of that visible entry: the same view
 	 * `fork(at)` would start with, without creating a conversation.

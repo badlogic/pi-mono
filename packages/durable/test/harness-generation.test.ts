@@ -9,7 +9,6 @@ import {
 } from "@earendil-works/pi-ai";
 import {
 	AssistantEntry,
-	type CommitPublication,
 	type Conversation,
 	createRegistry,
 	defineDoc,
@@ -31,7 +30,7 @@ import { resolveSettings } from "../src/harness/agent.ts";
 import type { SessionImpl } from "../src/session/session.ts";
 import { allEntries, type ChatSetup, chatSetup, openChat, textOf, unanswered, waitFor } from "./chat-support.ts";
 import { addSection } from "./harness-support.ts";
-import { ControlledStorage, context } from "./session-support.ts";
+import { ControlledStorage, context, observeCommits } from "./session-support.ts";
 
 const ERROR_503 = fauxAssistantMessage([], { stopReason: "error", errorMessage: "503 Service Unavailable" });
 
@@ -76,7 +75,7 @@ function invalidFinalStream(): ReturnType<Models["streamSimple"]> {
 
 function livePublications(harness: Harness): LiveState[] {
 	const values: LiveState[] = [];
-	harness.subscribeCommits((publication: CommitPublication) => {
+	observeCommits(harness, (publication) => {
 		for (const change of publication.changes) {
 			if (change.type === "document" && change.record.kind === "pi.live" && change.value !== null) {
 				values.push(change.value as LiveState);
@@ -509,7 +508,7 @@ describe("generation", () => {
 			stream: {},
 			retry: { enabled: true, maxRetries: 3, baseDelayMs: 2000, maxAgentDelayMs: 60000 },
 			compaction: { enabled: true, reserveTokens: 16384, keepRecentTokens: 20000, backgroundTokens: 32768 },
-			progress: { partialIntervalMs: 100, outputIntervalMs: 100 },
+			progress: { partialIntervalMs: 100, outputIntervalMs: 100, persistWithinMs: 1000 },
 			toolExecution: "parallel",
 			steeringMode: "one-at-a-time",
 			followUpMode: "one-at-a-time",
@@ -527,7 +526,11 @@ describe("generation", () => {
 		expect(resolveSettings({ progress: { outputIntervalMs: 500 } }).progress).toEqual({
 			partialIntervalMs: 100,
 			outputIntervalMs: 500,
+			persistWithinMs: 1000,
 		});
+		// Not a number of milliseconds, 0 or more: the default.
+		expect(resolveSettings({ progress: { persistWithinMs: -1 } }).progress.persistWithinMs).toBe(1000);
+		expect(resolveSettings({ progress: { persistWithinMs: 0 } }).progress.persistWithinMs).toBe(0);
 	});
 
 	it("commits partials no more often than progress.partialIntervalMs", async () => {

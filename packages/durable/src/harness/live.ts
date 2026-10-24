@@ -2,7 +2,16 @@ import type { Draft, JsonRepresentation, JsonValue } from "@earendil-works/chord
 import type { AssistantMessage, Usage } from "@earendil-works/pi-ai";
 import { defineDoc } from "../documents.ts";
 import type { Transaction } from "../session/transaction.ts";
-import type { EntryId, JsonObject, SubmissionId, SubmissionSettlement, TaskId, TaskRecord, Tx } from "../types.ts";
+import type {
+	CommitOptions,
+	EntryId,
+	JsonObject,
+	SubmissionId,
+	SubmissionSettlement,
+	TaskId,
+	TaskRecord,
+	Tx,
+} from "../types.ts";
 import { convertPartial } from "./generation.ts";
 import type { SchedulerOutcome } from "./scheduler.ts";
 import type { CompactionReason, CompactionResult, ToolDiagnostic } from "./types.ts";
@@ -125,6 +134,13 @@ export const LiveDoc = defineDoc<LiveState>({
 		!(value.tools ?? []).some((slot) => slot.status === "running") &&
 		!(value.nestedTools ?? []).some((slot) => slot.status === "running"),
 });
+
+/**
+ * How the progress throttles commit a partial answer and running tool output into `pi.live`: deferred, so storage gets
+ * them together, at the next commit that reads or writes `pi.live` or after `settings.progress.persistWithinMs`. Every
+ * commit that consumes or clears streamed fields reads `pi.live`, so it stores them with its own changes (spec §8.2).
+ */
+export const PROGRESS_COMMIT: CommitOptions = { persistence: { kind: "deferred" } };
 
 /** Built-in task kinds that can own `pi.live.run`. */
 const RUN_TASK_KINDS: ReadonlySet<string> = new Set(["pi.generation"]);

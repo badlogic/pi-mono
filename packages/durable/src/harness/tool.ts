@@ -38,6 +38,7 @@ import {
 	LiveDoc,
 	type NestedToolSlot,
 	type NestedToolSummary,
+	PROGRESS_COMMIT,
 	removeNestedSlots,
 	type ToolSlot,
 	toolSlot,
@@ -358,12 +359,16 @@ async function run(
 			committed.catch(() => {});
 			return awaitWithContext(committed, detailsContext);
 		},
-		commit: async (change, commitContext) => {
+		commit: async (change, commitContext, options) => {
 			let result: Awaited<ReturnType<typeof change>> | undefined;
-			await runtime.commit(async (tx) => {
-				result = await change(tx);
-				return undefined;
-			}, commitContext);
+			await runtime.commit(
+				async (tx) => {
+					result = await change(tx);
+					return undefined;
+				},
+				commitContext,
+				options,
+			);
 			return result as Awaited<ReturnType<typeof change>>;
 		},
 		memo: runtime.memo,
@@ -478,7 +483,7 @@ function progressClock(runtime: Runtime): ProgressClock {
 
 /**
  * Throttled commits of what the tool reported into its slot, in `pi.live.tools` or `pi.live.nestedTools`, each writing
- * only what changed since the last one; none when `enabled` is false.
+ * only what changed since the last one, deferred (`PROGRESS_COMMIT`); none when `enabled` is false.
  */
 function publishProgress(runtime: Runtime, reported: Reported, enabled: boolean, context: Context): Progress {
 	let written = { text: "", details: undefined as JsonValue | undefined, diagnostics: 0 };
@@ -501,24 +506,28 @@ function publishProgress(runtime: Runtime, reported: Reported, enabled: boolean,
 			}
 			if (detailsChanged) bytes += utf8ByteLength(JSON.stringify(current.details ?? null));
 			if (added.length > 0) bytes += utf8ByteLength(JSON.stringify(added));
-			await runtime.commit(async (tx) => {
-				const slot = toolSlot(await tx.doc(LiveDoc, runtime.conversationId), runtime.taskId);
-				if (slot === undefined) return undefined;
-				// REMINDER: assign `output` as one string field. Chord then diffs it into an append, or a trim plus an
-				// append for a sliding tail; replacing the slot object would record the whole window on every commit.
-				if ((slot.output ?? "") !== snapshot.text) slot.output = snapshot.text;
-				if (snapshot.droppedBytes > 0) slot.droppedBytes = snapshot.droppedBytes;
-				if (snapshot.droppedLines > 0) slot.droppedLines = snapshot.droppedLines;
-				// Diff details leaf by leaf and append new diagnostics, so each commit writes only what changed.
-				if (detailsChanged && current.details !== undefined) {
-					assignJson(slot as unknown as Record<string, JsonValue>, "details", current.details);
-				}
-				if (added.length > 0) {
-					if (slot.diagnostics === undefined) slot.diagnostics = [];
-					for (const diagnostic of added) slot.diagnostics.push(diagnostic);
-				}
-				return undefined;
-			}, context);
+			await runtime.commit(
+				async (tx) => {
+					const slot = toolSlot(await tx.doc(LiveDoc, runtime.conversationId), runtime.taskId);
+					if (slot === undefined) return undefined;
+					// REMINDER: assign `output` as one string field. Chord then diffs it into an append, or a trim plus an
+					// append for a sliding tail; replacing the slot object would record the whole window on every commit.
+					if ((slot.output ?? "") !== snapshot.text) slot.output = snapshot.text;
+					if (snapshot.droppedBytes > 0) slot.droppedBytes = snapshot.droppedBytes;
+					if (snapshot.droppedLines > 0) slot.droppedLines = snapshot.droppedLines;
+					// Diff details leaf by leaf and append new diagnostics, so each commit writes only what changed.
+					if (detailsChanged && current.details !== undefined) {
+						assignJson(slot, "details", current.details);
+					}
+					if (added.length > 0) {
+						if (slot.diagnostics === undefined) slot.diagnostics = [];
+						for (const diagnostic of added) slot.diagnostics.push(diagnostic);
+					}
+					return undefined;
+				},
+				context,
+				PROGRESS_COMMIT,
+			);
 			written = current;
 			return bytes;
 		},

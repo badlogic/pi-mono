@@ -130,6 +130,8 @@ export { defineTask } from "./tasks.ts";
 export type {
 	CheckpointInfo,
 	CommitChange,
+	CommitOptions,
+	CommitPersistence,
 	CommitPublication,
 	CommonDocDefinition,
 	ContextEdit,

@@ -1,6 +1,6 @@
 import { copyJson, type Draft } from "@earendil-works/chord";
 import { defineDoc } from "../documents.ts";
-import { documentRetention } from "../session/session.ts";
+import { documentRetention, persistWithin } from "../session/session.ts";
 import type { ConversationId, ConversationRecord, Tx } from "../types.ts";
 import type {
 	Agent,
@@ -34,6 +34,7 @@ export const DEFAULT_COMPACTION_POLICY: CompactionPolicy = {
 export const DEFAULT_PROGRESS_POLICY: ProgressPolicy = {
 	partialIntervalMs: 100,
 	outputIntervalMs: 100,
+	persistWithinMs: 1_000,
 };
 
 /** The reserved section key of the agent's `instructions`. */
@@ -73,6 +74,7 @@ export function resolveSettings(settings: HarnessSettings | undefined): Settings
 		progress: {
 			partialIntervalMs: settings?.progress?.partialIntervalMs ?? DEFAULT_PROGRESS_POLICY.partialIntervalMs,
 			outputIntervalMs: settings?.progress?.outputIntervalMs ?? DEFAULT_PROGRESS_POLICY.outputIntervalMs,
+			persistWithinMs: persistWithin(settings?.progress?.persistWithinMs),
 		},
 		toolExecution: settings?.toolExecution ?? "parallel",
 		steeringMode: settings?.steeringMode ?? "one-at-a-time",

@@ -41,7 +41,8 @@ type once the PR lands.
 The core rule is:
 
 > A Session atomically commits immutable entries, full task records, and
-> Chord-tracked documents. Only committed state is observable.
+> Chord-tracked documents. Only committed state is observable. A commit marked
+> deferred may be observed before it is stored (section 4.1).
 
 ## 1. Terms and invariants
 
@@ -63,8 +64,16 @@ The core rule is:
 Required invariants:
 
 1. One Session commit is atomic across all record and document writes.
-2. A document update is published only after its storage commit succeeds.
-3. All visible progress is durable. There is no volatile publication path.
+2. A document update is published only after its storage commit succeeds,
+   except a deferred commit's (section 4.1): it is published to watches and the
+   conversation view when memory adopts it, and to `subscribeCommits()` once it
+   is stored.
+3. All visible progress is durable, except what a deferred commit holds: what
+   watches see can be ahead of Storage by up to that commit's window
+   (`withinMs`), and a crash loses it. A commit is deferred only when its caller
+   marks it so, and only when it changes nothing but existing latest,
+   initial-fork conversation documents (section 4.1). Every stored document is
+   a state memory had.
 4. External effects do not run inside the Session mutation transaction.
 5. Entries and IDs are immutable and never reused after a committed write.
 6. Document drafts are fully revoked when their transaction callback settles:
@@ -649,6 +658,8 @@ interface Conversation {
   commit<T>(
     change: (tx: Tx) => T | Promise<T>,
     context: Context,
+    /** As for `Session.commit()` (section 4.1). */
+    options?: CommitOptions,
   ): Promise<T>;
   /** With `at`, the context as of that visible entry, as `fork(at)` would start with. */
   context(context: Context, options?: { readonly at?: EntryId }): Promise<ContextView>;
@@ -1286,8 +1297,14 @@ There is no mutable `session.document()` API.
 ```ts
 type SessionEnd = { readonly reason: "closed" } | { readonly reason: "failed"; readonly error: unknown };
 
+type CommitPersistence =
+  | { readonly kind: "immediate" }
+  | { readonly kind: "deferred"; readonly withinMs?: number };
+type CommitOptions = { readonly persistence?: CommitPersistence };
+
 interface Session extends DocumentObserver {
-  commit<T>(change: (tx: Tx) => T | Promise<T>, context: Context): Promise<T>;
+  /** `options.persistence` may defer storing the commit (section 4.1). */
+  commit<T>(change: (tx: Tx) => T | Promise<T>, context: Context, options?: CommitOptions): Promise<T>;
   close(context: Context): Promise<void>;
   /** Settles once closed, Storage included: `{ reason: "closed" }`, or `{ reason: "failed", error }` (section 10.1). */
   readonly closed: Promise<SessionEnd>;
@@ -1482,6 +1499,12 @@ callback succeeds with no pending acquisition
   prepare every open change -> immutable next revision + self-contained Chord Op[]
   Session evaluates each required/ordinary document write exactly once
   Storage.commit persists the atomic batch while the Session line remains held
+commit deferred and holdable (section 4.1)
+  adopt every prepared change by pointer swap; queue its ops per document, unstored
+  watches and view mounts capture it synchronously; subscribeCommits() does not
+  release the line; invoke listeners later
+otherwise, right before Storage admission
+  take the held ops of every document the commit acquired and put them in front of its own
 storage succeeds
   adopt every prepared change by pointer swap and enqueue immutable revision/ops publication
   commit listeners, including conversation view mounts (section 9.3), capture it synchronously
@@ -1552,8 +1575,11 @@ The Session evaluates this predicate exactly once after tracker preparation.
 base, excluding the change being evaluated. Storage reports it when it
 materializes the current value; the Session advances it after each adopted write
 and resets it after every base, so evaluation performs no Storage read.
-Creation and version transitions require bases and do not call it. The Session
-then gives Storage only the selected representation:
+Creation and version transitions require bases and do not call it. A deferred
+commit's predicate also runs once, when it is held, against the stored count; a
+base it selects is stored with the held changes, as a store whose held
+operations overflowed is (section 4.1). The Session then gives Storage only the
+selected representation:
 
 ```text
 required or predicate true -> base with complete value
@@ -1698,14 +1724,14 @@ line through callback execution, preparation, storage settlement, committed
 baseline adoption, and publication enqueue. Adoption runs inside
 `Storage.commit()`: the Session passes an `adopt(seq)` callback, which the
 storage calls synchronously once the batch is durable and before its next
-commit (section 10), so memory always shows a complete prefix of the log. The
-callback keeps its own error: a failed adoption fails the Session once
+commit (section 10), so memory always shows a complete prefix of the log, plus
+what deferred commits hold (section 4.1). The callback keeps its own error: a failed adoption fails the Session once
 `Storage.commit()` returns. A commit that rejects after its adoption fails the
 Session too, and its adopted changes stay adopted. Commit observers run on the
 line; watch listeners run later.
 External model, process, tool, network, and human effects run outside it.
-`subscribeCommits()` observes complete immutable publications synchronously on
-the line after adoption. `subscribeClose()` observes close synchronously when it
+`subscribeCommits()` observes stored commits synchronously on the line after
+adoption, each with exactly what that storage transaction stored (section 4.1). `subscribeClose()` observes close synchronously when it
 begins, after admission is sealed, also when a failure closes the Session; the
 Harness ends waits, watches, and streams there, and signals task invocations
 after every close listener has run, so what a task holds ends with the Session's
@@ -1746,6 +1772,84 @@ Storage ownership:
 - JSONL and SQLite detach through serialization and decoded indexes.
 - Every storage read returns a detached JSON value.
 - Immutable strings may be shared; mutable arrays and objects may not.
+
+### 4.1 Deferred commits
+
+A commit whose writes are only cheap to lose, such as a streamed answer or
+running tool output, may be stored later than it is shown:
+
+```ts
+await runtime.commit(
+  async (tx) => { (await tx.doc(LiveDoc, conversationId)).generation!.message = partial; },
+  context,
+  { persistence: { kind: "deferred", withinMs: 1_000 } },
+);
+```
+
+`Session.commit()`, `Conversation.commit()`, `TaskRuntime.commit()`, and a
+tool's `api.commit()` take the option; without it, or
+with `{ kind: "immediate" }`, a commit is stored before it resolves. `withinMs`
+is a number of milliseconds, `0` or more (`Infinity` waits for one of the other
+triggers below); anything else rejects with a `TypeError`. Without it, a
+Harness uses `settings.progress.persistWithinMs` (default 1,000) and a plain
+Session its `persistWithinMs` option (default 1,000).
+
+The mark is a permission. A deferred commit is **held** only when, after its
+callback, settlement, and the read-only check, every write it makes changes an
+existing conversation document with `history: "latest"` and `fork: "initial"`
+at its stored version. Anything else, such as an entry, a task state, a
+submission, another document, a document's creation, migration, or retirement,
+makes it immediate, a normal commit. A held commit is adopted in memory by
+pointer swap, resolves, and is published to the Session's own observers: document
+watches, the conversation view and agent events (section 9). Its stored
+version and delta count stay; its operations wait, folded per incarnation
+(Chord's `PendingOps`), and the incarnation is pinned in the cache, so idle
+eviction skips it at any retention.
+
+What is held is stored by the first of:
+
+1. a normal commit that acquires the document (`tx.doc()`), whether it changes
+   it or only reads it, and stores anything: the held operations go in front of
+   its own in the one content write of that incarnation, in its storage
+   transaction. A stored delta of a held document therefore always begins with
+   its held operations; a base the commit writes covers them;
+2. the document's deadline, the earliest `withinMs` deadline of its held
+   commits on the Session clock, kept by one foreground timer (section 5.6);
+   when it fires, every held document is stored in one storage transaction:
+   a deadline is the latest time, and the others cost little more there;
+3. `close()`, after the writes at close and before the trackers are dropped;
+   a failure of that store fails the Session, and the backend still closes;
+4. any drop of a tracker that holds them: `unloadDocuments()`, and a token of
+   another definition version, which reloads the document from Storage;
+   retirement is case 1.
+
+Held operations leave their queue only at the last step before
+`Storage.commit()`, after every fallible step: a callback, settlement, or
+checkpoint failure of a normal commit keeps them. A store fails like any
+storage write: it fails the Session (section 10.1). Past Chord's
+`MAX_PENDING_OPS` (10,000) held operations, or when a held commit's
+`checkpointWhen` selected a base, the store writes a base of the current value.
+A failed Session stores nothing; after a reopen nothing is held.
+
+Publication: the Session's own observers see each held commit once, when memory
+adopts it, and of a normal commit that stores held changes only its own
+operations. `subscribeCommits()` sees every storage transaction with exactly
+what it stored: nothing for a held commit, and the stored operations, held
+first, for a commit or a deadline that stores them. A consumer that applies
+`subscribeCommits()` publications to stored state, such as a replica, stays
+equal to Storage. Its `seq` values have gaps where nothing was published.
+
+Consistency: every stored document is a state it had in memory, and a normal
+commit that reads a held document through `tx` stores it with whatever it
+derives. What a crash loses is a held commit's changes: up to `withinMs` plus the
+line and I/O delay. A value read outside a commit (`snapshot()`, a watch) may be
+ahead of Storage; nothing durable may be derived from it without reading it in
+a commit. Other readers of Storage, such as another process, a replica, or an
+export, see held changes once they are stored.
+
+The Harness defers exactly two kinds of commits: generation partials (section
+8.3) and running tool progress (section 7.3). Every commit that consumes or
+clears them reads `pi.live` and so stores them first (section 8.2).
 
 ## 5. Tasks
 
@@ -1853,6 +1957,8 @@ interface TaskRuntime<I, S, R, H extends object> extends DocumentObserver, Docum
       current: RunningTask<I, S, R>,
     ) => NextTaskState<S, R> | undefined | Promise<NextTaskState<S, R> | undefined>,
     context: Context,
+    /** May defer storing a commit that changes only documents (section 4.1); one that returns a state is stored. */
+    options?: CommitOptions,
   ): Promise<void>;
 
   memo<T extends JsonValue>(name: string, context: Context): Promise<T | undefined>;
@@ -1937,7 +2043,8 @@ Harness is closing, the task is terminal, or a run invocation's task carries an
 abort mark. Its `tx.createTask()` defaults to the task's conversation, and every
 entry it appends records the task as `byTaskId`. When the
 callback returns a state, the runtime replaces the task's state in the same
-commit, so the checkpoint or outcome is atomic with the callback's entries,
+commit (stored at once even when `options` defers it, section 4.1), so the
+checkpoint or outcome is atomic with the callback's entries,
 documents, and child tasks and is type-checked against the task's checkpoint and
 result types. Returning nothing leaves the state unchanged. A terminal or
 completing state drops the memos. A `waiting` or `sleeping` state ends the
@@ -2448,7 +2555,8 @@ commits and task changes. The default declines them in Cloudflare Workers, since
 a pending timer keeps a Durable Object from hibernating or being evicted even
 when `nodejs_compat` gives it an `unref()`, and wherever timers cannot be
 unreferenced. Foreground timers pace or resume work: throttled
-progress commits through `TaskRuntime.setTimer()`, and, without `onWake`, the
+progress commits through `TaskRuntime.setTimer()`, the deadline of deferred
+commits (section 4.1), and, without `onWake`, the
 timer for the earliest sleep while scheduling runs. That one keeps a Node.js
 process alive, since a sleeping task is work left to do. A timer should not fire
 early and may fire late; every caller checks its clock again when it fires. The
@@ -3087,7 +3195,8 @@ interface ToolExecutionApi<TDetails extends JsonValue = JsonValue> extends Docum
   retainedOutput(): { readonly text: string; readonly truncated: boolean };
   diagnostic(diagnostic: ToolDiagnostic): void;
   details(value: TDetails, context: Context): Promise<void>;
-  commit<T>(change: (tx: Tx) => T | Promise<T>, context: Context): Promise<T>;
+  /** A commit of the call's task; `options` may defer storing it (section 4.1). */
+  commit<T>(change: (tx: Tx) => T | Promise<T>, context: Context, options?: CommitOptions): Promise<T>;
   memo<T extends JsonValue>(name: string, context: Context): Promise<T | undefined>;
   memo<T extends JsonValue>(name: string, candidate: T, context: Context): Promise<T>;
   createTask<I, S extends { phase: string }, R, H extends object>(
@@ -3424,7 +3533,8 @@ canonical path before opening it does not prevent a concurrent rename or
 symlink swap, so callers that restrict paths do so for hygiene, not security.
 
 The `details()` promise resolves after the corresponding or coalesced document
-commit. During normal settlement the tool task stops its throttle and awaits the
+commit, which memory adopts at once and Storage gets with the next commit that
+reads `pi.live` or within `settings.progress.persistWithinMs` (section 4.1). During normal settlement the tool task stops its throttle and awaits the
 commit in flight; the terminal commit, which appends the result entry, is the
 final flush and settles any `details()` promise still pending. Abort and close obey
 invocation and Session admission gates: uncommitted buffered updates may be
@@ -3964,8 +4074,12 @@ continuation calls `models.fetchDeferred()` and `models.cancelDeferred()` with
 that same model and signal. Missing models and synchronous/streamed pi-ai errors
 are classified into the durable generation outcomes below.
 
-Generation and tool progress are throttled durable document commits. A crash may
-lose only the uncommitted throttle window. Recovery converts committed partials
+Generation and tool progress are throttled document commits, deferred
+(section 4.1): watches see each at once, and Storage gets them with the next
+commit that reads `pi.live` or within `settings.progress.persistWithinMs`
+(default 1,000 ms). A crash may lose the throttle window plus what was not
+stored yet: a stream that crashes before its first store leaves no aborted entry,
+and that attempt's usage is not recorded. Recovery converts stored partials
 to normal interrupted/aborted transcript entries, clears presentation state,
 and then retries or terminates according to the task phase. Retry deadlines,
 attempts, compaction, and tool progress are current document state for late
@@ -4108,7 +4222,8 @@ each commit writes at most one window, and the throttle bounds the rate.
 Generation creates `tools` with one `pending` slot per call in the commit that
 appends the tool-calling answer; a call its request did not offer starts `done`
 with its result entry. A tool task sets its slot `running` in its intent commit,
-publishes throttled output and details into it, and in its terminal commit sets
+publishes throttled output and details into it with deferred commits (section
+4.1), and in its terminal commit sets
 `done` and `entry` and removes `output`, `droppedBytes`, `droppedLines`,
 `details`, and `diagnostics`, which the result entry now carries (section 7.3).
 The generation's `tools` phase removes `tools`. Slot updates apply only while a slot with the task's
@@ -4136,6 +4251,17 @@ inputs. `tx.settleSubmission()` stages each input's new status
 and resolves the transaction's latest candidate submission record, falling back
 to committed state, during assembly, like task-document validation (section 3.3),
 so it is not a caller table read and works after the commit's first table write.
+
+The streamed fields, `generation.message` and a running slot's `output`,
+`droppedBytes`, `droppedLines`, `details`, and `diagnostics`, are written by
+deferred commits (section 4.1). Every commit that derives anything from them or
+clears them acquires `pi.live`: converting a partial into an aborted entry,
+settling a tool from its slot, handing a generation over to its tool round,
+ending a run, and clearing a safe rerun's progress. It therefore stores them
+first, with its own changes, and after a crash Storage holds a `pi.live` its
+memory had: control fields as of the last normal commit, streamed fields as of
+the last store. Recovery's own conversions and clears are normal commits, so a
+second crash never converts the same partial twice.
 
 ### 8.3 Generation
 
@@ -4233,7 +4359,9 @@ The run's inputs live in `pi.live.run`, not in the task input.
   model context through `cutoff` with the invocation signal, the thinking level
   as `reasoning` (omitted for `off`), the conversation's persisted provider
   `sessionId`, and the pinned `streamOptions`, committing throttled partials at
-  most every `settings.progress.partialIntervalMs` (default 100 ms).
+  most every `settings.progress.partialIntervalMs` (default 100 ms), deferred
+  (section 4.1), so Storage gets them at the next commit that reads `pi.live`
+  or within `settings.progress.persistWithinMs`.
   Before streaming, the `beforeRequest` chain may
   replace the messages for this request only. Recovery resends the same
   committed messages with the same pinned model, thinking level, and stream
@@ -4766,8 +4894,8 @@ The Harness keeps at most one mount per conversation. The first `watch()` or
 event attachment builds its revision on the Session line from the
 committed active transcript and documents; the mount is dropped when its last
 observer detaches. A mount derives each next revision from the Session's
-`subscribeCommits()` publications, like `watchDoc()`: every publication is
-already durable, so the view shows only committed state. One publication that
+commits as memory adopts them, like `watchDoc()`: it shows committed state,
+including deferred commits before they are stored (section 4.1). One publication that
 touches the conversation yields one Chord batch:
 
 ```text
@@ -5587,7 +5715,9 @@ These are contracts, not invitations to add defensive machinery:
 Durable has no:
 
 - whole-Session DOM;
-- visible-undurable publication;
+- visible-undurable publication beyond deferred commits (section 4.1): an
+  unmarked commit, and every commit that writes anything but existing latest,
+  initial-fork conversation documents, is stored before anything observes it;
 - Session-kernel semantic event journal or independently maintained event state;
 - session-scoped rewindable documents;
 - automatic checkpoint heuristic;

@@ -1,9 +1,8 @@
 import { type Context, type JsonValue, Watch, type WatchHandle } from "@earendil-works/chord";
 import { withoutAbortSignal } from "@earendil-works/chord/context";
 import { applyImmutable, type NonEmptyPath, type Op, type Path } from "@earendil-works/chord/delta";
-import { contained, type SessionImpl } from "../session/session.ts";
+import { contained, type ObservedCommit, type SessionImpl } from "../session/session.ts";
 import type {
-	CommitPublication,
 	ConversationDocToken,
 	ConversationId,
 	ConversationRecord,
@@ -37,7 +36,7 @@ export type ViewObserver = {
 		before: ConversationView,
 		after: ConversationView,
 		ops: readonly Op[],
-		publication: CommitPublication,
+		publication: ObservedCommit,
 		context: Context,
 	): void;
 	/** The Session closed, or failed with `failure`. */
@@ -72,7 +71,8 @@ export function conversationViews(harness: object): ConversationViews {
 
 /**
  * The Harness's conversation view mounts: at most one per conversation, built on the Session line by its first
- * observer and dropped with its last. Each mount advances from the Session's commit publications, which are durable.
+ * observer and dropped with its last. Each mount advances from the Session's commits as memory adopts them, deferred ones
+ * (`CommitPersistence`) before they are stored.
  */
 export class ConversationViews {
 	readonly #session: SessionImpl;
@@ -172,7 +172,7 @@ export class ConversationViews {
 function advance(
 	id: ConversationId,
 	mount: Mount,
-	publication: CommitPublication,
+	publication: ObservedCommit,
 	context: Context,
 	report: (error: unknown) => void,
 ): void {
