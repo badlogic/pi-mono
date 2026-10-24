@@ -1496,6 +1496,22 @@ describe("openai-completions tool_choice", () => {
 		}
 	});
 
+	it.each(["k3.1-pro", "k3.1-pro-highspeed"] as const)(
+		"sends max reasoning_effort without a thinking field for Kimi Coding %s",
+		async (modelId) => {
+			const model = getModel("kimi-coding", modelId)!;
+			expect(model.compat).toMatchObject({
+				supportsReasoningEffort: true,
+				thinkingFormat: "openai",
+				requiresReasoningContentOnAssistantMessages: true,
+			});
+
+			const params = await captureSimpleParams(model, "max");
+			expect(params.reasoning_effort).toBe("max");
+			expect(params.thinking).toBeUndefined();
+		},
+	);
+
 	it("keeps disabled thinking for Moonshot Kimi K2.6 when thinking is off", async () => {
 		const model = getModel("moonshotai-cn", "kimi-k2.6")!;
 		let payload: unknown;
