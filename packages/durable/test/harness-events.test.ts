@@ -690,6 +690,9 @@ describe("streamed partials", () => {
 		const stream = async (size: number) => {
 			const setup = chatSetup({ tokensPerSecond: 64_000, tokenSize: { min: 64, max: 64 } });
 			setup.settings.progress = { partialIntervalMs: 1, outputIntervalMs: 100 };
+			// Keep `pi.live` cached between commits, as the default retention does. Evicted after each use (the suite's
+			// evicting run), every commit replays the document's delta chain: a cost of eviction, not of appending.
+			setup.settings.documentRetentionMs = 60_000;
 			const text = 'streamed text with "quotes" and \\ escapes\n'.repeat(size / 40);
 			setup.faux.setResponses([
 				fauxAssistantMessage(
